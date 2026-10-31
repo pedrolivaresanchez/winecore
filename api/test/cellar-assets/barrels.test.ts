@@ -89,6 +89,91 @@ describe('usos de barrica', () => {
       await ctx.close();
     }
   });
+
+  it('recalcula el uso desde el historial de llenados y se puede repetir', async () => {
+    const ctx = await createTestApp();
+    try {
+      const po = await entityId(ctx);
+      const warehouse = await seedWarehouse(ctx, po);
+      const location = await call(ctx, 'POST', '/v1/locations', {
+        code: 'BOD',
+        name: 'Bodega',
+        kind: 'cellar',
+        controlling_entity_id: po,
+        tax_warehouse_id: warehouse,
+      });
+      const locationId = String(location.body.id);
+      const tank = await call(ctx, 'POST', '/v1/vessels', {
+        code: 'INOX-01',
+        name: 'Depósito',
+        kind: 'tank_storage',
+        capacity_ml: 8_000_000,
+        material: 'stainless_steel',
+        location_id: locationId,
+      });
+      const barrel = await call(ctx, 'POST', '/v1/vessels', {
+        code: 'BAR-002',
+        name: 'Barrica 2',
+        kind: 'barrel',
+        capacity_ml: 300_000,
+        material: 'oak',
+        location_id: locationId,
+      });
+      const barrelId = String(barrel.body.id);
+      const lotId = await seedHolding(ctx, {
+        entityId: po,
+        warehouseId: warehouse,
+        locationId,
+        vesselId: String(tank.body.id),
+        code: 'L25T02',
+        volumeMl: 1_000_000,
+      });
+      const sheet = await call(ctx, 'POST', '/v1/vessels/BAR-002/barrel', {
+        oak_origin: 'frances',
+        toast: 'medio',
+        head_toast: false,
+        cooper: 'Tonelería Ejemplo',
+        year_made: 2020,
+        nominal_volume_ml: 225_000,
+      });
+      expect(sheet.status).toBe(201);
+      const filled = await confirm(ctx, transfer(po, lotId, String(tank.body.id), barrelId, 200_000, 0, '2026-06-15T08:00:00Z'));
+      expect(filled.status).toBe(200);
+
+      const denied = await call(ctx, 'POST', '/v1/barrels/use-count-backfill', undefined, 'bodega@winecore.test');
+      expect(denied.status).toBe(403);
+
+      await ctx.writer.withWrite({ type: 'system', id: 'backfill-test', requestId: 'backfill-1' }, async (tx) => {
+        tx.write(sql`UPDATE cellar.barrel SET use_count = 0 WHERE vessel_id = CAST(${barrelId} AS UUID)`);
+      });
+      const first = await call(ctx, 'POST', '/v1/barrels/use-count-backfill');
+      expect(first.status, JSON.stringify(first.body)).toBe(200);
+      expect(first.body).toMatchObject({ fills_added: 0, updated: 1 });
+      expect((await call(ctx, 'GET', '/v1/vessels/BAR-002/barrel')).body.use_count).toBe(1);
+      const again = await call(ctx, 'POST', '/v1/barrels/use-count-backfill');
+      expect(again.body).toMatchObject({ fills_added: 0, updated: 0 });
+      expect((await call(ctx, 'GET', '/v1/vessels/BAR-002/barrel')).body.use_count).toBe(1);
+
+      await ctx.writer.withWrite({ type: 'system', id: 'backfill-test', requestId: 'backfill-2' }, async (tx) => {
+        tx.write(sql`DELETE FROM cellar.barrel_fill WHERE vessel_id = CAST(${barrelId} AS UUID)`);
+        tx.write(sql`UPDATE cellar.barrel SET use_count = 0 WHERE vessel_id = CAST(${barrelId} AS UUID)`);
+      });
+      const rebuilt = await call(ctx, 'POST', '/v1/barrels/use-count-backfill');
+      expect(rebuilt.status, JSON.stringify(rebuilt.body)).toBe(200);
+      expect(rebuilt.body).toMatchObject({ fills_added: 1, updated: 1 });
+      expect((await call(ctx, 'GET', '/v1/vessels/BAR-002/barrel')).body.use_count).toBe(1);
+      const stable = await call(ctx, 'POST', '/v1/barrels/use-count-backfill');
+      expect(stable.body).toMatchObject({ fills_added: 0, updated: 0 });
+
+      const audit = await ctx.writer.read<{ n: string }>(sql`
+        SELECT count(*)::VARCHAR AS n FROM audit.audit_log
+        WHERE table_name = 'cellar.barrel' AND action = 'EVENT'
+      `);
+      expect(Number(audit[0]?.n)).toBeGreaterThanOrEqual(4);
+    } finally {
+      await ctx.close();
+    }
+  });
 });
 
 function transfer(

@@ -12,7 +12,7 @@ import type { Me } from '@/lib/types'
 import { Badge, Button, DataGrid, Drawer, DrawerBody, DrawerHeader, EmptyState, Input, Select, useToast, type GridColumn } from '@/ui'
 import { ledgerOf, validateLedger, type Ledger } from '@/pages/regulatorio/api'
 import { Fact, FactCard, ListFrame } from '@/pages/regulatorio/frame'
-import { canValidateLedger, classLabel, validAdvisorRef } from '@/pages/regulatorio/model'
+import { canValidateLedger, classLabel, validAdvisorRef, warehouseOptionLabel } from '@/pages/regulatorio/model'
 import { useWarehouses } from '@/pages/regulatorio/warehouses'
 
 const GRID_LABELS = {
@@ -134,7 +134,7 @@ export function MayoresPage({ me }: { me: Me }) {
             <option value="">{copy.regulatorio.warehouse}</option>
             {warehouses.map((item) => (
               <option key={item.id} value={item.id}>
-                {item.name}
+                {warehouseOptionLabel(item)}
               </option>
             ))}
           </Select>

@@ -28,6 +28,7 @@ import {
   type RequiredAnalysisView,
   type SettingsView,
   type So2LimitView,
+  type Warning,
   type So2Scope,
   type SugarBand,
   type WineColor,
@@ -140,7 +141,12 @@ export async function readEffective(reader: Reader, legalEntityId: string | null
   return readSettings(reader, legalEntityId);
 }
 
-export async function writeSettings(tx: Tx, actorId: string, body: unknown, now: Date): Promise<SettingsView> {
+export async function writeSettings(
+  tx: Tx,
+  actorId: string,
+  body: unknown,
+  now: Date,
+): Promise<SettingsView & { warnings: Warning[] }> {
   const entityId = entityIdOf(body);
   await existingEntity(tx, entityId);
   const before = await loadBundle(tx, entityId);
@@ -158,7 +164,7 @@ export async function writeSettings(tx: Tx, actorId: string, body: unknown, now:
     before: beforeView,
     after: afterView,
   });
-  return afterView;
+  return { ...afterView, warnings: after.warnings };
 }
 
 async function existingEntity(reader: Reader, legalEntityId: string): Promise<string> {
@@ -228,9 +234,10 @@ function applyPut(
   entityId: string,
   actorId: string | null,
   now: Date,
-): { bundle: Bundle; writes: string[] } {
+): { bundle: Bundle; writes: string[]; warnings: Warning[] } {
   const record = objectOf(body);
   const writes: string[] = [];
+  const warnings: Warning[] = [];
   const bundle: Bundle = {
     parameters: before.parameters.map((row) => ({ ...row })),
     so2: before.so2.map((row) => ({ ...row })),
@@ -250,7 +257,7 @@ function applyPut(
   }
   if (record.loss_tolerances !== undefined) {
     touched = true;
-    applyLoss(bundle, writes, arrayOf(record.loss_tolerances, 'loss_tolerances', fields), entityId, fields, actorId, now);
+    applyLoss(bundle, writes, arrayOf(record.loss_tolerances, 'loss_tolerances', fields), entityId, fields, actorId, now, warnings);
   }
   if (record.prohibited_practices !== undefined) {
     touched = true;
@@ -263,7 +270,7 @@ function applyPut(
   if (!touched) fields.body = 'No hay cambios';
   checkWindows(bundle, fields);
   if (Object.keys(fields).length > 0) throw domainError('WC_VALIDATION', fields);
-  return { bundle, writes };
+  return { bundle, writes, warnings };
 }
 
 function applyParameters(
@@ -305,8 +312,7 @@ function applyParameters(
     if (row.source_ref !== undefined) next.sourceRef = textRef(row.source_ref, `parameters.${index}.source_ref`, fields);
     if (row.valid_from !== undefined) next.validFrom = parseDay(row.valid_from, `parameters.${index}.valid_from`, fields);
     const confirm = boolOf(row.confirm, `parameters.${index}.confirm`, fields);
-    if (valueChanged(current, next) && confirm !== true) next.confirmed = false;
-    if (confirm === true) next.confirmed = true;
+    next.confirmed = applyConfirmation(current.basis, current.confirmed, confirm, valueChanged(current, next));
     if (sameParameter(current, next)) return;
     bundle.parameters[bundle.parameters.indexOf(current)] = commitParameter(current, next, entityId, actorId, now, writes);
   });
@@ -345,8 +351,7 @@ function applySo2(
     if (row.note !== undefined) next.note = row.note === null ? null : textRef(row.note, `so2_limits.${index}.note`, fields);
     if (row.valid_from !== undefined) next.validFrom = parseDay(row.valid_from, `so2_limits.${index}.valid_from`, fields);
     const confirm = boolOf(row.confirm, `so2_limits.${index}.confirm`, fields);
-    if ((next.limitMgL !== current.limitMgL) && confirm !== true) next.confirmed = false;
-    if (confirm === true) next.confirmed = true;
+    next.confirmed = applyConfirmation(current.basis, current.confirmed, confirm, next.limitMgL !== current.limitMgL);
     if (JSON.stringify(publicSo2(current)) === JSON.stringify(publicSo2(next)) && current.validFrom === next.validFrom) return;
     const indexOf = bundle.so2.indexOf(current);
     bundle.so2[indexOf] = commitSo2(current, next, entityId, actorId, now, writes);
@@ -361,6 +366,7 @@ function applyLoss(
   fields: Record<string, string>,
   actorId: string | null,
   now: Date,
+  warnings: Warning[],
 ): void {
   items.forEach((item, index) => {
     const row = objectOf(item, `loss_tolerances.${index}`, fields);
@@ -383,13 +389,16 @@ function applyLoss(
     }
     if (row.source_ref !== undefined) next.sourceRef = textRef(row.source_ref, `loss_tolerances.${index}.source_ref`, fields);
     if (row.valid_from !== undefined) next.validFrom = parseDay(row.valid_from, `loss_tolerances.${index}.valid_from`, fields);
-    if (next.maxPct !== null && next.sourceRef === SOURCE.loss) {
-      fields[`loss_tolerances.${index}.source_ref`] = 'Indica la referencia del asesor';
-    }
     const confirm = boolOf(row.confirm, `loss_tolerances.${index}.confirm`, fields);
-    if (next.maxPct !== current.maxPct && confirm !== true) next.confirmed = false;
-    if (confirm === true) next.confirmed = true;
+    next.confirmed = applyConfirmation(current.basis, current.confirmed, confirm, next.maxPct !== current.maxPct);
     if (JSON.stringify(publicLoss(current)) === JSON.stringify(publicLoss(next)) && current.validFrom === next.validFrom) return;
+    if (next.maxPct !== null && next.sourceRef === SOURCE.loss) {
+      warnings.push({
+        code: 'ENOLOGY_LOSS_SOURCE_PENDING',
+        severity: 'warning',
+        message: 'La merma máxima se guarda con la fuente todavía pendiente de confirmar.',
+      });
+    }
     bundle.loss[bundle.loss.indexOf(current)] = commitLoss(current, next, entityId, actorId, now, writes);
   });
 }
@@ -416,15 +425,12 @@ function applyPractices(
       return;
     }
     const current = bundle.practices.find((entry) => entry.nameKey === nameKey);
-    if (row.confirm !== undefined && typeof row.confirm !== 'boolean') {
-      fields[`prohibited_practices.${index}.confirm`] = 'Debe ser verdadero o falso';
-      return;
-    }
     if (row.active !== undefined && typeof row.active !== 'boolean') {
       fields[`prohibited_practices.${index}.active`] = 'Debe ser verdadero o falso';
       return;
     }
-    const confirm = row.confirm === true;
+    const confirm = boolOf(row.confirm, `prohibited_practices.${index}.confirm`, fields);
+    if (fields[`prohibited_practices.${index}.confirm`]) return;
     const active = typeof row.active === 'boolean' ? row.active : (current?.active ?? true);
     if (!current) {
       const created: PracticeRow = {
@@ -436,15 +442,14 @@ function applyPractices(
         active,
         basis: 'supuesto',
         sourceRef: 'Añadida por la dirección.',
-        confirmed: confirm,
+        confirmed: confirm === true,
       };
       bundle.practices.push(created);
       writes.push(insertPractice(created, entityId, actorId, now));
       return;
     }
     const next: PracticeRow = { ...current, matchTerms: [...current.matchTerms], active, nameEs: current.nameEs };
-    if (confirm) next.confirmed = true;
-    if (active !== current.active && !confirm) next.confirmed = current.basis === 'hecho' ? current.confirmed : false;
+    next.confirmed = applyConfirmation(current.basis, current.confirmed, confirm, active !== current.active);
     if (next.active === current.active && next.confirmed === current.confirmed) return;
     bundle.practices[bundle.practices.indexOf(current)] = commitPractice(current, next, entityId, actorId, now, writes);
   });
@@ -918,6 +923,13 @@ function checkWindows(bundle: Bundle, fields: Record<string, string>): void {
   if (bottleFrom && bottleTo && Number(bottleFrom) > Number(bottleTo)) {
     fields.bottling_reminder_month_from = 'El mes inicial no puede ser posterior al final';
   }
+}
+
+function applyConfirmation(basis: Basis, current: boolean, confirm: boolean | null, changed: boolean): boolean {
+  if (confirm === true) return true;
+  if (confirm === false && basis !== 'hecho') return false;
+  if (changed) return false;
+  return current;
 }
 
 function valueChanged(current: ParameterRow, next: ParameterRow): boolean {

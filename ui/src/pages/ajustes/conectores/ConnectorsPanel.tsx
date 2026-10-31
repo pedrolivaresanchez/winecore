@@ -16,10 +16,8 @@ import {
   clientStatus,
   codeFromName,
   isGrantableScope,
-  lastUsedAt,
   mcpCalls,
   mcpEndpoint,
-  peopleInAudit,
   personName,
   scopeLabel,
   uniqueClients,
@@ -69,7 +67,7 @@ export function ConnectorsPanel({ me }: { me: Me }) {
   const owner = isOwner(me);
   const clients = useApi<{ items: unknown[] }>(owner ? "/v1/mcp/clients" : null);
   const calls = useApi<AuditPage>(owner ? "/v1/audit?table=mcp.call&limit=50" : null);
-  const actors = useApi<AuditPage>(owner ? "/v1/audit?limit=100" : null);
+  const directory = useApi<{ items: { id: string; display_name: string; status: string }[] }>(owner ? "/v1/users" : null);
   const [mode, setMode] = useState<Mode>({ kind: "closed" });
   const [busy, setBusy] = useState(false);
   const flight = useRef(false);
@@ -78,9 +76,11 @@ export function ConnectorsPanel({ me }: { me: Me }) {
   if (!owner) return <NoPermission />;
 
   const items = uniqueClients((clients.data?.items ?? []).map(asClient).filter((item): item is McpClient => item !== null));
-  const people = peopleInAudit(actors.data?.items);
+  const people = (directory.data?.items ?? [])
+    .filter((person) => person.status === "active" && person.display_name.trim().length > 0)
+    .map((person) => ({ id: person.id.toLowerCase(), name: person.display_name.trim() }))
+    .sort((left, right) => left.name.localeCompare(right.name, "es"));
   const recent = calls.data ? mcpCalls(calls.data.items) : null;
-  const used = recent ? lastUsedAt(recent) : null;
   const revoking = mode.kind === "revoke" ? items.find((item) => item.id === mode.id) ?? null : null;
 
   function closeToken() {
@@ -204,8 +204,6 @@ export function ConnectorsPanel({ me }: { me: Me }) {
                 key={client.id}
                 client={client}
                 people={people}
-                usedAt={used?.get(client.id.toLowerCase()) ?? null}
-                usedKnown={used !== null}
                 busy={busy}
                 onRotate={() => void rotate(client)}
                 onRevoke={() => setMode({ kind: "revoke", id: client.id })}
@@ -249,7 +247,7 @@ export function ConnectorsPanel({ me }: { me: Me }) {
         onCreated={(name, token) => {
           setMode({ kind: "token", variant: "created", name, token });
           clients.reload();
-          actors.reload();
+          directory.reload();
         }}
       />
       <TokenDialog
@@ -299,27 +297,24 @@ function statusLabel(status: ClientStatus): string {
 function ClientRow({
   client,
   people,
-  usedAt,
-  usedKnown,
   busy,
   onRotate,
   onRevoke,
 }: {
   client: McpClient;
   people: Person[];
-  usedAt: string | null;
-  usedKnown: boolean;
   busy: boolean;
   onRotate: () => void;
   onRevoke: () => void;
 }) {
   const menu = useMenuOpen();
   const status = clientStatus(client);
-  const person = personName(people, client.on_behalf_of_user_id);
+  const person = client.on_behalf_of_display_name ?? personName(people, client.on_behalf_of_user_id);
+  const used = client.last_used_at ? formatDateTime(client.last_used_at) : copy.connectors.neverUsed;
   const meta = [
     person ? fill(copy.connectors.behalf, { name: person }) : null,
+    `${copy.connectors.lastUse} · ${used}`,
     client.created_at ? fill(copy.connectors.createdAt, { date: formatDate(client.created_at) }) : null,
-    usedKnown ? (usedAt ? fill(copy.connectors.used, { date: formatDateTime(usedAt) }) : copy.connectors.unused) : null,
     client.token_prefix ? fill(copy.connectors.prefix, { prefix: client.token_prefix }) : null,
   ].filter((part): part is string => Boolean(part));
   const scopes = client.scopes.map(scopeLabel).join(" · ");

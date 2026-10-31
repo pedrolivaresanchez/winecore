@@ -366,4 +366,59 @@ describe('entrega de facturas por CVBOT', () => {
       await ctx.close();
     }
   });
+
+  it('la lista trae el estado de entrega y el historial de intentos', async () => {
+    const ctx = await createTestApp();
+    try {
+      await insertInvoice(ctx.client, true);
+      await issue(ctx);
+      const pending = await bodyOf(await ctx.app.handle(new Request('http://localhost/v1/invoices?delivery_status=pending')));
+      const row = (pending.items as { id: string; delivery_status: string; last_delivery_at: string | null }[])
+        .find((item) => item.id === INVOICE);
+      expect(row?.delivery_status).toBe('pending');
+      expect(row?.last_delivery_at).toBeTruthy();
+      const sentOnly = await bodyOf(await ctx.app.handle(new Request('http://localhost/v1/invoices?delivery_status=sent')));
+      expect((sentOnly.items as { id: string }[]).some((item) => item.id === INVOICE)).toBe(false);
+      const none = await bodyOf(await ctx.app.handle(new Request('http://localhost/v1/invoices?delivery_status=none')));
+      expect((none.items as { id: string }[]).some((item) => item.id === INVOICE)).toBe(false);
+      const invalid = await ctx.app.handle(new Request('http://localhost/v1/invoices?delivery_status=correo'));
+      expect(invalid.status).toBe(422);
+
+      const history = await bodyOf(await ctx.app.handle(new Request(`http://localhost/v1/invoices/${INVOICE}/deliveries`)));
+      const attempts = history.items as { attempt: number; channel: string; recipients: string[]; status: string; message_id: string | null; marked_by: string | null }[];
+      expect(attempts).toHaveLength(1);
+      expect(attempts[0]).toMatchObject({
+        attempt: 1,
+        channel: 'cvbot_outlook',
+        status: 'pending',
+        recipients: ['facturas@example.com'],
+        message_id: null,
+        marked_by: null,
+      });
+
+      const marked = await ctx.app.handle(new Request(`http://localhost/v1/invoices/${INVOICE}/delivery/sent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          attempt: 1,
+          message_id: 'outlook-lista-1',
+          sent_at: '2026-03-10T12:00:00.000Z',
+          recipients: ['facturas@example.com'],
+        }),
+      }));
+      expect(marked.status).toBe(200);
+      const after = await bodyOf(await ctx.app.handle(new Request(`http://localhost/v1/invoices?delivery_status=sent`)));
+      const sent = (after.items as { id: string; delivery_status: string; last_delivery_at: string | null }[])
+        .find((item) => item.id === INVOICE);
+      expect(sent?.delivery_status).toBe('sent');
+      expect(sent?.last_delivery_at).toContain('2026-03-10');
+      const trail = await bodyOf(await ctx.app.handle(new Request(`http://localhost/v1/invoices/${INVOICE}/deliveries`)));
+      expect((trail.items as { status: string; message_id: string; marked_by: string }[])[0]).toMatchObject({
+        status: 'sent',
+        message_id: 'outlook-lista-1',
+      });
+    } finally {
+      await ctx.close();
+    }
+  });
 });

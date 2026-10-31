@@ -25,6 +25,8 @@ export type McpClient = {
   description: string;
   scopes: string[];
   on_behalf_of_user_id: string | null;
+  on_behalf_of_display_name: string | null;
+  last_used_at: string | null;
   created_at: string;
   revoked_at: string | null;
   token_prefix: string | null;
@@ -119,6 +121,8 @@ export function asClient(value: unknown): McpClient | null {
     description: textOrNull(row.description) ?? textOrNull(row.code) ?? "",
     scopes: asScopes(row.scopes),
     on_behalf_of_user_id: textOrNull(row.on_behalf_of_user_id),
+    on_behalf_of_display_name: textOrNull(row.on_behalf_of_display_name),
+    last_used_at: textOrNull(row.last_used_at),
     created_at: textOrNull(row.created_at) ?? "",
     revoked_at: textOrNull(row.revoked_at),
     token_prefix: textOrNull(row.token_prefix) ?? textOrNull(row.prefix),

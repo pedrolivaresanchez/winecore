@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Building, Check, FlaskConical, List, Lock, Search, ShareNetwork, Sliders, type IconComponent } from '@/ui/icons'
+import { ArrowLeft, Building, Check, FlaskConical, List, Lock, Search, ShareNetwork, Sliders, Users, type IconComponent } from '@/ui/icons'
 import { Input } from '@/ui'
 import { EntityRoles } from '@/components/EntityRoles'
 import { SystemStatus } from '@/components/SystemStatus'
@@ -7,6 +7,7 @@ import { copy } from '@/i18n'
 import { isOwner } from '@/pages/aprobaciones/model'
 import { PoliciesPanel } from '@/pages/aprobaciones/PoliciesPanel'
 import { ConnectorsPanel } from '@/pages/ajustes/conectores/ConnectorsPanel'
+import { PersonasPanel } from '@/pages/ajustes/personas/PersonasPanel'
 import { SecurityPanel } from '@/pages/ajustes/seguridad/SecurityPanel'
 import { EnologySettings } from '@/pages/enologia/EnologySettings'
 import { SetupPanel } from '@/pages/ajustes/puesta-en-marcha/SetupPanel'
@@ -16,7 +17,7 @@ import { iconStroke, pressClass } from '@/lib/motion'
 import { useShell } from '@/app/shell/shell-context'
 import type { Me } from '@/lib/types'
 
-export type SettingsArea = 'entities' | 'security' | 'policies' | 'enology' | 'connectors' | 'setup' | 'system'
+export type SettingsArea = 'entities' | 'people' | 'security' | 'policies' | 'enology' | 'connectors' | 'setup' | 'system'
 
 const AREAS: { id: SettingsArea; title: string; hint: string; keywords: string; icon: IconComponent; ownerOnly?: boolean; staff?: boolean }[] = [
   {
@@ -25,6 +26,14 @@ const AREAS: { id: SettingsArea; title: string; hint: string; keywords: string; 
     hint: copy.settings.entitiesHint,
     keywords: 'entidades usuarios roles bodega personas',
     icon: Building,
+  },
+  {
+    id: 'people',
+    title: copy.settings.people,
+    hint: copy.settings.peopleHint,
+    keywords: 'personas roles invitacion correo alta baja',
+    icon: Users,
+    staff: true,
   },
   {
     id: 'security',
@@ -188,6 +197,7 @@ export function SettingsView({ me, area }: { me: Me; area: SettingsArea }) {
           </div>
         </header>
         {area === 'entities' ? <EntityRoles me={me} /> : null}
+        {area === 'people' ? (canReadSetup(me) ? <PersonasPanel me={me} /> : <NoPermission />) : null}
         {area === 'security' ? <SecurityPanel /> : null}
         {area === 'policies' ? <PoliciesPanel me={me} /> : null}
         {area === 'enology' ? <EnologySettings me={me} /> : null}

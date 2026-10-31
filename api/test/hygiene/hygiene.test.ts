@@ -609,4 +609,80 @@ describe('higiene y APPCC', () => {
       await ctx.close();
     }
   });
+
+  it('lista registros con fechas y el saldo de consumibles', async () => {
+    const ctx = await createTestApp();
+    try {
+      const cellar = await boot(ctx);
+      const plates = await product(ctx, 'PLACA-L', 'Placas de listado');
+      const registered = await call(ctx, 'POST', '/v1/hygiene/consumables', {
+        product_id: plates,
+        consumable_kind: 'filter_plate',
+      }, CELLAR);
+      expect(registered.status).toBe(201);
+      const early = await call(ctx, 'POST', '/v1/hygiene/consumable-receipts', {
+        product_id: plates,
+        location_id: cellar.locationId,
+        owner_entity_id: cellar.po,
+        quantity: 20,
+        occurred_at: '2026-06-01T08:00:00Z',
+        supplier_name: 'Suministros Ejemplo S.L.',
+      }, CELLAR);
+      expect(early.status).toBe(201);
+      const later = await call(ctx, 'POST', '/v1/hygiene/consumable-receipts', {
+        product_id: plates,
+        location_id: cellar.locationId,
+        owner_entity_id: cellar.po,
+        quantity: 5,
+        occurred_at: '2026-07-02T08:00:00Z',
+        supplier_name: 'Suministros Ejemplo S.L.',
+      }, CELLAR);
+      expect(later.status).toBe(201);
+      const contactId = await supplier(ctx);
+      const used = await call(ctx, 'POST', '/v1/hygiene/filtrations', {
+        occurred_at: '2026-06-15T08:00:00Z',
+        plate_grade: 'V13',
+        plate_format: '40x40',
+        supplier_contact_id: contactId,
+        plate_count: 4,
+        operator: 'Operario sintético',
+        location_id: cellar.locationId,
+        owner_entity_id: cellar.po,
+        consumptions: [{ product_id: plates, quantity: 4 }],
+      }, CELLAR);
+      expect(used.status).toBe(201);
+
+      const june = await call(ctx, 'GET', '/v1/hygiene/consumable-receipts?from=2026-06-01&to=2026-06-30&limit=1', undefined, ADVISOR);
+      expect(june.status).toBe(200);
+      expect(june.body.total).toBe(1);
+      expect((june.body.items as unknown[]).length).toBe(1);
+      expect(june.body.next_cursor).toBeNull();
+      const july = await call(ctx, 'GET', '/v1/hygiene/consumable-receipts?from=2026-07-01&to=2026-07-31', undefined, ADVISOR);
+      expect((july.body.items as { quantity: number }[]).map((row) => row.quantity)).toEqual([5]);
+
+      const filtrations = await call(ctx, 'GET', '/v1/hygiene/filtrations?from=2026-06-01&to=2026-06-30', undefined, ADVISOR);
+      expect(filtrations.status).toBe(200);
+      expect((filtrations.body.items as { plate_count: number }[])[0]?.plate_count).toBe(4);
+
+      const balance = await call(ctx, 'GET', `/v1/hygiene/consumable-balances?product_id=${plates}&to=2026-06-30`, undefined, ADVISOR);
+      expect(balance.status).toBe(200);
+      expect(balance.body.items).toEqual([expect.objectContaining({
+        product_id: plates,
+        in_units: 20,
+        out_units: 4,
+        current_units: 16,
+      })]);
+      const empty = await call(ctx, 'GET', '/v1/hygiene/cleaning-logs?from=2026-01-01&to=2026-01-31', undefined, ADVISOR);
+      expect(empty.status).toBe(200);
+      expect(empty.body.items).toEqual([]);
+      const links = await call(ctx, 'GET', '/v1/hygiene/equipment-links', undefined, ADVISOR);
+      expect(links.status).toBe(200);
+      const checks = await call(ctx, 'GET', '/v1/hygiene/bottling-checks', undefined, ADVISOR);
+      expect(checks.status).toBe(200);
+      const maintenance = await call(ctx, 'GET', '/v1/hygiene/maintenance', undefined, ADVISOR);
+      expect(maintenance.status).toBe(200);
+    } finally {
+      await ctx.close();
+    }
+  });
 });

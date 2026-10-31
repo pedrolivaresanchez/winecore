@@ -1143,18 +1143,59 @@ async function assertNoPeriodOverlap(tx: Tx, pair: EntityPair, period: MonthPeri
   if (clash) throw domainError('WC_IC_PERIOD_OVERLAP');
 }
 
+/** Busca el contacto de CVPO y, si falta, lo crea marcado como interno. */
+export async function ensureInternalCustomer(tx: Tx, buyer: LegalEntityRow): Promise<{ id: string; paymentTermsDays: number }> {
+  return requireCustomer(tx, buyer);
+}
+
 async function requireCustomer(tx: Tx, buyer: LegalEntityRow): Promise<{ id: string; paymentTermsDays: number }> {
+  const found = await findBuyerContact(tx, buyer.taxId);
+  if (found) return found;
+  const created = await createInternalBuyer(tx, buyer);
+  if (!created) throw domainError('WC_IC_CUSTOMER_MISSING', undefined, { tax_id: buyer.taxId });
+  return created;
+}
+
+async function findBuyerContact(tx: Tx, taxId: string): Promise<{ id: string; paymentTermsDays: number } | null> {
   const rows = await tx.read<{ id: string; payment_terms_days: number }>(sql`
     SELECT id, payment_terms_days
     FROM party.contact
-    WHERE tax_id = ${buyer.taxId} AND archived_at IS NULL AND merged_into_id IS NULL
+    WHERE tax_id = ${taxId} AND archived_at IS NULL AND merged_into_id IS NULL
     ORDER BY is_customer DESC, created_at
     LIMIT 1
   `);
   const row = rows[0];
-  if (!row) throw domainError('WC_IC_CUSTOMER_MISSING', undefined, { tax_id: buyer.taxId });
+  if (!row) return null;
   const terms = Number(row.payment_terms_days);
   return { id: uuidText(row.id), paymentTermsDays: Number.isInteger(terms) ? terms : 30 };
+}
+
+async function createInternalBuyer(
+  tx: Tx,
+  buyer: LegalEntityRow,
+): Promise<{ id: string; paymentTermsDays: number } | null> {
+  if (buyer.code !== 'CVPO') return null;
+  if (!/^[A-Z0-9]{2,20}$/.test(buyer.taxId) || buyer.taxId === 'PENDIENTE') return null;
+  const name = buyer.legalName.trim().slice(0, 120);
+  if (name.length < 1) return null;
+  const id = newId();
+  tx.write(sql`
+    INSERT INTO party.contact (
+      id, kind, legal_name, tax_id, tax_id_type, country_code, is_customer,
+      payment_terms_days, legacy_refs, created_by
+    ) VALUES (
+      CAST(${id} AS UUID), 'company', ${name}, ${buyer.taxId}, 'nif', 'ES', TRUE,
+      30, ${sql.json({ internal: true })}, 'intercompany'
+    )
+  `);
+  tx.audit({
+    table: 'party.contact',
+    rowId: id,
+    action: 'INSERT',
+    before: null,
+    after: { legal_name: name, tax_id: buyer.taxId, is_customer: true, internal: true },
+  });
+  return { id, paymentTermsDays: 30 };
 }
 
 async function requireSeries(tx: Tx, sellerId: string, year: number): Promise<string> {

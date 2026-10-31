@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'bun:test';
+import { sessionHash, writeStepUp } from '../../src/core/auth/stepup/session';
+import { sql } from '../../src/core/db/sql';
 import { DomainError } from '../../src/core/errors';
 import type { OcrWorkforce } from '../../src/core/purchasing/extract';
 import type { ApprovedSupplierInvoice } from '../../src/core/purchasing/approval';
@@ -543,6 +545,92 @@ describe('gastos', () => {
       expect(failed.status).toBe(422);
       const current = await json(await ctx.app.handle(new Request(`http://localhost/v1/supplier-invoices/${String(created.id)}`)));
       expect(current.status).toBe('validated');
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  it('pide la aprobación y, una vez concedida, aprueba el gasto en la escritura que la consume', async () => {
+    const approved: string[] = [];
+    const ctx = await createTestApp({
+      approvalHook: {
+        async onApproved(invoice: ApprovedSupplierInvoice) {
+          approved.push(invoice.id);
+        },
+      },
+    });
+    try {
+      await supplier(ctx);
+      const created = await json(await capture(ctx, facturae({
+        number: 'F-APR-2027',
+        issue: '2027-04-02',
+        buyer: CVPO,
+        description: 'Metabisulfito de potasio',
+        base: '20.00',
+        rate: '21.00',
+        quota: '4.20',
+        total: '24.20',
+      }), 'captura-aprobacion-01'));
+      const validated = await json(await post(
+        ctx,
+        `/v1/supplier-invoices/${String(created.id)}/validate`,
+        String(created.updated_at),
+        ADMIN,
+      ));
+      const direct = await post(ctx, `/v1/supplier-invoices/${String(created.id)}/approve`, String(validated.updated_at), ADMIN);
+      expect(direct.status).toBe(403);
+
+      const asked = await post(ctx, `/v1/supplier-invoices/${String(created.id)}/request-approval`, String(validated.updated_at), ADMIN);
+      expect(asked.status).toBe(200);
+      const pending = await json(asked);
+      expect(pending.approval_status).toBe('pending');
+      expect(pending.status).toBe('validated');
+      const requestId = String(pending.approval_request_id);
+      const hash = String(pending.payload_sha256);
+      const again = await json(await post(
+        ctx,
+        `/v1/supplier-invoices/${String(created.id)}/request-approval`,
+        String(validated.updated_at),
+        ADMIN,
+      ));
+      expect(again.approval_request_id).toBe(requestId);
+
+      const early = await ctx.app.handle(new Request(`http://localhost/v1/approvals/${requestId}/decide`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision: 'approve', payload_sha256: hash }),
+      }));
+      expect(early.status).toBe(401);
+      const still = await json(await ctx.app.handle(new Request(`http://localhost/v1/supplier-invoices/${String(created.id)}`)));
+      expect(still.status).toBe('validated');
+
+      const owners = await ctx.writer.read<{ id: string }>(sql`
+        SELECT id FROM core.app_user WHERE email = 'owner@winecore.test'
+      `);
+      const ownerId = String(owners[0]?.id).toLowerCase();
+      const ownerRequest = new Request('http://localhost/v1/approvals/decide', { headers: { 'X-Dev-User': 'owner@winecore.test' } });
+      await ctx.writer.withWrite({ type: 'user', id: ownerId, requestId: 'step-up-gasto' }, (tx) => writeStepUp(tx, {
+        userId: ownerId,
+        hash: sessionHash(ctx.config, ownerRequest, ownerId),
+        at: new Date(),
+        method: 'totp',
+        ip: null,
+        userAgent: null,
+      }));
+      const decided = await ctx.app.handle(new Request(`http://localhost/v1/approvals/${requestId}/decide`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Dev-User': 'owner@winecore.test' },
+        body: JSON.stringify({ decision: 'approve', payload_sha256: hash }),
+      }));
+      expect(decided.status).toBe(200);
+      expect((await json(decided)).status).toBe('consumed');
+      const done = await json(await ctx.app.handle(new Request(`http://localhost/v1/supplier-invoices/${String(created.id)}`)));
+      expect(done.status).toBe('approved');
+      expect(approved).toEqual([created.id]);
+      const stored = await ctx.writer.read<{ status: string }>(sql`
+        SELECT status FROM ops.approval_request WHERE id = CAST(${requestId} AS UUID)
+      `);
+      expect(stored[0]?.status).toBe('consumed');
     } finally {
       await ctx.close();
     }

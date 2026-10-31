@@ -23,6 +23,40 @@ export function flag(value: unknown): boolean {
   return value === true || value === 1 || value === 'true' || value === 't';
 }
 
+/** Devolución física de una rectificativa, guardada en legacy_refs (DuckDB no altera CHECKs). */
+export function rectificationDetail(refs: Record<string, unknown> | null): {
+  noPhysicalReturn: boolean | null;
+  returnDeliveryNote: string | null;
+} {
+  const raw = refs?.rectification;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { noPhysicalReturn: null, returnDeliveryNote: null };
+  }
+  const record = raw as Record<string, unknown>;
+  const flagValue = record.no_physical_return;
+  const note = record.return_delivery_note;
+  return {
+    noPhysicalReturn: typeof flagValue === 'boolean' ? flagValue : null,
+    returnDeliveryNote: typeof note === 'string' && note.trim() !== '' ? note : null,
+  };
+}
+
+export function mergeRectification(
+  refs: Record<string, unknown>,
+  detail: { noPhysicalReturn: boolean | null; returnDeliveryNote: string | null },
+): Record<string, unknown> {
+  const next = { ...refs };
+  if (detail.noPhysicalReturn == null && detail.returnDeliveryNote == null) {
+    delete next.rectification;
+    return next;
+  }
+  next.rectification = {
+    no_physical_return: detail.noPhysicalReturn === true,
+    return_delivery_note: detail.returnDeliveryNote,
+  };
+  return next;
+}
+
 export function day(value: unknown): string | null {
   if (value == null) return null;
   if (value instanceof Date && !Number.isNaN(value.getTime())) return businessDate(value);

@@ -143,14 +143,21 @@ export async function listPayments(writer: Writer, user: UserCtx, request: Reque
     ? sql` AND (p.value_date < CAST(${cursor.date} AS DATE) OR (p.value_date = CAST(${cursor.date} AS DATE) AND p.id < CAST(${cursor.id} AS UUID)))`
     : '';
   const rows = await writer.read<Record<string, unknown>>(
-    `SELECT p.* FROM finance.payment p WHERE ${where}${cursorSql} ORDER BY p.value_date DESC, p.id DESC LIMIT ${limit + 1}`,
+    `SELECT p.*, c.legal_name AS counterparty_name
+     FROM finance.payment p
+     LEFT JOIN party.contact c ON c.id = p.counterparty_id
+     WHERE ${where}${cursorSql}
+     ORDER BY p.value_date DESC, p.id DESC
+     LIMIT ${limit + 1}`,
   );
   const totalRows = await writer.read<{ total: number }>(`SELECT count(*)::INTEGER AS total FROM finance.payment p WHERE ${where}`);
   const hasMore = rows.length > limit;
   const page = hasMore ? rows.slice(0, limit) : rows;
   const ids = page.map((row) => String(row.id).toLowerCase());
   const allocations = await allocationsFor(writer, ids);
-  const items = page.map((row) => paymentBody(row, allocations.get(String(row.id).toLowerCase()) ?? [], new Map()));
+  const flat = ids.flatMap((id) => allocations.get(id) ?? []);
+  const documents = await documentsFor(writer, flat);
+  const items = page.map((row) => paymentBody(row, allocations.get(String(row.id).toLowerCase()) ?? [], documents));
   const last = page.at(-1);
   return {
     items,
@@ -327,6 +334,7 @@ export async function register(
     currency: 'EUR',
     value_date: command.valueDate,
     counterparty_id: command.counterpartyId,
+    counterparty_name: party.legalName,
     bank_account_id: command.bankAccountId,
     reference: command.reference,
     source: command.source,
@@ -339,7 +347,10 @@ export async function register(
 
 async function reverse(tx: Tx, user: UserCtx, id: string, reason: string, now: Date) {
   const rows = await tx.read<Record<string, unknown>>(sql`
-    SELECT * FROM finance.payment WHERE id = CAST(${id} AS UUID)
+    SELECT p.*, c.legal_name AS counterparty_name
+    FROM finance.payment p
+    LEFT JOIN party.contact c ON c.id = p.counterparty_id
+    WHERE p.id = CAST(${id} AS UUID)
   `);
   const row = rows[0];
   if (!row) throw domainError('WC_NOT_FOUND');
@@ -391,7 +402,10 @@ async function reverse(tx: Tx, user: UserCtx, id: string, reason: string, now: D
 
 export async function readPayment(tx: { read: Tx['read'] }, id: string) {
   const rows = await tx.read<Record<string, unknown>>(sql`
-    SELECT * FROM finance.payment WHERE id = CAST(${id} AS UUID)
+    SELECT p.*, c.legal_name AS counterparty_name
+    FROM finance.payment p
+    LEFT JOIN party.contact c ON c.id = p.counterparty_id
+    WHERE p.id = CAST(${id} AS UUID)
   `);
   const row = rows[0];
   if (!row) throw domainError('WC_NOT_FOUND');
@@ -442,6 +456,7 @@ function paymentBody(
     currency: String(row.currency),
     value_date: dateOnly(row.value_date),
     counterparty_id: row.counterparty_id == null ? null : String(row.counterparty_id).toLowerCase(),
+    counterparty_name: textOf(row.counterparty_name),
     bank_account_id: row.bank_account_id == null ? null : String(row.bank_account_id).toLowerCase(),
     reference: textOf(row.reference),
     source: String(row.source),
@@ -450,6 +465,42 @@ function paymentBody(
     allocations: items,
     unallocated: moneyText(amount.minus(allocated)),
   };
+}
+
+async function documentsFor(tx: { read: Tx['read'] }, rows: Record<string, unknown>[]) {
+  const grouped = new Map<string, { outstanding: string; payment_status: string; document_number: string }>();
+  const idsOf = (table: string) => [...new Set(rows
+    .filter((row) => String(row.target_table) === table)
+    .map((row) => String(row.target_id).toLowerCase()))];
+  await fillDocuments(tx, grouped, 'billing.invoice', 'number', idsOf('billing.invoice'));
+  await fillDocuments(tx, grouped, 'purchasing.supplier_invoice', 'supplier_invoice_number', idsOf('purchasing.supplier_invoice'));
+  await fillDocuments(tx, grouped, 'legacy.open_item', 'document_number', idsOf('legacy.open_item'));
+  return grouped;
+}
+
+async function fillDocuments(
+  tx: { read: Tx['read'] },
+  grouped: Map<string, { outstanding: string; payment_status: string; document_number: string }>,
+  table: string,
+  numberColumn: string,
+  ids: string[],
+) {
+  if (ids.length === 0) return;
+  const amount = table === 'legacy.open_item' ? 'amount' : 'total';
+  const status = table === 'legacy.open_item' ? 'status' : 'payment_status';
+  const rows = await tx.read<Record<string, unknown>>(
+    `SELECT id, ${numberColumn} AS document_number, ${status} AS payment_status, ${amount} AS total, amount_paid
+     FROM ${table}
+     WHERE id IN (${ids.map((id) => sql`CAST(${id} AS UUID)`).join(', ')})`,
+  );
+  for (const row of rows) {
+    const outstanding = decimalOf(row.total).minus(decimalOf(row.amount_paid));
+    grouped.set(`${table}:${String(row.id).toLowerCase()}`, {
+      outstanding: moneyText(outstanding),
+      payment_status: String(row.payment_status),
+      document_number: textOf(row.document_number) ?? '',
+    });
+  }
 }
 
 async function allocationsFor(tx: { read: Tx['read'] }, ids: string[]) {

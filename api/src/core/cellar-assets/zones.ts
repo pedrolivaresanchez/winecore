@@ -27,6 +27,7 @@ import { domainError } from '../errors';
 import { newId } from '../ids';
 import { HOLDER_LABELS, ZONE_KINDS, ZONE_LABELS, type HolderKind, type ZoneKind } from './constants';
 import { doubleOf, idOf, requireFinite, requireRotation, requireSpan } from './parse';
+import { PLAN_METADATA, type PlanMetadata } from './plan-metadata';
 
 export interface ZoneView {
   id: string;
@@ -93,7 +94,7 @@ const ZONE_COLUMNS = `
   z.notes, z.is_active
 `;
 
-export async function listZones(writer: Writer, request: Request): Promise<ListBody<ZoneView>> {
+export async function listZones(writer: Writer, request: Request): Promise<ListBody<ZoneView> & { metadata: PlanMetadata }> {
   const url = new URL(request.url);
   const limit = parseLimit(url.searchParams.get('limit'));
   const locationId = optionalQueryUuid(url.searchParams.get('location_id'));
@@ -113,13 +114,16 @@ export async function listZones(writer: Writer, request: Request): Promise<ListB
   `);
   const parsed = rows.map(zoneOf);
   const positions = await positionsFor(writer, parsed.map((row) => row.id));
-  return slicePage(parsed.map((row) => toZone(row, positions.get(row.id) ?? [])), limit, total, (row) => row.code);
+  return {
+    ...slicePage(parsed.map((row) => toZone(row, positions.get(row.id) ?? [])), limit, total, (row) => row.code),
+    metadata: PLAN_METADATA,
+  };
 }
 
-export async function getZone(writer: Writer, _request: Request, code: string): Promise<ZoneView> {
+export async function getZone(writer: Writer, _request: Request, code: string): Promise<ZoneView & { metadata: PlanMetadata }> {
   const row = await zoneByCode(writer, code);
   const positions = await positionsFor(writer, [row.id]);
-  return toZone(row, positions.get(row.id) ?? []);
+  return { ...toZone(row, positions.get(row.id) ?? []), metadata: PLAN_METADATA };
 }
 
 export async function createZone(writer: Writer, request: Request): Promise<ZoneView> {
@@ -192,7 +196,7 @@ export async function patchZone(writer: Writer, request: Request, code: string):
   return getZone(writer, request, code);
 }
 
-export async function createPosition(writer: Writer, request: Request, zoneCode: string): Promise<PositionView> {
+export async function createPosition(writer: Writer, request: Request, zoneCode: string): Promise<PositionView & { metadata: PlanMetadata }> {
   const body = await readJson(request);
   const geom = requireGeom(body);
   const subject = readSubject(body);
@@ -218,7 +222,7 @@ export async function createPosition(writer: Writer, request: Request, zoneCode:
       )
     `);
   });
-  return positionById(writer, id);
+  return { ...await positionById(writer, id), metadata: PLAN_METADATA };
 }
 
 export async function patchPosition(
@@ -226,7 +230,7 @@ export async function patchPosition(
   request: Request,
   zoneCode: string,
   positionId: string,
-): Promise<PositionView> {
+): Promise<PositionView & { metadata: PlanMetadata }> {
   if (!isUuid(positionId)) throw domainError('WC_NOT_FOUND');
   const body = await readJson(request);
   const geom = patchGeom(body);
@@ -250,7 +254,7 @@ export async function patchPosition(
       WHERE id = CAST(${positionId} AS UUID)
     `);
   });
-  return positionById(writer, positionId);
+  return { ...await positionById(writer, positionId), metadata: PLAN_METADATA };
 }
 
 export async function deletePosition(

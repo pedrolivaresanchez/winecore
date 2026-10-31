@@ -1,13 +1,14 @@
 import { Elysia } from 'elysia';
-import { requirePermission, type GuardDeps } from '../auth/guard';
+import { requirePermission, sessionOf, type GuardDeps } from '../auth/guard';
 import { actorFor, readJson } from '../core/cellar/service/http';
 import type { Writer } from '../core/db/writer';
 import { getEvolution } from '../core/tasting/evolution';
-import { createNote, getNote, listNotes, patchNote } from '../core/tasting/notes';
+import { createNote, deleteNote, getNote, listNotes, patchNote } from '../core/tasting/notes';
 import {
   addSample,
   castVote,
   createSession,
+  deleteSession,
   getSelection,
   getSession,
   listSessions,
@@ -73,6 +74,7 @@ export function tastingRoutes(deps: { writer: Writer; guard: GuardDeps }) {
     }, write)
     .get('/v1/tasting-notes/:id', ({ params }) => getNote(writer, params.id), read)
     .patch('/v1/tasting-notes/:id', async ({ request, params }) => patchNote(writer, actorFor(request), params.id, await readJson(request)), write)
+    .delete('/v1/tasting-notes/:id', ({ request, params }) => deleteNote(writer, actorFor(request), params.id), write)
     .get('/v1/tasting-sessions', ({ request }) => listSessions(writer, request), read)
     .post('/v1/tasting-sessions', async ({ request, set }) => {
       const created = await createSession(writer, actorFor(request), await readJson(request));
@@ -99,7 +101,8 @@ export function tastingRoutes(deps: { writer: Writer; guard: GuardDeps }) {
     .post('/v1/tasting-sessions/:id/reveal', ({ request, params }) => revealSession(writer, actorFor(request), {
       session_id: uuidParam(params.id),
     }), write)
-    .get('/v1/tasting-sessions/:id', ({ params }) => getSession(writer, uuidParam(params.id)), read)
+    .delete('/v1/tasting-sessions/:id', ({ request, params }) => deleteSession(writer, actorFor(request), uuidParam(params.id)), write)
+    .get('/v1/tasting-sessions/:id', ({ request, params }) => getSession(writer, uuidParam(params.id), { userId: sessionOf(request).id }), read)
     .get('/v1/tasting-evolution', ({ request }) => getEvolution(writer, request), read);
 }
 

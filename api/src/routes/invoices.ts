@@ -9,7 +9,7 @@ import { newId } from '../core/ids';
 import { executeBatchIssue, requestBatchIssue } from '../core/billing/batch';
 import { exportIssuedBook, periodBounds } from '../core/billing/books';
 import { createDraft, discardDraft, updateDraft } from '../core/billing/drafts';
-import { day, idOf, isUuid, jsonObject, moneyText, text } from '../core/billing/format';
+import { day, idOf, isUuid, jsonObject, moneyText, stamp, text } from '../core/billing/format';
 import { issueInvoice } from '../core/billing/issue';
 import { loadEntity, loadEntityByCode, loadInvoice, presentInvoice } from '../core/billing/readModel';
 import { validateInvoice } from '../core/billing/validate';
@@ -36,6 +36,8 @@ export async function listInvoices(writer: Writer, request: Request) {
   if (query.paymentStatus) filters.push(sql`i.payment_status = ${query.paymentStatus}`);
   if (query.verifactuStatus === 'pending') filters.push('i.verifactu_record_id IS NULL');
   if (query.verifactuStatus === 'accepted') filters.push('i.verifactu_record_id IS NOT NULL');
+  if (query.deliveryStatus === 'none') filters.push('del.invoice_id IS NULL');
+  else if (query.deliveryStatus) filters.push(sql`del.status = ${query.deliveryStatus}`);
   const where = filters.join(' AND ');
   const cursor = query.cursor;
   const pageWhere = cursor
@@ -43,16 +45,22 @@ export async function listInvoices(writer: Writer, request: Request) {
     : where;
   const rows = await writer.read(`
     SELECT i.*, e.code AS entity_code, c.legal_name AS customer_name,
-           (SELECT min(d.due_date) FROM billing.invoice_due d WHERE d.invoice_id = i.id) AS first_due
+           (SELECT min(d.due_date) FROM billing.invoice_due d WHERE d.invoice_id = i.id) AS first_due,
+           del.status AS delivery_status,
+           COALESCE(del.sent_at, del.created_at) AS last_delivery_at
     FROM billing.invoice i
     JOIN core.legal_entity e ON e.id = i.legal_entity_id
     LEFT JOIN party.contact c ON c.id = i.customer_id
+    ${DELIVERY_JOIN}
     WHERE ${pageWhere}
     ORDER BY i.updated_at DESC, i.id DESC
     LIMIT ${query.limit + 1}
   `);
   const totalRows = await writer.read<{ total: unknown }>(`
-    SELECT count(*)::INTEGER AS total FROM billing.invoice i WHERE ${where}
+    SELECT count(*)::INTEGER AS total
+    FROM billing.invoice i
+    ${DELIVERY_JOIN}
+    WHERE ${where}
   `);
   const hasMore = rows.length > query.limit;
   const page = hasMore ? rows.slice(0, query.limit) : rows;
@@ -232,8 +240,26 @@ function listItem(row: Record<string, unknown>) {
     invoice_type: String(row.invoice_type),
     series_id: idOf(row.series_id),
     verifactu_record_id: row.verifactu_record_id == null ? null : idOf(row.verifactu_record_id),
+    delivery_status: deliveryStatusOf(row.delivery_status),
+    last_delivery_at: stamp(row.last_delivery_at),
     updated_at: String(row.updated_at),
   };
+}
+
+const DELIVERY_STATUSES = ['pending', 'sent', 'failed', 'no_recipient', 'none'] as const;
+
+const DELIVERY_JOIN = `
+  LEFT JOIN billing.invoice_delivery del
+    ON del.invoice_id = i.id
+   AND del.attempt = (
+     SELECT max(latest.attempt) FROM billing.invoice_delivery latest WHERE latest.invoice_id = i.id
+   )
+`;
+
+function deliveryStatusOf(value: unknown): 'pending' | 'sent' | 'failed' | 'no_recipient' | 'none' {
+  const status = value == null ? 'none' : String(value);
+  if (status === 'pending' || status === 'sent' || status === 'failed' || status === 'no_recipient') return status;
+  return 'none';
 }
 
 function parseListQuery(url: URL) {
@@ -258,6 +284,10 @@ function parseListQuery(url: URL) {
     fields.payment_status = 'Estado de cobro no válido';
   }
   const verifactuStatus = url.searchParams.get('verifactu_status');
+  const deliveryStatus = url.searchParams.get('delivery_status');
+  if (deliveryStatus && !(DELIVERY_STATUSES as readonly string[]).includes(deliveryStatus)) {
+    fields.delivery_status = 'Estado de entrega no válido';
+  }
   const limitRaw = url.searchParams.get('limit');
   let limit = 50;
   if (limitRaw && limitRaw.trim() !== '') {
@@ -277,6 +307,7 @@ function parseListQuery(url: URL) {
     to: to || null,
     paymentStatus: paymentStatus || null,
     verifactuStatus: verifactuStatus || null,
+    deliveryStatus: deliveryStatus || null,
     limit,
     cursor,
   };
