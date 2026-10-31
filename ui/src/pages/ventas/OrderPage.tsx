@@ -8,7 +8,7 @@ import { useApi } from '@/hooks/use-api'
 import { copy } from '@/i18n'
 import { COUNTRIES } from '@/lib/contacts'
 import { allows } from '@/lib/permissions'
-import { productAliases, useSalesCatalog } from '@/lib/sales-catalog'
+import { mergeProducts, productAliases, useSalesCatalog, useSalesOffer } from '@/lib/sales-catalog'
 import { commercialLines, draftsFrom, type DraftLine } from '@/lib/sales-draft'
 import {
   CHANNELS,
@@ -94,8 +94,23 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
   const servable = order.status === 'confirmed' || order.status === 'partially_delivered'
   const ruleCode = order.entity_code ?? order.issuing_preview?.entity_code ?? null
   const ruleLabel = order.rule_label ?? order.issuing_preview?.label ?? null
+  const offer = useSalesOffer({
+    customerId: order.customer_id,
+    channel,
+    date: orderDate || todayMadrid(),
+  })
+  const products = mergeProducts(offer.products, aliases)
+  const places = offer.locations.length > 0 ? offer.locations : catalog.locations
 
   function reprice(line: DraftLine) {
+    const listed = offer.priceOf(line.productId)
+    if (listed) {
+      setLines((current) =>
+        current.map((item) =>
+          item.key === line.key ? { ...item, quoted: listed, unitPrice: item.touched ? item.unitPrice : listed } : item,
+        ),
+      )
+    }
     if (!line.productId || !(Number(line.quantity) > 0)) return
     const stamp = crypto.randomUUID()
     stamps.current[line.key] = stamp
@@ -230,9 +245,9 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
           {editing ? (
             <LineEditor
               lines={lines}
-              products={catalog.products}
-              lots={[]}
-              locations={[]}
+              products={products}
+              lots={offer.lots}
+              locations={places}
               lockCount
               onChange={setLines}
               onPrice={reprice}
@@ -326,9 +341,9 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
       {dialog === 'delivery' ? (
         <DeliveryFromOrder
           order={order}
-          lots={catalog.lots}
-          locations={catalog.locations}
-          productName={(id) => order.lines.find((line) => line.product_id === id)?.description ?? catalog.products.find((item) => item.id === id)?.label ?? id.slice(0, 8)}
+          lots={offer.lots}
+          locations={places}
+          productName={(id) => order.lines.find((line) => line.product_id === id)?.description ?? products.find((item) => item.id === id)?.label ?? id.slice(0, 8)}
           onClose={() => setDialog(null)}
           onCreated={(id) => navigate(`${docPath('delivery')}/${id}`)}
         />

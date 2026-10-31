@@ -49,16 +49,22 @@ type TabId = 'resumen' | 'vigencias'
 
 export function TariffPage({ me }: { me: Me }) {
   const { id = '' } = useParams()
+  const record = useApi<Tariff>(id ? `/v1/intercompany/tariffs/${id}` : null)
   const tariffs = useApi<{ items: Tariff[] }>('/v1/intercompany/tariffs')
+  const [tariff, setTariff] = useState<Tariff | null>(null)
   const [items, setItems] = useState<Tariff[] | null>(null)
   useChromeTitle(copy.intercompany.tariffs)
+
+  useEffect(() => {
+    if (record.data) setTariff(record.data)
+  }, [record.data])
 
   useEffect(() => {
     if (tariffs.data) setItems(tariffs.data.items)
   }, [tariffs.data])
 
   if (!allows(me, 'billing.read')) return <NoPermission />
-  if (tariffs.loading && !items) {
+  if (record.loading && !tariff) {
     return (
       <div data-screen="intercompania-tarifa-cargando" aria-busy="true" className="grid gap-3 p-6">
         <Skeleton className="h-8 w-48" />
@@ -66,37 +72,40 @@ export function TariffPage({ me }: { me: Me }) {
       </div>
     )
   }
-  if ((tariffs.error && !items) || !items) {
-    return (
-      <div className="p-6">
-        <ErrorState
-          title={`${copy.error.load} (${tariffs.error?.code ?? 'WC_ERROR'})`}
-          detail={tariffs.error?.message}
-          onRetry={tariffs.reload}
-        />
-      </div>
-    )
-  }
-  const tariff = items.find((item) => item.id === id)
-  if (!tariff) {
+  if (record.error?.status === 404) {
     return (
       <div className="p-6">
         <ErrorState title={copy.intercompany.notFound} />
       </div>
     )
   }
-  return <Loaded me={me} tariff={tariff} items={items} onChange={setItems} />
+  if ((record.error && !tariff) || !tariff) {
+    return (
+      <div className="p-6">
+        <ErrorState
+          title={`${copy.error.load} (${record.error?.code ?? 'WC_ERROR'})`}
+          detail={record.error?.message}
+          onRetry={record.reload}
+        />
+      </div>
+    )
+  }
+  const catalog = items ?? []
+  const windows = catalog.some((item) => item.id === tariff.id) ? catalog : [tariff, ...catalog]
+  return <Loaded me={me} tariff={tariff} items={windows} onTariff={setTariff} onChange={setItems} />
 }
 
 function Loaded({
   me,
   tariff,
   items,
+  onTariff,
   onChange,
 }: {
   me: Me
   tariff: Tariff
   items: Tariff[]
+  onTariff: (tariff: Tariff) => void
   onChange: (items: Tariff[]) => void
 }) {
   const navigate = useNavigate()
@@ -111,7 +120,9 @@ function Loaded({
   useChromeTitle(windowLabel(tariff))
 
   function replace(next: Tariff) {
-    onChange(items.map((item) => (item.id === next.id ? next : item)).concat(items.some((item) => item.id === next.id) ? [] : [next]))
+    onTariff(next)
+    const rest = items.filter((item) => item.id !== next.id)
+    onChange([next, ...rest])
   }
 
   async function run(action: 'activate' | 'retire') {

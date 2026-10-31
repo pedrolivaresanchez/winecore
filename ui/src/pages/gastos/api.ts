@@ -2,7 +2,7 @@ import { isAuthEnabled } from '@/auth/config'
 import { getAccessToken } from '@/auth/tokens'
 import { ApiError, api, apiText } from '@/lib/api'
 import { copy } from '@/i18n'
-import type { Expense, ExpenseDraft, ExpensePage, ExpenseQuery } from '@/pages/gastos/types'
+import type { Expense, ExpenseCategory, ExpenseDraft, ExpensePage, ExpenseQuery } from '@/pages/gastos/types'
 
 function root(): string {
   const configured = import.meta.env.VITE_API_BASE_URL
@@ -13,9 +13,16 @@ export function expenseQuery(query: ExpenseQuery): string {
   const params = new URLSearchParams()
   if (query.status) params.set('status', query.status)
   if (query.entity) params.set('entity', query.entity)
+  if (query.month) params.set('month', query.month)
+  if (query.category) params.set('category', query.category)
+  if (query.q) params.set('q', query.q.slice(0, 80))
   if (query.cursor) params.set('cursor', query.cursor)
   params.set('limit', String(query.limit ?? 50))
   return `/v1/supplier-invoices?${params.toString()}`
+}
+
+export function listCategories(signal?: AbortSignal) {
+  return api<{ items: ExpenseCategory[] }>('/v1/expense-categories', { signal })
 }
 
 export function listExpenses(query: ExpenseQuery, signal?: AbortSignal) {

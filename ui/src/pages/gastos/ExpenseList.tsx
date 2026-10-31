@@ -31,7 +31,7 @@ import { cn } from '@/lib/cn'
 import { allows } from '@/lib/permissions'
 import { readStorage, writeStorage } from '@/lib/storage'
 import type { EntityChoice, Me } from '@/lib/types'
-import { downloadBook, listExpenses } from '@/pages/gastos/api'
+import { downloadBook, listCategories, listExpenses } from '@/pages/gastos/api'
 import { CATEGORIES, categoryLabel, currentQuarter, monthOptions, quarterOf, statusLabel, statusTone } from '@/pages/gastos/catalog'
 import type { Expense, ExpenseQuery } from '@/pages/gastos/types'
 
@@ -98,14 +98,6 @@ function money(value: string | null): string {
   return Number.isFinite(parsed) ? formatMoney(parsed) : value
 }
 
-function matches(row: Expense, q: string, month: string, category: string): boolean {
-  if (category && row.category_code !== category) return false
-  if (month && !(row.issue_date ?? row.accounting_date ?? '').startsWith(month)) return false
-  if (!q) return true
-  const haystack = `${row.supplier_name ?? ''} ${row.supplier_tax_id ?? ''} ${row.supplier_invoice_number ?? ''}`.toLowerCase()
-  return haystack.includes(q.toLowerCase())
-}
-
 export function ExpenseList({ me }: { me: Me }) {
   useChromeTitle(copy.gastos.title)
   const navigate = useNavigate()
@@ -121,6 +113,7 @@ export function ExpenseList({ me }: { me: Me }) {
   const category = params.get('category') ?? ''
   const [q, setQ] = useState(params.get('q') ?? '')
   const [debounced, setDebounced] = useState(q)
+  const [categories, setCategories] = useState<{ code: string; name: string }[] | null>(null)
   const [items, setItems] = useState<Expense[]>([])
   const [total, setTotal] = useState(0)
   const [cursor, setCursor] = useState<string | null>(null)
@@ -139,11 +132,40 @@ export function ExpenseList({ me }: { me: Me }) {
     return () => window.clearTimeout(timer)
   }, [q])
 
-  const query = useMemo<ExpenseQuery>(() => ({ status, entity, limit: 50 }), [entity, status])
+  useEffect(() => {
+    const current = params.get('q') ?? ''
+    if (current === debounced) return
+    const next = new URLSearchParams(params)
+    if (debounced) next.set('q', debounced)
+    else next.delete('q')
+    setParams(next, { replace: true })
+  }, [debounced, params, setParams])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    listCategories(controller.signal)
+      .then((page) => {
+        if (!controller.signal.aborted) {
+          setCategories(page.items.map((item) => ({ code: item.code, name: item.name })))
+        }
+      })
+      .catch((err: unknown) => {
+        if (isAbortError(err) || controller.signal.aborted) return
+        setCategories(CATEGORIES.map((item) => ({ code: item.code, name: categoryLabel(item.code) })))
+      })
+    return () => controller.abort()
+  }, [])
+
+  const categoryOptions = categories ?? CATEGORIES.map((item) => ({ code: item.code, name: categoryLabel(item.code) }))
+  const query = useMemo<ExpenseQuery>(
+    () => ({ status, entity, month, category, q: debounced, limit: 50 }),
+    [category, debounced, entity, month, status],
+  )
 
   useEffect(() => {
     const controller = new AbortController()
     let active = true
+    setLoading(true)
     listExpenses(query, controller.signal)
       .then((page) => {
         if (!active) return
@@ -169,7 +191,7 @@ export function ExpenseList({ me }: { me: Me }) {
     if (value) next.set(key, value)
     else next.delete(key)
     setParams(next)
-    if (key === 'status' || key === 'entity') setLoading(true)
+    setLoading(true)
   }
 
   async function loadMore() {
@@ -198,21 +220,24 @@ export function ExpenseList({ me }: { me: Me }) {
     })
   }
 
-  const visible = useMemo(
-    () => items.filter((row) => matches(row, debounced, month, category)),
-    [category, debounced, items, month],
-  )
-  const clientFiltered = Boolean(debounced || month || category)
-  const shownTotal = clientFiltered ? visible.length : total
+  const shownTotal = total
+  function categoryName(code: string | null): string {
+    if (!code) return '—'
+    return categoryOptions.find((item) => item.code === code)?.name ?? categoryLabel(code)
+  }
 
   const columns = useMemo<GridColumn<Expense>[]>(() => {
+    const nameOf = (code: string | null) => {
+      if (!code) return '—'
+      return categoryOptions.find((item) => item.code === code)?.name ?? categoryLabel(code)
+    }
     const all: GridColumn<Expense>[] = [
       { id: 'supplier', header: copy.gastos.supplier, cell: (row) => row.supplier_name || '—' },
       { id: 'tax_id', header: copy.gastos.taxId, cell: (row) => row.supplier_tax_id || '—' },
       { id: 'number', header: copy.gastos.number, cell: (row) => row.supplier_invoice_number || '—' },
       { id: 'issue_date', header: copy.gastos.issueDate, cell: (row) => (row.issue_date ? formatDate(row.issue_date) : '—') },
       { id: 'entity', header: copy.gastos.entity, cell: (row) => row.legal_entity_code },
-      { id: 'category', header: copy.gastos.category, cell: (row) => categoryLabel(row.category_code) },
+      { id: 'category', header: copy.gastos.category, cell: (row) => nameOf(row.category_code) },
       { id: 'total', header: copy.gastos.total, align: 'right', cell: (row) => money(row.total) },
       {
         id: 'status',
@@ -221,11 +246,11 @@ export function ExpenseList({ me }: { me: Me }) {
       },
     ]
     return all.filter((column) => !hidden.has(column.id as ColumnId))
-  }, [hidden])
+  }, [categoryOptions, hidden])
 
   const filtersActive = Boolean(debounced || status || entity || month || category)
   const emptyTitle = filtersActive ? copy.gastos.noMatch : copy.gastos.empty
-  const screen = loading ? 'gastos-cargando' : visible.length === 0 && !filtersActive ? 'gastos-vacio' : 'gastos'
+  const screen = loading ? 'gastos-cargando' : items.length === 0 && !filtersActive ? 'gastos-vacio' : 'gastos'
 
   async function exportBook() {
     if (!entity) {
@@ -329,9 +354,9 @@ export function ExpenseList({ me }: { me: Me }) {
             onChange={(event) => setFilter('category', event.target.value)}
           >
             <option value="">{copy.gastos.category}</option>
-            {CATEGORIES.map((item) => (
+            {categoryOptions.map((item) => (
               <option key={item.code} value={item.code}>
-                {categoryLabel(item.code)}
+                {item.name}
               </option>
             ))}
           </Select>
@@ -352,7 +377,7 @@ export function ExpenseList({ me }: { me: Me }) {
       ) : desktop ? (
         <DataGrid
           columns={columns}
-          rows={visible}
+          rows={items}
           rowKey={(row) => row.id}
           labels={GRID_LABELS}
           widths={widths}
@@ -384,7 +409,7 @@ export function ExpenseList({ me }: { me: Me }) {
             <div className="px-3 py-2">
               <SkeletonRows rows={6} />
             </div>
-          ) : visible.length === 0 ? (
+          ) : items.length === 0 ? (
             <EmptyState
               size="sm"
               icon={<Receipt strokeWidth={iconStroke} />}
@@ -400,7 +425,7 @@ export function ExpenseList({ me }: { me: Me }) {
             />
           ) : (
             <ul className="flex flex-col gap-2 p-3">
-              {visible.map((row) => (
+              {items.map((row) => (
                 <li key={row.id}>
                   <a
                     href={`/gastos/${row.id}`}
@@ -413,7 +438,7 @@ export function ExpenseList({ me }: { me: Me }) {
                           .filter(Boolean)
                           .join(' · ')}
                       </span>
-                      <span className="mt-1 block truncate text-caption text-text-secondary">{categoryLabel(row.category_code)}</span>
+                      <span className="mt-1 block truncate text-caption text-text-secondary">{categoryName(row.category_code)}</span>
                     </span>
                     <span className="flex shrink-0 flex-col items-end gap-1.5">
                       <span className="text-label font-medium text-ink-900">{money(row.total)}</span>

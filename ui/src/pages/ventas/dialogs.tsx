@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Field } from '@/components/Field'
 import { copy } from '@/i18n'
 import { COUNTRIES } from '@/lib/contacts'
-import type { CatalogCustomer, CatalogLocation, CatalogLot, CatalogProduct } from '@/lib/sales-catalog'
+import { useSalesOffer, type CatalogCustomer, type CatalogLocation, type CatalogLot } from '@/lib/sales-catalog'
 import { blankLine, commercialLines, type DraftLine } from '@/lib/sales-draft'
 import {
   CHANNELS,
@@ -41,13 +41,11 @@ const DATE_LABELS = { clear: 'Quitar', today: 'Hoy' }
 export function CreateDocument({
   doc,
   customers,
-  products,
   onClose,
   onCreated,
 }: {
   doc: 'quote' | 'order'
   customers: CatalogCustomer[]
-  products: CatalogProduct[]
   onClose: () => void
   onCreated: (id: string) => void
 }) {
@@ -69,6 +67,8 @@ export function CreateDocument({
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const stamps = useRef<Record<string, string>>({})
+  const offerDate = doc === 'order' ? orderDate : todayMadrid()
+  const offer = useSalesOffer({ customerId: customerId || undefined, channel, date: offerDate })
 
   const visible = customers.filter((item) => item.name.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 50)
   const selected = customers.find((item) => item.id === customerId)
@@ -88,7 +88,18 @@ export function CreateDocument({
     return () => controller.abort()
   }, [channel, customerId])
 
+  function applyListed(line: DraftLine) {
+    const listed = offer.priceOf(line.productId)
+    if (!listed) return
+    setLines((current) =>
+      current.map((item) =>
+        item.key === line.key ? { ...item, quoted: listed, unitPrice: item.touched ? item.unitPrice : listed } : item,
+      ),
+    )
+  }
+
   function reprice(line: DraftLine, nextCustomer = customerId, date = orderDate) {
+    applyListed(line)
     if (!nextCustomer || !line.productId || !(Number(line.quantity) > 0)) return
     const stamp = crypto.randomUUID()
     stamps.current[line.key] = stamp
@@ -210,11 +221,14 @@ export function CreateDocument({
           ) : customerId ? (
             <p className="text-label text-text-tertiary">{copy.sales.ruleMissing}</p>
           ) : null}
+          {offer.error && offer.products.length === 0 ? (
+            <p role="alert" className="text-label text-danger-700">{errorText(offer.error)}</p>
+          ) : null}
           <LineEditor
             lines={lines}
-            products={products}
-            lots={[]}
-            locations={[]}
+            products={offer.products}
+            lots={offer.lots}
+            locations={offer.locations}
             onChange={setLines}
             onPrice={(line) => reprice(line)}
           />
@@ -305,16 +319,10 @@ export function CreateDocument({
 
 export function CreateDelivery({
   customers,
-  products,
-  lots,
-  locations,
   onClose,
   onCreated,
 }: {
   customers: CatalogCustomer[]
-  products: CatalogProduct[]
-  lots: CatalogLot[]
-  locations: CatalogLocation[]
   onClose: () => void
   onCreated: (id: string) => void
 }) {
@@ -326,6 +334,12 @@ export function CreateDelivery({
   const [lines, setLines] = useState<DraftLine[]>([blankLine()])
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const offer = useSalesOffer({
+    customerId: customerId || undefined,
+    channel,
+    date: todayMadrid(),
+  })
+  const locations = offer.locations
   const fromId = fromChoice ?? locations.find((item) => item.code === 'BOD')?.id ?? locations[0]?.id ?? ''
   const needsCustomer = kind === 'sale' || kind === 'sample'
   const needsTo = kind === 'consignment' || kind === 'transfer' || kind === 'return'
@@ -433,10 +447,13 @@ export function CreateDelivery({
               </Field>
             ) : null}
           </div>
+          {offer.error && offer.products.length === 0 ? (
+            <p role="alert" className="text-label text-danger-700">{errorText(offer.error)}</p>
+          ) : null}
           <LineEditor
             lines={lines}
-            products={products}
-            lots={lots}
+            products={offer.products}
+            lots={offer.lots}
             locations={locations}
             showLot
             locationId={fromId}
@@ -591,6 +608,8 @@ export function ReasonDialog({
   confirmLabel,
   danger,
   min = 3,
+  optional = false,
+  fieldLabel,
   extra,
   onClose,
   onConfirm,
@@ -600,6 +619,8 @@ export function ReasonDialog({
   confirmLabel: string
   danger?: boolean
   min?: number
+  optional?: boolean
+  fieldLabel?: string
   extra?: ReactNode
   onClose: () => void
   onConfirm: (reason: string) => Promise<void>
@@ -609,7 +630,8 @@ export function ReasonDialog({
   const [saving, setSaving] = useState(false)
 
   async function submit() {
-    if (reason.trim().length < min) {
+    const text = reason.trim()
+    if (text.length < min && !(optional && text.length === 0)) {
       setError(copy.sales.reason)
       return
     }
@@ -630,7 +652,7 @@ export function ReasonDialog({
         <div className="grid gap-3 pb-2">
           <p className="text-label text-text-secondary">{body}</p>
           {extra}
-          <Field id="motivo" label={copy.sales.reason}>
+          <Field id="motivo" label={fieldLabel ?? copy.sales.reason}>
             <Textarea id="motivo" value={reason} onChange={(event) => setReason(event.target.value)} />
           </Field>
           {error ? <p role="alert" className="text-label text-danger-700">{error}</p> : null}

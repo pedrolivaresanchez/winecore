@@ -73,8 +73,18 @@ export type ExpensePage = {
 export type ExpenseQuery = {
   status?: string
   entity?: string
+  month?: string
+  category?: string
+  q?: string
   cursor?: string
   limit?: number
+}
+
+export type ExpenseCategory = {
+  code: string
+  name: string
+  default_account: string
+  organic_relevant: boolean
 }
 
 export type ExpenseDraft = {

@@ -54,8 +54,6 @@ export function Panel({ me }: { me: Me }) {
   const expenses = useReport(canReports ? 'expenses' : null, canReports ? yearQuery : null, true)
   const stock = useReport(canReports ? 'stock' : null, canReports ? yearQuery : null, true)
   const pending = dashboard.initial || (canReports && (sales.initial || expenses.initial || stock.initial))
-  const alerts =
-    (dashboard.data?.cellar?.count ?? 0) + (dashboard.data?.stock?.count ?? 0) + (dashboard.data?.submissions?.count ?? 0)
 
   return (
     <div data-screen={pending ? 'panel-cargando' : 'panel'} className="min-h-0 flex-1 overflow-y-auto">
@@ -100,8 +98,8 @@ export function Panel({ me }: { me: Me }) {
                   href={attentionHref.receivables}
                 />
               ) : null}
-              {dashboard.data.cellar || dashboard.data.stock || dashboard.data.submissions ? (
-                <CountTile label={copy.panel.alerts} value={alerts} href={attentionHref.cellar} />
+              {dashboard.data.alerts ? (
+                <CountTile label={copy.panel.alerts} value={dashboard.data.alerts.count} href={firstHref(dashboard.data.alerts)} />
               ) : null}
             </div>
           </>
@@ -135,6 +133,9 @@ export function Panel({ me }: { me: Me }) {
             {dashboard.data.receivables ? (
               <ReceivablesCard block={dashboard.data.receivables} />
             ) : null}
+            {dashboard.data.alerts ? (
+              <AttentionCard title={copy.panel.alerts} href={firstHref(dashboard.data.alerts)} block={dashboard.data.alerts} />
+            ) : null}
             {dashboard.data.submissions ? (
               <AttentionCard title={copy.panel.shipments} href={attentionHref.submissions} block={dashboard.data.submissions} className="max-md:hidden" />
             ) : null}
@@ -166,6 +167,10 @@ function PanelSkeleton() {
   )
 }
 
+function firstHref(block: AttentionBlock): string | null {
+  return block.items.find((item) => item.href)?.href ?? null
+}
+
 function CountTile({
   label,
   value,
@@ -174,19 +179,24 @@ function CountTile({
 }: {
   label: string
   value: number | string
-  href: string
+  href: string | null
   quiet?: boolean
 }) {
   const empty = quiet ?? value === 0
-  return (
-    <Link
-      to={href}
-      className="flex min-w-0 flex-col gap-1 rounded-[10px] border border-border-subtle bg-surface-subtle px-3 py-2.5 outline-none transition-colors duration-(--duration-quick) ease-(--ease-smooth-out) hover:border-border hover:bg-surface focus-visible:shadow-(--shadow-focus)"
-    >
+  const className =
+    'flex min-w-0 flex-col gap-1 rounded-[10px] border border-border-subtle bg-surface-subtle px-3 py-2.5 outline-none transition-colors duration-(--duration-quick) ease-(--ease-smooth-out) hover:border-border hover:bg-surface focus-visible:shadow-(--shadow-focus)'
+  const body = (
+    <>
       <span className="truncate text-caption text-text-tertiary">{label}</span>
       <span className={cn('truncate text-heading font-medium leading-none tabular-nums', empty ? 'text-text-tertiary' : 'text-ink-900')}>
         {typeof value === 'number' ? formatInteger(value) : value}
       </span>
+    </>
+  )
+  if (!href) return <div className={className}>{body}</div>
+  return (
+    <Link to={href} className={className}>
+      {body}
     </Link>
   )
 }
@@ -278,17 +288,22 @@ function AttentionCard({
   className,
 }: {
   title: string
-  href: string
+  href: string | null
   block: AttentionBlock
   days?: boolean
   className?: string
 }) {
+  const titleClass = 'min-w-0 truncate text-label font-medium text-ink-900 outline-none focus-visible:shadow-(--shadow-focus)'
   return (
     <section className={cn('rounded-xl bg-surface shadow-(--shadow-surface)', className)}>
       <div className="flex items-center justify-between gap-2 px-4 py-3">
-        <Link to={href} className="min-w-0 truncate text-label font-medium text-ink-900 outline-none focus-visible:shadow-(--shadow-focus)">
-          {title}
-        </Link>
+        {href ? (
+          <Link to={href} className={titleClass}>
+            {title}
+          </Link>
+        ) : (
+          <span className={titleClass}>{title}</span>
+        )}
         {block.count > 0 ? <span className="text-caption tabular-nums text-text-tertiary">{formatInteger(block.count)}</span> : null}
       </div>
       {block.items.length === 0 ? (
@@ -344,14 +359,20 @@ function ReceivablesCard({ block }: { block: ReceivablesBlock }) {
   )
 }
 
-function ItemLink({ item, href, days }: { item: AttentionItem; href: string; days: boolean }) {
+function ItemLink({ item, href, days }: { item: AttentionItem; href: string | null; days: boolean }) {
   const meta = [item.detail, days && item.daysLeft != null ? fill(copy.panel.days, { days: String(item.daysLeft) }) : null]
     .filter((part): part is string => Boolean(part))
     .join(' · ')
-  return (
-    <Link to={href} className="block px-4 py-2.5 outline-none hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)">
+  const body = (
+    <>
       <p className="truncate text-label text-ink-900">{item.title}</p>
       {meta ? <p className="truncate text-caption text-text-tertiary">{meta}</p> : null}
+    </>
+  )
+  if (!href) return <div className="px-4 py-2.5">{body}</div>
+  return (
+    <Link to={href} className="block px-4 py-2.5 outline-none hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)">
+      {body}
     </Link>
   )
 }

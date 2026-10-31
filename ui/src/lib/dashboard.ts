@@ -38,6 +38,7 @@ export interface Dashboard {
   approvals: AttentionBlock | null
   deadlines: AttentionBlock | null
   receivables: ReceivablesBlock | null
+  alerts: AttentionBlock | null
   verifactu: VerifactuBlock | null
   submissions: AttentionBlock | null
   cellar: AttentionBlock | null
@@ -63,6 +64,7 @@ export function emptyDashboard(): Dashboard {
     approvals: emptyBlock(),
     deadlines: emptyBlock(),
     receivables: { amount: '0.00', count: 0, buckets: [] },
+    alerts: emptyBlock(),
     verifactu: { count: 0, since: null },
     submissions: emptyBlock(),
     cellar: emptyBlock(),
@@ -131,46 +133,55 @@ function bucketsOf(value: unknown): MoneyBucket[] {
   })
 }
 
-function moduleOn(raw: Record<string, unknown>, name: string): boolean {
-  const modules = asRecord(raw.modules)
-  if (!modules || !(name in modules)) return true
-  return modules[name] !== false
+function hasKey(record: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(record, key)
+}
+
+/** A missing key or an explicit null means the seat cannot see that section. */
+function pickBlock(record: Record<string, unknown>, key: string, legacy?: string): AttentionBlock | null {
+  if (hasKey(record, key)) return blockOf(record[key])
+  if (legacy && hasKey(record, legacy)) return blockOf(record[legacy])
+  return null
+}
+
+function pickReceivables(record: Record<string, unknown>): ReceivablesBlock | null {
+  const key = hasKey(record, 'receivables_overdue') ? 'receivables_overdue' : hasKey(record, 'receivables') ? 'receivables' : null
+  if (!key || record[key] === null) return null
+  const receivables = asRecord(record[key])
+  return {
+    amount: amount(receivables?.amount),
+    count: countOf(receivables?.count, 0),
+    buckets: bucketsOf(receivables?.buckets),
+  }
+}
+
+function pickVerifactu(record: Record<string, unknown>): VerifactuBlock | null {
+  const key = hasKey(record, 'verifactu_pending') ? 'verifactu_pending' : hasKey(record, 'verifactu') ? 'verifactu' : null
+  if (!key || record[key] === null) return null
+  const verifactu = asRecord(record[key])
+  return {
+    count: countOf(verifactu?.count, 0),
+    since: text(verifactu?.since) ?? text(verifactu?.since_at) ?? text(verifactu?.oldest_at),
+  }
 }
 
 export function parseDashboard(raw: unknown): Dashboard {
   const record = asRecord(raw) ?? {}
-  const receivables = asRecord(record.receivables_overdue) ?? asRecord(record.receivables)
-  const verifactu = asRecord(record.verifactu_pending) ?? asRecord(record.verifactu)
   return {
-    approvals: moduleOn(record, 'approvals') ? blockOf(record.approvals_pending ?? record.approvals ?? {}) : null,
-    deadlines: moduleOn(record, 'regulatory') ? blockOf(record.deadlines_next_30d ?? record.deadlines ?? {}) : null,
-    receivables: moduleOn(record, 'finance')
-      ? {
-          amount: amount(receivables?.amount),
-          count: countOf(receivables?.count, 0),
-          buckets: bucketsOf(receivables?.buckets),
-        }
-      : null,
-    verifactu: moduleOn(record, 'verifactu')
-      ? {
-          count: countOf(verifactu?.count, 0),
-          since: text(verifactu?.since) ?? text(verifactu?.since_at) ?? text(verifactu?.oldest_at),
-        }
-      : null,
-    submissions: moduleOn(record, 'regulatory') ? blockOf(record.submissions_failed ?? record.submissions ?? {}) : null,
-    cellar: moduleOn(record, 'cellar') ? blockOf(record.cellar_alerts ?? record.cellar ?? {}) : null,
-    stock: moduleOn(record, 'inventory') ? blockOf(record.stock_alerts ?? record.stock ?? {}) : null,
+    approvals: pickBlock(record, 'approvals_pending', 'approvals'),
+    deadlines: pickBlock(record, 'deadlines_next_30d', 'deadlines'),
+    receivables: pickReceivables(record),
+    alerts: pickBlock(record, 'alerts'),
+    verifactu: pickVerifactu(record),
+    submissions: pickBlock(record, 'submissions_failed', 'submissions'),
+    cellar: pickBlock(record, 'cellar_alerts', 'cellar'),
+    stock: pickBlock(record, 'stock_alerts', 'stock'),
   }
 }
 
 export async function loadDashboard(entity: EntityFilter, signal?: AbortSignal): Promise<Dashboard> {
-  try {
-    const raw = await api<unknown>(`/v1/dashboard?entity=${entity}`, { signal })
-    return parseDashboard(raw)
-  } catch (error) {
-    if (error instanceof ApiError && (error.status === 404 || error.code === 'WC_NOT_FOUND')) return emptyDashboard()
-    throw error
-  }
+  const raw = await api<unknown>(`/v1/dashboard?entity=${encodeURIComponent(entity)}`, { signal })
+  return parseDashboard(raw)
 }
 
 export function verifactuClock(value: string): string {

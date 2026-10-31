@@ -7,7 +7,7 @@ import { ApiError, isAbortError } from '@/lib/api'
 import { iconStroke } from '@/lib/motion'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
-import { getSettlement } from '@/pages/intercompania/api'
+import { listSettlements } from '@/pages/intercompania/api'
 import { ListFrame } from '@/pages/intercompania/frame'
 import {
   fold,
@@ -18,10 +18,10 @@ import {
   litersLabel,
   madridToday,
   periodTitle,
-  periodWindow,
+  rowFromIndex,
   watcherLabel,
   watcherTone,
-  type Settlement,
+  type SettlementRow,
 } from '@/pages/intercompania/model'
 import { Search } from '@/ui/icons'
 import {
@@ -45,7 +45,7 @@ const COLUMN_IDS: ColumnId[] = ['period', 'status', 'deadline', 'units', 'amount
 const DEFAULT_HIDDEN = new Set<ColumnId>(['liters'])
 
 export function SettlementList({ me }: { me: Me }) {
-  const [rows, setRows] = useState<Settlement[]>([])
+  const [rows, setRows] = useState<SettlementRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<ApiError | null>(null)
   const [attempt, setAttempt] = useState(0)
@@ -53,11 +53,11 @@ export function SettlementList({ me }: { me: Me }) {
   useEffect(() => {
     const controller = new AbortController()
     let active = true
-    const periods = periodWindow(madridToday().slice(0, 7), 11)
-    Promise.all(periods.map((period) => getSettlement(period, controller.signal)))
-      .then((items) => {
+    const today = madridToday()
+    listSettlements(controller.signal)
+      .then((page) => {
         if (!active) return
-        setRows(items)
+        setRows(page.items.map((item) => rowFromIndex(item, today)))
         setError(null)
         setLoading(false)
       })
@@ -90,7 +90,7 @@ export function SettlementList({ me }: { me: Me }) {
   return <Loaded rows={rows} loading={loading} current={madridToday().slice(0, 7)} />
 }
 
-function Loaded({ rows, loading, current }: { rows: Settlement[]; loading: boolean; current: string }) {
+function Loaded({ rows, loading, current }: { rows: SettlementRow[]; loading: boolean; current: string }) {
   const navigate = useNavigate()
   const columnsMenu = useMenuOpen()
   const [q, setQ] = useState('')
@@ -105,12 +105,12 @@ function Loaded({ rows, loading, current }: { rows: Settlement[]; loading: boole
       .filter((row) => matches(row, filter, current))
       .filter((row) => {
         if (!query) return true
-        return fold(`${periodTitle(row.period)} ${watcherLabel(row.watcher_status)} ${row.watcher_message}`).includes(query)
+        return fold(`${periodTitle(row.period)} ${watcherLabel(row.watcher_status)}`).includes(query)
       })
       .sort((a, b) => b.period.localeCompare(a.period))
   }, [current, filter, q, rows])
 
-  const columns = useMemo<GridColumn<Settlement>[]>(() => {
+  const columns = useMemo<GridColumn<SettlementRow>[]>(() => {
     const labels: Record<ColumnId, string> = {
       period: copy.intercompany.period,
       status: copy.intercompany.status,
@@ -119,7 +119,7 @@ function Loaded({ rows, loading, current }: { rows: Settlement[]; loading: boole
       amount: copy.intercompany.amount,
       liters: copy.intercompany.liters,
     }
-    const all: GridColumn<Settlement>[] = [
+    const all: GridColumn<SettlementRow>[] = [
       { id: 'period', header: labels.period, cell: (row) => periodTitle(row.period) },
       {
         id: 'status',
@@ -248,14 +248,15 @@ function Loaded({ rows, loading, current }: { rows: Settlement[]; loading: boole
   )
 }
 
-function matches(row: Settlement, filter: Filter, current: string): boolean {
+function matches(row: SettlementRow, filter: Filter, current: string): boolean {
   if (filter === 'pending') return row.watcher_status === 'pending_issue'
   if (filter === 'overdue') return row.watcher_status === 'overdue'
   if (filter === 'all') return true
-  return row.period === current || row.id != null || row.lines.length > 0 || row.watcher_status !== 'open'
+  const units = Number(row.totals.units)
+  return row.period === current || (Number.isFinite(units) && units > 0) || row.watcher_status !== 'open'
 }
 
-function bannerOf(rows: Settlement[]): { row: Settlement; text: string } | null {
+function bannerOf(rows: SettlementRow[]): { row: SettlementRow; text: string } | null {
   const overdue = rows
     .filter((row) => row.watcher_status === 'overdue')
     .sort((a, b) => a.issue_deadline.localeCompare(b.issue_deadline))
@@ -270,11 +271,11 @@ function bannerOf(rows: Settlement[]): { row: Settlement; text: string } | null 
   }
   return {
     row,
-    text: `${periodTitle(row.period)} · ${row.watcher_message}`,
+    text: `${periodTitle(row.period)} · ${watcherLabel(row.watcher_status)}`,
   }
 }
 
-function DeadlineBanner({ settlement, text }: { settlement: Settlement; text: string }) {
+function DeadlineBanner({ settlement, text }: { settlement: SettlementRow; text: string }) {
   const tone = settlement.watcher_status === 'overdue' ? 'danger' : 'warning'
   return (
     <div className="shrink-0 border-b border-border-subtle px-3 py-2 sm:px-4">
