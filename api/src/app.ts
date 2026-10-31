@@ -5,6 +5,10 @@ import { createTimbalAuth } from './auth/timbal';
 import type { FetchLike } from './core/db/timbal';
 import type { Config } from './config';
 import type { Writer } from './core/db/writer';
+import type { SupplierInvoiceApprovalHook } from './core/purchasing/approval';
+import { noopApprovalHook } from './core/purchasing/approval';
+import type { OcrWorkforce } from './core/purchasing/extract';
+import { ocrFromEnv } from './core/purchasing/timbal';
 import { asDomainError, domainError, errorBody } from './core/errors';
 import { listAudit, verifyAudit } from './routes/audit';
 import {
@@ -22,6 +26,16 @@ import {
   patchPerson,
 } from './routes/contacts';
 import { downloadAttachment, listAttachmentLinks, uploadAttachment } from './routes/attachments';
+import {
+  approveExpense,
+  captureExpense,
+  exportExpenses,
+  getExpense,
+  listExpenses,
+  patchExpense,
+  rejectExpense,
+  validateExpense,
+} from './routes/expenses';
 import { health } from './routes/health';
 import { me } from './routes/me';
 import { createNumberSeries, deactivateNumberSeries, listNumberSeries } from './routes/series';
@@ -31,6 +45,8 @@ export interface AppDeps {
   writer: Writer;
   log?: (line: string) => void;
   fetchImpl?: FetchLike;
+  ocr?: OcrWorkforce;
+  approvalHook?: SupplierInvoiceApprovalHook;
 }
 
 const startedAt = new WeakMap<Request, number>();
@@ -39,6 +55,7 @@ export function createApp(deps: AppDeps) {
   const log = deps.log ?? ((line: string) => console.log(line));
   const timbalAuth = createTimbalAuth(deps.config, deps.fetchImpl);
   const guardDeps = { config: deps.config, writer: deps.writer, timbalAuth };
+  const expenses = { ocr: deps.ocr ?? ocrFromEnv(), approvalHook: deps.approvalHook ?? noopApprovalHook };
   const app = new Elysia(deps.config.apiBasePath ? { prefix: deps.config.apiBasePath } : {})
     .use(cors())
     .onRequest(({ request, set }) => {
@@ -159,6 +176,35 @@ export function createApp(deps: AppDeps) {
     })
     .get('/v1/attachments/:id', ({ request, params }) => downloadAttachment(deps.writer, request, params.id), {
       beforeHandle: requireUser(guardDeps),
+    })
+    // Gastos (TASK-COMP-001..003). export y capture van antes de /:id.
+    .get('/v1/supplier-invoices/export', ({ request }) => exportExpenses(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'purchasing.read'),
+    })
+    .get('/v1/supplier-invoices', ({ request }) => listExpenses(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'purchasing.read'),
+    })
+    .post('/v1/supplier-invoices/capture', async ({ request, set }) => {
+      const result = await captureExpense(deps.writer, request, expenses);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'purchasing.write'),
+    })
+    .get('/v1/supplier-invoices/:id', ({ request, params }) => getExpense(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'purchasing.read'),
+    })
+    .patch('/v1/supplier-invoices/:id', ({ request, params }) => patchExpense(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'purchasing.write'),
+    })
+    .post('/v1/supplier-invoices/:id/validate', ({ request, params }) => validateExpense(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'purchasing.write'),
+    })
+    .post('/v1/supplier-invoices/:id/approve', ({ request, params }) => approveExpense(deps.writer, request, params.id, expenses), {
+      beforeHandle: requirePermission(guardDeps, 'purchasing.approve'),
+    })
+    .post('/v1/supplier-invoices/:id/reject', ({ request, params }) => rejectExpense(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'purchasing.write'),
     });
   return app;
 }

@@ -1,0 +1,24 @@
+[project]
+name = "ocr-gastos"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "timbal",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["fields.py", "prompt.py", "client.py", "synthetic.py", "workflow.py"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["timbal", "timbal.*", "pydantic"]
+ignore_missing_imports = true

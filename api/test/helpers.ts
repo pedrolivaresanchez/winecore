@@ -5,7 +5,12 @@ import { loadConfig, type Env } from '../src/config';
 import { createLocalClient } from '../src/core/db/local';
 import { createWriter } from '../src/core/db/writer';
 
-export async function createTestApp(options?: { log?: (line: string) => void; env?: Env }) {
+export async function createTestApp(options?: {
+  log?: (line: string) => void;
+  env?: Env;
+  ocr?: AppDeps['ocr'];
+  approvalHook?: AppDeps['approvalHook'];
+}) {
   const client = await createLocalClient(':memory:');
   await migrate(client);
   await seed(client, seedInputFromEnv({ NODE_ENV: 'test' }));
@@ -22,7 +27,13 @@ export async function createTestApp(options?: { log?: (line: string) => void; en
     GIT_SHA: 'testsha',
     ...options?.env,
   });
-  const deps: AppDeps = { config, writer, log: options?.log ?? (() => undefined) };
+  const deps: AppDeps = {
+    config,
+    writer,
+    log: options?.log ?? (() => undefined),
+    ocr: options?.ocr,
+    approvalHook: options?.approvalHook,
+  };
   const app = createApp(deps);
   return {
     app,

@@ -1,6 +1,9 @@
 export const PERMISSIONS = [
   'contacts.read',
   'contacts.write',
+  'purchasing.read',
+  'purchasing.write',
+  'purchasing.approve',
   'settings.manage',
   'users.manage',
   'audit.read',
@@ -27,11 +30,11 @@ export interface UserCtx {
 
 const MATRIX: Record<RoleCode, readonly Permission[]> = {
   owner: PERMISSIONS,
-  approver: ['contacts.read', 'audit.read'],
-  admin: ['contacts.read', 'contacts.write'],
+  approver: ['contacts.read', 'audit.read', 'purchasing.read', 'purchasing.approve'],
+  admin: ['contacts.read', 'contacts.write', 'purchasing.read', 'purchasing.write'],
   cellar: [],
   field: [],
-  advisor: ['contacts.read', 'audit.read'],
+  advisor: ['contacts.read', 'audit.read', 'purchasing.read'],
 };
 
 const PERSONAL_CONTACT_ROLES = new Set<RoleCode>(['owner', 'admin', 'approver']);
