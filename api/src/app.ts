@@ -24,6 +24,7 @@ import {
 import { downloadAttachment, listAttachmentLinks, uploadAttachment } from './routes/attachments';
 import { health } from './routes/health';
 import { me } from './routes/me';
+import { listNotifications, readAllNotifications, readNotification } from './routes/notifications';
 import { createNumberSeries, deactivateNumberSeries, listNumberSeries } from './routes/series';
 
 export interface AppDeps {
@@ -158,6 +159,16 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requireUser(guardDeps),
     })
     .get('/v1/attachments/:id', ({ request, params }) => downloadAttachment(deps.writer, request, params.id), {
+      beforeHandle: requireUser(guardDeps),
+    })
+    // Avisos propios (TASK-CORE-007). read-all va antes de /:id.
+    .get('/v1/notifications', ({ request }) => listNotifications(deps.writer, request), {
+      beforeHandle: requireUser(guardDeps),
+    })
+    .post('/v1/notifications/read-all', ({ request }) => readAllNotifications(deps.writer, request), {
+      beforeHandle: requireUser(guardDeps),
+    })
+    .post('/v1/notifications/:id/read', ({ request, params }) => readNotification(deps.writer, request, params.id), {
       beforeHandle: requireUser(guardDeps),
     });
   return app;

@@ -2,6 +2,7 @@ import { sessionOf } from '../auth/guard';
 import { seesPersonalContactData } from '../core/auth/permissions';
 import { sql } from '../core/db/sql';
 import type { Writer } from '../core/db/writer';
+import { emitEvent } from '../core/events/emit';
 import { domainError } from '../core/errors';
 import { newId } from '../core/ids';
 import {
@@ -137,6 +138,12 @@ export async function createContact(writer: Writer, request: Request) {
         receives_dunning: false,
       }, now);
     }
+    emitEvent(tx, {
+      type: 'party.contact.created',
+      aggregate: 'party.contact',
+      aggregateId: id,
+      payload: { contact_id: id, link: `/contactos/${id}` },
+    });
     const body = createdBody(id, input, tax, personId, now, user);
     remember(tx, user.id, key, hash, 201, body, now);
     return { status: 201, body, replay: false };
@@ -182,6 +189,7 @@ export async function archiveContact(writer: Writer, request: Request, id: strin
   const now = new Date();
   await writer.withWrite(actor(user, request), async (tx) => {
     const current = await requireContact(tx, id);
+    const wasArchived = current.archived_at != null;
     if (restore && taxOf(current)) await assertTaxAvailable(tx, taxOf(current), id);
     setArchived(tx, 'party.contact', id, now, restore);
     tx.audit({
@@ -191,6 +199,14 @@ export async function archiveContact(writer: Writer, request: Request, id: strin
       before: { archived_at: current.archived_at ?? null },
       after: { archived_at: restore ? null : now.toISOString() },
     });
+    if (!restore && !wasArchived) {
+      emitEvent(tx, {
+        type: 'party.contact.archived',
+        aggregate: 'party.contact',
+        aggregateId: id,
+        payload: { contact_id: id, link: `/contactos/${id}` },
+      });
+    }
   });
   return getContact(writer, request, id);
 }
