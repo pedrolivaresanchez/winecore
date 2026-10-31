@@ -15,19 +15,14 @@ import { Badge, Button, Dialog, DialogBody, DialogFooter, DialogHeader, EmptySta
 import { MoreVertical, Printer } from '@/ui/icons'
 import { Fact, FactCard, FillMeter, ReadingColumn, RecordBar, SectionTabs } from '@/pages/bodega/chrome'
 import { materialLabel, opLabel, opStatusLabel, opStatusTone, vesselStatusLabel, vesselTone } from '@/pages/bodega/labels'
+import { BarrelMenu, BarrelRetireHost } from '@/pages/bodega-plano/BarrelMenu'
+import { BarrelPane } from '@/pages/bodega-plano/BarrelPane'
+import { DemijohnPane } from '@/pages/bodega-plano/DemijohnPane'
+import { vesselTabs, type VesselTabId } from '@/pages/bodega-plano/text'
 
 type HistoryPage = { items: CellarOperation[] }
 
-const TABS = [
-  { id: 'contenido', label: copy.cellar.content },
-  { id: 'lecturas', label: copy.cellar.readings },
-  { id: 'analiticas', label: copy.cellar.analyses },
-  { id: 'limpiezas', label: copy.cellar.cleanings },
-  { id: 'historial', label: copy.cellar.history },
-  { id: 'qr', label: copy.cellar.qr },
-] as const
-
-type TabId = (typeof TABS)[number]['id']
+type TabId = VesselTabId
 
 export function DepositoPage({ me }: { me: Me }) {
   const { vesselId = '' } = useParams()
@@ -91,6 +86,7 @@ function Loaded({
   const [busy, setBusy] = useState(false)
   const pct = fillPercent(vessel)
   const inside = holding(vessel)
+  const tabs = vesselTabs(vessel.kind)
   const nueva = `/bodega/operaciones/nueva?tipo=racking&vessel=${encodeURIComponent(vessel.code)}`
   const limpieza = `/bodega/operaciones/nueva?tipo=cleaning&vessel=${encodeURIComponent(vessel.code)}`
   const cleanings = operations.filter((item) => item.op_type === 'cleaning')
@@ -174,6 +170,15 @@ function Loaded({
               {copy.cellar.retire}
             </MenuItem>
           ) : null}
+          <MenuItem
+            onClick={() => {
+              more.close()
+              navigate(`/bodega/plano?recipiente=${encodeURIComponent(vessel.code)}`)
+            }}
+          >
+            {copy.plano.onPlan}
+          </MenuItem>
+          {canOperate && vessel.kind === 'barrel' ? <BarrelMenu code={vessel.code} close={more.close} /> : null}
         </GlassMenu>
       </RecordBar>
 
@@ -196,7 +201,7 @@ function Loaded({
             <Metric label={copy.cellar.fill} value={`${pct} %`} />
           </div>
           <FillMeter pct={pct} label={`${copy.cellar.fill} ${pct} %`} />
-          <SectionTabs label="Secciones" tabs={TABS} value={tab} onChange={onTab} />
+          <SectionTabs label="Secciones" tabs={tabs} value={tab} onChange={onTab} />
 
           {tab === 'contenido' ? (
             <FactCard title="Datos">
@@ -218,6 +223,9 @@ function Loaded({
               {vessel.sisv_code ? <Fact label="Código SISV" value={vessel.sisv_code} /> : null}
             </FactCard>
           ) : null}
+
+          {tab === 'barrica' ? <BarrelPane me={me} code={vessel.code} /> : null}
+          {tab === 'damajuana' ? <DemijohnPane code={vessel.code} canOperate={canOperate} /> : null}
 
           {tab === 'lecturas' ? (
             <EmptyState size="sm" title={copy.cellar.emptyReadings} description={copy.cellar.emptyReadingsHint} />
@@ -257,6 +265,7 @@ function Loaded({
           </Button>
         </DialogFooter>
       </Dialog>
+      {vessel.kind === 'barrel' ? <BarrelRetireHost /> : null}
     </ReadingColumn>
   )
 }
