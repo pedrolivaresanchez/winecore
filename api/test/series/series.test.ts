@@ -231,8 +231,12 @@ describe('numeración', () => {
       expect(JSON.stringify(badBody)).toContain('<');
       const seeded = await json(await ctx.app.handle(new Request('http://localhost/v1/number-series')));
       const seededItems = seeded.items as { doc_type: string; code: string }[];
-      expect(seededItems.length).toBeGreaterThan(0);
-      expect(seededItems.every((item) => item.doc_type === 'cellar_operation' && item.code === 'OB')).toBe(true);
+      const cellar = seededItems.filter((item) => item.doc_type === 'cellar_operation');
+      const intercompany = seededItems.filter((item) => item.doc_type === 'intercompany_invoice');
+      expect(cellar.length).toBeGreaterThan(0);
+      expect(cellar.every((item) => item.code === 'OB')).toBe(true);
+      expect(intercompany.length).toBeGreaterThan(0);
+      expect(intercompany.every((item) => item.code === 'PI')).toBe(true);
       const invoiceBefore = await json(await ctx.app.handle(new Request('http://localhost/v1/number-series?doc_type=invoice')));
       expect(invoiceBefore.items).toEqual([]);
 
