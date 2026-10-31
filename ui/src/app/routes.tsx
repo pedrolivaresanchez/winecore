@@ -22,6 +22,12 @@ import { ProductCreate } from '@/pages/catalogo/ProductCreate'
 import { ProductList } from '@/pages/catalogo/ProductList'
 import { ProductPage } from '@/pages/catalogo/ProductPage'
 import { WinesPage } from '@/pages/catalogo/WinesPage'
+import { CountCreate } from '@/pages/existencias/CountCreate'
+import { CountPage } from '@/pages/existencias/CountPage'
+import { CountsPage } from '@/pages/existencias/CountsPage'
+import { InspectionPage } from '@/pages/existencias/InspectionPage'
+import { MovesPage } from '@/pages/existencias/MovesPage'
+import { StockPage } from '@/pages/existencias/StockPage'
 
 /** Authenticated routes. The shell, auth and the entity switcher stay outside. */
 export function AppRoutes({ me }: { me: Me }) {
@@ -41,6 +47,12 @@ export function AppRoutes({ me }: { me: Me }) {
       <Route path="catalogo/tarifas" element={<PriceListsPage me={me} />} />
       <Route path="catalogo/tarifas/:id" element={<PriceListPage me={me} />} />
       <Route path="catalogo/:id" element={<ProductPage me={me} />} />
+      <Route path="stock" element={<StockPage me={me} />} />
+      <Route path="stock/movimientos" element={<MovesPage me={me} />} />
+      <Route path="stock/informe" element={<InspectionPage me={me} />} />
+      <Route path="stock/aforos" element={<CountsPage me={me} />} />
+      <Route path="stock/aforos/nuevo" element={<CountCreate me={me} />} />
+      <Route path="stock/aforos/:id" element={<CountPage me={me} />} />
       <Route path="bodega" element={<MapaPage me={me} />} />
       <Route path="bodega/depositos" element={<MapaPage me={me} />} />
       <Route path="bodega/depositos/:vesselId" element={<DepositoPage me={me} />} />

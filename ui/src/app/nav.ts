@@ -73,6 +73,16 @@ export const navigation: NavEntry[] = [
     ],
   },
   {
+    id: 'stock',
+    module: 'inventory',
+    label: copy.nav.stock,
+    icon: Box,
+    path: '/stock',
+    permission: 'inventory.read',
+    mobile: 'tab',
+    placement: 'main',
+  },
+  {
     id: 'cellar',
     module: 'cellar',
     label: copy.nav.cellar,
