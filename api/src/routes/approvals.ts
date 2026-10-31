@@ -10,6 +10,7 @@ import { sql } from '../core/db/sql';
 import type { Actor } from '../core/db/writer';
 import { domainError } from '../core/errors';
 import { issueIntercompanyInvoice } from '../core/intercompany/settlement';
+import { syncInfoviFromApproval } from '../core/regulatory/infovi/workflow';
 import { syncSubmissionFromApproval } from '../core/regulatory/submissions';
 
 const PAGE_SIZE = 50;
@@ -134,6 +135,7 @@ export async function decideApproval(deps: HttpDeps, request: Request, id: strin
   });
   if (row.kind === 'regulatory_submission') {
     await syncSubmissionFromApproval(deps.writer, userActor(request, user.id), row.id);
+    await syncInfoviFromApproval(deps.writer, userActor(request, user.id), row.id);
   }
   if (body.decision === 'approve' && row.kind === 'intercompany_invoice_issue') {
     await deps.writer.withWrite(userActor(request, user.id), async (tx) => {

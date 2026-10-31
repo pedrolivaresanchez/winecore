@@ -11,6 +11,7 @@ import {
   type HolidayCalendar,
   type ObligationDraft,
 } from "./calendar";
+import { buildInfoviObligations } from "./infovi/deadlines";
 
 const DUE_SOON = "regulatory.obligation.due_soon";
 const OVERDUE = "regulatory.obligation.overdue";
@@ -51,6 +52,30 @@ export async function syncSilicieObligations(
     FROM regulatory.obligation
     WHERE legal_entity_id = CAST(${legalEntityId} AS UUID)
       AND flow = 'silicie'
+  `);
+  const known = new Set(existing.map((row) => `${row.title}|${String(row.due_date).slice(0, 10)}`));
+  let inserted = 0;
+  for (const item of desired) {
+    if (known.has(`${item.title}|${item.dueDate}`)) continue;
+    insertObligation(tx, legalEntityId, item);
+    inserted += 1;
+  }
+  return inserted;
+}
+
+/** Inserta las obligaciones INFOVI del año que aún no existen. No pisa una ya cumplida. */
+export async function syncInfoviObligations(
+  tx: Tx,
+  legalEntityId: string,
+  year: number,
+  calendar: HolidayCalendar,
+): Promise<number> {
+  const desired = buildInfoviObligations(year, legalEntityId, calendar);
+  const existing = await tx.read<{ title: string; due_date: string }>(sql`
+    SELECT title, due_date::VARCHAR AS due_date
+    FROM regulatory.obligation
+    WHERE legal_entity_id = CAST(${legalEntityId} AS UUID)
+      AND flow = 'infovi'
   `);
   const known = new Set(existing.map((row) => `${row.title}|${String(row.due_date).slice(0, 10)}`));
   let inserted = 0;
@@ -125,10 +150,10 @@ export async function listObligations(
  */
 export async function scanDeadlineAlerts(tx: Tx, today: string): Promise<number> {
   const rows = await tx.read<Record<string, unknown>>(sql`
-    SELECT id::VARCHAR AS id, legal_entity_id::VARCHAR AS legal_entity_id,
+    SELECT id::VARCHAR AS id, legal_entity_id::VARCHAR AS legal_entity_id, flow,
            due_date::VARCHAR AS due_date, status
     FROM regulatory.obligation
-    WHERE flow = 'silicie'
+    WHERE flow IN ('silicie', 'infovi')
       AND status IN ('open', 'in_progress')
   `);
   const sent = await alreadySent(tx);
@@ -148,7 +173,7 @@ export async function scanDeadlineAlerts(tx: Tx, today: string): Promise<number>
       payload: {
         legal_entity_id: String(row.legal_entity_id),
         obligation_id: id,
-        link: "/regulatorio",
+        link: String(row.flow) === "infovi" ? "/regulatorio/infovi" : "/regulatorio",
         alert: band,
         days_left: daysLeft(today, due),
       },
@@ -180,6 +205,8 @@ export async function refreshRegulatoryCalendar(
     for (const entity of entities) {
       inserted += await syncSilicieObligations(tx, entity.id, year, calendar);
       inserted += await syncSilicieObligations(tx, entity.id, year + 1, calendar);
+      inserted += await syncInfoviObligations(tx, entity.id, year, calendar);
+      inserted += await syncInfoviObligations(tx, entity.id, year + 1, calendar);
     }
   });
   let emitted = 0;

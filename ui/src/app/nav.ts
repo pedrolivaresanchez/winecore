@@ -190,6 +190,7 @@ export const navigation: NavEntry[] = [
     icon: Calendar,
     path: '/regulatorio',
     permission: 'regulatory.read',
+    children: [{ id: 'infovi', label: copy.nav.infovi, path: '/regulatorio/infovi', permission: 'regulatory.read' }],
     mobile: 'more',
     placement: 'main',
     group: 'regulatorio',

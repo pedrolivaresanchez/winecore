@@ -151,6 +151,17 @@ import {
 } from './routes/stock-counts';
 import { salesRoutes } from './routes/sales';
 import { stockBalances, stockFiscalBalances, stockInspection, stockMoves } from './routes/stock';
+import {
+  getInfovi,
+  getInfoviFile,
+  getInfoviMonth,
+  postCancelInfovi,
+  postCorrectInfovi,
+  postInfovi,
+  postMarkInfoviSubmitted,
+  postRequestInfoviApproval,
+  postValidateInfovi,
+} from './routes/infovi';
 import { listRegulatoryObligations, postSyncObligations } from './routes/regulatory-obligations';
 import {
   getRegulatorySubmission,
@@ -517,6 +528,33 @@ export function createApp(deps: AppDeps) {
     })
     .post('/v1/regulatory/obligations/sync', ({ request }) => postSyncObligations(http, request), {
       beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .get('/v1/regulatory/infovi', ({ request }) => getInfoviMonth(http, request), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
+    })
+    .post('/v1/regulatory/infovi', ({ request }) => postInfovi(http, request), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .get('/v1/regulatory/infovi/:id/file', ({ request, params }) => getInfoviFile(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
+    })
+    .post('/v1/regulatory/infovi/:id/validate', ({ request, params }) => postValidateInfovi(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .post('/v1/regulatory/infovi/:id/request-approval', ({ request, params }) => postRequestInfoviApproval(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .post('/v1/regulatory/infovi/:id/mark-submitted', ({ request, params }) => postMarkInfoviSubmitted(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .post('/v1/regulatory/infovi/:id/correct', ({ request, params }) => postCorrectInfovi(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .post('/v1/regulatory/infovi/:id/cancel', ({ request, params }) => postCancelInfovi(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .get('/v1/regulatory/infovi/:id', ({ request, params }) => getInfovi(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
     })
     .get('/v1/regulatory/submissions', ({ request }) => listRegulatorySubmissions(http, request), {
       beforeHandle: requirePermission(guardDeps, 'regulatory.read'),

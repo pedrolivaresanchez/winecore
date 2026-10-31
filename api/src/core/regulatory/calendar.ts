@@ -28,13 +28,13 @@ export interface HolidayCalendar {
 }
 
 export interface ObligationDraft {
-  flow: "silicie";
+  flow: "silicie" | "infovi";
   title: string;
   periodStart: string | null;
   periodEnd: string | null;
   dueDate: string;
   legalBasis: string;
-  kind: "silicie.asientos" | "silicie.cierre";
+  kind: "silicie.asientos" | "silicie.cierre" | "infovi.mensual";
 }
 
 const SUPPLY_BASIS = "Orden HAC/998/2019, disposición adicional primera, apartado 3";

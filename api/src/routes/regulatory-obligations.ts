@@ -1,7 +1,7 @@
 import { requestIdFor, sessionOf } from "../auth/guard";
 import { can } from "../core/auth/permissions";
 import { domainError } from "../core/errors";
-import { listObligations, loadHolidayCalendar, refreshRegulatoryCalendar, syncSilicieObligations } from "../core/regulatory/obligations";
+import { listObligations, loadHolidayCalendar, refreshRegulatoryCalendar, syncInfoviObligations, syncSilicieObligations } from "../core/regulatory/obligations";
 import { warehousesByEntity } from "../core/regulatory/warehouses";
 import { businessDate } from "../core/time";
 import type { RegulatoryDeps } from "./regulatory-submissions";
@@ -57,6 +57,7 @@ export async function postSyncObligations(deps: RegulatoryDeps, request: Request
     }, async (tx) => {
       const calendar = await loadHolidayCalendar(tx.read.bind(tx), year);
       inserted = await syncSilicieObligations(tx, entityId, year, calendar);
+      inserted += await syncInfoviObligations(tx, entityId, year, calendar);
     });
     return { inserted };
   }
