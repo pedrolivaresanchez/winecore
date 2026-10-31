@@ -20,7 +20,7 @@
 | Q-009 | Qué entidad factura a El Corte Inglés | M3 (EDI) | 15-01-2027 | ABIERTA |
 | Q-010 | Fecha fiscal de la salida en SILICIE (albarán o factura) y naturaleza de TFRP | M2 | 15-12-2026 | ABIERTA |
 | Q-011 | Calendario legal de SILICIE (2 presentaciones/año) | — (resuelta por la norma) | — | CERRADA (31-10-2026) |
-| Q-012 | SISV: periodicidad, acceso y formato | M3 | 15-02-2027 | ABIERTA (en verificación) |
+| Q-012 | SISV: matrícula RIA, acceso y ficheros reales (plazo y formato ya verificados) | M3 | 15-02-2027 | ABIERTA |
 | Q-013 | Fecha de corte, aforo físico y quién lo firma | M2 | 01-12-2026 | ABIERTA |
 | Q-014 | Envío de facturas por correo (M365) | No bloqueante (M1 usa descarga) | 30-11-2026 | ABIERTA |
 | Q-015 | Series y numeración desde 2027 | No bloqueante (hay defecto) | 20-11-2026 | ABIERTA |
@@ -140,10 +140,11 @@
 - **Hecho verificado**: para elaboradores de vino de **100.000 L o menos** (año natural anterior) que suministran desde su propio sistema contable, el plazo de suministro de los asientos termina el **último día hábil de diciembre** (movimientos de agosto a noviembre) y el **último día hábil de agosto** (movimientos de diciembre a julio). **No requiere autorización previa**. Fuentes: Orden HAC/998/2019, disposición adicional 1.ª.3 (https://www.boe.es/buscar/act.php?id=BOE-A-2019-14247) y preguntas frecuentes de la AEAT (https://sede.agenciatributaria.gob.es/Sede/impuestos-especiales-medioambientales/silicie/preguntas-frecuentes/establecimiento-autorizado-elaborador-vino.html), consultadas el 31-10-2026. Detalle en `04-regulatorio/silicie.md`.
 - Lo que la reunión llamaba "autorización" es este plazo legal. WineCore genera los asientos al día y los agrupa en dos envíos al año, con aviso a 30, 7 y 1 días.
 
-## Q-012 · SISV: periodicidad, acceso y formato — Bloquea M3 (en verificación)
+## Q-012 · SISV: acceso, instalación y ficheros reales — Bloquea M3
 
-- ¿Cada cuánto se firman y remiten los libros? ¿Se entra con certificado o con usuario y contraseña? ¿SISV permite importar ficheros? ¿Qué libros se usan exactamente (Varietal, Vinos envasados, Envasado, ¿entrada de uva? ¿elaboración?)?
-- **Recomendación**: Pedro hace una sesión grabada (captura de pantalla) de un envío real de SISV para diseñar el conector de *computer use*.
+- **Hechos verificados** (31-10-2026, `04-regulatorio/sisv.md`): los registros se presentan **dentro de los diez primeros días naturales de cada mes** por el mes anterior (Orden de 14-11-2012, art. 26.4, redacción de 2015); se entra con **certificado digital** (acceso solicitado por la bodega para una persona física); SISV **importa ficheros** de ancho fijo (modelo v02) con un tipo de registro por libro: VINO, IGP, DOP, VARIETAL, ELABORA, PRACTICA, PROCPRACT, ENVASADO y ENTSALENV.
+- **Preguntas**: (a) matrícula RIA de la instalación y persona/certificado con acceso hoy; (b) un fichero real de Bacosoft por libro de un mes reciente (se guarda solo en `data/`) para validar la generación; (c) cómo se anotan hoy mermas y destrucciones; (d) qué vinos tienen autorizada la mención de variedad o añada (art. 33).
+- **Recomendación**: además, una sesión grabada de una importación real para diseñar el procedimiento del ejecutor (ADR 005).
 - **Fecha límite**: 15-02-2027.
 
 ## Q-013 · Fecha de corte, aforo físico y firma — Bloquea M2
@@ -261,7 +262,7 @@
 
 ## Q-031 · INFOVI — Bloquea M3
 
-- **Hecho** (RD 739/2015, arts. 3.2 y 5.3, https://www.boe.es/buscar/act.php?id=BOE-A-2015-8647, consultado el 31-10-2026): con menos de 1.000 hl de media, P.O debe presentar la declaración de existencias/producción en **diciembre y agosto** (hasta el día 20) y la **declaración de cosecha** hasta el **10 de diciembre**.
+- **Hecho** (RD 739/2015, arts. 3.2, 5.3 y 6.2, https://www.boe.es/buscar/act.php?id=BOE-A-2015-8647, consultado el 31-10-2026): con menos de 1.000 hl de media, P.O debe presentar la declaración de existencias/producción en **diciembre y agosto** (hasta el día 20), la **declaración de cosecha** hasta el **10 de diciembre** y, entre el 1 y el 10 de diciembre, los datos de proveedores y justificantes de compraventa referidos al 30 de noviembre (`04-regulatorio/infovi.md`).
 - **Preguntas**: ¿quién la presenta hoy? ¿Cuáles son los números REOVI y NIDPB de la bodega? ¿Acceso al portal (certificado)?
 - **Fecha límite**: 15-02-2027.
 

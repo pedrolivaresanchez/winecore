@@ -301,7 +301,10 @@ ALTER TABLE inventory.fiscal_move
 CREATE TABLE regulatory.sisv_entry (
   id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   legal_entity_id  uuid NOT NULL REFERENCES core.legal_entity(id),
-  book             text NOT NULL CHECK (book IN ('grape_intake','winemaking','varietal','packaged_wines','packaging','other')),
+  -- Libros del "modelo de intercambio" v02 de la Junta (sisv.md §4)
+  book             text NOT NULL CHECK (book IN ('VINO','IGP','DOP','VARIETAL','ELABORA','PRACTICA','PROCPRACT','ENVASADO','ENTSALENV')),
+  installation_ria text NOT NULL CHECK (installation_ria ~ '^[0-9]{2}/[0-9]{5}$'),  -- matrícula RIA (provincia/registro)
+  direction        char(1) CHECK (direction IN ('E','S')),              -- entrada/salida (libros de E/S)
   entry_date       date NOT NULL,
   operation        text NOT NULL,                                       -- tipo de anotación según sisv.md
   fields           jsonb NOT NULL,
@@ -314,6 +317,8 @@ CREATE TABLE regulatory.sisv_entry (
   created_at       timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX sisv_entry_status_idx ON regulatory.sisv_entry(book, status, entry_date);
+ALTER TABLE regulatory.sisv_entry ADD CONSTRAINT sisv_entry_direction_ck
+  CHECK ((book IN ('ELABORA','PRACTICA')) = (direction IS NULL));
 CREATE TRIGGER sisv_entry_no_delete BEFORE DELETE ON regulatory.sisv_entry FOR EACH ROW EXECUTE FUNCTION core.forbid_delete();
 
 -- ---------------------------------------------------------------------
