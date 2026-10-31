@@ -1,38 +1,36 @@
-/// <reference path="./bun-test.d.ts" />
-
-import { describe, expect, it } from "bun:test";
-import Decimal from "decimal.js";
+import { describe, expect, it } from 'bun:test';
+import type { Decimal } from 'decimal.js';
 import {
   computeInvoice,
   InvoiceCalculationError,
   type ComputedInvoice,
   type InvoiceLineInput,
   type TaxBreakdown,
-} from "../../src/core/billing/compute";
+} from '../../src/core/billing/compute';
+import { money } from '../../src/core/money';
 import {
   EXP_E2,
-  halfUpDecimal,
   INTRA_E5,
   IVA21,
   IVA21_ALQ,
   IVA21_RE,
   NS_LOC,
   type TaxCode,
-} from "../../src/core/billing/taxCodes";
+} from '../../src/core/billing/taxCodes';
 
-function money(value: string): Decimal {
-  return new halfUpDecimal(value);
+function dec(value: string): Decimal {
+  return money.fromString(value);
 }
 
 function euros(value: Decimal): string {
-  return value.toFixed(2);
+  return money.toString(value);
 }
 
 function line(qty: string, unitPrice: string, discountPct: string, taxCode: TaxCode): InvoiceLineInput {
   return {
-    qty: money(qty),
-    unitPrice: money(unitPrice),
-    discountPct: money(discountPct),
+    qty: dec(qty),
+    unitPrice: dec(unitPrice),
+    discountPct: dec(discountPct),
     taxCode,
   };
 }
@@ -61,9 +59,9 @@ function subjectCode(code: string, rate: string): TaxCode {
     regimeKey: "01",
     qualification: "S1",
     exemption: null,
-    rate: money(rate),
-    surchargeRate: money("0.00"),
-    withholdingRate: money("0.00"),
+    rate: dec(rate),
+    surchargeRate: dec("0.00"),
+    withholdingRate: dec("0.00"),
     exempt: false,
     notSubject: false,
     legalMentionEs: null,
@@ -128,10 +126,10 @@ describe("computeInvoice", () => {
     // importeTotal = 120.00 + 25.20 + 0 = 145.20
     // totalToPay = 145.20 − 0 = 145.20
     // 2026-03-10 + 30 days = 2026-04-09 (21 days to 31 March, then 9 days)
-    const qty = money("12");
+    const qty = dec("12");
     const result = invoice([line("12", "10.00", "0", IVA21)]);
 
-    expect(euros(result.lines[0]?.lineBase ?? money("0"))).toBe("120.00");
+    expect(euros(result.lines[0]?.lineBase ?? dec("0"))).toBe("120.00");
     expect(qty.toString()).toBe("12");
     expect(result.taxes.length).toBe(1);
     expect(tax(result, "IVA21").taxCode).toBe(IVA21);
@@ -149,7 +147,7 @@ describe("computeInvoice", () => {
     expect(euros(result.totalToPay)).toBe("145.20");
     expect(result.dues.length).toBe(1);
     expect(result.dues[0]?.dueDate).toBe("2026-04-09");
-    expect(euros(result.dues[0]?.amount ?? money("0"))).toBe("145.20");
+    expect(euros(result.dues[0]?.amount ?? dec("0"))).toBe("145.20");
   });
 
   it("varios tratamientos con el mismo 21 % no se mezclan → 209,10", () => {
@@ -215,7 +213,7 @@ describe("computeInvoice", () => {
     expect(euros(result.withholdingTotal)).toBe("190.00");
     expect(euros(result.importeTotal)).toBe("1210.00");
     expect(euros(result.totalToPay)).toBe("1020.00");
-    expect(euros(result.dues[0]?.amount ?? money("0"))).toBe("1020.00");
+    expect(euros(result.dues[0]?.amount ?? dec("0"))).toBe("1020.00");
   });
 
   it("la exportación exenta no lleva cuota → el importe total es la base", () => {
@@ -259,7 +257,7 @@ describe("computeInvoice", () => {
     // quota = round(102 × 0.21, 2) = 21.42
     // importeTotal = 123.42
     const result = invoice([line("12", "10.00", "15", IVA21)]);
-    expect(euros(result.lines[0]?.lineBase ?? money("0"))).toBe("102.00");
+    expect(euros(result.lines[0]?.lineBase ?? dec("0"))).toBe("102.00");
     expect(euros(result.taxTotal)).toBe("21.42");
     expect(euros(result.importeTotal)).toBe("123.42");
   });
@@ -270,7 +268,7 @@ describe("computeInvoice", () => {
     // quota = round(9.05 × 0.21, 2) = round(1.9005, 2) = 1.90
     // importeTotal = 9.05 + 1.90 = 10.95
     const result = invoice([line("1", "10.05", "10", IVA21)]);
-    expect(euros(result.lines[0]?.lineBase ?? money("0"))).toBe("9.05");
+    expect(euros(result.lines[0]?.lineBase ?? dec("0"))).toBe("9.05");
     expect(euros(result.taxTotal)).toBe("1.90");
     expect(euros(result.importeTotal)).toBe("10.95");
   });
@@ -280,7 +278,7 @@ describe("computeInvoice", () => {
     // quota = round(1.01 × 0.21, 2) = round(0.2121, 2) = 0.21
     // importeTotal = 1.22
     const result = invoice([line("1", "1.005", "0", IVA21)]);
-    expect(euros(result.lines[0]?.lineBase ?? money("0"))).toBe("1.01");
+    expect(euros(result.lines[0]?.lineBase ?? dec("0"))).toBe("1.01");
     expect(euros(result.taxTotal)).toBe("0.21");
     expect(euros(result.importeTotal)).toBe("1.22");
   });
@@ -336,7 +334,7 @@ describe("computeInvoice", () => {
     //       = 259259256921102407.41
     // importeTotal = 1493827147021590061.73
     const result = invoice([line("12345678901.005", "99999999.999999", "0", IVA21)]);
-    expect(euros(result.lines[0]?.lineBase ?? money("0"))).toBe("1234567890100487654.32");
+    expect(euros(result.lines[0]?.lineBase ?? dec("0"))).toBe("1234567890100487654.32");
     expect(euros(result.taxTotal)).toBe("259259256921102407.41");
     expect(euros(result.importeTotal)).toBe("1493827147021590061.73");
   });
@@ -346,11 +344,11 @@ describe("computeInvoice", () => {
     // quota = round(−75 × 0.21, 2) = −15.75
     // importeTotal = −90.75
     const result = invoice([line("-4", "18.75", "0", IVA21)]);
-    expect(euros(result.lines[0]?.lineBase ?? money("0"))).toBe("-75.00");
+    expect(euros(result.lines[0]?.lineBase ?? dec("0"))).toBe("-75.00");
     expect(euros(result.taxTotal)).toBe("-15.75");
     expect(euros(result.importeTotal)).toBe("-90.75");
     expect(euros(result.totalToPay)).toBe("-90.75");
-    expect(euros(result.dues[0]?.amount ?? money("0"))).toBe("-90.75");
+    expect(euros(result.dues[0]?.amount ?? dec("0"))).toBe("-90.75");
   });
 
   it("un abono con recargo invierte también el recargo → −504,80", () => {
@@ -379,15 +377,15 @@ describe("computeInvoice", () => {
     expect(euros(tax(result, "IVA21").base)).toBe("0.50");
     expect(euros(tax(result, "IVA21").quota)).toBe("0.11");
     expect(euros(result.importeTotal)).toBe("0.61");
-    expect(euros(result.lines[0]?.lineBase ?? money("0"))).toBe("1.00");
-    expect(euros(result.lines[1]?.lineBase ?? money("0"))).toBe("-0.50");
+    expect(euros(result.lines[0]?.lineBase ?? dec("0"))).toBe("1.00");
+    expect(euros(result.lines[1]?.lineBase ?? dec("0"))).toBe("-0.50");
   });
 
   it("un descuento sobre una cantidad negativa reduce la base del abono → −18,15", () => {
     // round(−2 × 10 × (1 − 25/100), 2) = −15.00
     // quota = −3.15; importeTotal = −18.15
     const result = invoice([line("-2", "10.00", "25", IVA21)]);
-    expect(euros(result.lines[0]?.lineBase ?? money("0"))).toBe("-15.00");
+    expect(euros(result.lines[0]?.lineBase ?? dec("0"))).toBe("-15.00");
     expect(euros(result.importeTotal)).toBe("-18.15");
   });
 
@@ -397,7 +395,7 @@ describe("computeInvoice", () => {
     expect(euros(result.subtotal)).toBe("0.00");
     expect(euros(result.importeTotal)).toBe("0.00");
     expect(euros(result.totalToPay)).toBe("0.00");
-    expect(euros(result.dues[0]?.amount ?? money("1"))).toBe("0.00");
+    expect(euros(result.dues[0]?.amount ?? dec("1"))).toBe("0.00");
   });
 
   it("doce desgloses se calculan y las cuotas suman 0,78", () => {
@@ -540,8 +538,8 @@ describe("computeInvoice", () => {
       invoice([
         {
           qty: 12 as unknown as Decimal,
-          unitPrice: money("10"),
-          discountPct: money("0"),
+          unitPrice: dec("10"),
+          discountPct: dec("0"),
           taxCode: IVA21,
         },
       ]),
@@ -568,13 +566,13 @@ describe("computeInvoice", () => {
   });
 
   it("el mismo código con otro tipo → error", () => {
-    const other = { ...IVA21, rate: money("10.00") };
+    const other = { ...IVA21, rate: dec("10.00") };
     const error = catchError(() => invoice([line("1", "10.00", "0", IVA21), line("1", "10.00", "0", other)]));
     expect(error.message).toBe("El código de impuesto IVA21 no tiene el mismo tratamiento en todas las líneas.");
   });
 
   it("una exención con tipo distinto de cero → error", () => {
-    const broken: TaxCode = { ...EXP_E2, rate: money("21.00") };
+    const broken: TaxCode = { ...EXP_E2, rate: dec("21.00") };
     const error = catchError(() => invoice([line("1", "10.00", "0", broken)]));
     expect(error.message).toBe("El código de impuesto EXP_E2 exento o no sujeto no puede llevar tipo.");
   });

@@ -1,9 +1,8 @@
-/// <reference path="./bun-test.d.ts" />
-
-import { describe, expect, it } from "bun:test";
-import type Decimal from "decimal.js";
-import { computeInvoice, type ComputeInvoiceInput, type ComputedInvoice } from "../../src/core/billing/compute";
-import { halfUpDecimal, TAX_CODE_SEEDS, type TaxCode } from "../../src/core/billing/taxCodes";
+import { describe, expect, it } from 'bun:test';
+import type { Decimal } from 'decimal.js';
+import { computeInvoice, type ComputeInvoiceInput, type ComputedInvoice } from '../../src/core/billing/compute';
+import { money } from '../../src/core/money';
+import { TAX_CODE_SEEDS, type TaxCode } from '../../src/core/billing/taxCodes';
 
 const SEED = 20261031;
 const RANDOM_CASES = 200;
@@ -57,9 +56,9 @@ function randomIssueDate(rng: () => number): string {
 
 function line(qty: string, unitPrice: string, discountPct: string, taxCode: TaxCode): ComputeInvoiceInput["lines"][number] {
   return {
-    qty: new halfUpDecimal(qty),
-    unitPrice: new halfUpDecimal(unitPrice),
-    discountPct: new halfUpDecimal(discountPct),
+    qty: money.fromString(qty),
+    unitPrice: money.fromString(unitPrice),
+    discountPct: money.fromString(discountPct),
     taxCode,
   };
 }
@@ -103,12 +102,8 @@ function buildCases(): ComputeInvoiceInput[] {
 
 const cases = buildCases();
 
-function round2(value: Decimal): Decimal {
-  return value.toDecimalPlaces(2, halfUpDecimal.ROUND_HALF_UP);
-}
-
 function percentOf(base: Decimal, rate: Decimal): Decimal {
-  return round2(new halfUpDecimal(base).mul(new halfUpDecimal(rate)).div("100"));
+  return money.round2(money.mul(money.mul(base, rate), money.fromString('0.01')));
 }
 
 function fail(index: number, message: string): never {
@@ -142,11 +137,11 @@ describe("computeInvoice", () => {
   it("importeTotal es subtotal más cuotas más recargo, y el total a pagar resta la retención", () => {
     cases.forEach((input, index) => {
       const result = computeInvoice(input);
-      const importe = result.subtotal.plus(result.taxTotal).plus(result.surchargeTotal);
+      const importe = money.add(money.add(result.subtotal, result.taxTotal), result.surchargeTotal);
       if (!result.importeTotal.eq(importe)) {
         fail(index, `importeTotal ${moneyText(result.importeTotal)} != ${moneyText(importe)}`);
       }
-      const payable = result.importeTotal.minus(result.withholdingTotal);
+      const payable = money.sub(result.importeTotal, result.withholdingTotal);
       if (!result.totalToPay.eq(payable)) {
         fail(index, `totalToPay ${moneyText(result.totalToPay)} != ${moneyText(payable)}`);
       }
@@ -157,10 +152,10 @@ describe("computeInvoice", () => {
   it("cada cuota es el redondeo de base por tipo, y lo mismo el recargo y la retención", () => {
     cases.forEach((input, index) => {
       const result = computeInvoice(input);
-      let baseSum = new halfUpDecimal("0");
-      let quotaSum = new halfUpDecimal("0");
-      let surchargeSum = new halfUpDecimal("0");
-      let withholdingSum = new halfUpDecimal("0");
+      let baseSum = money.fromString('0');
+      let quotaSum = money.fromString('0');
+      let surchargeSum = money.fromString('0');
+      let withholdingSum = money.fromString('0');
       for (const tax of result.taxes) {
         const quota = percentOf(tax.base, tax.rate);
         const surcharge = percentOf(tax.base, tax.surchargeRate);
@@ -168,10 +163,10 @@ describe("computeInvoice", () => {
         if (!tax.quota.eq(quota)) fail(index, `cuota ${tax.taxCode.code}`);
         if (!tax.surchargeQuota.eq(surcharge)) fail(index, `recargo ${tax.taxCode.code}`);
         if (!tax.withholding.eq(withholding)) fail(index, `retención ${tax.taxCode.code}`);
-        baseSum = baseSum.plus(tax.base);
-        quotaSum = quotaSum.plus(tax.quota);
-        surchargeSum = surchargeSum.plus(tax.surchargeQuota);
-        withholdingSum = withholdingSum.plus(tax.withholding);
+        baseSum = money.add(baseSum, tax.base);
+        quotaSum = money.add(quotaSum, tax.quota);
+        surchargeSum = money.add(surchargeSum, tax.surchargeQuota);
+        withholdingSum = money.add(withholdingSum, tax.withholding);
       }
       if (!result.subtotal.eq(baseSum)) fail(index, "subtotal");
       if (!result.taxTotal.eq(quotaSum)) fail(index, "taxTotal");
@@ -183,22 +178,20 @@ describe("computeInvoice", () => {
   it("la suma de las bases de línea es el subtotal y la suma de vencimientos es el total a pagar", () => {
     cases.forEach((input, index) => {
       const result = computeInvoice(input);
-      let lineSum = new halfUpDecimal("0");
+      let lineSum = money.fromString('0');
       input.lines.forEach((inputLine, lineNo) => {
         const output = result.lines[lineNo];
         if (output === undefined) fail(index, `falta la línea ${lineNo}`);
-        const qty = new halfUpDecimal(inputLine.qty);
-        const unitPrice = new halfUpDecimal(inputLine.unitPrice);
-        const discount = new halfUpDecimal(inputLine.discountPct);
-        const expected = round2(qty.mul(unitPrice).mul(new halfUpDecimal("1").minus(discount.div("100"))));
+        const factor = money.sub(money.fromString('1'), money.mul(inputLine.discountPct, money.fromString('0.01')));
+        const expected = money.round2(money.mul(money.mul(inputLine.qty, inputLine.unitPrice), factor));
         if (!output.lineBase.eq(expected)) fail(index, `base de la línea ${lineNo}`);
-        lineSum = lineSum.plus(output.lineBase);
+        lineSum = money.add(lineSum, output.lineBase);
       });
       if (!result.subtotal.eq(lineSum)) fail(index, "suma de bases");
 
-      let dueSum = new halfUpDecimal("0");
+      let dueSum = money.fromString('0');
       for (const due of result.dues) {
-        dueSum = dueSum.plus(due.amount);
+        dueSum = money.add(dueSum, due.amount);
       }
       if (!dueSum.eq(result.totalToPay)) fail(index, "vencimientos");
       if (result.dues.length !== 1) fail(index, "número de vencimientos");

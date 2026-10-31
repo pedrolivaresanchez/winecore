@@ -1,16 +1,16 @@
-import Decimal from "decimal.js";
+import { Decimal } from 'decimal.js';
+import { money } from '../money';
 import {
-  halfUpDecimal,
   type Exemption,
   type Qualification,
   type TaxCode,
   type TaxKind,
-} from "./taxCodes";
+} from './taxCodes';
 
 /**
  * Pure invoice calculation (TASK-FACT-001).
  *
- * line base = half-up(qty × unitPrice × (1 − discount/100), 2)
+ * line base = money.round2(qty × unitPrice × (1 − discount/100))
  * Group by tax code. Quota, surcharge and withholding are
  * half-up(base × percent/100, 2) on the grouped base.
  * importeTotal = subtotal + taxTotal + surchargeTotal (Verifactu; withholding stays out).
@@ -132,7 +132,7 @@ export function computeInvoice(input: ComputeInvoiceInput): ComputedInvoice {
         `El código de impuesto ${code} no tiene el mismo tratamiento en todas las líneas.`,
       );
     }
-    existing.base = existing.base.plus(line.lineBase);
+    existing.base = money.add(existing.base, line.lineBase);
   }
 
   if (groups.size > MAX_TAX_BREAKDOWNS) {
@@ -150,8 +150,8 @@ export function computeInvoice(input: ComputeInvoiceInput): ComputedInvoice {
   const taxTotal = sum(taxes.map((tax) => tax.quota));
   const surchargeTotal = sum(taxes.map((tax) => tax.surchargeQuota));
   const withholdingTotal = sum(taxes.map((tax) => tax.withholding));
-  const importeTotal = subtotal.plus(taxTotal).plus(surchargeTotal);
-  const totalToPay = importeTotal.minus(withholdingTotal);
+  const importeTotal = money.add(money.add(subtotal, taxTotal), surchargeTotal);
+  const totalToPay = money.sub(importeTotal, withholdingTotal);
   const dueDate = addCalendarDays(input.issueDate, readPaymentTermDays(input.paymentTerms));
 
   return {
@@ -190,17 +190,18 @@ function prepareLine(line: InvoiceLineInput | undefined, lineNo: number): Prepar
   const taxCode = line.taxCode;
   assertTaxCode(taxCode, lineNo);
 
-  const factor = new halfUpDecimal("1").minus(discountPct.div("100"));
-  const lineBase = qty.mul(unitPrice).mul(factor).toDecimalPlaces(2, halfUpDecimal.ROUND_HALF_UP);
+  const hundredth = money.fromString('0.01');
+  const factor = money.sub(money.fromString('1'), money.mul(discountPct, hundredth));
+  const lineBase = money.round2(money.mul(money.mul(qty, unitPrice), factor));
 
   return { qty, unitPrice, discountPct, taxCode, lineBase };
 }
 
 function readAmount(value: unknown, label: string): Decimal {
-  if (!Decimal.isDecimal(value) || !value.isFinite()) {
+  if (!(value instanceof Decimal) || !value.isFinite()) {
     throw new InvoiceCalculationError(`${label} tiene que ser un Decimal finito.`);
   }
-  return new halfUpDecimal(value);
+  return value;
 }
 
 function assertTaxCode(taxCode: TaxCode, lineNo: number): void {
@@ -254,14 +255,13 @@ function assertTaxCode(taxCode: TaxCode, lineNo: number): void {
 }
 
 function readPercent(value: unknown, label: string): Decimal {
-  if (!Decimal.isDecimal(value) || !value.isFinite()) {
+  if (!(value instanceof Decimal) || !value.isFinite()) {
     throw new InvoiceCalculationError(`${label} tiene que ser un Decimal finito.`);
   }
-  const percent = new halfUpDecimal(value);
-  if (percent.isNeg() || percent.gt("999.99")) {
+  if (value.isNeg() || value.gt(money.fromString('999.99'))) {
     throw new InvoiceCalculationError(`${label} tiene que estar entre 0 y 999,99.`);
   }
-  return percent;
+  return value;
 }
 
 function sameTreatment(left: TaxCode, right: TaxCode): boolean {
@@ -281,33 +281,27 @@ function sameTreatment(left: TaxCode, right: TaxCode): boolean {
 
 function toBreakdown(group: TaxGroup): TaxBreakdown {
   const { taxCode, base } = group;
-  const rate = new halfUpDecimal(taxCode.rate);
-  const surchargeRate = new halfUpDecimal(taxCode.surchargeRate);
-  const withholdingRate = new halfUpDecimal(taxCode.withholdingRate);
   return {
     taxCode,
     base,
-    rate,
-    quota: percentOf(base, rate),
-    surchargeRate,
-    surchargeQuota: percentOf(base, surchargeRate),
-    withholdingRate,
-    withholding: percentOf(base, withholdingRate),
+    rate: taxCode.rate,
+    quota: percentOf(base, taxCode.rate),
+    surchargeRate: taxCode.surchargeRate,
+    surchargeQuota: percentOf(base, taxCode.surchargeRate),
+    withholdingRate: taxCode.withholdingRate,
+    withholding: percentOf(base, taxCode.withholdingRate),
   };
 }
 
 /** half-up(base × percent / 100, 2). Percent is a percentage point, not a fraction. */
 function percentOf(base: Decimal, percent: Decimal): Decimal {
-  return new halfUpDecimal(base)
-    .mul(new halfUpDecimal(percent))
-    .div("100")
-    .toDecimalPlaces(2, halfUpDecimal.ROUND_HALF_UP);
+  return money.round2(money.mul(money.mul(base, percent), money.fromString('0.01')));
 }
 
 function sum(values: readonly Decimal[]): Decimal {
-  let total = new halfUpDecimal("0");
+  let total = money.fromString('0');
   for (const value of values) {
-    total = total.plus(value);
+    total = money.add(total, value);
   }
   return total;
 }

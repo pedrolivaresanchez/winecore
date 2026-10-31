@@ -1,15 +1,5 @@
-import Decimal from "decimal.js";
-
-/**
- * Money arithmetic for billing.
- * ROUND_HALF_UP is decimal.js mode 4: nearest, and away from zero on a tie.
- * Precision 40 keeps a product of the DDL widths (numeric(14,3) × numeric(14,6)
- * × a numeric(5,2) discount factor) exact until the explicit 2-decimal round.
- */
-export const halfUpDecimal = Decimal.clone({
-  rounding: Decimal.ROUND_HALF_UP,
-  precision: 40,
-});
+import type { Decimal } from 'decimal.js';
+import { money } from '../money';
 
 export type TaxKind = "01" | "02" | "03" | "05";
 export type Qualification = "S1" | "S2" | "N1" | "N2";
@@ -59,9 +49,9 @@ function seed(input: SeedInput): TaxCode {
     regimeKey: input.regimeKey,
     qualification: input.qualification,
     exemption: input.exemption,
-    rate: new halfUpDecimal(input.rate),
-    surchargeRate: new halfUpDecimal(input.surchargeRate),
-    withholdingRate: new halfUpDecimal(input.withholdingRate),
+    rate: money.fromString(input.rate),
+    surchargeRate: money.fromString(input.surchargeRate),
+    withholdingRate: money.fromString(input.withholdingRate),
     exempt: input.exemption !== null,
     notSubject: input.qualification === "N1" || input.qualification === "N2",
     legalMentionEs: input.legalMentionEs,
