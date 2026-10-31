@@ -3,7 +3,6 @@ import { GlassMenu, SegmentedControl, useMenuOpen } from '@/ui'
 import { EntitySwitcher } from '@/app/EntitySwitcher'
 import { useEntity } from '@/app/entity-context'
 import { useShell } from '@/app/shell/shell-context'
-import { railMetrics } from '@/app/shell/rail-metrics'
 import { isAuthEnabled, useSession } from '@/auth/provider'
 import { useTheme } from '@/theme/theme-provider'
 import { copy, fill } from '@/i18n'
@@ -48,12 +47,13 @@ export function UserMenu({ me, collapsed }: { me: Me; collapsed: boolean }) {
           onClick={menu.toggle}
           aria-expanded={menu.open}
           aria-label={fill(copy.user.account, { email: me.email })}
+          title={compact ? undefined : `${name} · ${company}`}
           className={cn(
             'flex items-center rounded-md text-left outline-none',
             'transition-[color,background-color] duration-(--duration-quick) ease-(--ease-smooth-out) hover:bg-sidebar-hover',
             'focus-visible:shadow-(--shadow-focus)',
             menu.open && 'bg-sidebar-hover',
-            compact ? 'size-7 justify-center' : cn('w-full gap-2 px-2 py-1', railMetrics.account),
+            compact ? 'size-7 justify-center' : 'h-7 w-full gap-2 px-2',
           )}
         >
           <span
@@ -65,10 +65,8 @@ export function UserMenu({ me, collapsed }: { me: Me; collapsed: boolean }) {
           </span>
           {compact ? null : (
             <>
-              <span className="min-w-0 flex-1 leading-tight">
-                <span className="block truncate text-label font-medium text-ink-900">{name}</span>
-                <span className="block truncate text-caption text-text-tertiary">{company}</span>
-              </span>
+              <span className="min-w-0 flex-1 truncate text-label font-medium text-ink-900">{name}</span>
+              <span className="shrink-0 text-caption text-text-tertiary">{company}</span>
               <ChevronDown
                 className={cn(
                   'size-3.5 shrink-0 text-control transition-transform duration-(--duration-fast) ease-(--ease-smooth-out)',

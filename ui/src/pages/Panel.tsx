@@ -9,7 +9,6 @@ import { FitAmount, Skeleton } from '@/ui'
 import { copy, fill } from '@/i18n'
 import { cn } from '@/lib/cn'
 import { iconStroke } from '@/lib/motion'
-import { SERIES_TONE } from '@/lib/chart-scale'
 import { formatInteger, formatMoney } from '@/lib/format'
 import { useLegacyOverview, type LegacyInvoice, type LegacyOverview } from '@/lib/legacy'
 import { allows } from '@/lib/permissions'
@@ -152,7 +151,7 @@ function HoldedHome({ data }: { data: LegacyOverview }) {
         ) : (
           <ColumnChart
             height={180}
-            color={SERIES_TONE.sales}
+            color="var(--color-ink-900)"
             label={copy.panel.chart}
             currentLabel={String(data.year)}
             previousLabel={copy.informes.previous}

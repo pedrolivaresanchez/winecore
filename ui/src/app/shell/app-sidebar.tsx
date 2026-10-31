@@ -1,9 +1,8 @@
-import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { ChevronDown, PanelLeft, Search } from '@/ui/icons'
+import { PanelLeft, Search } from '@/ui/icons'
 import { Tooltip } from '@/ui'
 import { textureSecondary } from '@/ui/button'
-import { tagToneClass, type TagTone } from '@/ui/tag-palette'
+import type { TagTone } from '@/ui/tag-palette'
 import { activeRailId, visibleGroups, type RailGroup, type RailItem } from '@/app/nav'
 import { PendingBadge } from '@/pages/aprobaciones/PendingBadge'
 import { RailRow } from '@/app/shell/rail-row'
@@ -12,7 +11,7 @@ import { useShell } from '@/app/shell/shell-context'
 import { commandChord } from '@/app/shell/shortcuts'
 import { SettingsSidebar, type SettingsArea } from '@/app/shell/settings-view'
 import { UserMenu } from '@/app/shell/user-menu'
-import { copy, fill } from '@/i18n'
+import { copy } from '@/i18n'
 import { cn } from '@/lib/cn'
 import { iconStroke } from '@/lib/motion'
 import type { Me } from '@/lib/types'
@@ -52,7 +51,6 @@ function WorkspaceRail({ me, collapsed }: { me: Me; collapsed: boolean }) {
   const location = useLocation()
   const groups = visibleGroups(me)
   const activeId = activeRailId(location.pathname, groups)
-  const [moreOpen, setMoreOpen] = useState<Record<string, boolean>>({})
 
   function go(path: string) {
     navigate(path)
@@ -141,13 +139,6 @@ function WorkspaceRail({ me, collapsed }: { me: Me; collapsed: boolean }) {
             first={index === 0}
             collapsed={collapsed}
             activeId={activeId}
-            expanded={moreOpen[group.id] ?? group.items.some((item) => item.tier === 'more' && item.id === activeId)}
-            onToggle={() =>
-              setMoreOpen((current) => {
-                const open = current[group.id] ?? group.items.some((item) => item.tier === 'more' && item.id === activeId)
-                return { ...current, [group.id]: !open }
-              })
-            }
             onNavigate={go}
           />
         ))}
@@ -165,60 +156,24 @@ function RailSection({
   first,
   collapsed,
   activeId,
-  expanded,
-  onToggle,
   onNavigate,
 }: {
   group: RailGroup
   first: boolean
   collapsed: boolean
   activeId: string | null
-  expanded: boolean
-  onToggle: () => void
   onNavigate: (path: string) => void
 }) {
-  const primary = group.items.filter((item) => item.tier === 'primary')
-  const more = group.items.filter((item) => item.tier === 'more')
-
   return (
     <div className={cn('flex flex-col', railMetrics.gap, collapsed && 'items-center')}>
       {collapsed ? (
-        first ? null : <span aria-hidden className={cn(tagToneClass(group.tone), 'tag-dot my-1.5 h-px w-4 rounded-full opacity-60')} />
+        first ? null : <span aria-hidden className="my-1.5 h-px w-4 rounded-full bg-border" />
       ) : (
-        <p className={cn('flex items-center gap-1.5 px-2 pb-0.5 text-caption text-text-tertiary', first ? 'pt-1' : 'pt-3')}>
-          <span aria-hidden className={cn(tagToneClass(group.tone), 'tag-dot size-1.5 shrink-0 rounded-full')} />
-          {group.label}
-        </p>
+        <p className={cn('px-2 pb-0.5 text-caption text-text-tertiary', first ? 'pt-1' : 'pt-3')}>{group.label}</p>
       )}
-      {primary.map((item) => (
+      {group.items.map((item) => (
         <NavButton key={item.id} item={item} tone={group.tone} active={item.id === activeId} collapsed={collapsed} onNavigate={onNavigate} />
       ))}
-      {collapsed || more.length === 0 ? null : (
-        <>
-          <button
-            type="button"
-            aria-expanded={expanded}
-            aria-label={fill(copy.nav.moreIn, { group: group.label })}
-            onClick={onToggle}
-            className={cn(
-              'flex w-full items-center gap-1.5 rounded-md px-2 text-left text-label text-text-tertiary',
-              railMetrics.row,
-              'hover:bg-sidebar-hover hover:text-ink-900',
-            )}
-          >
-            <ChevronDown
-              strokeWidth={iconStroke}
-              className={cn('size-3 shrink-0 transition-transform duration-(--duration-fast) ease-(--ease-smooth-out)', expanded ? 'rotate-0' : '-rotate-90')}
-            />
-            <span className="min-w-0 flex-1 truncate">{copy.nav.more}</span>
-          </button>
-          {expanded
-            ? more.map((item) => (
-                <NavButton key={item.id} item={item} tone={group.tone} active={item.id === activeId} collapsed={false} onNavigate={onNavigate} nested />
-              ))
-            : null}
-        </>
-      )}
     </div>
   )
 }
@@ -228,33 +183,29 @@ function NavButton({
   tone,
   active,
   collapsed,
-  nested,
   onNavigate,
 }: {
   item: RailItem
   tone: TagTone
   active: boolean
   collapsed: boolean
-  nested?: boolean
   onNavigate: (path: string) => void
 }) {
   const Icon = item.icon
   return (
-    <div className={cn(nested && 'pl-4')}>
-      <RailRow
-        active={active}
-        label={item.label}
-        tone={tone}
-        collapsed={collapsed}
-        glyph={
-          <span className="relative inline-flex">
-            <Icon className={cn(railMetrics.icon, 'shrink-0', active ? 'text-(--tag-fg-0)' : 'text-(--tag-dot-0)')} strokeWidth={iconStroke} />
-            {collapsed && item.id === 'approvals' ? <PendingBadge size="sm" /> : null}
-          </span>
-        }
-        trailing={!collapsed && item.id === 'approvals' ? <PendingBadge inline /> : undefined}
-        onNavigate={() => onNavigate(item.path)}
-      />
-    </div>
+    <RailRow
+      active={active}
+      label={item.label}
+      tone={tone}
+      collapsed={collapsed}
+      glyph={
+        <span className="relative inline-flex">
+          <Icon className={cn(railMetrics.icon, 'shrink-0', active ? 'text-(--tag-fg-0)' : 'text-(--tag-dot-0)')} strokeWidth={iconStroke} />
+          {collapsed && item.id === 'approvals' ? <PendingBadge size="sm" /> : null}
+        </span>
+      }
+      trailing={!collapsed && item.id === 'approvals' ? <PendingBadge inline /> : undefined}
+      onNavigate={() => onNavigate(item.path)}
+    />
   )
 }
