@@ -33,6 +33,7 @@ export function MapaPage({ me }: { me: Me }) {
   const [onlyFull, setOnlyFull] = useState(false);
   const [table, setTable] = useState(false);
   const [scan, setScan] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [code, setCode] = useState("");
 
   const zones = useMemo(() => {
@@ -85,8 +86,8 @@ export function MapaPage({ me }: { me: Me }) {
         }
       />
 
-      <div className="min-w-0">
-        <div className="flex flex-wrap gap-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <div className="-mx-4 flex min-w-0 flex-1 gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0">
           <Filter active={zone === "" && !onlyFull && kind === ""} onClick={() => { setZone(""); setKind(""); setOnlyFull(false); }}>
             Todos
           </Filter>
@@ -98,13 +99,26 @@ export function MapaPage({ me }: { me: Me }) {
           <Filter active={onlyFull} onClick={() => setOnlyFull((value) => !value)}>
             Ocupados
           </Filter>
-          <Filter active={kind === "barrel"} onClick={() => setKind(kind === "barrel" ? "" : "barrel")}>
-            Barricas
-          </Filter>
-          <Filter active={kind === "tank_fermenter"} onClick={() => setKind(kind === "tank_fermenter" ? "" : "tank_fermenter")}>
-            Fermentadores
-          </Filter>
+          <span className="hidden md:contents">
+            <Filter active={kind === "barrel"} onClick={() => setKind(kind === "barrel" ? "" : "barrel")}>
+              Barricas
+            </Filter>
+            <Filter active={kind === "tank_fermenter"} onClick={() => setKind(kind === "tank_fermenter" ? "" : "tank_fermenter")}>
+              Fermentadores
+            </Filter>
+          </span>
         </div>
+        <button
+          type="button"
+          className={cn(
+            "h-11 shrink-0 rounded-full px-3 text-compact md:hidden",
+            kind ? "bg-ink font-medium text-ink-foreground" : "bg-muted",
+          )}
+          aria-pressed={Boolean(kind)}
+          onClick={() => setFiltersOpen(true)}
+        >
+          Filtros
+        </button>
       </div>
 
       <Input
@@ -153,6 +167,25 @@ export function MapaPage({ me }: { me: Me }) {
           )}
         </>
       )}
+
+      <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+        <SheetContent side="bottom" data-screen="bodega-filtros">
+          <SheetHeader>
+            <SheetTitle>Filtros</SheetTitle>
+          </SheetHeader>
+          <div className="flex flex-wrap gap-2 px-4 pb-6">
+            <Filter active={kind === "barrel"} onClick={() => setKind(kind === "barrel" ? "" : "barrel")}>
+              Barricas
+            </Filter>
+            <Filter active={kind === "tank_fermenter"} onClick={() => setKind(kind === "tank_fermenter" ? "" : "tank_fermenter")}>
+              Fermentadores
+            </Filter>
+            <Filter active={kind === ""} onClick={() => setKind("")}>
+              Todos los tipos
+            </Filter>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <Sheet open={scan} onOpenChange={setScan}>
         <SheetContent side="bottom" data-screen="bodega-qr">

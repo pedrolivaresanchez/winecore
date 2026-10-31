@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ArrowLeftRight, Delete, Droplets, Filter, Merge, Plus, Sparkles, Tag, Trash2, Wine, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -21,8 +21,10 @@ import {
   describeCellarError,
   mlToEdit,
   OP_TYPES,
+  previewOperation,
   updateOperation,
   type CellarOperation,
+  type OperationPreview,
   type OpType,
   type Vessel,
 } from "@/lib/cellar";
@@ -185,6 +187,90 @@ function BalanceBanner({ balance }: { balance: Balance }) {
   );
 }
 
+const MOVE_LABEL: Record<string, string> = {
+  cellar_out: "Sale",
+  cellar_in: "Entra",
+  loss: "Merma",
+};
+
+const FISCAL_LABEL: Record<string, string> = {
+  ledger_change_out: "Sale del mayor",
+  ledger_change_in: "Entra en el mayor",
+  loss: "Merma fiscal",
+  destruction: "Destrucción fiscal",
+};
+
+const CLASS_LABEL: Record<string, string> = {
+  bulk: "granel",
+  bulk_wood: "madera",
+  packaged: "envasado",
+};
+
+function EffectsPanel({
+  preview,
+  fallback,
+  vessels,
+  draft,
+}: {
+  preview: OperationPreview | null;
+  fallback: { fisico: string; sisv: string; silicie: string } | null;
+  vessels: Vessel[];
+  draft: Draft;
+}) {
+  if (preview) {
+    const lines = [...draft.inputs, ...draft.outputs, ...draft.losses];
+    return (
+      <section data-effects="server" className="grid gap-1 rounded-xl border bg-card p-3 text-compact">
+        <h2 className="text-body font-semibold">Efectos</h2>
+        {preview.moves.length === 0 ? <p className="text-muted-foreground">Sin movimiento físico</p> : null}
+        {preview.moves.map((move, index) => {
+          const vessel = vessels.find((item) => item.id === move.vessel_id)?.code;
+          const lot = lines.find((item) => item.lot_id && item.lot_id === move.lot_id)?.lot_code;
+          const amount = move.qty_units !== 0 ? `${Math.abs(move.qty_units)} botellas` : formatLitres(Math.abs(move.volume_ml) / 1000);
+          return (
+            <p key={`${move.move_type}-${move.vessel_id ?? ""}-${index}`}>
+              {MOVE_LABEL[move.move_type] ?? move.move_type}
+              {vessel ? ` · ${vessel}` : ""}
+              {lot ? ` · ${lot}` : ""}
+              {` · ${amount}`}
+            </p>
+          );
+        })}
+        {preview.fiscal_moves.length === 0 ? <p className="text-muted-foreground">Sin asiento fiscal</p> : null}
+        {preview.fiscal_moves.map((move, index) => (
+          <p key={`${move.move_type}-${index}`}>
+            {FISCAL_LABEL[move.move_type] ?? move.move_type}
+            {` · ${CLASS_LABEL[move.product_class] ?? move.product_class} · ${formatLitres(Math.abs(move.volume_ml) / 1000)}`}
+          </p>
+        ))}
+        {preview.new_lots.map((lot) => (
+          <p key={lot.code}>
+            Lote nuevo · {lot.code} · {formatLitres(lot.volume_ml / 1000)}
+          </p>
+        ))}
+      </section>
+    );
+  }
+  if (!fallback) return null;
+  return (
+    <section data-effects="local" className="grid gap-2 rounded-xl border bg-card p-3 text-compact">
+      <h2 className="text-body font-semibold">Efectos</h2>
+      <p>
+        <span className="text-muted-foreground">Físico · </span>
+        {fallback.fisico}
+      </p>
+      <p>
+        <span className="text-muted-foreground">SISV · </span>
+        {fallback.sisv}
+      </p>
+      <p>
+        <span className="text-muted-foreground">SILICIE · </span>
+        {fallback.silicie}
+      </p>
+    </section>
+  );
+}
+
 function Keypad({ onPress }: { onPress: (key: string) => void }) {
   const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ",", "0", "⌫"];
   return (
@@ -281,9 +367,32 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
   const [active, setActive] = useState<ActiveField | null>(null);
   const [server, setServer] = useState<Issue[]>([]);
   const [saving, setSaving] = useState(false);
-  const [draftId, setDraftId] = useState<string | null>(null);
+  const [serverPreview, setServerPreview] = useState<OperationPreview | null>(null);
   const [result, setResult] = useState<CellarOperation | null>(null);
+  const draftRef = useRef(draft);
+  const vesselsRef = useRef(vessels);
+  const draftIdRef = useRef<string | null>(null);
+  const queueRef = useRef<Promise<void>>(Promise.resolve());
+  draftRef.current = draft;
+  vesselsRef.current = vessels;
   const vesselQuery = params.get("vessel") ?? "";
+
+  const ensureDraft = useCallback(async (): Promise<string | null> => {
+    const run = queueRef.current.then(async () => {
+      const current = draftRef.current;
+      if (!current.op_type) return null;
+      const body = buildPayload(current, vesselsRef.current, legalEntityId);
+      const id = draftIdRef.current;
+      const saved = id ? await updateOperation(id, body) : await createOperation(body);
+      draftIdRef.current = saved.id;
+      return saved.id;
+    });
+    queueRef.current = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }, [legalEntityId]);
 
   useEffect(() => {
     if (!vesselQuery) return;
@@ -309,6 +418,27 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
   const ready = useMemo(() => problems(draft, vessels, true).length === 0, [draft, vessels]);
   const effects = effectsFor(draft, vessels);
   const op = draft.op_type;
+
+  useEffect(() => {
+    if (step !== "revision" || !op) return;
+    let cancel = false;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const id = await ensureDraft();
+          if (!id || cancel) return;
+          const next = await previewOperation(id);
+          if (!cancel) setServerPreview(next);
+        } catch {
+          if (!cancel) setServerPreview(null);
+        }
+      })();
+    }, 150);
+    return () => {
+      cancel = true;
+      window.clearTimeout(timer);
+    };
+  }, [step, draft, op, ensureDraft]);
 
   function change(recipe: (current: Draft) => Draft) {
     setServer([]);
@@ -349,18 +479,13 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
     }
     setSaving(true);
     try {
-      const body = buildPayload(draft, vessels, legalEntityId);
-      const saved = draftId ? await updateOperation(draftId, body) : await createOperation(body);
-      setDraftId(saved.id);
+      const id = await ensureDraft();
+      if (!id) return;
       if (!confirm) {
         toast("Borrador guardado");
         return;
       }
-      if (saved.approval_request_id && saved.status !== "confirmed") {
-        setResult(saved);
-        return;
-      }
-      setResult(await confirmOperation(saved.id));
+      setResult(await confirmOperation(id));
     } catch (error: unknown) {
       setServer(serverIssues(error, draft));
       setStep("revision");
@@ -736,6 +861,7 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
           <div className="grid gap-3">
             {balance?.text ? <BalanceBanner balance={balance} /> : null}
+            <EffectsPanel preview={serverPreview} fallback={effects} vessels={vessels} draft={draft} />
             {lineMessages(issues, "banner", step).map((message) => (
               <p key={message} role="alert" data-server-error className="rounded-xl bg-status-danger px-3 py-3 text-compact text-status-danger-fg">
                 {message}
@@ -759,14 +885,6 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
             ) : null}
           </div>
           <div className="grid gap-3">
-            {effects ? (
-              <section className="grid gap-2 rounded-xl border bg-card p-3 text-compact">
-                <h2 className="text-body font-semibold">Efectos</h2>
-                <p><span className="text-muted-foreground">Físico · </span>{effects.fisico}</p>
-                <p><span className="text-muted-foreground">SISV · </span>{effects.sisv}</p>
-                <p><span className="text-muted-foreground">SILICIE · </span>{effects.silicie}</p>
-              </section>
-            ) : null}
             <Field id="occurred_at" label="Fecha" error={lineMessages(issues, "occurred_at", step)[0]}>
               <Input id="occurred_at" type="datetime-local" value={draft.occurred_at} onChange={(event) => change((current) => ({ ...current, occurred_at: event.target.value }))} />
             </Field>

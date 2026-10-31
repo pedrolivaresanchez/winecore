@@ -250,6 +250,50 @@ export function updateOperation(id: string, body: unknown) {
   return api<CellarOperation>(`/v1/cellar-operations/${id}`, { method: "PATCH", body: JSON.stringify(body) });
 }
 
+export type PreviewMove = {
+  move_type: string;
+  vessel_id: string | null;
+  lot_id: string | null;
+  volume_ml: number;
+  qty_units: number;
+  product_state: string;
+  loss_kind?: "authorized" | "incident" | null;
+};
+
+export type PreviewFiscalMove = {
+  move_type: string;
+  product_class: string;
+  volume_ml: number;
+  units: number;
+};
+
+export type PreviewLot = {
+  code: string;
+  kind: string;
+  volume_ml: number;
+};
+
+/** Efectos que devolvería confirmar, sin escribir libros. */
+export type OperationPreview = {
+  moves: PreviewMove[];
+  fiscal_moves: PreviewFiscalMove[];
+  new_lots: PreviewLot[];
+};
+
 export function confirmOperation(id: string) {
-  return api<CellarOperation>(`/v1/cellar-operations/${id}/confirm`, { method: "POST" });
+  return api<CellarOperation>(`/v1/cellar-operations/${encodeURIComponent(id)}/confirm`, { method: "POST" });
+}
+
+export function previewOperation(id: string) {
+  return api<OperationPreview>(`/v1/cellar-operations/${encodeURIComponent(id)}/preview`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export function rectifyOperation(id: string, reason: string) {
+  return api<CellarOperation>(`/v1/cellar-operations/${encodeURIComponent(id)}/rectify`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
 }

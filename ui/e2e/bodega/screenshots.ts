@@ -28,6 +28,32 @@ function sumMl(lines: { role?: string; volume_ml?: number }[], role: string) {
   return lines.filter((line) => line.role === role).reduce((sum, line) => sum + Number(line.volume_ml ?? 0), 0);
 }
 
+function previewOf(saved: Record<string, unknown>) {
+  const lines = Array.isArray(saved.lines)
+    ? (saved.lines as { role?: string; vessel_id?: string | null; lot_id?: string | null; volume_ml?: number; qty_units?: number; product_state?: string; loss_kind?: string | null }[])
+    : [];
+  const moves = lines
+    .map((line) => {
+      const sign = line.role === "output" ? 1 : -1;
+      return {
+        move_type: line.role === "input" ? "cellar_out" : line.role === "output" ? "cellar_in" : "loss",
+        vessel_id: line.vessel_id ?? null,
+        lot_id: line.lot_id ?? null,
+        volume_ml: sign * Number(line.volume_ml ?? 0),
+        qty_units: sign * Number(line.qty_units ?? 0),
+        product_state: line.product_state ?? "wine",
+        loss_kind: line.role === "loss" ? (line.loss_kind ?? "authorized") : null,
+      };
+    })
+    .filter((move) => move.volume_ml !== 0 || move.qty_units !== 0);
+  const details = saved.details && typeof saved.details === "object" ? (saved.details as { new_lot_code?: string }) : {};
+  const created = lines.filter((line) => line.role === "output").reduce((sum, line) => sum + Number(line.volume_ml ?? 0), 0);
+  const newLots = details.new_lot_code
+    ? [{ code: details.new_lot_code, kind: saved.op_type === "bottling" ? "bottled" : "wine", volume_ml: created }]
+    : [];
+  return { moves, fiscal_moves: [], new_lots: newLots };
+}
+
 async function installApi(page: Page, mode: Mode) {
   const drafts = new Map<string, Record<string, unknown>>();
   await page.route("**/api/**", async (route) => {
@@ -77,6 +103,14 @@ async function installApi(page: Page, mode: Mode) {
       const saved = { id, number: null, status: "draft", approval_request_id: null, ...body };
       drafts.set(id, saved);
       return fulfill(route, saved, 201);
+    }
+
+    const preview = pathname.match(/\/v1\/cellar-operations\/([^/]+)\/preview$/);
+    if (preview && method === "POST") {
+      const id = decodeURIComponent(preview[1] ?? "");
+      const saved = drafts.get(id);
+      if (!saved) return fulfill(route, { code: "WC_NOT_FOUND", message: "Operación no encontrada" }, 404);
+      return fulfill(route, previewOf(saved));
     }
 
     const confirm = pathname.match(/\/v1\/cellar-operations\/([^/]+)\/confirm$/);
@@ -300,6 +334,8 @@ async function main() {
         await wizard.page.getByRole("button", { name: "Siguiente" }).click();
         await wizard.page.waitForSelector("[data-step='revision']");
         await wizard.page.locator("[data-code='ok']").waitFor();
+        await wizard.page.locator("[data-effects='server']").waitFor();
+        await wizard.page.getByText("Sale").first().waitFor();
         await shot(wizard.page, `bodega-op-revision-${width}`);
         await wizard.close();
 
