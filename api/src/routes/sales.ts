@@ -14,7 +14,6 @@ import { getQuoteById, getQuotePdf, getQuotes, postQuote, postQuoteSend, postQuo
 import {
   getOrder,
   getOrders,
-  getPriceQuote,
   patchOrder,
   postCancel,
   postClose,
@@ -56,7 +55,6 @@ export function salesRoutes(writer: Writer, guardDeps: GuardDeps) {
     .get('/v1/billing-rules/sets/:id/impact', ({ request, params }) => getImpact(writer, request, params.id), { beforeHandle: settings })
     .post('/v1/billing-rules/sets/:id/request-activation', ({ request, params }) => postRequestActivation(writer, request, params.id), { beforeHandle: settings })
     .post('/v1/billing-rules/sets/:id/activate', ({ request, params }) => postActivate(writer, request, params.id), { beforeHandle: settings })
-    .get('/v1/price-quote', ({ request }) => getPriceQuote(writer, request), { beforeHandle: read })
     .get('/v1/quotes', ({ request }) => getQuotes(writer, request), { beforeHandle: read })
     .post('/v1/quotes', async ({ request, set }) => {
       const result = await postQuote(writer, request);

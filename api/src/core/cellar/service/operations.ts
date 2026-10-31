@@ -519,37 +519,6 @@ function insertDraft(tx: Tx, operationId: string, header: ParsedHeader, draft: S
   `);
 }
 
-function insertDraftLines(tx: Tx, operationId: string, lines: readonly ParsedLine[]): void {
-  for (const line of lines) {
-    if (!line.lot_id) continue;
-    if (!line.vessel_id && !line.location_id) continue;
-    insertLine(tx, operationId, line, line.lot_id, 'racking');
-  }
-}
-
-async function syncDraftLines(
-  tx: Tx,
-  operationId: string,
-  lines: readonly ParsedLine[],
-  opType: string,
-  newLotId: string | null = null,
-): Promise<void> {
-  const kept = lines.filter((line) => line.lot_id && (line.vessel_id || line.location_id));
-  const existing = await tx.read<{ id: string }>(sql`
-    SELECT id::VARCHAR AS id
-    FROM cellar.operation_line
-    WHERE operation_id = CAST(${operationId} AS UUID)
-    ORDER BY id
-  `);
-  for (let index = 0; index < kept.length; index += 1) {
-    const line = kept[index];
-    if (!line) continue;
-    const currentId = existing[index]?.id;
-    if (currentId) updateLine(tx, currentId, operationId, line, newLotId, opType);
-    else insertLine(tx, operationId, line, newLotId, opType);
-  }
-}
-
 /**
  * Vessel content is the stock ledger. Confirming writes the planned moves,
  * so `vesselsAfter` becomes the balance. A failed plan writes nothing.
@@ -1418,47 +1387,6 @@ function insertLot(tx: Tx, lot: LotDraft): void {
 
 function lineLotId(line: ParsedLine, newLotId: string | null, opType: string): string | null {
   return (opType === 'blend' || opType === 'bottling') && line.role === 'output' ? newLotId : line.lot_id;
-}
-
-function updateLine(
-  tx: Tx,
-  id: string,
-  operationId: string,
-  line: ParsedLine,
-  newLotId: string | null,
-  opType: string,
-): void {
-  const lotId = lineLotId(line, newLotId, opType);
-  if (!lotId) throw new Error('La línea no tiene lote');
-  const vesselId = opType === 'bottling' && line.role === 'output' ? null : line.vessel_id;
-  const stored = {
-    id,
-    operation_id: operationId,
-    role: line.role,
-    lot_id: lotId,
-    vessel_id: vesselId,
-    location_id: line.location_id,
-    product_id: line.product_id,
-    product_state: line.product_state,
-    volume_ml: line.volume_ml,
-    qty_units: line.qty_units,
-    mass_g: 0,
-    loss_kind: line.role === 'loss' ? line.loss_kind : null,
-  };
-  auditUpdate(tx, 'cellar.operation_line', id, { id }, stored, sql`
-    UPDATE cellar.operation_line SET
-      role = ${stored.role},
-      lot_id = CAST(${stored.lot_id} AS UUID),
-      vessel_id = CAST(${stored.vessel_id} AS UUID),
-      location_id = CAST(${stored.location_id} AS UUID),
-      product_id = CAST(${stored.product_id} AS UUID),
-      product_state = ${stored.product_state},
-      volume_ml = ${stored.volume_ml},
-      qty_units = ${stored.qty_units},
-      mass_g = 0,
-      loss_kind = ${stored.loss_kind}
-    WHERE id = CAST(${id} AS UUID)
-  `);
 }
 
 function insertLine(tx: Tx, operationId: string, line: ParsedLine, newLotId: string | null, opType: string): void {

@@ -586,9 +586,11 @@ export async function replaceItems(
 }
 
 export async function quoteFromRequest(writer: Writer, request: Request): Promise<{
+  product_id: string;
   unit_price: string;
   min_qty: string;
   price_list_version_id: string;
+  version_id: string;
   price_list_id: string;
   code: string;
   currency: string;
@@ -612,9 +614,11 @@ export async function quoteFromRequest(writer: Writer, request: Request): Promis
     date: date ?? businessDate(new Date()),
   });
   return {
-    unit_price: quote.unitPrice.toDecimalPlaces(4).toFixed(4),
+    product_id: productId ?? '',
+    unit_price: quote.unitPrice.toDecimalPlaces(6).toFixed(6),
     min_qty: quote.minQty.toDecimalPlaces(3).toFixed(3),
     price_list_version_id: quote.priceListVersionId,
+    version_id: quote.priceListVersionId,
     price_list_id: quote.priceListId,
     code: quote.priceListCode,
     currency: quote.currency,

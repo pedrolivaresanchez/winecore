@@ -191,7 +191,7 @@ describe('priceFor', () => {
     ));
     expect(quote.status).toBe(200);
     const raw = await quote.text();
-    expect(raw).toContain('"unit_price":"10.0000"');
+    expect(raw).toContain('"unit_price":"10.000000"');
     const body = JSON.parse(raw) as { unit_price: string; min_qty: string };
     expect(typeof body.unit_price).toBe('string');
     expect(body.min_qty).toBe('1.000');

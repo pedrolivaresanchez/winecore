@@ -1,6 +1,6 @@
 import { sessionOf } from '../auth/guard';
 import type { Writer } from '../core/db/writer';
-import { actorOf, asRecord, fail, optionalText, pathId, readJson } from '../core/sales/db';
+import { actorOf, asRecord, optionalText, pathId, readJson } from '../core/sales/db';
 import { createDeliveryNote } from '../core/sales/delivery';
 import {
   cancelSalesOrder,
@@ -13,11 +13,6 @@ import {
   patchSalesOrder,
   setEntityException,
 } from '../core/sales/orders';
-import { quotePrice, priceJson } from '../core/sales/pricing';
-import { loadCustomer } from '../core/sales/db';
-import { Decimal } from 'decimal.js';
-import { businessDate } from '../core/time';
-
 export function getOrders(writer: Writer, request: Request) {
   sessionOf(request);
   return listSalesOrders(writer, request);
@@ -82,28 +77,6 @@ export async function postOrderDelivery(writer: Writer, request: Request, id: st
   return writer.withWrite(actorOf(user, request), async (tx) => {
     const created = await createDeliveryNote(tx, actorOf(user, request), body);
     return { status: 201, body: created };
-  });
-}
-
-export async function getPriceQuote(writer: Writer, request: Request) {
-  sessionOf(request);
-  const url = new URL(request.url);
-  const customerId = url.searchParams.get('customer_id') ?? '';
-  const productId = url.searchParams.get('product_id') ?? '';
-  const qty = url.searchParams.get('qty') ?? '1';
-  const date = url.searchParams.get('date') ?? businessDate(new Date());
-  return writer.withWrite({ type: 'system', id: 'sales-price', requestId: 'sales-price' }, async (tx) => {
-    const customer = await loadCustomer(tx, customerId);
-    const quantity = new Decimal(qty);
-    if (!quantity.isFinite() || quantity.lte(0)) fail('La cantidad no es válida', { qty });
-    const hit = await quotePrice(tx, {
-      productId,
-      quantity,
-      date,
-      priceListId: customer.default_price_list_id,
-      channel: customer.default_channel ?? 'direct',
-    });
-    return { product_id: productId, currency: 'EUR', ...priceJson(hit) };
   });
 }
 
