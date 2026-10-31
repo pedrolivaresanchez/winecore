@@ -182,7 +182,9 @@ async function waitForServer(proc: ChildProcess, logs: string[]) {
 async function main() {
   await mkdir(outDir, { recursive: true });
   for (const file of await readdir(outDir)) {
-    if (file.endsWith(".png")) await rm(path.join(outDir, file));
+    if (file.endsWith(".png") && !file.startsWith("sdr-") && !file.startsWith("side-by-side-")) {
+      await rm(path.join(outDir, file));
+    }
   }
   const { proc, logs } = startServer();
   try {
@@ -199,19 +201,23 @@ async function main() {
         await gotoReady(panel.page, "/", "panel");
         await panel.page.getByText("Acciones rápidas").waitFor();
         await shot(panel.page, `panel-${width}`);
+        if (width >= 1280) {
+          await panel.page.getByRole("button", { name: "Plegar menú" }).click();
+          await shot(panel.page, `shell-collapsed-${width}`);
+        }
         await panel.close();
 
         const list = await openContext(browser, viewport, "ok");
         await gotoReady(list.page, "/contactos", "contactos");
         await shot(list.page, `contactos-${width}`);
-        const target =
-          width < 768
-            ? list.page.locator("button", { hasText: "Vinoteca La Encina S.L." })
-            : list.page.locator("tr", { hasText: "Vinoteca La Encina S.L." });
-        await target.first().click();
+        await list.page.getByRole("link", { name: "Vinoteca La Encina S.L." }).click();
         await list.page.waitForSelector("[data-screen='contacto-preview']");
         await list.page.getByText("Luis Encina").waitFor();
         await shot(list.page, `contacto-preview-${width}`);
+        await list.page.keyboard.press("Escape");
+        await list.page.getByRole("button", { name: "Columnas" }).click();
+        await list.page.getByRole("menuitemcheckbox", { name: "NIF" }).waitFor();
+        await shot(list.page, `menu-${width}`);
         await list.close();
 
         const create = await openContext(browser, viewport, "ok");
@@ -233,17 +239,14 @@ async function main() {
         const ficha = await openContext(browser, viewport, "ok");
         await gotoReady(ficha.page, "/contactos/c-encina", "ficha");
         await shot(ficha.page, `ficha-resumen-${width}`);
-        if (width < 768) await ficha.page.locator("#ficha-seccion").selectOption("direcciones");
-        else await ficha.page.getByRole("tab", { name: "Direcciones" }).click();
+        await ficha.page.getByRole("tab", { name: "Direcciones" }).click();
         await ficha.page.getByText("Calle de la Encina 12").waitFor();
         await shot(ficha.page, `ficha-direcciones-${width}`);
-        if (width < 768) await ficha.page.locator("#ficha-seccion").selectOption("personas");
-        else await ficha.page.getByRole("tab", { name: "Personas" }).click();
+        await ficha.page.getByRole("tab", { name: "Personas" }).click();
         await ficha.page.getByText("Luis Encina").waitFor();
         await shot(ficha.page, `ficha-personas-${width}`);
-        if (width < 768) await ficha.page.locator("#ficha-seccion").selectOption("historial");
-        else await ficha.page.getByRole("tab", { name: "Historial" }).click();
-        await ficha.page.getByText("Ana Rivas").waitFor();
+        await ficha.page.getByRole("tab", { name: "Historial" }).click();
+        await ficha.page.locator("[data-screen='ficha']").getByText("Ana Rivas").waitFor();
         await shot(ficha.page, `ficha-historial-${width}`);
         await ficha.close();
 
@@ -255,12 +258,12 @@ async function main() {
 
       const mobile = await openContext(browser, viewports[0], "ok");
       await gotoReady(mobile.page, "/", "panel");
-      await mobile.page.getByRole("button", { name: "Más" }).click();
-      await mobile.page.waitForSelector("[data-screen='mas']");
+      await mobile.page.getByRole("button", { name: "Desplegar menú" }).click();
+      await mobile.page.waitForSelector("[data-screen='rail']");
       await shot(mobile.page, "mas-390");
       await mobile.page.getByRole("button", { name: "Ajustes" }).click();
       await mobile.page.waitForSelector("[data-screen='ajustes']");
-      await mobile.page.getByText("Entidades y usuarios").waitFor();
+      await mobile.page.getByRole("heading", { name: "Entidades y usuarios" }).waitFor();
       await shot(mobile.page, "ajustes-390");
       await mobile.close();
 
@@ -268,7 +271,7 @@ async function main() {
       await gotoReady(desktop.page, "/", "panel");
       await desktop.page.getByRole("button", { name: "Ajustes" }).click();
       await desktop.page.waitForSelector("[data-screen='ajustes']");
-      await desktop.page.getByText("Entidades y usuarios").waitFor();
+      await desktop.page.getByRole("heading", { name: "Entidades y usuarios" }).waitFor();
       await shot(desktop.page, "ajustes-1440");
       await desktop.close();
     } finally {

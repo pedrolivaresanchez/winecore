@@ -1,5 +1,4 @@
-import type { ReactNode } from "react";
-import { Label } from "@/components/ui/label";
+import type { ReactNode } from 'react'
 
 export function Field({
   id,
@@ -8,22 +7,24 @@ export function Field({
   hint,
   children,
 }: {
-  id: string;
-  label: string;
-  error?: string;
-  hint?: string;
-  children: ReactNode;
+  id: string
+  label: string
+  error?: string
+  hint?: string
+  children: ReactNode
 }) {
   return (
     <div className="grid gap-1.5">
-      <Label htmlFor={id}>{label}</Label>
+      <label htmlFor={id} className="text-label text-text-secondary">
+        {label}
+      </label>
       {children}
       {error ? (
-        <p id={`${id}-error`} role="alert" className="text-meta text-destructive">
+        <p id={`${id}-error`} role="alert" className="text-caption text-danger-600">
           {error}
         </p>
       ) : null}
-      {hint && !error ? <p className="text-meta text-muted-foreground">{hint}</p> : null}
+      {hint && !error ? <p className="text-caption text-text-tertiary">{hint}</p> : null}
     </div>
-  );
+  )
 }
