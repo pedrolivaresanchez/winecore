@@ -21,13 +21,24 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
   expect(missingCodes).toEqual([]);
   expect(missingIndexes).toEqual([]);
   expect(new Set(guards.map((guard) => guard.id)).size).toBe(guards.length);
-  const implemented = guards.filter((guard) => guard.implemented).map((guard) => guard.id).sort();
-  expect(implemented).toEqual([
+  const implementedIds = [
     "UQ:core.number_series(legal_entity_id,doc_type,year)",
     "UQ:party.contact(tax_id)",
     "UQ:party.contact_address(contact_id,kind)",
     "WC001",
     "WC010",
     "WC011",
-  ]);
+    "WC021",
+    "WC023",
+    "WC024",
+    "WC025",
+    "WC026",
+    "WC027",
+  ];
+  const implemented = guards.filter((guard) => guard.implemented).map((guard) => guard.id).sort();
+  expect(implemented).toEqual(implementedIds);
+  const implementedSet = new Set(implementedIds);
+  for (const guard of guards) {
+    expect(guard.implemented).toBe(implementedSet.has(guard.id));
+  }
 });

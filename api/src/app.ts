@@ -25,6 +25,13 @@ import { downloadAttachment, listAttachmentLinks, uploadAttachment } from './rou
 import { health } from './routes/health';
 import { me } from './routes/me';
 import { createNumberSeries, deactivateNumberSeries, listNumberSeries } from './routes/series';
+import {
+  closeInventoryCountRoute,
+  postInventoryCountRoute,
+  putInventoryCountLinesRoute,
+  submitInventoryCountRoute,
+} from './routes/stock-counts';
+import { stockBalances, stockFiscalBalances, stockInspection, stockMoves } from './routes/stock';
 
 export interface AppDeps {
   config: Config;
@@ -159,6 +166,32 @@ export function createApp(deps: AppDeps) {
     })
     .get('/v1/attachments/:id', ({ request, params }) => downloadAttachment(deps.writer, request, params.id), {
       beforeHandle: requireUser(guardDeps),
+    })
+    // Existencias (stock): saldos, informe, movimientos y aforos.
+    .get('/v1/stock/balances', ({ request }) => stockBalances(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.read'),
+    })
+    .get('/v1/stock/fiscal-balances', ({ request }) => stockFiscalBalances(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.read'),
+    })
+    .get('/v1/stock/inspection-report', ({ request }) => stockInspection(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.read'),
+    })
+    .get('/v1/stock/moves', ({ request }) => stockMoves(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.read'),
+    })
+    .post('/v1/inventory-counts', ({ request }) => postInventoryCountRoute(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.count'),
+    })
+    .put('/v1/inventory-counts/:id/lines', ({ request, params }) => putInventoryCountLinesRoute(deps.writer, request, params), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.count'),
+    })
+    .post('/v1/inventory-counts/:id/close', ({ request, params }) => closeInventoryCountRoute(deps.writer, request, params), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.count'),
+    })
+    .post('/v1/inventory-counts/:id/post-request', ({ request, params }) => submitInventoryCountRoute(deps.writer, request, params), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.count'),
+    })
     });
   return app;
 }

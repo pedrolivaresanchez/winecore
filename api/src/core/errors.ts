@@ -55,14 +55,14 @@ export class DomainError extends Error {
   readonly code: string;
   readonly httpStatus: number;
   readonly fields?: Record<string, string>;
-  readonly details?: Record<string, unknown>;
+  readonly details?: unknown;
 
   constructor(
     code: string,
     httpStatus: number,
     message: string,
     fields?: Record<string, string>,
-    details?: Record<string, unknown>,
+    details?: unknown,
   ) {
     super(message);
     this.name = 'DomainError';
@@ -80,7 +80,7 @@ export function isErrorCode(code: string): code is ErrorCode {
 export function domainError(
   code: ErrorCode,
   fields?: Record<string, string>,
-  details?: Record<string, unknown>,
+  details?: unknown,
 ): DomainError {
   const entry = CATALOG[code];
   return new DomainError(code, entry[0], entry[1], fields, details);
@@ -90,17 +90,25 @@ export function errorBody(error: DomainError): {
   code: string;
   message: string;
   fields?: Record<string, string>;
-  details?: Record<string, unknown>;
+  details?: unknown;
 } {
   const body: {
     code: string;
     message: string;
     fields?: Record<string, string>;
-    details?: Record<string, unknown>;
+    details?: unknown;
   } = { code: error.code, message: error.message };
   if (error.fields && Object.keys(error.fields).length > 0) body.fields = error.fields;
-  if (error.details && Object.keys(error.details).length > 0) body.details = error.details;
+  if (hasDetails(error.details)) body.details = error.details;
   return body;
+}
+
+function hasDetails(details: unknown): boolean {
+  if (details === undefined || details === null) return false;
+  if (typeof details === 'object' && !Array.isArray(details)) {
+    return Object.keys(details).length > 0;
+  }
+  return true;
 }
 
 export function asDomainError(error: unknown): DomainError | null {
