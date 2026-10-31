@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'bun:test';
+import { openApprovalService } from '../../src/core/approvals/sql-store';
 import { sql } from '../../src/core/db/sql';
+import type { Writer } from '../../src/core/db/writer';
 import { DomainError } from '../../src/core/errors';
 import { postInventoryCount } from '../../src/core/inventory/service/counts.service';
 import { createTestApp } from '../helpers';
@@ -66,6 +68,7 @@ describe('aforos', () => {
       `);
       expect(JSON.stringify(audits.map((row) => row.after_data))).toContain('adjustment_plan');
 
+      await approveCount(ctx.writer, actor.id, opening.id);
       const posted = await postInventoryCount(ctx.writer, actor, opening.id);
       expect(posted.status).toBe('posted');
       expect(posted.physical_move_ids).toHaveLength(3);
@@ -158,6 +161,7 @@ describe('aforos', () => {
       expect(plan.adjustment_plan.mode).toBe('adjustment');
       expect(plan.adjustment_plan.physical.some((row) => row.move?.move_type === 'count_adjust_out' && row.move.volume_ml === -10_000)).toBe(true);
       expect(plan.adjustment_plan.fiscal.some((row) => row.move?.move_type === 'regularization_out' && row.move.volume_ml === -10_000)).toBe(true);
+      await approveCount(ctx.writer, actor.id, periodic.id);
       await postInventoryCount(ctx.writer, { ...actor, requestId: 'post-periodic' }, periodic.id);
       const june = await jsonOf<{ items: { volume_ml: number }[] }>(await ctx.app.handle(call(
         'GET',
@@ -297,6 +301,33 @@ describe('aforos', () => {
     }
   });
 });
+
+async function approveCount(writer: Writer, userId: string, countId: string): Promise<void> {
+  const rows = await writer.read<{ id: string; payload_sha256: string }>(sql`
+    SELECT id::VARCHAR AS id, payload_sha256
+    FROM ops.approval_request
+    WHERE subject_table = 'inventory.inventory_count'
+      AND subject_id = CAST(${countId} AS UUID)
+      AND kind = 'inventory_adjustment'
+    ORDER BY requested_at DESC
+    LIMIT 1
+  `);
+  const row = rows[0];
+  if (!row) throw new Error('falta la aprobación del aforo');
+  const service = await openApprovalService(writer, { type: 'user', id: userId, requestId: `approve-${countId}` });
+  await service.decide({
+    requestId: row.id,
+    decision: 'approve',
+    payloadSha256: row.payload_sha256,
+    stepUpMethod: 'totp',
+    actor: {
+      userId,
+      kind: 'user',
+      stepUpAt: new Date().toISOString(),
+      roles: [{ role: 'owner', legalEntityId: null }],
+    },
+  });
+}
 
 interface CountLine {
   id: string;

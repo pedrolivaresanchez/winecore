@@ -1,4 +1,7 @@
 import { Decimal } from 'decimal.js';
+import { payloadSha256 } from '../approvals/canonical';
+import { loadApprovalPolicies } from '../approvals/policy-store';
+import { approvalServiceOn } from '../approvals/sql-store';
 import type { Actor, Tx, Writer } from '../db/writer';
 import { sql } from '../db/sql';
 import { domainError } from '../errors';
@@ -22,11 +25,9 @@ import { activeParam, asCount, cursorParam, limitParam, pageOf } from './query';
 import { asBool, asNullableString, asString } from './rows';
 
 /**
- * La activación con aprobación (`POST .../request-activation`) no se publica:
- * `api/src/core/approvals` no está en este árbol. El CHECK de
- * `catalog.price_list_version.status` solo admite draft, active y retired,
- * así que el estado intermedio `pending` no se guarda. `activateVersion`
- * es la guarda de solape (EXCLUDE) cuando un borrador pasa a activo.
+ * `POST .../request-activation` abre una aprobación `tariff_activation` ligada
+ * al hash de la tabla de precios. La versión sigue en borrador hasta que esa
+ * aprobación se consume (`executeTariffActivation`).
  */
 
 const LIST_CODE = /^(?:final|distributor|shop|custom-[a-z0-9-]{2,30})$/;
@@ -165,6 +166,104 @@ export async function priceFor(
     priceListCode: list.code,
     currency: list.currency,
   };
+}
+
+export function tariffPayload(version: PriceVersion) {
+  const items = [...version.items]
+    .map((item) => ({
+      product_id: item.product_id,
+      min_qty: item.min_qty,
+      unit_price: item.unit_price,
+    }))
+    .sort((left, right) => left.product_id.localeCompare(right.product_id) || left.min_qty.localeCompare(right.min_qty));
+  return {
+    price_list_id: version.price_list_id,
+    version_id: version.id,
+    version: version.version,
+    valid_from: version.valid_from,
+    valid_to: version.valid_to,
+    items,
+  };
+}
+
+export async function requestVersionActivation(
+  writer: Writer,
+  actor: Actor,
+  priceListId: string,
+  versionParam: string,
+): Promise<{ approval_request_id: string; payload_sha256: string; status: 'pending'; version_status: 'draft' }> {
+  requireUuid(priceListId);
+  const versionNo = parseVersionParam(versionParam);
+  const list = await requireList(writer, priceListId);
+  const policies = await loadApprovalPolicies(writer);
+  return writer.withWrite(actor, async (tx) => {
+    const version = await versionWithItems(tx, priceListId, versionNo);
+    if (version.status !== 'draft') {
+      throw domainError('WC_VALIDATION', { status: 'Solo se activa un borrador' });
+    }
+    const payload = tariffPayload(version);
+    const request = await approvalServiceOn(tx, policies).requestApproval({
+      kind: 'tariff_activation',
+      legalEntityId: null,
+      subjectTable: 'catalog.price_list_version',
+      subjectId: version.id,
+      payload,
+      summary: `Activar tarifa ${list.code} v${version.version}`,
+      requestedBy: actor.id,
+    });
+    tx.write(sql`
+      UPDATE catalog.price_list_version
+      SET approval_request_id = CAST(${request.id} AS UUID)
+      WHERE id = CAST(${version.id} AS UUID) AND status = 'draft'
+    `);
+    tx.audit({
+      table: 'catalog.price_list_version',
+      rowId: version.id,
+      action: 'UPDATE',
+      before: { approval_request_id: version.approval_request_id },
+      after: { approval_request_id: request.id, status: 'draft' },
+    });
+    return {
+      approval_request_id: request.id,
+      payload_sha256: request.payloadSha256,
+      status: 'pending' as const,
+      version_status: 'draft' as const,
+    };
+  });
+}
+
+/** Consume la aprobación `tariff_activation` y, en la misma escritura, activa la versión. */
+export async function executeTariffActivation(
+  writer: Writer,
+  actor: Actor,
+  priceListId: string,
+  versionParam: string,
+): Promise<{ approval_request_id: string; status: 'active' }> {
+  requireUuid(priceListId);
+  const versionNo = parseVersionParam(versionParam);
+  const policies = await loadApprovalPolicies(writer);
+  return writer.withWrite(actor, async (tx) => {
+    const version = await versionWithItems(tx, priceListId, versionNo);
+    if (version.status !== 'draft') {
+      throw domainError('WC_VALIDATION', { status: 'Solo se activa un borrador' });
+    }
+    if (!version.approval_request_id) throw domainError('WC_NOT_APPROVED');
+    const hash = payloadSha256(tariffPayload(version));
+    await approvalServiceOn(tx, policies).consume({
+      requestId: version.approval_request_id,
+      payloadSha256: hash,
+    });
+    await activateVersion(tx, version.id);
+    return { approval_request_id: version.approval_request_id, status: 'active' as const };
+  });
+}
+
+async function versionWithItems(tx: Tx, priceListId: string, versionNo: number): Promise<PriceVersion> {
+  const version = await readVersionByNumber(tx, priceListId, versionNo);
+  if (!version) throw domainError('WC_NOT_FOUND');
+  const grouped = await loadItems(tx, [version.id]);
+  version.items = grouped.get(version.id) ?? [];
+  return version;
 }
 
 export async function activateVersion(tx: Tx, versionId: string): Promise<void> {

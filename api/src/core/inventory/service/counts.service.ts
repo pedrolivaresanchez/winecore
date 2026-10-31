@@ -1,5 +1,9 @@
+import { payloadSha256 } from "../../approvals/canonical";
+import { loadApprovalPolicies } from "../../approvals/policy-store";
+import { approvalServiceOn } from "../../approvals/sql-store";
 import { DomainError, domainError } from "../../errors";
 import { newId } from "../../ids";
+import { sql } from "../../db/sql";
 import type { Actor, Tx, Writer } from "../../db/writer";
 import { findNegativeBalances, stockAt } from "../balances";
 import { planCountAdjustments, planOpeningCount } from "../count";
@@ -499,6 +503,24 @@ async function buildPlan(
     physical: planCountAdjustments(stock, annotated, adjustmentContext(count, actor, "physical")),
     fiscal: planCountAdjustments(fiscal, annotated, adjustmentContext(count, actor, "fiscal")),
   };
+}
+
+async function assertAdjustmentHash(
+  tx: Tx,
+  count: InventoryCountRow,
+  plan: AdjustmentPlan,
+): Promise<{ requestId: string; hash: string }> {
+  if (!count.approval_request_id) throw domainError("WC_NOT_APPROVED");
+  const rows = await tx.read<{ payload_sha256: string }>(sql`
+    SELECT payload_sha256
+    FROM ops.approval_request
+    WHERE id = CAST(${count.approval_request_id} AS UUID)
+  `);
+  const frozen = rows[0]?.payload_sha256;
+  if (!frozen) throw domainError("WC_NOT_APPROVED");
+  const hash = payloadSha256(plan);
+  if (hash !== frozen) throw domainError("WC040");
+  return { requestId: count.approval_request_id, hash };
 }
 
 function plannedMoves(plan: AdjustmentPlan): { physical: StockMove[]; fiscal: FiscalMove[] } {
@@ -1131,6 +1153,7 @@ export async function submitInventoryCount(writer: Writer, actor: Actor, countId
     };
   }
   let plan: AdjustmentPlan | null = null;
+  const policies = await loadApprovalPolicies(writer);
   await writer.withWrite(actor, async (tx) => {
     const count = await readCount(tx, countId);
     if (count.status !== "review") {
@@ -1138,6 +1161,20 @@ export async function submitInventoryCount(writer: Writer, actor: Actor, countId
     }
     const lines = await readLines(tx, countId);
     plan = await buildPlan(tx, count, lines, actor);
+    const approval = await approvalServiceOn(tx, policies).requestApproval({
+      kind: "inventory_adjustment",
+      legalEntityId: count.legal_entity_id,
+      subjectTable: "inventory.inventory_count",
+      subjectId: countId,
+      payload: plan,
+      summary: `Contabilizar aforo ${count.number ?? countId}`,
+      requestedBy: actor.id,
+    });
+    tx.write(`
+      UPDATE inventory.inventory_count
+      SET approval_request_id = ${uuidSql(approval.id)}
+      WHERE id = ${uuidSql(countId)}
+    `);
     tx.audit({
       table: "inventory.inventory_count",
       rowId: countId,
@@ -1146,6 +1183,7 @@ export async function submitInventoryCount(writer: Writer, actor: Actor, countId
       after: countAudit(count, {
         approval_status: "pending",
         approval_kind: "inventory_adjustment",
+        approval_request_id: approval.id,
         adjustment_plan: plan,
       }),
     });
@@ -1161,10 +1199,9 @@ export async function submitInventoryCount(writer: Writer, actor: Actor, countId
 }
 
 /**
- * Posts a count that is pending approval (`status = review` and a stored plan).
- * The approvals module is not wired: this function is the posting step the
- * approval would call. It recomputes `planCountAdjustments` / `planOpeningCount`
- * and applies those drafts in one `withWrite`, after WC021 and the negative checks.
+ * Contabiliza un aforo en revisión. Recalcula el plan y exige que su hash
+ * coincida con la aprobación `inventory_adjustment` (`WC040` si cambió).
+ * Consume esa aprobación en la misma escritura que los movimientos.
  */
 export async function postInventoryCount(
   writer: Writer,
@@ -1172,6 +1209,7 @@ export async function postInventoryCount(
   countId: string,
 ): Promise<{ id: string; status: "posted"; physical_move_ids: string[]; fiscal_move_ids: string[] }> {
   if (!isUuid(actor.id)) invalid("El actor no es un usuario.", { created_by: actor.id });
+  const policies = await loadApprovalPolicies(writer);
   return writer.withWrite(actor, async (tx) => {
     const count = await readCount(tx, countId);
     if (count.status === "posted") invalid("El aforo ya está contabilizado.", { status: "posted" });
@@ -1183,6 +1221,7 @@ export async function postInventoryCount(
     const lines = await readLines(tx, countId);
     if (count.kind === "opening") await assertOpeningOnce(tx, count, lines);
     const plan = await buildPlan(tx, count, lines, actor);
+    const approvalHash = await assertAdjustmentHash(tx, count, plan);
     const drafted = plannedMoves(plan);
     if (count.kind === "opening" && drafted.physical.length === 0 && drafted.fiscal.length === 0) {
       invalid("El aforo de arranque no tiene cantidades.", { lines: "Vacío" });
@@ -1200,6 +1239,10 @@ export async function postInventoryCount(
     assertNoNewNegatives(stockBook, physical);
     assertNoNewNegatives(fiscalBook, fiscal);
     await assertVessels(tx, stockBook, physical);
+    await approvalServiceOn(tx, policies).consume({
+      requestId: approvalHash.requestId,
+      payloadSha256: approvalHash.hash,
+    });
     for (const move of physical) {
       tx.write(insertStockSql(move, now));
       tx.audit({ table: "inventory.stock_move", rowId: move.id ?? null, action: "INSERT", before: null, after: move });

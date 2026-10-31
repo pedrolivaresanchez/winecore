@@ -28,6 +28,10 @@ import { findNegativeBalances } from '../../inventory/balances';
 import { assertPeriodOpen, isBusinessDate, isInstant } from '../../inventory/periods';
 import type { FiscalMove, PeriodLock, StockMove } from '../../inventory/types';
 import { sessionOf } from '../../../auth/guard';
+import { payloadSha256 } from '../../approvals/canonical';
+import { loadApprovalPolicies } from '../../approvals/policy-store';
+import { approvalServiceOn } from '../../approvals/sql-store';
+import type { ApprovalPolicy } from '../../approvals/types';
 import { newId } from '../../ids';
 import { sql } from '../../db/sql';
 import type { Tx, Writer } from '../../db/writer';
@@ -240,10 +244,12 @@ export async function createOperation(writer: Writer, request: Request): Promise
   const parsed = parseBody(await readJson(request));
   const actor = actorFor(request, parsed.header.reason ?? 'borrador de operación');
   const operationId = newId();
+  const policies = await loadApprovalPolicies(writer);
   await writer.withWrite(actor, async (tx) => {
     await assertEntity(tx, parsed.header.legal_entity_id);
     await assertReferences(tx, parsed.draft);
     insertDraft(tx, operationId, parsed.header, parsed.draft, actor.id);
+    await ensureLossApproval(tx, policies, operationId, parsed.header, parsed.draft, actor.id);
   });
   return readOperation(writer, operationId);
 }
@@ -252,6 +258,7 @@ export async function updateOperation(writer: Writer, request: Request, id: stri
   if (!isUuid(id)) throw domainError('WC_NOT_FOUND');
   const parsed = parseBody(await readJson(request));
   const actor = actorFor(request, parsed.header.reason ?? 'edición de borrador');
+  const policies = await loadApprovalPolicies(writer);
   await writer.withWrite(actor, async (tx) => {
     const current = await loadStored(tx, id);
     if (current.status !== 'draft') throw linesLocked(current.status);
@@ -269,6 +276,7 @@ export async function updateOperation(writer: Writer, request: Request, id: stri
       WHERE id = CAST(${id} AS UUID) AND status = 'draft'
     `);
     insertDraftLines(tx, id, parsed.draft.lines);
+    await ensureLossApproval(tx, policies, id, parsed.header, parsed.draft, actor.id);
   });
   return readOperation(writer, id);
 }
@@ -293,11 +301,13 @@ export async function previewOperation(writer: Writer, request: Request, id: str
 export async function confirmOperation(writer: Writer, request: Request, id: string): Promise<OperationView> {
   if (!isUuid(id)) throw domainError('WC_NOT_FOUND');
   const actor = actorFor(request, 'confirmación de operación');
+  const policies = await loadApprovalPolicies(writer);
   await writer.withWrite(actor, async (tx) => {
     const current = await loadStored(tx, id);
     if (current.status !== 'draft') {
       throw new DomainError('WC032', 409, 'Solo se confirma un borrador');
     }
+    await consumeLossApproval(tx, policies, current);
     const plan = await planStored(tx, current, actor.id);
     const number = await takeCellarOperationNumber(tx, current.header.legal_entity_id, current.header.fiscal_date);
     await persistConfirmed(tx, current, plan, actor.id, number);
@@ -407,6 +417,7 @@ function parseBody(body: Record<string, unknown>): { header: ParsedHeader; draft
 interface LoadedDraft {
   id: string;
   status: string;
+  approvalRequestId: string | null;
   header: ParsedHeader;
   draft: StoredDraft;
 }
@@ -414,7 +425,7 @@ interface LoadedDraft {
 async function loadStored(tx: Tx, id: string): Promise<LoadedDraft> {
   const rows = await tx.read<Record<string, unknown>>(sql`
     SELECT id::VARCHAR AS id, legal_entity_id::VARCHAR AS legal_entity_id, op_type, occurred_at,
-           status, reason, performed_by, details
+           status, reason, performed_by, details, approval_request_id::VARCHAR AS approval_request_id
     FROM cellar.operation
     WHERE id = CAST(${id} AS UUID)
   `);
@@ -429,6 +440,7 @@ async function loadStored(tx: Tx, id: string): Promise<LoadedDraft> {
   return {
     id,
     status: textOf(row.status),
+    approvalRequestId: textOrNull(row.approval_request_id),
     header: {
       op_type: opType as ParsedHeader['op_type'],
       legal_entity_id: textOf(row.legal_entity_id),
@@ -443,15 +455,22 @@ async function loadStored(tx: Tx, id: string): Promise<LoadedDraft> {
 
 async function planStored(tx: Tx, current: LoadedDraft, actorId: string): Promise<PlanSuccess> {
   const { header, draft } = current;
-  if (header.op_type === 'destruction' || draft.lines.some((line) => line.loss_kind === 'incident')) {
-    throw domainError('WC_NOT_APPROVED');
-  }
   assertNotFuture(header.occurred_at, header.fiscal_date);
   await assertReferences(tx, draft);
   const locks = await loadLocks(tx);
   assertPeriodOpen(header.occurred_at, locks.filter((lock) => lock.ledger === 'physical'));
   assertPeriodOpen(header.fiscal_date, locks.filter((lock) => lock.ledger === 'fiscal'));
-  const built = await buildRequest(tx, header, draft.lines, draft.addition, draft.cleaning, draft.new_lot, current.id, actorId);
+  const built = await buildRequest(
+    tx,
+    header,
+    draft.lines,
+    draft.addition,
+    draft.cleaning,
+    draft.new_lot,
+    current.id,
+    actorId,
+    current.approvalRequestId,
+  );
   const plan = planOperation(built, { vessels: await vesselMap(tx, built) }, { newId });
   if (!plan.ok) throw fromPlan(plan);
   await assertLedgers(tx, plan);
@@ -551,6 +570,7 @@ async function buildRequest(
   newLot: NewLotInput | null,
   operationId: string,
   actorId: string,
+  approvalRequestId: string | null,
 ): Promise<OperationRequest> {
   const common = {
     id: operationId,
@@ -560,12 +580,13 @@ async function buildRequest(
     performed_by: header.performed_by,
     created_by: actorId,
     reason: header.reason,
-    approval_request_id: null,
+    approval_request_id: approvalRequestId,
   };
   if (header.op_type === 'racking') return buildTransfer(tx, common, lines);
   if (header.op_type === 'blend') return buildBlend(tx, common, lines, newLot);
   if (header.op_type === 'bottling') return buildBottling(tx, common, lines, newLot);
-  if (header.op_type === 'loss') return buildLoss(tx, common, lines);
+  if (header.op_type === 'loss') return buildLoss(tx, common, lines, 'loss');
+  if (header.op_type === 'destruction') return buildLoss(tx, common, lines, 'destruction');
   if (header.op_type === 'addition') return buildAddition(tx, common, addition);
   return buildCleaning(tx, common, cleaning);
 }
@@ -581,7 +602,13 @@ function vesselIdsOf(request: OperationRequest): string[] {
   const ids = new Set<string>();
   if (request.op_type === 'addition') ids.add(request.vessel_id);
   if (request.op_type === 'cleaning' && request.cleaning.vessel_id) ids.add(request.cleaning.vessel_id);
-  if (request.op_type === 'racking' || request.op_type === 'blend' || request.op_type === 'bottling' || request.op_type === 'loss') {
+  if (
+    request.op_type === 'racking'
+    || request.op_type === 'blend'
+    || request.op_type === 'bottling'
+    || request.op_type === 'loss'
+    || request.op_type === 'destruction'
+  ) {
     for (const line of request.lines) {
       if ('vessel_id' in line && line.vessel_id) ids.add(line.vessel_id);
     }
@@ -729,6 +756,7 @@ async function buildLoss(
   tx: Tx,
   common: Omit<LossRequest, 'op_type' | 'lines'>,
   lines: readonly ParsedLine[],
+  opType: 'loss' | 'destruction',
 ): Promise<LossRequest> {
   const engine: LossLine[] = [];
   for (let index = 0; index < lines.length; index += 1) {
@@ -745,7 +773,78 @@ async function buildLoss(
       product_state: bulkState(line.product_state, `${field}.product_state`),
     });
   }
-  return { ...common, op_type: 'loss', lines: engine };
+  return { ...common, op_type: opType, lines: engine };
+}
+
+function needsLossApproval(header: ParsedHeader, draft: StoredDraft): boolean {
+  return header.op_type === 'destruction' || draft.lines.some((line) => line.loss_kind === 'incident');
+}
+
+function lossPayload(header: ParsedHeader, draft: StoredDraft) {
+  return {
+    op_type: header.op_type,
+    legal_entity_id: header.legal_entity_id.toLowerCase(),
+    fiscal_date: header.fiscal_date,
+    reason: header.reason,
+    performed_by: header.performed_by,
+    lines: draft.lines,
+    new_lot: draft.new_lot,
+    addition: draft.addition,
+    cleaning: draft.cleaning,
+  };
+}
+
+function lossSummary(header: ParsedHeader): string {
+  const kind = header.op_type === 'destruction' ? 'Destrucción' : 'Merma por incidencia';
+  const reason = header.reason?.trim() || 'de bodega';
+  const text = `${kind}: ${reason}`;
+  if (text.length < 5) return 'Merma de bodega';
+  return text.length > 300 ? text.slice(0, 300) : text;
+}
+
+async function ensureLossApproval(
+  tx: Tx,
+  policies: readonly ApprovalPolicy[],
+  operationId: string,
+  header: ParsedHeader,
+  draft: StoredDraft,
+  requestedBy: string,
+): Promise<void> {
+  if (!needsLossApproval(header, draft)) return;
+  const request = await approvalServiceOn(tx, policies).requestApproval({
+    kind: 'cellar_loss',
+    legalEntityId: header.legal_entity_id,
+    subjectTable: 'cellar.operation',
+    subjectId: operationId,
+    payload: lossPayload(header, draft),
+    summary: lossSummary(header),
+    requestedBy,
+  });
+  tx.write(sql`
+    UPDATE cellar.operation
+    SET approval_request_id = CAST(${request.id} AS UUID)
+    WHERE id = CAST(${operationId} AS UUID)
+  `);
+  tx.audit({
+    table: 'cellar.operation',
+    rowId: operationId,
+    action: 'UPDATE',
+    before: { approval_request_id: null },
+    after: { approval_request_id: request.id },
+  });
+}
+
+async function consumeLossApproval(
+  tx: Tx,
+  policies: readonly ApprovalPolicy[],
+  current: LoadedDraft,
+): Promise<void> {
+  if (!needsLossApproval(current.header, current.draft)) return;
+  if (!current.approvalRequestId) throw domainError('WC_NOT_APPROVED');
+  await approvalServiceOn(tx, policies).consume({
+    requestId: current.approvalRequestId,
+    payloadSha256: payloadSha256(lossPayload(current.header, current.draft)),
+  });
 }
 
 async function buildAddition(

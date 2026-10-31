@@ -8,6 +8,7 @@ import {
   listVersions,
   quoteFromRequest,
   replaceItems,
+  requestVersionActivation,
   updatePriceList,
 } from '../core/catalog/pricing';
 import {
@@ -114,6 +115,9 @@ export function catalogRoutes(deps: GuardDeps) {
         params.version,
         await jsonBody(request),
       )
+    ), { beforeHandle: write })
+    .post('/v1/price-lists/:id/versions/:version/request-activation', ({ request, params }) => (
+      requestVersionActivation(writer, actor(request, 'pedir activación de tarifa'), params.id, params.version)
     ), { beforeHandle: write })
     .get('/v1/price-quote', ({ request }) => quoteFromRequest(writer, request), { beforeHandle: read });
 }

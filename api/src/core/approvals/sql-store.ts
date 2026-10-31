@@ -17,6 +17,7 @@ import { loadApprovalPolicies } from './policy-store';
 import {
   APPROVAL_STATUSES,
   type ApprovalDecision,
+  type ApprovalPolicy,
   type ApprovalRequest,
   type ApprovalStatus,
   type Clock,
@@ -30,13 +31,14 @@ type Read = <T = Record<string, unknown>>(statement: string) => Promise<T[]>;
 
 export class SqlApprovalStore implements ApprovalStore {
   constructor(
-    private readonly writer: Writer,
-    private readonly actor: Actor,
+    private readonly writer: Writer | null,
+    private readonly actor: Actor | null,
     private readonly clock: Clock = systemClock,
+    private readonly boundTx: Tx | null = null,
   ) {}
 
   async insertRequest(request: ApprovalRequest): Promise<void> {
-    await this.writer.withWrite(this.actor, async (tx) => {
+    await this.inTx(async (tx) => {
       await assertLegalEntity(tx, request.legalEntityId);
       tx.write(insertRequestSql(request));
       tx.audit({
@@ -50,18 +52,11 @@ export class SqlApprovalStore implements ApprovalStore {
   }
 
   getRequest(id: string): Promise<ApprovalRequest | null> {
-    return this.fetchRequest((statement) => this.writer.read(statement), id);
+    return this.fetchRequest(this.readFn(), id);
   }
 
   async listDecisions(requestId: string): Promise<readonly ApprovalDecision[]> {
-    const rows = await this.writer.read<Record<string, unknown>>(sql`
-      SELECT id, request_id, decided_by, decision, decided_at, note,
-             step_up_method, step_up_at, payload_sha256, ip, user_agent
-      FROM ops.approval_decision
-      WHERE request_id = CAST(${requestId} AS UUID)
-      ORDER BY decided_at, id
-    `);
-    return rows.map((row) => mapDecision(row));
+    return this.fetchDecisions(this.readFn(), requestId);
   }
 
   async compareAndSet(
@@ -69,7 +64,7 @@ export class SqlApprovalStore implements ApprovalStore {
     expect: StatusExpect,
     patch: StatusPatch,
   ): Promise<ApprovalRequest | null> {
-    return this.writer.withWrite(this.actor, async (tx) => {
+    return this.inTx(async (tx) => {
       const current = await this.fetchRequest(tx.read, id);
       if (!matches(current, expect)) return null;
       const next = applyPatch(current, patch);
@@ -86,8 +81,9 @@ export class SqlApprovalStore implements ApprovalStore {
   }
 
   async transact<T>(requestId: string, run: (tx: ApprovalTx) => Promise<T>): Promise<T> {
+    if (this.boundTx) return run(await this.bound(this.boundTx, requestId));
     let thrown: unknown;
-    const result = await this.writer.withWrite(this.actor, async (db) => {
+    const result = await this.requireWriter().withWrite(this.requireActor(), async (db) => {
       try {
         return await run(await this.bound(db, requestId));
       } catch (error) {
@@ -97,6 +93,27 @@ export class SqlApprovalStore implements ApprovalStore {
     });
     if (thrown) throw thrown;
     return result;
+  }
+
+  private inTx<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+    if (this.boundTx) return fn(this.boundTx);
+    return this.requireWriter().withWrite(this.requireActor(), fn);
+  }
+
+  private requireWriter(): Writer {
+    if (!this.writer) throw domainError('WC002');
+    return this.writer;
+  }
+
+  private requireActor(): Actor {
+    if (!this.actor) throw domainError('WC002');
+    return this.actor;
+  }
+
+  private readFn(): Read {
+    if (this.boundTx) return this.boundTx.read.bind(this.boundTx);
+    const writer = this.requireWriter();
+    return (statement) => writer.read(statement);
   }
 
   private async bound(db: Tx, requestId: string): Promise<ApprovalTx> {
@@ -174,6 +191,19 @@ export async function openApprovalService(
   const policies = await loadApprovalPolicies(writer);
   return new ApprovalService({
     store: new SqlApprovalStore(writer, actor, clock),
+    policies,
+    clock,
+  });
+}
+
+/** Servicio de aprobaciones que escribe en la transacción ya abierta. */
+export function approvalServiceOn(
+  tx: Tx,
+  policies: readonly ApprovalPolicy[],
+  clock: Clock = systemClock,
+): ApprovalService {
+  return new ApprovalService({
+    store: new SqlApprovalStore(null, null, clock, tx),
     policies,
     clock,
   });
