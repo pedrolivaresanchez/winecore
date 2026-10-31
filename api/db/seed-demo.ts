@@ -4,7 +4,7 @@ import type { Writer } from '../src/core/db/writer';
 import { createWriter } from '../src/core/db/writer';
 import { openClient } from '../src/core/db/open';
 import { migrate } from './migrate';
-import { generateSynthetic, type SyntheticDataset } from './synthetic';
+import { generateSynthetic, type SyntheticDataset, type SyntheticScale } from './synthetic';
 
 const UUID_COLUMNS = new Set([
   'id', 'user_id', 'legal_entity_id', 'granted_by', 'contact_id', 'wine_id', 'format_id',
@@ -23,10 +23,11 @@ const DECIMAL_COLUMNS = new Set(['min_qty', 'unit_price', 'alcohol_pct', 'discou
 export async function seedDemo(
   writer: Writer,
   config: { nodeEnv: string; dbMode: string },
+  scale: SyntheticScale = 'demo',
 ): Promise<{ contacts: number }> {
   if (config.nodeEnv === 'production') throw new Error('seed:demo no está permitido cuando NODE_ENV=production');
   if (config.dbMode === 'timbal') throw new Error('seed:demo no está permitido cuando DB_MODE=timbal');
-  const data = generateSynthetic({ seed: 2026, scale: 'demo' });
+  const data = generateSynthetic({ seed: 2026, scale });
   await writeRows(writer, 'core.legal_entity', data.legal_entity.map(entityRow), 'code');
   const entities = await writer.read<{ id: string; code: string }>('SELECT id, code FROM core.legal_entity');
   const byCode = new Map(entities.map((row) => [row.code, row.id]));
