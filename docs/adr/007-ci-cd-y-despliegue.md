@@ -1,6 +1,6 @@
 # ADR 007 · CI/CD, ramas de entorno y despliegue en Timbal
 
-- **Estado**: propuesto (depende de Q-004: si existe "Connect GitHub" en Timbal, se simplifica) · 31-10-2026
+- **Estado**: propuesto (depende de Q-004) · actualizado 31-10-2026: el proyecto Timbal existe (id 3942, org 122, entorno Main 4165 ↔ `main`); Pedro conectará GitHub desde la UI de Timbal. Con el **Plan A** de ADR 001 (conexión de GitHub verificada) se eliminan los jobs `push-timbal` y `deploy-timbal`; con el **Plan B** se usan tal cual.
 - **Fuentes** (31-10-2026): https://docs.timbal.ai/deployment/platform, https://docs.timbal.ai/api-reference/projects/environments/deploy, …/environments/update-config, https://docs.timbal.ai/evals/running-evals, código del CLI (`credential_helper.zig`, `push.zig`) y ADR 001.
 
 ## Contexto
@@ -30,7 +30,7 @@ Flujo: `feat/*` → PR a `dev` (squash) → al cerrar un hito, PR `dev` → `sta
 | `guardrails.yml` (ya existe) | PR y push | gitleaks; bloqueo de `data/`, hojas de cálculo, CSV no sintéticos, certificados y `.env`; detector de datos personales |
 | `ci.yml` | PR y push a `dev`/`staging`/`main` | `lint-ts` (Biome) y `typecheck` (tsc) en `core/`, `api/`, `ui/`; `lint-py` (ruff) y `typecheck-py` (mypy) en `workforce/`; `unit` (bun test); `db-invariants` (PostgreSQL 16 en servicio de Actions: aplica migraciones + `invariants_test.sql`); `integration` (API + BD sintética); `golden` (ficheros regulatorios byte a byte); `property` (fast-check, ≥ 1.000 casos por propiedad); `evals` (`python -m timbal.evals.cli workforce/`); `e2e-smoke` (Playwright contra la app en local con datos sintéticos) |
 | `deploy.yml` | push a `dev`, `staging`, `main` (tras merge) | `db-migrate` → `push-timbal` → `deploy-timbal` → `smoke-remote` (ver §3) |
-| `remotes-drift.yml` | diario 06:00 UTC y manual | Compara `git ls-remote` de `origin` y `timbal` para `dev`, `staging` y `main`; si difieren, falla (GitHub avisa por correo a Pedro y al padre) y escribe el detalle en el resumen del job |
+| `remotes-drift.yml` | diario 06:00 UTC y manual | Plan B: compara `git ls-remote` de `origin` y `timbal` para `dev`, `staging` y `main`. Plan A: compara la cabeza de cada rama de GitHub con el commit desplegado (`GET /orgs/122/projects/3942/envs/{env_id}/deployments?trigger=latest` → `target.commit`). Si difieren, falla (GitHub avisa por correo a Pedro y al agente padre) y escribe el detalle en el resumen del job. Requiere una credencial de Timbal (de solo lectura si existe) |
 | `nightly.yml` | diario 02:00 UTC | Propiedades con 20.000 casos; restauración de la copia de `dev`; e2e completo |
 
 ### 3. Despliegue (`deploy.yml`)
@@ -96,14 +96,15 @@ Notas:
 - Si la API de Timbal no acepta una SHA en `rev` (pendiente), se usa el nombre de la rama: la SHA ya es la cabeza de esa rama en `timbal`.
 - `api/health` devuelve `{status, sha, migrations}`; el smoke comprueba que la SHA desplegada es la de GitHub.
 - **Evals como gate en Timbal**: `PATCH …/envs/{env_id}/config {"components": {}, "evals": true}` en `staging` y `main` (los evals ya corren en CI; el gate de Timbal es la segunda barrera).
-- **Si existe "Connect GitHub"** con auto-despliegue (Q-004): se eliminan `push-timbal` y `deploy-timbal` y se mantiene `db-migrate` antes del merge (job de "pre-deploy" que Pedro aprueba). Nunca ambos mecanismos a la vez.
+- **Plan A (conexión de GitHub verificada, ADR 001)**: se eliminan `push-timbal` y `deploy-timbal`. Como el despliegue arranca al hacer merge, las migraciones deben estar aplicadas **antes**: el job `db-migrate` pasa a ejecutarse en el PR hacia la rama de entorno, como check obligatorio "pre-deploy" protegido por el *environment* (aprobación de Pedro para `main`), y solo migraciones compatibles hacia atrás (expand → migrate → contract). `smoke-remote` se mantiene tras el merge. Nunca ambos mecanismos a la vez.
+- **Composer**: la plataforma ya hizo un commit por su cuenta en este proyecto (`f89f339`). Con el Plan B, cualquier commit del Composer en una rama de entorno hace fallar `push-timbal` (no es *fast-forward*): es lo deseado; se investiga y se rehace por PR. Con el Plan A, la protección de ramas de GitHub impide que la app de Timbal empuje sin PR.
 
 ### 4. Secretos y variables
 
 | Nombre | Tipo | Dónde | Uso |
 |---|---|---|---|
-| `TIMBAL_API_KEY` | secreto | environments `timbal-*` | Cuenta dedicada solo org 122 (ADR 001) |
-| `TIMBAL_PROJECT_ID`, `TIMBAL_ENV_ID`, `WINECORE_BASE_URL` | variables | environments `timbal-*` | IDs y URL del entorno |
+| `TIMBAL_API_KEY` | secreto | environments `timbal-*` | Solo Plan B. Cuenta dedicada solo org 122 (ADR 001) |
+| `TIMBAL_PROJECT_ID` (= `3942`), `TIMBAL_ENV_ID` (`main` = `4165`; `staging` y `dev` cuando existan), `WINECORE_BASE_URL` | variables | environments `timbal-*` | IDs y URL del entorno |
 | `DATABASE_URL_MIGRATOR` | secreto | environments `timbal-*` | Rol `winecore_migrator` |
 | `DATABASE_URL` (app), `WINECORE_DATA_KEY`, `S3_*`, claves de modelos | secretos | **Variables secretas de Timbal** por entorno (`timbal env push --secret …`) | Tiempo de ejecución |
 

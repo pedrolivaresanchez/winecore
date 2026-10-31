@@ -11,7 +11,7 @@ flowchart LR
     P[Pedro / aprobadores<br/>navegador escritorio y móvil]
     B[Bodega y campo<br/>móvil]
   end
-  subgraph Timbal org 122 · proyecto WineCore · entorno = rama
+  subgraph Timbal org 122 · proyecto WineCore (id 3942) · entorno = rama (Main 4165 = main)
     UI[ui/<br/>React + Vite]
     API[api/<br/>Elysia + núcleo TS<br/>REST · MCP · jobs]
     WF[workforce/<br/>agentes y workflows Python]
@@ -125,7 +125,7 @@ Permisos (claves usadas por `requirePermission`). ✔ = sí; E = solo en las ent
 | `inventory.count` | ✔ | — | ✔ | ✔ | — | — | — | — |
 | `cellar.operate` / `cellar.manage` | ✔ / ✔ | — | — | ✔ / — | — | — | `vendimia-campo`: lecturas y catas | con confirmación (lecturas, catas) |
 | `vineyard.write` | ✔ | — | — | ✔ | ✔ | — | `vendimia-campo` | con confirmación |
-| `regulatory.prepare` | ✔ | ✔ | ✔ | — | — | — | workflows regulatorios | no |
+| `regulatory.prepare` | ✔ | ✔ | ✔ | — | — | — | workflows regulatorios | con confirmación (borradores y solicitud de aprobación) |
 | `regulatory.approve` (decidir aprobaciones) | ✔ | E | — | — | — | — | **nunca** | **nunca** |
 | `settings.manage`, `users.manage`, `modules.manage` | ✔ | — | — | — | — | — | — | — |
 | `exports.fiscal` | ✔ | ✔ | ✔ | — | — | ✔ | — | — |
@@ -247,7 +247,7 @@ Limitación conocida: en Timbal las variables secretas llegan a **todos** los co
 
 ## 14. Preguntas abiertas a Timbal (las canaliza Pedro; no bloquean la especificación)
 
-1. ¿Existe "Settings → Git Settings → Connect GitHub" con despliegue automático? (ADR 001/007)
+1. "Settings → Git Settings → Connect GitHub" **existe** en la UI (Pedro, 31-10-2026). Falta su comportamiento: permisos que pide sobre GitHub, sentido de la sincronización, despliegue automático y si el Composer puede seguir haciendo commits (ADR 001, V1–V7).
 2. ¿Cuentas de servicio o tokens con alcance por org/proyecto para CI? ¿Caducidad de las API keys?
 3. ¿Acción IAM y rol mínimo para crear proyectos y escribir en el repo git del proyecto?
 4. ¿Un push a la rama de un entorno redespliega solo? ¿Cada rama crea un entorno? ¿Coste y ciclo de vida?

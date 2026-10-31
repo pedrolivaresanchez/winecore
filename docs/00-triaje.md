@@ -84,11 +84,11 @@ Los R1–R12 son los del plan (§9), revisados; R13–R23 son nuevos de este tri
 | R7 | Custodia del certificado en la nube | Media | Crítico | ADR 003: certificado dedicado, secreto cifrado, uso solo en el paso de envío tras aprobación (Q-006). | Abierto |
 | R8 | Sobredimensionar para 1–3 usuarios | Media | Medio | MVP estricto; H1 confirma volúmenes bajos. | Abierto |
 | R9 | Coste de agentes (escalados a Opus) | Media | Medio | Criterios §7.3; coste visible en PROGRESS. | Abierto |
-| R10 | Doble remoto o despliegue doble | Media | Medio | Un solo mecanismo (ADR 007) + job diario de comparación de SHA. | Abierto |
+| R10 | Doble remoto o despliegue doble | Media | Medio | Un solo mecanismo (ADR 001 Plan A o B; ADR 007) + job diario de comparación de SHA. **Agravante confirmado**: el Composer de Timbal ya hizo un commit por su cuenta en el proyecto 3942 (`f89f339`); se prohíbe el Composer en ramas de entorno. | Abierto |
 | R11 | Pérdida del know-how de la administradora | Alta | Alto | Sus reglas convertidas en casos de test (ver `11-tests.md` §6). Pedir el Excel maestro antes de su salida. | Abierto |
 | R12 | El titular quiere seguir con el sistema actual hasta fin de año | Media | Medio | Encaja con el plan B; decisión el 01-12-2026 con datos. | Abierto |
 | **R13** | La fecha fiscal por factura (D2) difiera de la salida física y una inspección encuentre menos stock del contabilizado | Media | Alto | Doble fecha guardada, regla configurable, informe permanente de diferencias, confirmación escrita del asesor (Q-010). | Nuevo |
-| **R14** | Repo público: exposición de datos y de la arquitectura de seguridad | **Alta (hecho)** | Alto | Q-001: hacerlo privado; mientras, solo contenido anonimizado; gitleaks y bloqueo de `data/` en CI. | Nuevo |
+| **R14** | Repo público: exposición de datos y de la arquitectura de seguridad | **Alta (hecho)** | Alto | Pedro decide mantenerlo público de momento (Q-001, 31-10-2026): todo se sube anonimizado; gitleaks, bloqueo de `data/` y detector de datos personales en CI; revisar la decisión antes del primer código de M0. | **Aceptado y vigilado** |
 | **R15** | Interpretar que Verifactu puede hacerse por *computer use* | Media | Crítico | Q-002/Q-003; documentación normativa citada. | Nuevo |
 | **R16** | Ventas intracomunitarias con impuesto pagado y ventas a distancia sin documento EMCS ni representante fiscal | Media | Alto | Q-018/Q-019; restringir países en la web; validar con el asesor. | Nuevo |
 | **R17** | Calidad de datos de Holded (sin NIF, sin SKU, saltos de numeración, albaranes huérfanos) | Alta (hecho) | Medio | Migración con *dry-run*, informes de calidad y decisiones explícitas (`06-migracion.md`). | Nuevo |
@@ -106,14 +106,14 @@ Los R1–R12 son los del plan (§9), revisados; R13–R23 son nuevos de este tri
 | S1 | La AEAT ofrece servicios web de SILICIE utilizables por un pequeño productor | Irrelevante a corto plazo por §12.1 (*computer use* sobre la carga de fichero actual). Documentado en `04-regulatorio/silicie.md`. |
 | S2 | TFRP es almacén de CVPO o en depósito, no depósito fiscal | **Sin confirmar** (Q-010, Q-021). |
 | S3 | ~1.000 facturas/año CVPO y ~500 P.O | **Falso** (H1): ~250 y ~100. |
-| S4 | Timbal soporta CI con token y entornos por rama | En verificación con su documentación (ADR 001/007). |
+| S4 | Timbal soporta CI con token y entornos por rama | **Parcial**: entornos por rama sí (documentación); el CLI no tiene modo no interactivo y la credencial es una API key personal que abarca todas las organizaciones del usuario. El proyecto 3942 ya existe (entorno Main 4165) y la conexión con GitHub existe en la UI (Pedro), con comportamiento por verificar (ADR 001, V1–V7). |
 
 ## 6. Preguntas bloqueantes
 
 La lista completa, con opciones, recomendación y fecha límite, está en [`QUESTIONS.md`](QUESTIONS.md). Orden de prioridad:
 
-1. **Q-001** Repo público → privado (03-11-2026).
-2. **Q-004** Proyecto Timbal y credenciales (04-11-2026).
+1. **Q-001** Repo público — **respondida** (31-10-2026): se mantiene público de momento; todo sigue anonimizado.
+2. **Q-004** Proyecto Timbal (ya existe: 3942 / Main 4165), conexión con GitHub y credenciales — **en curso** (04-11-2026).
 3. **Q-002 / Q-003** Verifactu: servicio web y aprobación en la emisión (05-11-2026).
 4. **Q-005** Aprobadores y canal de aprobación (05-11-2026).
 5. **Q-006** Certificado y custodia (12-11-2026).

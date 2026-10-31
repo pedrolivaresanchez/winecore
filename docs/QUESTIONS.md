@@ -9,10 +9,10 @@
 
 | ID | Tema | Bloquea | Fecha límite | Estado |
 |---|---|---|---|---|
-| Q-001 | El repo de GitHub es **público** | Merge del PR de especificación y todo el código de Fase 2 | **03-11-2026** | ABIERTA |
+| Q-001 | El repo de GitHub es **público** | — (Pedro decide mantenerlo público de momento) | Revisar antes del primer código de Fase 2 (M0) | RESPONDIDA (31-10-2026) |
 | Q-002 | Verifactu: modalidad y canal de envío (computer use no es viable) | M1 | **05-11-2026** | ABIERTA |
 | Q-003 | Verifactu: ¿aprobar la emisión = aprobar el envío del registro? | M1 | **05-11-2026** | ABIERTA |
-| Q-004 | Credenciales y creación del proyecto Timbal en la org 122 | M0 (infraestructura) | **04-11-2026** | ABIERTA |
+| Q-004 | Proyecto Timbal (existe: id 3942, entorno Main 4165), conexión con GitHub y credenciales | M0 (infraestructura) | **04-11-2026** | EN CURSO (31-10-2026) |
 | Q-005 | Quién aprueba qué (personas identificadas) y desde dónde | M1 | **05-11-2026** | ABIERTA |
 | Q-006 | Certificado para Verifactu y custodia | M1 (pruebas en preproducción y producción) | **12-11-2026** | ABIERTA |
 | Q-007 | Productor del software (declaración responsable Verifactu) | Paso a producción de M1 | **15-12-2026** | ABIERTA |
@@ -34,11 +34,16 @@
 | Q-023 | Clientes de Shopify a migrar (RGPD) | M7 | 01-04-2027 | ABIERTA |
 | Q-024 | AECOC: GTIN/GLN, DESADV y credenciales (detalle que Pedro pasará) | M3 | 15-02-2027 | ABIERTA (pendiente §12.3) |
 | Q-025 | Reglas iniciales de entidad facturadora (Ajustes) | M1 (precarga) | 20-11-2026 | ABIERTA |
+| Q-026 | Equipo dedicado para el ejecutor local de *computer use* (certificado en local) | M2 (SILICIE) | 15-12-2026 | ABIERTA |
+| Q-027 | Cuenta de AWS (PostgreSQL + S3 en la UE) y coste mensual | M0 | **06-11-2026** | ABIERTA |
+| Q-028 | Preguntas técnicas a Timbal (lista en `07-arquitectura.md` §14) | M0 (parcial) | 06-11-2026 | ABIERTA |
+| Q-029 | Cómo recibe CVBOT los eventos de WineCore (URL y firma) | M1 | 13-11-2026 | ABIERTA |
 
 ---
 
-## Q-001 · El repo de GitHub es público — BLOQUEANTE
+## Q-001 · El repo de GitHub es público — RESPONDIDA (31-10-2026)
 
+- **Respuesta de Pedro (31-10-2026)**: el repo **se mantiene público de momento**. Consecuencia: **todo** lo que se suba sigue anonimizado (política de `00-triaje.md` §8), la CI bloquea datos reales y datos personales, y el riesgo R14 queda **aceptado y vigilado**. Recomiendo revisar la decisión antes de subir el primer código de Fase 2 (M0), porque el código incluirá la configuración de seguridad (roles, rutas de máquina, procedimientos del ejecutor local). Ventaja colateral: en repos públicos, GitHub Actions y el *secret scanning* con *push protection* son gratuitos (activar ambos en Settings → Code security).
 - **Hecho** (comprobado el 31-10-2026 con `gh repo view pedrolivaresanchez/winecore`): `visibility: PUBLIC`. El plan (§3.1) exige **privado**.
 - **Por qué importa**: todo lo que se sube (especificación, PR, issues, historial de git) es visible para cualquiera. La especificación describe procesos fiscales, clientes, proveedores, descuadres heredados y la arquitectura de seguridad. Un repo público también expone, para siempre, cualquier error futuro (un `.env`, un fichero de `data/`).
 - **Qué he hecho mientras tanto**: todo lo subido está **anonimizado** (sin nombres de personas salvo Pedro, sin correos ni teléfonos, sin importes de facturación, sin el CAE, sin datos de clientes). El contexto original (transcripción, handover, exports) está en `data/` y **no se sube** (está en `.gitignore`). Los descuadres heredados se citan solo de forma genérica.
@@ -68,15 +73,18 @@
 - **Recomendación**: opción 1. Las facturas sueltas las aprueba quien las emite (si tiene permiso de emisión); los lotes de facturas requieren aprobación expresa en la bandeja.
 - **Dueño**: Pedro · **Fecha límite**: 05-11-2026.
 
-## Q-004 · Proyecto Timbal en la org 122 y credenciales — BLOQUEANTE para M0
+## Q-004 · Proyecto Timbal, conexión con GitHub y credenciales — EN CURSO (bloquea M0)
 
-- **Hecho**: en este entorno no hay CLI de Timbal ni credenciales; no he creado nada en Timbal y **no he tocado la org 1 ni el proyecto SDR**.
-- **Qué necesito** (procedimiento completo en `docs/adr/001-repo-y-remotos.md`):
-  1. Que Pedro cree el proyecto **WineCore** en la org 122 (o me dé una credencial para hacerlo) y me pase el **id del proyecto** (para el remoto `https://api.timbal.ai/orgs/122/projects/<id>/git`).
-  2. Una **API key/token de Timbal** con permiso solo sobre la org 122 para CI (se guarda en GitHub Secrets como `TIMBAL_API_KEY`; nunca en el repo).
-  3. Confirmar si se usará "Settings → Git Settings → Connect GitHub" y con qué cuenta (`pedrolivaresanchez` o `timbal-ai`). Si se conecta, ese será el **único** mecanismo de despliegue (CI no hará `timbal push`) para evitar despliegues dobles.
-  4. Acceso de solo lectura al código del SDR (copia local o credencial de lectura), para copiar el sistema de diseño. Sin él, la Fase 2 implementa la UI con las reglas documentadas en `docs/08-ui/00-sistema-diseno.md`.
-- **Recomendación**: Pedro crea el proyecto desde la UI (org 122), conecta GitHub con la cuenta `pedrolivaresanchez` y genera una API key de org 122 para CI.
+- **Hecho (Pedro, 31-10-2026)**: existe el proyecto **WineCore**, id **3942**, en la org **122**, con el entorno **Main (id 4165)** asociado a la rama `main`. Remoto git: `https://api.timbal.ai/orgs/122/projects/3942/git`. El Composer de Timbal generó **por su cuenta** un andamiaje (commit `f89f339`, 5 ficheros) que se trata como **desechable**: la fuente de verdad es GitHub. GitHub **aún no está conectado** (lo hará Pedro). En este entorno sigo sin credencial de Timbal; no he ejecutado nada contra Timbal y **no he tocado la org 1 ni el proyecto SDR**.
+- **Plan de remotos actualizado**: `docs/adr/001-repo-y-remotos.md` (Plan A: conexión de GitHub verificada con la lista V1–V7; Plan B: CI empuja al remoto `timbal`, con un arranque único que sustituye `f89f339` con *lease* sobre su SHA exacta, solo con tu aprobación expresa).
+- **Qué falta** (en orden):
+  1. **Proteger ramas en GitHub antes de conectar** (`main` con PR y tu aprobación; `staging`/`dev` con PR y checks; sin *force push*; sin *bypass* para apps).
+  2. **Conectar GitHub** en el proyecto 3942 (Settings → Git Settings → Connect GitHub, cuenta `pedrolivaresanchez`, repo `pedrolivaresanchez/winecore`, `main` ↔ Main 4165) y **anotar V1–V7** del ADR 001 (permisos que pide la app, qué queda en `main`, si despliega solo, entornos para `staging`/`dev`, entornos efímeros, si el Composer sigue haciendo commits).
+  3. **Crear los entornos `staging` y `dev`** asociados a sus ramas y pasarme sus id.
+  4. **Solo si hace falta el Plan B**: una **cuenta de Timbal dedicada, miembro solo de la org 122**, y su API key en GitHub Secrets (`TIMBAL_API_KEY`). No uses tu API key personal: hereda permisos en todas tus organizaciones, incluida la org 1.
+  5. **No usar el Composer** en `main`, `staging` ni `dev`.
+  6. Copia de solo lectura del código del SDR (sigue pendiente) para el sistema de diseño; sin ella, la UI se hace con las reglas de `docs/08-ui/00-sistema-diseno.md`.
+- **Recomendación**: Plan A si V2–V4 y V6 salen bien; si no, Plan B.
 - **Dueño**: Pedro · **Fecha límite**: 04-11-2026.
 
 ## Q-005 · Quién aprueba qué y desde dónde — BLOQUEANTE para M1
@@ -211,3 +219,29 @@
 
 - **Defecto propuesto** (D3): por defecto **CVPO**; por cliente: El Corte Inglés → **P.O**; exportación con e-DA (Reino Unido) → **P.O** (es quien expide el e-DA según el export de Holded); intercompañía → **P.O**.
 - **Fecha límite**: 20-11-2026.
+
+## Q-026 · Equipo dedicado para el ejecutor local — Bloquea M2
+
+- **Contexto**: Timbal no ofrece *computer use* ni custodia de certificados (sus variables secretas llegan a todos los componentes). Para operar SILICIE, EMCS, SISV y AecocEDI por *computer use* sin sacar el certificado de P.O a la nube, propongo un **ejecutor local** (ADR 009) en un equipo dedicado (el ordenador nuevo que se mencionó en la reunión) con el certificado en su llavero.
+- **Opciones**: (1) equipo dedicado en la bodega o en casa de Pedro, encendido en horario laboral; (2) el portátil de Pedro (peor: mezcla usos); (3) navegador en Timbal con el certificado como secreto (no recomendable).
+- **Recomendación**: (1). Requisitos mínimos: macOS o Linux actual, disco cifrado, usuario de sistema propio, conexión estable; ningún puerto abierto hacia fuera.
+- **Fecha límite**: 15-12-2026.
+
+## Q-027 · Cuenta de AWS para la base de datos y los ficheros — Bloquea M0
+
+- **Contexto**: la Knowledge Base de Timbal es DuckDB por HTTP sin transacciones documentadas: no sirve para facturas, numeración ni libros fiscales (ADR 002).
+- **Opciones**: (1) **AWS RDS PostgreSQL + S3 en eu-north-1** (misma región que Timbal; ~25–40 €/mes); (2) Neon (PostgreSQL serverless en la UE) + S3; (3) Supabase.
+- **Recomendación**: (1), cuenta de AWS a nombre de CVPO con facturación a CVPO, MFA en la cuenta raíz y un usuario administrador para Pedro. Necesito que me digas quién la crea; yo no necesito acceso a la consola, solo las cadenas de conexión como secretos de Timbal y de GitHub.
+- **Fecha límite**: 06-11-2026.
+
+## Q-028 · Preguntas técnicas a Timbal — Bloquea M0 (parcialmente)
+
+- Lista completa en `07-arquitectura.md` §14. Las urgentes para M0: (a) si `timbalAuth` permite rutas de máquina con token propio (`/api/m2m/*`, MCP de CVBOT, webhooks); (b) quién puede iniciar sesión en la app (solo miembros/invitados de la org 122); (c) si un merge en GitHub despliega solo (se verá al conectar GitHub, V3); (d) IP de salida fija o red privada hacia la base de datos.
+- **Dueño**: Pedro (canaliza con Timbal) · **Fecha límite**: 06-11-2026.
+
+## Q-029 · Canal de eventos hacia CVBOT — Bloquea M1
+
+- **Contexto**: §12.1 pide que WineCore avise a CVBOT de trámites (aprobaciones pendientes, vencimientos, pedidos EDI, incidencias).
+- **Pregunta**: ¿CVBOT tiene una URL para recibir eventos? ¿Con qué autenticación?
+- **Defecto propuesto**: `POST` JSON a `CVBOT_EVENTS_URL` con cabecera `X-WineCore-Signature: sha256=<HMAC del cuerpo>` y reintentos (1 min, 5 min, 30 min, 2 h). Si CVBOT no puede recibir, consultará `approvals_list_pending` y `regulatory_obligations_list` por MCP periódicamente.
+- **Fecha límite**: 13-11-2026.
