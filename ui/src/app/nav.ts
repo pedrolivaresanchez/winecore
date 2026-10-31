@@ -1,4 +1,4 @@
-import { Archive, Box, ChartBar, Check, CreditCard, FileText, Home, Layers, MapPin, Receipt, Settings2, ShareNetwork, Users, type IconComponent } from '@/ui/icons'
+import { Archive, Box, Calendar, ChartBar, Check, CreditCard, FileText, Home, Layers, MapPin, Receipt, Settings2, ShareNetwork, Users, type IconComponent } from '@/ui/icons'
 import { copy } from '@/i18n'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
@@ -179,6 +179,17 @@ export const navigation: NavEntry[] = [
     mobile: 'tab',
     placement: 'main',
     group: 'vinedo',
+  },
+  {
+    id: 'regulatory',
+    module: 'regulatory',
+    label: copy.nav.regulatory,
+    icon: Calendar,
+    path: '/regulatorio',
+    permission: 'regulatory.read',
+    mobile: 'more',
+    placement: 'main',
+    group: 'regulatorio',
   },
   {
     id: 'reports',

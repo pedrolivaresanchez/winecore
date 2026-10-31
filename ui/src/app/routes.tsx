@@ -54,6 +54,7 @@ import { TariffPage } from '@/pages/intercompania/TariffPage'
 import { Higiene } from '@/pages/higiene/Higiene'
 import { ParcelaPage } from '@/pages/vinedo/Parcela'
 import { Vinedo } from '@/pages/vinedo/Vinedo'
+import { Regulatorio } from '@/pages/regulatorio/Regulatorio'
 
 /** Authenticated routes. The shell, auth and the entity switcher stay outside. */
 export function AppRoutes({ me }: { me: Me }) {
@@ -123,6 +124,7 @@ export function AppRoutes({ me }: { me: Me }) {
       <Route path="intercompania/:period" element={<SettlementPage me={me} />} />
       <Route path="vinedo" element={<Vinedo me={me} />} />
       <Route path="vinedo/:code" element={<ParcelaPage me={me} />} />
+      <Route path="regulatorio/*" element={<Regulatorio me={me} />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   )
