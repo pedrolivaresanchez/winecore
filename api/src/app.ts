@@ -64,6 +64,7 @@ import {
   captureExpense,
   exportExpenses,
   getExpense,
+  listCategories,
   listExpenses,
   patchExpense,
   rejectExpense,
@@ -97,6 +98,7 @@ import {
 import { health } from './routes/health';
 import {
   getSettlement,
+  getTariff,
   getTariffs,
   patchTariff,
   postActivateTariff,
@@ -123,6 +125,7 @@ import {
 import { handleAuthenticatedMcp } from './mcp/http';
 import { RateLimiter } from './mcp/rate';
 import { createMcpClient, listMcpClients, revokeMcpClient, rotateMcpClient } from './routes/mcp-clients';
+import { getDashboard } from './routes/dashboard';
 import { me } from './routes/me';
 import { listNotifications, readAllNotifications, readNotification } from './routes/notifications';
 import { getReport } from './routes/reports';
@@ -232,6 +235,9 @@ export function createApp(deps: AppDeps) {
     // Timbal's readiness probe: liveness only, it must not depend on the Knowledge Base.
     .get('/healthcheck', () => ({ status: 'ok' }))
     .get('/v1/me', ({ request }) => me(deps.writer, request), {
+      beforeHandle: requireUser(guardDeps),
+    })
+    .get('/v1/dashboard', ({ request }) => getDashboard(deps.writer, request, guardDeps.now?.() ?? new Date()), {
       beforeHandle: requireUser(guardDeps),
     })
     .get('/v1/reports/sales.csv', ({ request }) => getReport(deps.writer, request, 'sales'), {
@@ -547,6 +553,9 @@ export function createApp(deps: AppDeps) {
     .get('/v1/intercompany/tariffs', () => getTariffs(deps.writer), {
       beforeHandle: requirePermission(guardDeps, 'billing.read'),
     })
+    .get('/v1/intercompany/tariffs/:id', ({ params }) => getTariff(deps.writer, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.read'),
+    })
     .post('/v1/intercompany/tariffs', async ({ request, set }) => {
       const result = await postTariff(deps.writer, request);
       set.status = result.status;
@@ -579,6 +588,9 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requirePermission(guardDeps, 'billing.write'),
     })
     // Gastos (TASK-COMP-001..003). export y capture van antes de /:id.
+    .get('/v1/expense-categories', () => listCategories(deps.writer), {
+      beforeHandle: requirePermission(guardDeps, 'purchasing.read'),
+    })
     .get('/v1/supplier-invoices/export', ({ request }) => exportExpenses(deps.writer, request), {
       beforeHandle: requirePermission(guardDeps, 'purchasing.read'),
     })

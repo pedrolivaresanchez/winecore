@@ -12,6 +12,7 @@ import {
   captureInvoice,
   findEntity,
   getInvoice,
+  listExpenseCategories,
   listInvoices,
   patchInvoice,
   rejectInvoice,
@@ -24,6 +25,10 @@ export type ExpenseDeps = {
   ocr: OcrWorkforce;
   approvalHook: SupplierInvoiceApprovalHook;
 };
+
+export async function listCategories(writer: Writer) {
+  return listExpenseCategories(writer);
+}
 
 export async function listExpenses(writer: Writer, request: Request) {
   return listInvoices(writer, sessionOf(request), new URL(request.url));
