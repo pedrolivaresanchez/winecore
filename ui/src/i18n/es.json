@@ -1911,6 +1911,8 @@
     "holdedTitle": "Facturas de Holded",
     "holdedHint": "Histórico importado. No son facturas Verifactu.",
     "holdedEmpty": "Sin facturas importadas",
+    "onScreen": "{n} en pantalla",
+    "noLines": "Sin líneas",
     "salesBook": "Ventas",
     "purchaseBook": "Compras",
     "pendingAmount": "Pendiente",

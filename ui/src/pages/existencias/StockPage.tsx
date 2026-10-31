@@ -92,7 +92,8 @@ export function StockPage({ me }: { me: Me }) {
   const { catalog } = useCatalog(entities)
   const ownerId = ownerEntityId(filter, entities)
   const [params, setParams] = useSearchParams()
-  const at = params.get('at') || new Date().toISOString()
+  const requestedAt = params.get('at')
+  const at = requestedAt || (isBeforeStockEpoch(new Date().toISOString()) ? STOCK_EPOCH_ISO : new Date().toISOString())
   const book = params.get('book') === 'fiscal' ? 'fiscal' : 'physical'
   const locationId = params.get('location') ?? ''
   const state = params.get('state') ?? ''
