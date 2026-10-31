@@ -122,7 +122,7 @@ describe('passkeys y TOTP', () => {
   test('registra una passkey con una ceremonia real y la revoca', async () => {
     const ctx = await openApp();
     try {
-      const { credential } = await registerPasskey(ctx.app, ownerHeaders());
+      const { passkey, credential } = await registerPasskey(ctx.app, ownerHeaders());
       expect(credential.kind).toBe('passkey');
       expect(credential.label).toBe('Llave del propietario');
       const listed = await call(ctx.app, 'GET', '/v1/auth/credentials');
@@ -130,6 +130,13 @@ describe('passkeys y TOTP', () => {
       const items = listed.body?.items as { id: string; kind: string; last_used_at: string | null }[];
       expect(items.map((item) => item.id)).toContain(credential.id);
       expect(items[0]?.last_used_at).toBeNull();
+      const blocked = await call(ctx.app, 'POST', `/v1/auth/credentials/${credential.id}/revoke`);
+      expect(blocked.status).toBe(401);
+      expect(blocked.body?.code).toBe('WC_STEP_UP_REQUIRED');
+      expect(blocked.body?.fields).toEqual({
+        step_up: 'Hace falta una verificación reforzada de los últimos 5 minutos',
+      });
+      expect((await stepUpWithPasskey(ctx.app, passkey, ownerHeaders())).status).toBe(200);
       const revoked = await call(ctx.app, 'POST', `/v1/auth/credentials/${credential.id}/revoke`);
       expect(revoked.status).toBe(200);
       const after = await call(ctx.app, 'GET', '/v1/auth/credentials');
@@ -264,6 +271,92 @@ describe('passkeys y TOTP', () => {
     }
   });
 
+  test('la primera credencial exige una sesión joven y las siguientes un step-up', async () => {
+    const clock = mutableClock();
+    const ctx = await openApp(clock);
+    try {
+      await call(ctx.app, 'GET', '/v1/auth/credentials');
+      await ctx.client.query(sql`
+        UPDATE core.session
+        SET created_at = ${new Date(clock.now().getTime() - 11 * 60_000)}
+        WHERE user_id = CAST(${OWNER} AS UUID)
+      `);
+      const passkey = await call(ctx.app, 'POST', '/v1/auth/passkeys/registration/options');
+      expect(passkey.status).toBe(401);
+      expect(passkey.body?.code).toBe('WC_STEP_UP_REQUIRED');
+      expect(passkey.body?.fields).toEqual({
+        session: 'La primera credencial exige una sesión de menos de 10 minutos',
+      });
+      const totp = await call(ctx.app, 'POST', '/v1/auth/totp/enroll');
+      expect(totp.status).toBe(401);
+      expect((totp.body?.fields as { session?: string }).session).toBeTruthy();
+
+      await ctx.client.query(sql`
+        UPDATE core.session
+        SET created_at = ${clock.now()}
+        WHERE user_id = CAST(${OWNER} AS UUID)
+      `);
+      const { passkey: key } = await registerPasskey(ctx.app, ownerHeaders(), 'Primera llave');
+      const second = await call(ctx.app, 'POST', '/v1/auth/passkeys/registration/options');
+      expect(second.status).toBe(401);
+      expect(second.body?.fields).toEqual({
+        step_up: 'Hace falta una verificación reforzada de los últimos 5 minutos',
+      });
+      const enroll = await call(ctx.app, 'POST', '/v1/auth/totp/enroll');
+      expect(enroll.status).toBe(401);
+      expect((enroll.body?.fields as { step_up?: string }).step_up).toBeTruthy();
+
+      expect((await stepUpWithPasskey(ctx.app, key, ownerHeaders())).status).toBe(200);
+      const again = await call(ctx.app, 'POST', '/v1/auth/passkeys/registration/options');
+      expect(again.status).toBe(200);
+      const enrolled = await call(ctx.app, 'POST', '/v1/auth/totp/enroll');
+      expect(enrolled.status).toBe(200);
+      const secret = secretFromUrl(String(enrolled.body?.otpauth_url));
+      const confirmed = await call(ctx.app, 'POST', '/v1/auth/totp/confirm', {
+        code: totpCode(secret, clock.now(), 1),
+      });
+      expect(confirmed.status).toBe(200);
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  test('renombra una credencial propia y deja auditoría sin material secreto', async () => {
+    const ctx = await openApp();
+    try {
+      const { credential } = await registerPasskey(ctx.app, ownerHeaders());
+      const renamed = await call(ctx.app, 'PATCH', `/v1/auth/credentials/${credential.id}`, {
+        label: 'Llave del teléfono',
+      });
+      expect(renamed.status).toBe(200);
+      expect((renamed.body?.credential as { label: string }).label).toBe('Llave del teléfono');
+      const long = 'a'.repeat(61);
+      const tooLong = await call(ctx.app, 'PATCH', `/v1/auth/credentials/${credential.id}`, { label: long });
+      expect(tooLong.status).toBe(422);
+      const empty = await call(ctx.app, 'PATCH', `/v1/auth/credentials/${credential.id}`, { label: '  ' });
+      expect(empty.status).toBe(422);
+      const exact = await call(ctx.app, 'PATCH', `/v1/auth/credentials/${credential.id}`, { label: 'b'.repeat(60) });
+      expect(exact.status).toBe(200);
+      const foreign = await call(ctx.app, 'PATCH', `/v1/auth/credentials/${credential.id}`, {
+        label: 'Ajena',
+      }, asUser('admin@winecore.test'));
+      expect(foreign.status).toBe(404);
+      const audit = await ctx.writer.read<{ before_data: unknown; after_data: unknown }>(sql`
+        SELECT before_data, after_data
+        FROM audit.audit_log
+        WHERE table_name = 'core.user_credential' AND action = 'UPDATE' AND row_id = ${credential.id}
+        ORDER BY id DESC
+        LIMIT 1
+      `);
+      const after = JSON.stringify(audit[0]?.after_data ?? {});
+      expect(after).toContain('bbbb');
+      expect(after).not.toContain('public_key');
+      expect(after).not.toContain('totp');
+    } finally {
+      await ctx.close();
+    }
+  });
+
   test('sin alta pendiente el TOTP no se confirma', async () => {
     const ctx = await openApp();
     try {
@@ -322,8 +415,13 @@ describe('aprobaciones', () => {
       const display = detail.body?.payload_display as { label: string; value: string }[];
       expect(display).toContainEqual({ label: 'Litros', value: '18340' });
       expect(display).toContainEqual({ label: 'Destino', value: 'AEAT' });
-      const decisions = detail.body?.decisions as { decision: string; decided_by: { display_name: string } }[];
+      const decisions = detail.body?.decisions as {
+        decision: string;
+        step_up_method: string;
+        decided_by: { display_name: string };
+      }[];
       expect(decisions[0]?.decision).toBe('approve');
+      expect(decisions[0]?.step_up_method).toBe('passkey');
       expect(decisions[0]?.decided_by.display_name).toBe('Propietario');
       const method = await ctx.writer.read<{ step_up_method: string }>(sql`
         SELECT step_up_method FROM ops.approval_decision WHERE request_id = CAST(${approval.id} AS UUID)
@@ -353,6 +451,9 @@ describe('aprobaciones', () => {
         SELECT step_up_method FROM ops.approval_decision WHERE request_id = CAST(${approval.id} AS UUID)
       `);
       expect(method[0]?.step_up_method).toBe('totp');
+      const detail = await call(ctx.app, 'GET', `/v1/approvals/${approval.id}`);
+      const decisions = detail.body?.decisions as { step_up_method: string }[];
+      expect(decisions[0]?.step_up_method).toBe('totp');
     } finally {
       await ctx.close();
     }

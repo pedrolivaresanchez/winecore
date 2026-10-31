@@ -1,3 +1,8 @@
+/**
+ * Intentos fallidos de verificación, en memoria de este proceso.
+ * Es a propósito: WineCore tiene un solo escritor (ADR 002). En un despliegue
+ * el contador vuelve a cero y los retos pendientes se pierden; la persona reintenta.
+ */
 import { domainError } from '../../errors';
 
 const MAX_FAILURES = 5;

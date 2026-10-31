@@ -145,6 +145,63 @@ export async function insertTotp(
   return { id, kind: 'totp', label: 'TOTP', created_at: input.at.toISOString(), last_used_at: null };
 }
 
+export async function credentialState(
+  writer: Writer,
+  userId: string,
+  credentialId: string,
+): Promise<'missing' | 'active' | 'revoked'> {
+  const rows = await writer.read<{ revoked_at: string | null }>(sql`
+    SELECT revoked_at
+    FROM core.user_credential
+    WHERE id = CAST(${credentialId} AS UUID) AND user_id = CAST(${userId} AS UUID)
+  `);
+  const row = rows[0];
+  if (!row) return 'missing';
+  return row.revoked_at ? 'revoked' : 'active';
+}
+
+export async function renameOwnedCredential(
+  writer: Writer,
+  actor: Actor,
+  userId: string,
+  credentialId: string,
+  label: string,
+): Promise<CredentialView | null> {
+  const rows = await writer.read<Record<string, unknown>>(sql`
+    SELECT id, kind, label, created_at, last_used_at, revoked_at
+    FROM core.user_credential
+    WHERE id = CAST(${credentialId} AS UUID) AND user_id = CAST(${userId} AS UUID)
+  `);
+  const row = rows[0];
+  if (!row || row.revoked_at != null) return null;
+  const previous = text(row.label) ?? '';
+  if (previous !== label) {
+    await writer.withWrite(actor, async (tx) => {
+      tx.write(sql`
+        UPDATE core.user_credential
+        SET label = ${label}
+        WHERE id = CAST(${credentialId} AS UUID)
+          AND user_id = CAST(${userId} AS UUID)
+          AND revoked_at IS NULL
+      `);
+      tx.audit({
+        table: 'core.user_credential',
+        rowId: credentialId,
+        action: 'UPDATE',
+        before: { label: previous },
+        after: { label },
+      });
+    });
+  }
+  return {
+    id: credentialId,
+    kind: row.kind === 'totp' ? 'totp' : 'passkey',
+    label,
+    created_at: asIso(text(row.created_at) ?? ''),
+    last_used_at: row.last_used_at == null ? null : asIso(String(row.last_used_at)),
+  };
+}
+
 export async function revokeOwnedCredential(
   writer: Writer,
   actor: Actor,

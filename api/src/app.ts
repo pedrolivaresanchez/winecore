@@ -19,6 +19,7 @@ import {
   enrollTotp,
   listCredentials,
   passkeyRegistrationOptions,
+  renameCredential,
   revokeCredential,
   stepUpOptions,
   stepUpVerify,
@@ -41,7 +42,12 @@ const startedAt = new WeakMap<Request, number>();
 export function createApp(deps: AppDeps) {
   const log = deps.log ?? ((line: string) => console.log(line));
   const timbalAuth = createTimbalAuth(deps.config, deps.fetchImpl);
-  const guardDeps = { config: deps.config, writer: deps.writer, timbalAuth };
+  const guardDeps = {
+    config: deps.config,
+    writer: deps.writer,
+    timbalAuth,
+    now: deps.now ?? (() => new Date()),
+  };
   const http = { config: deps.config, writer: deps.writer, now: deps.now ?? (() => new Date()) };
   const app = new Elysia(deps.config.apiBasePath ? { prefix: deps.config.apiBasePath } : {})
     .use(cors())
@@ -100,6 +106,9 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requireUser(guardDeps),
     })
     .get('/v1/auth/credentials', ({ request, set }) => listCredentials(http, request, set), {
+      beforeHandle: requireUser(guardDeps),
+    })
+    .patch('/v1/auth/credentials/:id', ({ request, params, set, body }) => renameCredential(http, request, params.id, body, set), {
       beforeHandle: requireUser(guardDeps),
     })
     .post('/v1/auth/credentials/:id/revoke', ({ request, params, set }) => revokeCredential(http, request, params.id, set), {

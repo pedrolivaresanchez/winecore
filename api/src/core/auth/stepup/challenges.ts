@@ -1,3 +1,8 @@
+/**
+ * Retos WebAuthn de un solo uso, en memoria de este proceso.
+ * Es a propósito: WineCore tiene un solo escritor (ADR 002). En un despliegue
+ * se pierden los retos pendientes y la persona vuelve a pedir opciones.
+ */
 const TTL_MS = 120_000;
 
 type Purpose = 'registration' | 'authentication';

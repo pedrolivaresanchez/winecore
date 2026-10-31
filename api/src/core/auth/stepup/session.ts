@@ -8,6 +8,69 @@ import type { StepUpMethod } from '../../approvals/types';
 
 const SESSION_HOURS = 12;
 
+/** La primera credencial solo se registra con una sesión de login más joven que esto. */
+export const LOGIN_SESSION_MAX_AGE_MS = 10 * 60 * 1000;
+
+/**
+ * Crea la fila de `core.session` la primera vez que vemos a esta persona
+ * (en dev, el primer request; en Timbal, el primer request tras el login).
+ * No renueva `created_at`: una sesión robada y antigua no puede darse de alta.
+ * Devuelve `created_at` o null si la sesión está revocada.
+ */
+export async function ensureLoginSession(
+  writer: Writer,
+  actor: { type: 'user'; id: string; requestId: string },
+  input: { userId: string; hash: Uint8Array; at: Date },
+): Promise<string | null> {
+  const existing = await loginRow(writer.read.bind(writer), input.hash);
+  if (existing === 'revoked') return null;
+  if (existing) return existing;
+  await writer.withWrite(actor, async (tx) => {
+    const again = await loginRow(tx.read, input.hash);
+    if (again) return;
+    const id = newId();
+    const expiresAt = new Date(input.at.getTime() + SESSION_HOURS * 60 * 60 * 1000);
+    tx.write(sql`
+      INSERT INTO core.session (
+        id, user_id, token_hash, created_at, expires_at, last_seen_at
+      ) VALUES (
+        CAST(${id} AS UUID),
+        CAST(${input.userId} AS UUID),
+        ${input.hash},
+        ${input.at},
+        ${expiresAt},
+        ${input.at}
+      )
+    `);
+    tx.audit({
+      table: 'core.session',
+      rowId: id,
+      action: 'INSERT',
+      before: null,
+      after: { created_at: input.at.toISOString() },
+    });
+  });
+  const created = await loginRow(writer.read.bind(writer), input.hash);
+  return created === 'revoked' ? null : created;
+}
+
+export async function loginCreatedAt(writer: Writer, hash: Uint8Array): Promise<string | null> {
+  const created = await loginRow(writer.read.bind(writer), hash);
+  return created === 'revoked' || created === null ? null : created;
+}
+
+async function loginRow(read: Tx['read'], hash: Uint8Array): Promise<string | 'revoked' | null> {
+  const rows = await read<{ created_at: string; revoked_at: string | null }>(sql`
+    SELECT created_at, revoked_at
+    FROM core.session
+    WHERE token_hash = ${hash}
+  `);
+  const row = rows[0];
+  if (!row) return null;
+  if (row.revoked_at) return 'revoked';
+  return iso(row.created_at);
+}
+
 export function sessionHash(config: Config, request: Request, userId: string): Uint8Array {
   if (config.authMode === 'dev') {
     const email = (request.headers.get('x-dev-user') ?? config.devUserEmail).trim().toLowerCase();

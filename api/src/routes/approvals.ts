@@ -76,7 +76,7 @@ export async function getApproval(deps: HttpDeps, request: Request, id: string) 
   const summary = await toSummary(deps, request, row, now);
   const names = await displayNames(deps);
   const decisions = await deps.writer.read<Record<string, unknown>>(sql`
-    SELECT decided_by, decision, note, decided_at
+    SELECT decided_by, decision, note, decided_at, step_up_method
     FROM ops.approval_decision
     WHERE request_id = CAST(${row.id} AS UUID)
     ORDER BY decided_at, id
@@ -89,6 +89,9 @@ export async function getApproval(deps: HttpDeps, request: Request, id: string) 
       decision: decision.decision === 'reject' ? 'reject' : 'approve',
       note: decision.note == null ? null : String(decision.note),
       decided_at: asIso(String(decision.decided_at)),
+      step_up_method: decision.step_up_method === 'passkey' || decision.step_up_method === 'totp'
+        ? decision.step_up_method
+        : null,
     })),
   };
 }

@@ -3,18 +3,22 @@ import { requestIdFor, sessionOf } from '../auth/guard';
 import type { Config } from '../config';
 import type { StepUpMethod } from '../core/approvals/types';
 import { issueChallenge, takeChallenge } from '../core/auth/stepup/challenges';
+import { STEP_UP_WINDOW_MS } from '../core/approvals/policy';
+import { sql } from '../core/db/sql';
 import {
   commitFactorUse,
+  credentialState,
   insertPasskey,
   insertTotp,
   listActiveCredentials,
   listPasskeys,
   listTotp,
+  renameOwnedCredential,
   revokeOwnedCredential,
 } from '../core/auth/stepup/credentials';
 import { randomToken, requireDataKey } from '../core/auth/stepup/crypto';
 import { assertWithinRateLimit, rateBucket, recordAuthFailure, recordAuthSuccess } from '../core/auth/stepup/rate-limit';
-import { readStepUp, sessionHash, stepUpCookie } from '../core/auth/stepup/session';
+import { LOGIN_SESSION_MAX_AGE_MS, loginCreatedAt, readStepUp, sessionHash, stepUpCookie } from '../core/auth/stepup/session';
 import {
   beginTotpEnrollment,
   dropPendingTotp,
@@ -46,6 +50,7 @@ export async function passkeyRegistrationOptions(deps: HttpDeps, request: Reques
   noStore(set);
   const user = sessionOf(request);
   const now = deps.now();
+  await assertMayRegister(deps, request, user.id, now);
   assertWithinRateLimit(rateBucket('passkey-register', user.id), now);
   const existing = await listPasskeys(deps.writer, user.id);
   const options = await registrationOptions({
@@ -63,6 +68,7 @@ export async function verifyPasskeyRegistration(deps: HttpDeps, request: Request
   noStore(set);
   const user = sessionOf(request);
   const now = deps.now();
+  await assertMayRegister(deps, request, user.id, now);
   const bucket = rateBucket('passkey-register', user.id);
   assertWithinRateLimit(bucket, now);
   const body = objectBody(payload);
@@ -109,16 +115,33 @@ export async function revokeCredential(deps: HttpDeps, request: Request, id: str
   noStore(set);
   const user = sessionOf(request);
   if (!UUID_RE.test(id)) throw domainError('WC_NOT_FOUND');
+  const state = await credentialState(deps.writer, user.id, id);
+  if (state === 'missing') throw domainError('WC_NOT_FOUND');
+  await assertRecentStepUp(deps, request, user.id, deps.now());
+  if (state === 'revoked') return {};
   const revoked = await revokeOwnedCredential(deps.writer, actorOf(request, user.id), user.id, id, deps.now());
   if (!revoked) throw domainError('WC_NOT_FOUND');
   return {};
 }
 
+export async function renameCredential(deps: HttpDeps, request: Request, id: string, payload: unknown, set: HeaderSink) {
+  noStore(set);
+  const user = sessionOf(request);
+  if (!UUID_RE.test(id)) throw domainError('WC_NOT_FOUND');
+  const body = objectBody(payload);
+  const label = requiredLabel(body.label, 60);
+  const credential = await renameOwnedCredential(deps.writer, actorOf(request, user.id), user.id, id, label);
+  if (!credential) throw domainError('WC_NOT_FOUND');
+  return { credential };
+}
+
 export async function enrollTotp(deps: HttpDeps, request: Request, set: HeaderSink) {
   noStore(set);
   const user = sessionOf(request);
+  const now = deps.now();
+  await assertMayRegister(deps, request, user.id, now);
   requireDataKey(deps.config);
-  const otpauthUrl = beginTotpEnrollment(user.id, user.email, deps.now());
+  const otpauthUrl = beginTotpEnrollment(user.id, user.email, now);
   return { otpauth_url: otpauthUrl };
 }
 
@@ -126,6 +149,7 @@ export async function confirmTotp(deps: HttpDeps, request: Request, set: HeaderS
   noStore(set);
   const user = sessionOf(request);
   const now = deps.now();
+  await assertMayRegister(deps, request, user.id, now);
   const bucket = rateBucket('totp-confirm', user.id);
   assertWithinRateLimit(bucket, now);
   const body = objectBody(payload);
@@ -287,15 +311,49 @@ function noStore(set: HeaderSink): void {
   set.headers['cache-control'] = 'no-store';
 }
 
-function requiredLabel(value: unknown): string {
+function requiredLabel(value: unknown, max = 80): string {
   if (typeof value !== 'string') {
-    throw domainError('WC_VALIDATION', { label: 'La etiqueta debe tener entre 1 y 80 caracteres' });
+    throw domainError('WC_VALIDATION', { label: `La etiqueta debe tener entre 1 y ${max} caracteres` });
   }
   const label = value.trim();
-  if (label.length < 1 || label.length > 80 || /[\u0000-\u001f]/.test(label)) {
-    throw domainError('WC_VALIDATION', { label: 'La etiqueta debe tener entre 1 y 80 caracteres' });
+  if (label.length < 1 || label.length > max || /[\u0000-\u001f]/.test(label)) {
+    throw domainError('WC_VALIDATION', { label: `La etiqueta debe tener entre 1 y ${max} caracteres` });
   }
   return label;
+}
+
+const STEP_UP_NEEDED = 'Hace falta una verificación reforzada de los últimos 5 minutos';
+const FRESH_SESSION_NEEDED = 'La primera credencial exige una sesión de menos de 10 minutos';
+
+async function assertMayRegister(deps: HttpDeps, request: Request, userId: string, now: Date): Promise<void> {
+  const active = await activeCredentials(deps, userId);
+  if (active > 0) {
+    await assertRecentStepUp(deps, request, userId, now);
+    return;
+  }
+  const created = await loginCreatedAt(deps.writer, sessionHash(deps.config, request, userId));
+  const age = created == null ? Number.POSITIVE_INFINITY : now.getTime() - Date.parse(created);
+  if (created == null || Number.isNaN(age) || age < 0 || age >= LOGIN_SESSION_MAX_AGE_MS) {
+    throw domainError('WC_STEP_UP_REQUIRED', { session: FRESH_SESSION_NEEDED });
+  }
+}
+
+async function assertRecentStepUp(deps: HttpDeps, request: Request, userId: string, now: Date): Promise<void> {
+  const step = await readStepUp(deps.writer, userId, sessionHash(deps.config, request, userId));
+  const age = step == null ? Number.POSITIVE_INFINITY : now.getTime() - Date.parse(step.at);
+  if (step == null || Number.isNaN(age) || age < 0 || age > STEP_UP_WINDOW_MS) {
+    throw domainError('WC_STEP_UP_REQUIRED', { step_up: STEP_UP_NEEDED });
+  }
+}
+
+async function activeCredentials(deps: HttpDeps, userId: string): Promise<number> {
+  const rows = await deps.writer.read<{ n: unknown }>(sql`
+    SELECT count(*) AS n
+    FROM core.user_credential
+    WHERE user_id = CAST(${userId} AS UUID) AND revoked_at IS NULL
+  `);
+  const count = Number(rows[0]?.n ?? 0);
+  return Number.isFinite(count) ? count : 0;
 }
 
 function totpCodeField(value: unknown, field = 'code'): string {

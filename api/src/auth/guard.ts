@@ -5,12 +5,14 @@ import type { Writer } from '../core/db/writer';
 import { sql } from '../core/db/sql';
 import { newId } from '../core/ids';
 import type { Config } from '../config';
+import { ensureLoginSession, sessionHash } from '../core/auth/stepup/session';
 import type { TimbalAuth } from './timbal';
 
 export interface GuardDeps {
   config: Config;
   writer: Writer;
   timbalAuth: TimbalAuth;
+  now?: () => Date;
 }
 
 interface GuardState {
@@ -63,6 +65,7 @@ export function requireUser(deps: GuardDeps) {
     if (blocked) return blocked;
     const session = await loadSession(deps, context.request);
     if (session instanceof DomainError) return reject(context.set, session);
+    await rememberLogin(deps, context.request, session);
   };
 }
 
@@ -72,6 +75,7 @@ export function requireUserOrMachine(deps: GuardDeps) {
     if (!machineBearer(context.request)) {
       const session = await loadSession(deps, context.request);
       if (session instanceof DomainError) return reject(context.set, session);
+      await rememberLogin(deps, context.request, session);
       return;
     }
     const machine = await rememberMachine(deps, context.request);
@@ -128,6 +132,7 @@ export function requirePermission(deps: GuardDeps, permission: Permission) {
     if (blocked) return blocked;
     const session = await loadSession(deps, context.request);
     if (session instanceof DomainError) return reject(context.set, session);
+    await rememberLogin(deps, context.request, session);
     if (!can(session, permission)) return reject(context.set, domainError('WC_FORBIDDEN'));
   };
 }
@@ -138,8 +143,21 @@ export function requireOwner(deps: GuardDeps) {
     if (blocked) return blocked;
     const session = await loadSession(deps, context.request);
     if (session instanceof DomainError) return reject(context.set, session);
+    await rememberLogin(deps, context.request, session);
     if (!isOwner(session)) return reject(context.set, domainError('WC_FORBIDDEN'));
   };
+}
+
+async function rememberLogin(deps: GuardDeps, request: Request, user: UserCtx): Promise<void> {
+  await ensureLoginSession(
+    deps.writer,
+    { type: 'user', id: user.id, requestId: requestIdFor(request) },
+    {
+      userId: user.id,
+      hash: sessionHash(deps.config, request, user.id),
+      at: (deps.now ?? (() => new Date()))(),
+    },
+  );
 }
 
 function reject(set: GuardState['set'], error: DomainError) {
