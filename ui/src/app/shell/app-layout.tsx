@@ -1,14 +1,17 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { motion, useReducedMotion } from 'motion/react'
-import { PanelLeft } from '@/ui/icons'
+import { PanelLeft, Search } from '@/ui/icons'
 import { Tooltip } from '@/ui'
 import { AppSidebar } from '@/app/shell/app-sidebar'
+import { CommandPalette } from '@/app/shell/command-palette'
 import { ShellProvider, useShell } from '@/app/shell/shell-context'
+import { useGlobalShortcuts } from '@/app/shell/shortcuts'
+import { ShortcutsDialog } from '@/app/shell/shortcuts-dialog'
 import { SettingsView, type SettingsArea } from '@/app/shell/settings-view'
 import { copy } from '@/i18n'
 import { cn } from '@/lib/cn'
-import { iconStroke, overlayFade, railMotion } from '@/lib/motion'
+import { DURATION_FAST, iconStroke, overlayFade, railMotion } from '@/lib/motion'
 import { RAIL_OPEN, RAIL_SHUT } from '@/app/shell/rail-metrics'
 import { readStorage, SIDEBAR_KEY, writeStorage } from '@/lib/storage'
 import { useMinWidth } from '@/hooks/use-media'
@@ -22,17 +25,23 @@ function openedOnSetup() {
   return typeof window !== 'undefined' && window.location.pathname === SETUP_PATH
 }
 
-function readOpen(wide: boolean) {
+/** The stored choice is the desktop rail's. On a phone the rail is a drawer over the page,
+    so it always starts shut — opening the app should show the app. */
+function readOpen() {
+  if (typeof window === 'undefined') return false
+  if (window.innerWidth < 768) return false
   const raw = readStorage(SIDEBAR_KEY)
   if (raw === 'collapsed' || raw === 'false') return false
   if (raw === 'expanded' || raw === 'true') return true
-  return wide
+  return window.innerWidth >= 1280
 }
 
 export function Shell({ me, children }: { me: Me; children: ReactNode }) {
   const mobile = !useMinWidth(768)
   const wide = useMinWidth(1280)
-  const [open, setOpen] = useState(() => readOpen(typeof window !== 'undefined' && window.innerWidth >= 1280))
+  const [open, setOpen] = useState(readOpen)
+  const [command, setCommand] = useState(false)
+  const [shortcuts, setShortcuts] = useState(false)
   const [settings, setSettings] = useState(openedOnSetup)
   const [area, setArea] = useState<SettingsArea>(openedOnSetup() ? 'setup' : 'entities')
   const location = useLocation()
@@ -59,13 +68,23 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    if (readStorage(SIDEBAR_KEY) == null && !mobile) setOpen(wide)
+    if (mobile) setOpen(false)
+    else if (readStorage(SIDEBAR_KEY) == null) setOpen(wide)
   }, [mobile, wide])
 
   function setSidebarOpen(next: boolean) {
     setOpen(next)
     if (!mobile) writeStorage(SIDEBAR_KEY, next ? 'expanded' : 'collapsed')
   }
+
+  const openCommand = useCallback(() => setCommand(true), [])
+  const toggleRail = () => setSidebarOpen(!openRef.current)
+
+  useGlobalShortcuts({
+    onCommand: () => setCommand((current) => !current),
+    onHelp: () => setShortcuts(true),
+    onToggleRail: toggleRail,
+  })
 
   function openSettings() {
     if (!settings) before.current = open
@@ -101,10 +120,20 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
       settings={settings}
       openSettings={openSettings}
       closeSettings={closeSettings}
+      openCommand={openCommand}
     >
       <Frame me={me} area={area} onArea={chooseArea}>
         {children}
       </Frame>
+      <CommandPalette
+        me={me}
+        open={command}
+        onClose={() => setCommand(false)}
+        onToggleRail={toggleRail}
+        onSettings={openSettings}
+        onShortcuts={() => setShortcuts(true)}
+      />
+      <ShortcutsDialog open={shortcuts} onClose={() => setShortcuts(false)} />
     </ShellProvider>
   )
 }
@@ -120,10 +149,28 @@ function Frame({
   onArea: (area: SettingsArea) => void
   children: ReactNode
 }) {
-  const { mobile, sidebarOpen, setSidebarOpen, settings, closeSettings, chromeTitle } = useShell()
+  const { mobile, sidebarOpen, setSidebarOpen, settings, closeSettings, chromeTitle, openCommand } = useShell()
   const reduce = useReducedMotion()
   const railW = mobile ? 0 : sidebarOpen || settings ? OPEN_W : SHUT_W
   const tween = reduce ? { duration: 0 } : railMotion(reduce, sidebarOpen || settings)
+  const { pathname } = useLocation()
+  const pageRef = useRef<HTMLDivElement>(null)
+  const section = pathname.split('/')[1] ?? ''
+  const lastSection = useRef(section)
+
+  /* A short fade when you change section, so the jump reads as a page turning rather than a
+     flash. Opacity only and never a remount: a transform would re-anchor fixed children,
+     and a keyed wrapper would throw away list state on every navigation. Moving inside a
+     section (list to record, tab to tab) stays instant. */
+  useEffect(() => {
+    if (lastSection.current === section) return
+    lastSection.current = section
+    if (reduce) return
+    pageRef.current?.animate([{ opacity: 0.35 }, { opacity: 1 }], {
+      duration: DURATION_FAST * 1000,
+      easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    })
+  }, [section, reduce])
 
   return (
     <div className="relative h-dvh overflow-hidden bg-sidebar text-text">
@@ -168,10 +215,20 @@ function Frame({
               </button>
             </Tooltip>
             <span className="min-w-0 flex-1 truncate text-label font-medium text-ink-900">{chromeTitle}</span>
+            <button
+              type="button"
+              onClick={openCommand}
+              aria-label={copy.command.title}
+              className="flex size-9 shrink-0 items-center justify-center rounded-md text-ink-900 hover:bg-fill-hover"
+            >
+              <Search className="size-4" strokeWidth={iconStroke} />
+            </button>
           </div>
         ) : null}
         <div id="contenido" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <div className={cn('min-h-0 min-w-0 flex-1 flex-col overflow-hidden', settings ? 'hidden' : 'flex')}>{children}</div>
+          <div ref={pageRef} className={cn('min-h-0 min-w-0 flex-1 flex-col overflow-hidden', settings ? 'hidden' : 'flex')}>
+            {children}
+          </div>
           {settings ? <SettingsView me={me} area={area} /> : null}
         </div>
       </motion.div>
