@@ -143,6 +143,8 @@ describe('plano de bodega', () => {
       const map = await call(ctx, 'GET', `/v1/cellar-map?location_id=${locationId}`, undefined, 'asesor@winecore.test');
       expect(map.status).toBe(200);
       expect(map.body.location_code).toBe('BOD');
+      const metadata = map.body.metadata as { coordinates: { origin: string; unit: string; y_axis: string } };
+      expect(metadata.coordinates).toMatchObject({ origin: 'top_left', unit: 'plan', y_axis: 'down' });
       const zones = map.body.zones as Array<{
         code: string;
         kind_label: string;

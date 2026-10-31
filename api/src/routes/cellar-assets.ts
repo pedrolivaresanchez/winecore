@@ -1,5 +1,5 @@
 import { Elysia } from 'elysia';
-import { requirePermission, type GuardDeps } from '../auth/guard';
+import { requireOwner, requirePermission, type GuardDeps } from '../auth/guard';
 import type { Writer } from '../core/db/writer';
 import {
   createBarrel,
@@ -11,7 +11,8 @@ import {
   upsertDemijohn,
 } from '../core/cellar-assets/barrels';
 import { addHolderCountLine } from '../core/cellar-assets/holder-counts';
-import { createHolder, getHolder, listHolderStock, listHolders, patchHolder, postHolderMove } from '../core/cellar-assets/holders';
+import { createHolder, getHolder, listHolderMoves, listHolderStock, listHolders, patchHolder, postHolderMove } from '../core/cellar-assets/holders';
+import { backfillBarrelUseCounts } from '../core/cellar-assets/use-count-backfill';
 import { getCellarMap } from '../core/cellar-assets/map';
 import { createPosition, createZone, getZone, listZones, patchPosition, patchZone } from '../core/cellar-assets/zones';
 
@@ -20,6 +21,7 @@ export function cellarAssetRoutes(deps: { writer: Writer; guard: GuardDeps }) {
   const { writer, guard } = deps;
   const read = { beforeHandle: requirePermission(guard, 'cellar.read') };
   const operate = { beforeHandle: requirePermission(guard, 'cellar.operate') };
+  const owner = { beforeHandle: requireOwner(guard) };
   return new Elysia()
     .get('/v1/cellar-map', ({ request }) => getCellarMap(writer, request), read)
     .get('/v1/cellar-zones', ({ request }) => listZones(writer, request), read)
@@ -45,6 +47,7 @@ export function cellarAssetRoutes(deps: { writer: Writer; guard: GuardDeps }) {
     }, operate)
     .get('/v1/holders/:code', ({ request, params }) => getHolder(writer, request, params.code), read)
     .patch('/v1/holders/:code', ({ request, params }) => patchHolder(writer, request, params.code), operate)
+    .get('/v1/holders/:code/moves', ({ request, params }) => listHolderMoves(writer, request, params.code), read)
     .post('/v1/holders/:code/moves', async ({ request, params, set }) => {
       const moved = await postHolderMove(writer, request, params.code);
       set.status = 201;
@@ -65,6 +68,7 @@ export function cellarAssetRoutes(deps: { writer: Writer; guard: GuardDeps }) {
       set.status = 201;
       return recorded;
     }, operate)
+    .post('/v1/barrels/use-count-backfill', ({ request }) => backfillBarrelUseCounts(writer, request), owner)
     .post('/v1/inventory-counts/:id/holder-lines', async ({ request, params, set }) => {
       const created = await addHolderCountLine(writer, request, params.id);
       set.status = 201;

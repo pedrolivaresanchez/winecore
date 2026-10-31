@@ -19,6 +19,7 @@ import {
   type ZoneKind,
 } from './constants';
 import { doubleOf, idOf } from './parse';
+import { PLAN_METADATA, type PlanMetadata } from './plan-metadata';
 import { holderKindLabel } from './zones';
 
 export interface MapVessel {
@@ -77,6 +78,7 @@ export interface CellarMap {
   location_id: string;
   location_code: string;
   location_name: string;
+  metadata: PlanMetadata;
   zones: Array<{
     id: string;
     code: string;
@@ -181,6 +183,7 @@ export async function getCellarMap(writer: Writer, request: Request): Promise<Ce
     location_id: location.id,
     location_code: location.code,
     location_name: location.name,
+    metadata: PLAN_METADATA,
     zones: zones.map((row) => {
       const kind = textOf(row.kind) as ZoneKind;
       const bucket = byZone.get(idOf(row.id)) ?? { vessels: [], holders: [] };

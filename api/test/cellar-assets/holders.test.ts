@@ -137,6 +137,33 @@ describe('nichos y jaulones', () => {
       await ctx.close();
     }
   });
+
+  it('deja leer los movimientos del soporte al personal de bodega', async () => {
+    const ctx = await createTestApp();
+    try {
+      const po = await entityId(ctx);
+      const { locationId, lotId, productId } = await bottled(ctx, po);
+      const created = await call(ctx, 'POST', '/v1/holders', {
+        code: 'NIC-M1',
+        name: 'Nicho M1',
+        kind: 'nicho',
+        location_id: locationId,
+        nominal_volume_ml: 750,
+      });
+      expect(created.status).toBe(201);
+      const entered = await move(ctx, 'NIC-M1', po, lotId, productId, 'packaged_labeled', 12);
+      expect(entered.status).toBe(201);
+      const byCode = await call(ctx, 'GET', '/v1/holders/NIC-M1/moves', undefined, 'bodega@winecore.test');
+      expect(byCode.status).toBe(200);
+      const items = byCode.body.items as Array<{ qty_units: number; lot_code: string; holder_code: string }>;
+      expect(items).toEqual([expect.objectContaining({ qty_units: 12, lot_code: 'L25-B075', holder_code: 'NIC-M1' })]);
+      const byId = await call(ctx, 'GET', `/v1/holders/${String(created.body.id)}/moves`, undefined, 'asesor@winecore.test');
+      expect(byId.status).toBe(200);
+      expect((byId.body.items as unknown[]).length).toBe(1);
+    } finally {
+      await ctx.close();
+    }
+  });
 });
 
 async function bottled(ctx: Awaited<ReturnType<typeof createTestApp>>, po: string) {

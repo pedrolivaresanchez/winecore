@@ -1,4 +1,6 @@
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+/** Tope del audio de cata (mp3, m4a, mp4, webm, ogg). */
+export const MAX_AUDIO_BYTES = 8 * 1024 * 1024;
 
 const PDF = [0x25, 0x50, 0x44, 0x46]; // %PDF
 const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -16,6 +18,29 @@ function ascii(bytes: Uint8Array, offset: number, length: number): string {
     out += String.fromCharCode(bytes[offset + index] ?? 0);
   }
   return out;
+}
+
+function audioMime(bytes: Uint8Array): string | null {
+  if (bytes.length >= 3 && ascii(bytes, 0, 3) === 'ID3') return 'audio/mpeg';
+  const frame = bytes[1];
+  if (bytes.length >= 2 && bytes[0] === 0xff && frame !== undefined && (frame & 0xe0) === 0xe0) return 'audio/mpeg';
+  if (bytes.length >= 4 && ascii(bytes, 0, 4) === 'OggS') return 'audio/ogg';
+  if (isWebm(bytes)) return 'audio/webm';
+  const brand = ftypBrand(bytes);
+  if (brand === 'M4A ') return 'audio/x-m4a';
+  if (brand === 'mp41' || brand === 'mp42' || brand === 'isom') return 'audio/mp4';
+  return null;
+}
+
+function ftypBrand(bytes: Uint8Array): string | null {
+  if (bytes.length < 12 || ascii(bytes, 4, 4) !== 'ftyp') return null;
+  return ascii(bytes, 8, 4);
+}
+
+function isWebm(bytes: Uint8Array): boolean {
+  if (bytes.length < 4 || bytes[0] !== 0x1a || bytes[1] !== 0x45 || bytes[2] !== 0xdf || bytes[3] !== 0xa3) return false;
+  const end = Math.min(bytes.length, 64);
+  return ascii(bytes, 0, end).includes('webm');
 }
 
 function isHeic(bytes: Uint8Array): boolean {
@@ -63,12 +88,20 @@ function splitCount(line: string, delimiter: string): number {
   return line.split(delimiter).length - 1;
 }
 
+export function audioSizeError(mime: string, bytes: number): string | null {
+  if (!mime.startsWith('audio/')) return null;
+  if (bytes > MAX_AUDIO_BYTES) return 'El audio supera el límite de 8 MB';
+  return null;
+}
+
 /** MIME por el contenido. El nombre y el tipo declarado no intervienen. */
 export function detectMime(bytes: Uint8Array): string | null {
   if (startsWith(bytes, PDF)) return 'application/pdf';
   if (startsWith(bytes, PNG)) return 'image/png';
   if (startsWith(bytes, JPEG)) return 'image/jpeg';
   if (isHeic(bytes)) return 'image/heic';
+  const audio = audioMime(bytes);
+  if (audio) return audio;
   const text = textOf(bytes);
   if (text === null) return null;
   if (isXml(text)) return 'application/xml';

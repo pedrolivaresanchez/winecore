@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'bun:test';
 import { createTestApp } from '../helpers';
 import { PERMANENT_LINK_ROLES, unlinkAttachment } from '../../src/core/attachments';
-import { detectMime } from '../../src/core/attachments/mime';
+import { audioSizeError, detectMime, MAX_AUDIO_BYTES } from '../../src/core/attachments/mime';
 import { sql } from '../../src/core/db/sql';
 import { DomainError } from '../../src/core/errors';
 import { newId } from '../../src/core/ids';
@@ -68,8 +68,32 @@ describe('detección de MIME', () => {
     expect(detectMime(new TextEncoder().encode('a;b\n1;2\n'))).toBe('text/csv');
     expect(detectMime(new TextEncoder().encode('Nota de bodega\n'))).toBe('text/plain');
     expect(detectMime(Uint8Array.of(0, 1, 2, 3))).toBeNull();
+    expect(detectMime(Uint8Array.of(0x49, 0x44, 0x33, 0x04))).toBe('audio/mpeg');
+    expect(detectMime(Uint8Array.of(0xff, 0xfb, 0x90, 0x00))).toBe('audio/mpeg');
+    expect(detectMime(box('M4A '))).toBe('audio/x-m4a');
+    expect(detectMime(box('mp42'))).toBe('audio/mp4');
+    expect(detectMime(webm())).toBe('audio/webm');
+    expect(detectMime(new TextEncoder().encode('OggS\0audio'))).toBe('audio/ogg');
+    expect(audioSizeError('audio/mpeg', MAX_AUDIO_BYTES)).toBeNull();
+    expect(audioSizeError('audio/mpeg', MAX_AUDIO_BYTES + 1)).toBe('El audio supera el límite de 8 MB');
+    expect(audioSizeError('image/png', MAX_AUDIO_BYTES + 1)).toBeNull();
   });
 });
+
+function box(brand: string): Uint8Array {
+  const bytes = new Uint8Array(16);
+  new DataView(bytes.buffer).setUint32(0, 16);
+  bytes.set([0x66, 0x74, 0x79, 0x70], 4);
+  bytes.set(new TextEncoder().encode(brand), 8);
+  return bytes;
+}
+
+function webm(): Uint8Array {
+  const bytes = new Uint8Array(8);
+  bytes.set([0x1a, 0x45, 0xdf, 0xa3]);
+  bytes.set(new TextEncoder().encode('webm'), 4);
+  return bytes;
+}
 
 describe('adjuntos', () => {
   it('reutiliza el contenido con el mismo hash', async () => {

@@ -119,6 +119,8 @@ describe('diseño de lote', () => {
     }), BODEGA);
     expect(wrong.status).toBe(422);
     expect(wrong.body.code).toBe('WC_LOT_SINGLE_PLOT');
+    expect(wrong.body.alias).toBe('WC141');
+    expect(String((wrong.body.fields as Record<string, string>).parcel_id).length).toBeGreaterThan(0);
     const mixed = await call(lab.ctx, 'PUT', '/v1/lots/LOTE-AB/design', body(lab, {
       single_plot: true,
       parcel_id: lab.parcelA,
