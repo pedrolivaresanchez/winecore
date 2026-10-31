@@ -10,7 +10,8 @@
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "screenshots": "bun e2e/screenshots.ts",
-    "e2e:real:bodega": "bun e2e/real/bodega.real.ts"
+    "e2e:real:bodega": "bun e2e/real/bodega.real.ts",
+    "e2e:real:catalogo": "bun e2e/real/catalogo.real.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "1.1.15",

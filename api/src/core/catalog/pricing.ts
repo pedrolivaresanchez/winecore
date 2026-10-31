@@ -22,7 +22,7 @@ import {
   textValue,
 } from './fields';
 import { activeParam, asCount, cursorParam, limitParam, pageOf } from './query';
-import { asBool, asNullableString, asString } from './rows';
+import { asBool, asNullableInt, asNullableString, asString } from './rows';
 
 /**
  * `POST .../request-activation` abre una aprobación `tariff_activation` ligada
@@ -56,6 +56,8 @@ export interface PriceList {
   currency: string;
   tax_included: boolean;
   is_active: boolean;
+  active_version?: number | null;
+  active_valid_from?: string | null;
 }
 
 export interface PriceItem {
@@ -336,7 +338,19 @@ export async function listPriceLists(writer: Writer, request: Request) {
     SELECT count(*) AS total FROM catalog.price_list WHERE ${active === null ? 'TRUE' : sql`is_active = ${active}`}
   `);
   const rows = await writer.read(`
-    SELECT id, code, name, currency, tax_included, is_active
+    SELECT id, code, name, currency, tax_included, is_active,
+      (
+        SELECT version FROM catalog.price_list_version
+        WHERE price_list_id = catalog.price_list.id AND status = 'active'
+        ORDER BY version DESC
+        LIMIT 1
+      ) AS active_version,
+      (
+        SELECT CAST(valid_from AS VARCHAR) FROM catalog.price_list_version
+        WHERE price_list_id = catalog.price_list.id AND status = 'active'
+        ORDER BY version DESC
+        LIMIT 1
+      ) AS active_valid_from
     FROM catalog.price_list
     WHERE ${filters.join(' AND ')}
     ORDER BY code, id
@@ -490,7 +504,7 @@ export async function createVersion(writer: Writer, actor: Actor, priceListId: s
           INSERT INTO catalog.price_list_item (id, version_id, product_id, min_qty, unit_price)
           VALUES (
             CAST(${itemId} AS UUID), CAST(${id} AS UUID), CAST(${String(item.product_id)} AS UUID),
-            ${minQty}, ${unitPrice}
+            CAST(${minQty.toFixed(3)} AS DECIMAL(14,3)), CAST(${unitPrice.toFixed(6)} AS DECIMAL(14,6))
           )
         `);
         tx.audit({
@@ -556,7 +570,7 @@ export async function replaceItems(
         INSERT INTO catalog.price_list_item (id, version_id, product_id, min_qty, unit_price)
         VALUES (
           CAST(${itemId} AS UUID), CAST(${fresh.id} AS UUID), CAST(${item.product_id} AS UUID),
-          ${new PriceDecimal(item.min_qty)}, ${new PriceDecimal(item.unit_price)}
+          CAST(${item.min_qty} AS DECIMAL(14,3)), CAST(${item.unit_price} AS DECIMAL(14,6))
         )
       `);
       tx.audit({
@@ -820,6 +834,8 @@ function toList(row: Record<string, unknown>): PriceList {
     currency: asString(row.currency),
     tax_included: asBool(row.tax_included),
     is_active: asBool(row.is_active),
+    active_version: row.active_version === undefined ? null : asNullableInt(row.active_version),
+    active_valid_from: row.active_valid_from === undefined ? null : asNullableString(row.active_valid_from),
   };
 }
 

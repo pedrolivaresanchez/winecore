@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
 import { NoPermission } from "@/components/NoPermission";
 import { PageHeader } from "@/components/PageHeader";
@@ -15,13 +14,13 @@ import { useApi } from "@/hooks/use-api";
 import { useMinWidth } from "@/hooks/use-media";
 import { copy } from "@/i18n";
 import { ApiError } from "@/lib/api";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatDecimalMoney } from "@/lib/format";
 import { allows } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
 import type { Me } from "@/lib/types";
-import { createVersion, requestActivation, saveVersionItems } from "@/pages/catalogo/api";
+import { createVersion, saveVersionItems } from "@/pages/catalogo/api";
 import { Field } from "@/components/Field";
-import { cmpDecimal, formatPrice, normalizeDecimal, showDecimal } from "@/pages/catalogo/money";
+import { cmpDecimal, normalizeDecimal, showDecimal } from "@/pages/catalogo/money";
 import {
   VERSION_LABELS,
   pickVersion,
@@ -107,10 +106,14 @@ function Editor({
   const chosen = ordered.find((version) => version.id === selectedId) ?? pickVersion(ordered);
   const [rows, setRows] = useState<Row[]>([]);
   const [baseline, setBaseline] = useState("");
+  const rowsRef = useRef(rows);
+  const baselineRef = useRef(baseline);
+  const loadedVersionRef = useRef<string | null>(null);
+  rowsRef.current = rows;
+  baselineRef.current = baseline;
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
   const [banner, setBanner] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [confirm, setConfirm] = useState(false);
   const [creating, setCreating] = useState(false);
   const [showDiff, setShowDiff] = useState(false);
   const [importNotes, setImportNotes] = useState<string[]>([]);
@@ -125,8 +128,12 @@ function Editor({
       min_qty: showDecimal(item.min_qty),
       unit_price: showDecimal(item.unit_price),
     }));
+    const serialized = JSON.stringify(next);
+    const dirty = baselineRef.current !== "" && JSON.stringify(rowsRef.current) !== baselineRef.current;
+    if (dirty && loadedVersionRef.current === chosen.id) return;
+    loadedVersionRef.current = chosen.id;
     setRows(next);
-    setBaseline(JSON.stringify(next));
+    setBaseline(serialized);
     setRowErrors({});
     setBanner(null);
     setImportNotes([]);
@@ -179,28 +186,14 @@ function Editor({
     setBanner(null);
     try {
       await saveVersionItems(list.id, chosen.version, items);
+      const saved = JSON.stringify(rows);
+      baselineRef.current = saved;
+      setBaseline(saved);
       toast("Precios guardados");
       onReload();
     } catch (error: unknown) {
-      setBanner(error instanceof ApiError ? error.message : "No se han podido guardar los precios.");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function activate() {
-    if (!chosen) return;
-    setSaving(true);
-    setBanner(null);
-    try {
-      await requestActivation(list.id, chosen.version);
-      setConfirm(false);
-      toast("Activación solicitada");
-      onReload();
-    } catch (error: unknown) {
-      setConfirm(false);
-      const message = error instanceof ApiError ? error.message : "No se ha podido solicitar la activación.";
-      setBanner(error instanceof ApiError && error.code === "WC050" ? `${message} Crea una versión nueva.` : message);
+      const message = error instanceof ApiError ? error.message : "No se han podido guardar los precios.";
+      setBanner(error instanceof ApiError && error.code === "WC050" ? `WC050. ${message}` : message);
     } finally {
       setSaving(false);
     }
@@ -275,8 +268,13 @@ function Editor({
             </p>
           </div>
           {chosen.notes ? <p className="text-compact">{chosen.notes}</p> : null}
+          {status === "draft" ? (
+            <p className="text-compact text-muted-foreground">Disponible al activar Aprobaciones</p>
+          ) : null}
           {status === "active" || status === "retired" ? (
-            <p className="text-compact text-muted-foreground">Versión de tarifa no editable. Crea una versión nueva.</p>
+            <p role="status" className="text-compact text-muted-foreground">
+              WC050. Versión de tarifa no editable. Crea una versión nueva.
+            </p>
           ) : null}
           {banner ? (
             <p role="alert" className="text-compact text-destructive">
@@ -333,9 +331,6 @@ function Editor({
                 </Button>
                 <Button type="button" variant={dirty ? "primary" : "secondary"} onClick={() => void save()} disabled={saving || !dirty}>
                   {saving ? "Guardando…" : "Guardar precios"}
-                </Button>
-                <Button type="button" variant={dirty ? "secondary" : "primary"} onClick={() => setConfirm(true)} disabled={saving || dirty || rows.length === 0}>
-                  Solicitar activación
                 </Button>
               </>
             ) : null}
@@ -462,19 +457,6 @@ function Editor({
           onReload();
         }}
       />
-      <ConfirmDialog
-        open={confirm}
-        title="Solicitar activación"
-        body={
-          chosen
-            ? `Se pedirá aprobación para activar la versión ${chosen.version} desde el ${formatDate(chosen.valid_from)}.`
-            : ""
-        }
-        confirmLabel="Solicitar activación"
-        busy={saving}
-        onClose={() => setConfirm(false)}
-        onConfirm={() => void activate()}
-      />
     </div>
   );
 }
@@ -585,7 +567,9 @@ function Diff({ rows, previous, products }: { rows: Row[]; previous: PriceItem[]
 }
 
 function diffRows(rows: Row[], previous: PriceItem[], products: Product[]) {
-  const before = new Map(previous.map((item) => [`${item.product_id}|${item.min_qty}`, item]));
+  const before = new Map(
+    previous.map((item) => [`${item.product_id}|${normalizeDecimal(item.min_qty, 3).value || item.min_qty}`, item]),
+  );
   const seen = new Set<string>();
   const lines: { key: string; name: string; before: string; after: string }[] = [];
   for (const row of rows) {
@@ -596,18 +580,19 @@ function diffRows(rows: Row[], previous: PriceItem[], products: Product[]) {
     seen.add(key);
     const prev = before.get(key);
     const name = labelOf(row.product_id, products, previous);
-    if (!prev) lines.push({ key, name, before: "—", after: formatPrice(price) });
+    if (!prev) lines.push({ key, name, before: "—", after: formatDecimalMoney(price) });
     else if (cmpDecimal(prev.unit_price, price) !== 0) {
-      lines.push({ key, name, before: formatPrice(prev.unit_price), after: formatPrice(price) });
+      lines.push({ key, name, before: formatDecimalMoney(prev.unit_price), after: formatDecimalMoney(price) });
     }
   }
   for (const item of previous) {
-    const key = `${item.product_id}|${item.min_qty}`;
+    const min = normalizeDecimal(item.min_qty, 3).value || item.min_qty;
+    const key = `${item.product_id}|${min}`;
     if (seen.has(key)) continue;
     lines.push({
       key,
       name: item.product_name || labelOf(item.product_id, products, previous),
-      before: formatPrice(item.unit_price),
+      before: formatDecimalMoney(item.unit_price),
       after: "—",
     });
   }
@@ -651,7 +636,7 @@ function missingPrices(rows: Row[], products: Product[]) {
 
 function priceText(value: string): string {
   const parsed = normalizeDecimal(value, 4);
-  return parsed.value ? formatPrice(parsed.value) : value || "—";
+  return parsed.value ? formatDecimalMoney(parsed.value) : value || "—";
 }
 
 function parseCsv(text: string, products: Product[]): { rows: Row[]; notes: string[] } {

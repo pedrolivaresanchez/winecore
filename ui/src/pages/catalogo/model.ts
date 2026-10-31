@@ -82,6 +82,7 @@ export type Product = {
   created_at: string;
   updated_at: string;
   has_movements?: boolean;
+  is_gtin_current?: boolean;
   gtin_is_current?: boolean;
   on_hand_qty?: string | null;
   is_organic?: boolean;
@@ -152,7 +153,9 @@ export type FormatInput = {
 export type ProductPrice = {
   price_list_id: string;
   price_list_code?: string;
-  price_list_name: string;
+  price_list_name?: string;
+  name?: string;
+  code?: string;
   version_id?: string;
   version?: number;
   currency?: string;
@@ -332,6 +335,10 @@ export function versionStatus(version: PriceListVersion): VersionStatus {
 
 export function versionEditable(version: PriceListVersion): boolean {
   return version.status === "draft" && !version.approval_request_id;
+}
+
+export function gtinCurrent(product: Product): boolean {
+  return Boolean(product.is_gtin_current ?? product.gtin_is_current);
 }
 
 export function productWarnings(product: Product): string[] {

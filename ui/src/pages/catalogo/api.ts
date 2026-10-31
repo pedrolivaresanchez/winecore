@@ -91,7 +91,13 @@ export function markGtinCurrent(id: string) {
 
 export function productPrices(id: string, signal?: AbortSignal) {
   return api<ListPage<ProductPrice>>(`/v1/products/${id}/prices`, { signal }).then((page) =>
-    asPage(page, (item) => ({ ...item, unit_price: text(item.unit_price) ?? "0", min_qty: text(item.min_qty) ?? "1" })),
+    asPage(page, (item) => ({
+      ...item,
+      unit_price: text(item.unit_price) ?? "0",
+      min_qty: text(item.min_qty) ?? "1",
+      price_list_name: item.price_list_name || item.name,
+      price_list_code: item.price_list_code || item.code,
+    })),
   );
 }
 
@@ -182,7 +188,8 @@ export function requestActivation(priceListId: string, version: number) {
 export async function exportProducts(query: ProductQuery) {
   const path = productQuery(query).replace("/v1/products?", "/v1/products/export.csv?");
   const csv = await apiText(path);
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const withBom = csv.charCodeAt(0) === 0xfeff ? csv : `\uFEFF${csv}`;
+  const blob = new Blob([withBom], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -196,11 +203,13 @@ export function isStale(error: unknown): boolean {
 }
 
 export function moduleDisabled(error: unknown): boolean {
-  return error instanceof ApiError && error.status === 404 && error.code === "WC_MODULE_DISABLED";
+  if (!(error instanceof ApiError) || error.status !== 404) return false;
+  return error.code === "WC_MODULE_DISABLED" || error.code === "WC_NOT_FOUND";
 }
 
 export function duplicateProduct(error: unknown): { id: string; name: string } | null {
-  if (!(error instanceof ApiError) || error.status !== 409 || !error.details) return null;
+  if (!(error instanceof ApiError) || !error.details) return null;
+  if (error.status !== 409 && error.status !== 422) return null;
   const id = error.details.existing_id;
   const name = error.details.existing_name;
   if (typeof id === "string" && typeof name === "string") return { id, name };
