@@ -1,2 +1,4 @@
 # Valores que parecen datos personales pero son sintéticos o públicos (uno por línea, valor exacto).
 # Añadir aquí solo datos inventados para tests o identificadores públicos de entidades.
+# NIF ficticio de pruebas (00000000 mod 23 = 0 → letra T); no corresponde a ninguna persona.
+00000000T

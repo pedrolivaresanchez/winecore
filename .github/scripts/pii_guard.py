@@ -19,7 +19,7 @@ TEXT_SUFFIXES = {
 ALLOWED_EMAIL_DOMAINS = (
     "example.com", "example.org", "example.net", "winecore.test",
     "agenciatributaria.gob.es", "correo.aeat.es", "juntadeandalucia.es",
-    "users.noreply.github.com",
+    "users.noreply.github.com", "github.com",
 )
 PATTERNS = {
     "email": re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),

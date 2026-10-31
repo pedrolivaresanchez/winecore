@@ -290,6 +290,18 @@ CREATE TABLE core.attachment_link (
 );
 CREATE INDEX attachment_link_entity_idx ON core.attachment_link(entity_table, entity_id);
 
+-- Los enlaces de evidencias, PDF emitidos y acuses no se desvinculan nunca (WC001)
+CREATE FUNCTION core.attachment_link_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF OLD.role IN ('invoice_pdf','delivery_note_pdf','evidence_screenshot','evidence_request',
+                  'evidence_response','official_receipt','lab_report') THEN
+    RAISE EXCEPTION 'WC001: el enlace % (%) es una evidencia y no se elimina', OLD.id, OLD.role;
+  END IF;
+  RETURN OLD;
+END $$;
+CREATE TRIGGER attachment_link_guard BEFORE DELETE ON core.attachment_link
+  FOR EACH ROW EXECUTE FUNCTION core.attachment_link_guard();
+
 CREATE TABLE core.notification (
   id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id    uuid NOT NULL REFERENCES core.app_user(id),

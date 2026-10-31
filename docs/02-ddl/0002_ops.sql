@@ -1,7 +1,7 @@
 -- =====================================================================
 -- WineCore · Migración 0002 · operaciones transversales (ops)
 -- Aprobaciones humanas, eventos (outbox), idempotencia, confirmaciones MCP y ejecuciones de jobs.
--- Especificación: docs/02-modelo-dominio.md §5 y docs/03-maquinas-estado.md §11
+-- Especificación: docs/02-modelo-dominio.md §5 y docs/03-maquinas-estado.md §12
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
