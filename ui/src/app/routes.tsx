@@ -22,6 +22,9 @@ import { LotesPage } from '@/pages/bodega/Lotes'
 import { MapaPage } from '@/pages/bodega/Mapa'
 import { OperacionPage } from '@/pages/bodega/Operacion'
 import { QrOpen } from '@/pages/bodega/QrOpen'
+import { AnaliticasPage } from '@/pages/elaboracion/Analiticas'
+import { FasesPage } from '@/pages/elaboracion/Fases'
+import { LecturasPage } from '@/pages/elaboracion/Lecturas'
 import { CountCreate } from '@/pages/existencias/CountCreate'
 import { CountPage } from '@/pages/existencias/CountPage'
 import { CountsPage } from '@/pages/existencias/CountsPage'
@@ -59,6 +62,9 @@ export function AppRoutes({ me }: { me: Me }) {
       <Route path="bodega/lotes" element={<LotesPage me={me} />} />
       <Route path="bodega/lotes/:lotId" element={<LotePage me={me} />} />
       <Route path="lotes/:lotId" element={<LotePage me={me} />} />
+      <Route path="bodega/lecturas" element={<LecturasPage me={me} />} />
+      <Route path="bodega/fases" element={<FasesPage me={me} />} />
+      <Route path="bodega/analiticas" element={<AnaliticasPage me={me} />} />
       <Route path="bodega/operaciones/nueva" element={<OperacionPage me={me} />} />
       <Route path="bodega/operacion/nueva" element={<OperacionPage me={me} />} />
       <Route path="bodega/operaciones/:id" element={<OperacionPage me={me} />} />

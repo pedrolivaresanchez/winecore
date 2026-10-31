@@ -42,6 +42,9 @@ export const navigation: NavEntry[] = [
     children: [
       { id: 'vessels', label: copy.nav.vessels, path: '/bodega/depositos', permission: 'cellar.read' },
       { id: 'lots', label: copy.nav.lots, path: '/bodega/lotes', permission: 'cellar.read' },
+      { id: 'readings', label: copy.nav.readings, path: '/bodega/lecturas', permission: 'cellar.read' },
+      { id: 'phases', label: copy.nav.phases, path: '/bodega/fases', permission: 'cellar.read' },
+      { id: 'analyses', label: copy.nav.analyses, path: '/bodega/analiticas', permission: 'cellar.read' },
       { id: 'new-operation', label: copy.nav.newOperation, path: '/bodega/operaciones/nueva', permission: 'cellar.operate' },
     ],
   },

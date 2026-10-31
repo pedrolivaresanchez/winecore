@@ -15,6 +15,8 @@ import { Badge, Button, Dialog, DialogBody, DialogFooter, DialogHeader, EmptySta
 import { MoreVertical, Printer } from '@/ui/icons'
 import { Fact, FactCard, FillMeter, ReadingColumn, RecordBar, SectionTabs } from '@/pages/bodega/chrome'
 import { materialLabel, opLabel, opStatusLabel, opStatusTone, vesselStatusLabel, vesselTone } from '@/pages/bodega/labels'
+import { LotAnalyses } from '@/pages/elaboracion/Analiticas'
+import { LotCurve } from '@/pages/elaboracion/Lecturas'
 
 type HistoryPage = { items: CellarOperation[] }
 
@@ -220,10 +222,10 @@ function Loaded({
           ) : null}
 
           {tab === 'lecturas' ? (
-            <EmptyState size="sm" title={copy.cellar.emptyReadings} description={copy.cellar.emptyReadingsHint} />
+            inside ? <LotCurve lotCode={inside.lot_code} /> : <EmptyState size="sm" title={copy.cellar.emptyReadings} description={copy.cellar.emptyReadingsHint} />
           ) : null}
           {tab === 'analiticas' ? (
-            <EmptyState size="sm" title={copy.cellar.emptyAnalyses} description={copy.cellar.emptyAnalysesHint} />
+            inside ? <LotAnalyses me={me} lotCode={inside.lot_code} /> : <EmptyState size="sm" title={copy.cellar.emptyAnalyses} description={copy.cellar.emptyAnalysesHint} />
           ) : null}
           {tab === 'limpiezas' ? (
             cleanings.length === 0 ? (

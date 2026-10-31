@@ -14,7 +14,11 @@ export type OpType =
   | "addition"
   | "loss"
   | "destruction"
-  | "cleaning";
+  | "cleaning"
+  | "bleeding"
+  | "pressing_off"
+  | "delestage"
+  | "temperature_control";
 
 export type Vessel = {
   id: string;
@@ -149,6 +153,10 @@ export const OP_TYPES: { id: OpType; label: string; hint: string }[] = [
   { id: "loss", label: "Merma", hint: "Lías, derrame, rotura" },
   { id: "destruction", label: "Destrucción", hint: "Exige aprobación" },
   { id: "cleaning", label: "Limpieza", hint: "Depósito vacío" },
+  { id: "bleeding", label: "Sangrado", hint: "Parte del depósito, lote nuevo" },
+  { id: "pressing_off", label: "Descube", hint: "Yema y vino de prensa" },
+  { id: "delestage", label: "Délestage", hint: "Sin mover volumen" },
+  { id: "temperature_control", label: "Temperatura", hint: "Cambia la consigna" },
 ];
 
 const KIND_LABEL: Record<VesselKind, string> = {
@@ -211,7 +219,7 @@ export function mlToEdit(ml: number): string {
 }
 
 export function needsBalance(op: OpType | ""): boolean {
-  return op === "racking" || op === "blend" || op === "filtration" || op === "bottling";
+  return op === "racking" || op === "blend" || op === "filtration" || op === "bottling" || op === "bleeding" || op === "pressing_off";
 }
 
 export function conservation(inputMl: number, outputMl: number, lossMl: number): { ok: boolean; text: string } {

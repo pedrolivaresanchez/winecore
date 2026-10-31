@@ -15,9 +15,14 @@ import type { Me } from '@/lib/types'
 import { Alert, Badge, EmptyState, Skeleton } from '@/ui'
 import { ReadingColumn, RecordBar, SectionTabs } from '@/pages/bodega/chrome'
 import { lotKindLabel, lotStatusLabel, moveLabel } from '@/pages/bodega/labels'
+import { LotAnalyses } from '@/pages/elaboracion/Analiticas'
+import { PhaseBoard } from '@/pages/elaboracion/Fases'
+import { LotCurve } from '@/pages/elaboracion/Lecturas'
 
 const TABS = [
   { id: 'resumen', label: copy.cellar.summary },
+  { id: 'lecturas', label: copy.cellar.readings },
+  { id: 'fases', label: copy.nav.phases },
   { id: 'genealogia', label: copy.cellar.genealogy },
   { id: 'analiticas', label: copy.cellar.analyses },
   { id: 'adiciones', label: copy.cellar.additions },
@@ -44,7 +49,10 @@ function formatAmount(volumeMl: number, massG = 0): string {
 
 function so2Over(items: Record<string, unknown>[]): boolean {
   return items.some((item) => {
-    const raw = item.so2_total ?? item.total_so2_mg_l ?? item.so2
+    const results = Array.isArray(item.results) ? item.results : []
+    const hit = results.find((result) => result && typeof result === 'object' && 'parameter' in result && result.parameter === 'total_so2')
+    const fromResult = hit && typeof hit === 'object' && 'value' in hit ? hit.value : undefined
+    const raw = fromResult ?? item.so2_total ?? item.total_so2_mg_l ?? item.so2
     const value = typeof raw === 'number' ? raw : Number(raw)
     return Number.isFinite(value) && value > 100
   })
@@ -58,7 +66,7 @@ export function LotePage({ me }: { me: Me }) {
   const trace = useApi<Traceability>(allowed ? `/v1/lots/${code}/traceability?direction=both` : null)
   const wines = useApi<{ items: Wine[] }>(allowed ? '/v1/wines?limit=100' : null)
   const [tab, setTab] = useState<TabId>('resumen')
-  const analyses = useApi<Page<Record<string, unknown>>>(allowed && tab === 'analiticas' ? `/v1/lots/${code}/analyses` : null)
+  const analyses = useApi<Page<Record<string, unknown>>>(allowed ? `/v1/lots/${code}/analyses` : null)
   const additions = useApi<Page<Record<string, unknown>>>(allowed && tab === 'adiciones' ? `/v1/lots/${code}/additions` : null)
   const moves = useApi<Page<Record<string, unknown>>>(allowed && tab === 'movimientos' ? `/v1/lots/${code}/moves?limit=20` : null)
   const sales = useApi<Page<Record<string, unknown>>>(allowed && tab === 'ventas' ? `/v1/lots/${code}/sales` : null)
@@ -156,14 +164,9 @@ export function LotePage({ me }: { me: Me }) {
             ) : null
           ) : null}
 
-          {tab === 'analiticas' ? (
-            <RecordList
-              page={analyses}
-              emptyTitle={copy.cellar.emptyAnalyses}
-              emptyHint={copy.cellar.emptyAnalysesHint}
-              render={(row) => String(row.parameter ?? row.kind ?? row.id ?? 'Analítica')}
-            />
-          ) : null}
+          {tab === 'lecturas' ? <LotCurve lotCode={item.code} /> : null}
+          {tab === 'fases' ? <PhaseBoard me={me} lotCode={item.code} /> : null}
+          {tab === 'analiticas' ? <LotAnalyses me={me} lotCode={item.code} /> : null}
           {tab === 'adiciones' ? (
             <RecordList
               page={additions}
