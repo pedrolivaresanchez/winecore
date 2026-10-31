@@ -8,6 +8,8 @@ type ShellContextValue = {
   settings: boolean
   openSettings: () => void
   closeSettings: () => void
+  /** Cmd-K, from any surface. */
+  openCommand: () => void
   chromeTitle: string
   setChromeTitle: (title: string) => void
 }
@@ -21,6 +23,7 @@ export function ShellProvider({
   settings,
   openSettings,
   closeSettings,
+  openCommand,
   children,
 }: {
   mobile: boolean
@@ -29,6 +32,7 @@ export function ShellProvider({
   settings: boolean
   openSettings: () => void
   closeSettings: () => void
+  openCommand: () => void
   children: ReactNode
 }) {
   const [chromeTitle, setChromeTitle] = useState(copy.nav.panel)
@@ -39,6 +43,7 @@ export function ShellProvider({
     settings,
     openSettings,
     closeSettings,
+    openCommand,
     chromeTitle,
     setChromeTitle,
   }

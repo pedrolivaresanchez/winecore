@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { ChevronDown, PanelLeft, Search, Settings2 } from '@/ui/icons'
-import { GlassMenu, MenuItem, Tooltip, useMenuOpen } from '@/ui'
+import { ChevronDown, PanelLeft, Search } from '@/ui/icons'
+import { Tooltip } from '@/ui'
 import { textureSecondary } from '@/ui/button'
 import { tagToneClass, type TagTone } from '@/ui/tag-palette'
 import { activeRailId, visibleGroups, type RailGroup, type RailItem } from '@/app/nav'
@@ -9,17 +9,13 @@ import { PendingBadge } from '@/pages/aprobaciones/PendingBadge'
 import { RailRow } from '@/app/shell/rail-row'
 import { railMetrics } from '@/app/shell/rail-metrics'
 import { useShell } from '@/app/shell/shell-context'
+import { commandChord } from '@/app/shell/shortcuts'
 import { SettingsSidebar, type SettingsArea } from '@/app/shell/settings-view'
 import { UserMenu } from '@/app/shell/user-menu'
 import { copy, fill } from '@/i18n'
 import { cn } from '@/lib/cn'
 import { iconStroke } from '@/lib/motion'
 import type { Me } from '@/lib/types'
-
-function commandChord() {
-  const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
-  return mac ? '⌘K' : 'Ctrl K'
-}
 
 export function AppSidebar({
   me,
@@ -51,10 +47,9 @@ export function AppSidebar({
 }
 
 function WorkspaceRail({ me, collapsed }: { me: Me; collapsed: boolean }) {
-  const { setSidebarOpen, openSettings, mobile } = useShell()
+  const { setSidebarOpen, openCommand, mobile } = useShell()
   const navigate = useNavigate()
   const location = useLocation()
-  const search = useMenuOpen()
   const groups = visibleGroups(me)
   const activeId = activeRailId(location.pathname, groups)
   const [moreOpen, setMoreOpen] = useState<Record<string, boolean>>({})
@@ -63,8 +58,6 @@ function WorkspaceRail({ me, collapsed }: { me: Me; collapsed: boolean }) {
     navigate(path)
     if (mobile) setSidebarOpen(false)
   }
-
-  const destinations = groups.flatMap((group) => group.items)
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -103,67 +96,41 @@ function WorkspaceRail({ me, collapsed }: { me: Me; collapsed: boolean }) {
       </div>
 
       <div className={cn('flex shrink-0 pb-2', railMetrics.pad, collapsed && 'justify-center')}>
-        <GlassMenu
-          open={search.open}
-          onOpenChange={search.setOpen}
-          placement={collapsed ? 'right-start' : 'bottom-start'}
-          className={collapsed ? 'w-7' : 'w-full'}
-          panelClassName="min-w-[220px]"
-          trigger={
-            collapsed ? (
-              <button
-                type="button"
-                onClick={search.toggle}
-                aria-label={copy.table.search}
-                className={cn(
-                  'flex size-7 items-center justify-center rounded-md text-text-tertiary hover:text-ink-900',
-                  textureSecondary,
-                )}
-              >
-                <Search className={railMetrics.icon} strokeWidth={iconStroke} />
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={search.toggle}
-                className={cn(
-                  'flex w-full items-center gap-2 rounded-md px-2 text-left text-label text-text-tertiary hover:text-ink-900',
-                  railMetrics.search,
-                  textureSecondary,
-                )}
-              >
-                <Search className={cn(railMetrics.icon, 'shrink-0')} strokeWidth={iconStroke} />
-                <span className="min-w-0 flex-1 truncate">{copy.table.search}</span>
-                <kbd className="shrink-0 text-caption text-text-tertiary">{commandChord()}</kbd>
-              </button>
-            )
-          }
-        >
-          {destinations.map((item) => {
-            const Icon = item.icon
-            return (
-              <MenuItem
-                key={item.id}
-                icon={<Icon className={railMetrics.icon} strokeWidth={iconStroke} />}
-                onClick={() => {
-                  search.close()
-                  go(item.path)
-                }}
-              >
-                {item.label}
-              </MenuItem>
-            )
-          })}
-          <MenuItem
-            icon={<Settings2 className={railMetrics.icon} strokeWidth={iconStroke} />}
+        {collapsed ? (
+          <Tooltip label={`${copy.table.search} · ${commandChord()}`}>
+            <button
+              type="button"
+              onClick={openCommand}
+              aria-label={copy.command.title}
+              aria-keyshortcuts="Meta+K Control+K"
+              className={cn(
+                'flex size-7 items-center justify-center rounded-md text-text-tertiary hover:text-ink-900',
+                textureSecondary,
+              )}
+            >
+              <Search className={railMetrics.icon} strokeWidth={iconStroke} />
+            </button>
+          </Tooltip>
+        ) : (
+          <button
+            type="button"
             onClick={() => {
-              search.close()
-              openSettings()
+              if (mobile) setSidebarOpen(false)
+              openCommand()
             }}
+            aria-label={copy.command.title}
+            aria-keyshortcuts="Meta+K Control+K"
+            className={cn(
+              'flex w-full items-center gap-2 rounded-md px-2 text-left text-label text-text-tertiary hover:text-ink-900',
+              railMetrics.search,
+              textureSecondary,
+            )}
           >
-            {copy.nav.settings}
-          </MenuItem>
-        </GlassMenu>
+            <Search className={cn(railMetrics.icon, 'shrink-0')} strokeWidth={iconStroke} />
+            <span className="min-w-0 flex-1 truncate">{copy.table.search}</span>
+            <kbd className="shrink-0 text-caption text-text-tertiary pointer-coarse:hidden">{commandChord()}</kbd>
+          </button>
+        )}
       </div>
 
       <nav className={cn('flex min-h-0 flex-1 flex-col overflow-y-auto pb-3 scrollbar-none', railMetrics.pad, railMetrics.gap, collapsed && 'items-center')}>
