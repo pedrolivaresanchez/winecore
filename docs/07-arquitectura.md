@@ -18,6 +18,7 @@ flowchart LR
   end
   DB[(PostgreSQL 16<br/>AWS RDS eu-north-1)]
   S3[(S3 eu-north-1<br/>Object Lock)]
+  SND[verifactu-sender<br/>AWS Lambda eu-north-1<br/>certificado en Secrets Manager]
   RUN[Ejecutor local<br/>Playwright + certificado<br/>equipo dedicado]
   AEAT[AEAT<br/>servicio web Verifactu]
   PORT[Portales: SILICIE, EMCS,<br/>SISV, AecocEDI]
@@ -30,7 +31,8 @@ flowchart LR
   WF -->|REST/MCP con token| API
   API --> DB
   API --> S3
-  API -->|mTLS| AEAT
+  SND -->|registros pending / estados| DB
+  SND -->|mTLS| AEAT
   RUN -->|HTTPS saliente: reclamar trabajos, evidencias| API
   RUN --> PORT
   WF -->|lectura| M365
@@ -74,6 +76,7 @@ WineCore/
 │   ├── regulatorio-emcs/  regulatorio-edi/  vendimia-campo/  resumen-diario/
 │   │   └── timbal.yaml, agent.py | workflow.py, pyproject.toml, evals/*.yaml
 ├── runner/                     # ejecutor local (ADR 009): procedures/, src/, README.md
+├── sender/                     # verifactu-sender (ADR 003): función AWS Lambda, reutiliza api/src/core/regulatory/verifactu
 ├── scripts/                    # utilidades de CI (esperar despliegue, comparar remotos)
 ├── docs/  context/  .github/
 └── .gitignore  .env.example  biome.json  README.md
@@ -87,7 +90,8 @@ WineCore/
 | `api/src/core` | Toda la lógica de negocio: cálculos, invariantes, máquinas de estado, payloads y renderizadores regulatorios, Verifactu (huella, XML, QR) | HTTP, UI |
 | `api/src/routes` | REST `/api/v1/*` con validación TypeBox, permisos, idempotencia | Lógica de negocio |
 | `api/src/mcp` | Catálogo MCP (ADR 010) | Lógica de negocio; aprobaciones |
-| `api/src/jobs` | Cron: envío Verifactu, cierre intercompañía, vigilantes, outbox, verificaciones | — |
+| `api/src/jobs` | Cron: cierre intercompañía, vigilantes, outbox, verificaciones | Enviar a la AEAT (lo hace `sender/`) |
+| `sender/` | `verifactu-sender` en AWS Lambda (ADR 003): envía los registros ya generados, respeta el control de flujo y guarda respuestas | Generar registros o huellas; emitir facturas |
 | `api/src/m2m` | Protocolo del ejecutor local, webhooks (Stripe, M3), MCP de máquina | — |
 | `workforce/*` | Orquestación (workflows regulatorios con `suspend()`), extracción (OCR), interfaz conversacional (asistente, vendimia), resumen diario | Escribir en BD directamente; decidir reglas de negocio |
 | `runner/` | Ejecutar trabajos aprobados en portales con certificado; subir evidencias | Decidir qué enviar; aprobar |
@@ -141,7 +145,7 @@ sequenceDiagram
   participant U as Administración (UI)
   participant A as api (núcleo)
   participant D as PostgreSQL
-  participant J as job verifactu-sender
+  participant J as verifactu-sender (AWS Lambda, ADR 003)
   participant T as AEAT (servicio web)
   U->>A: POST /api/v1/invoices/{id}/issue (Idempotency-Key)
   A->>D: BEGIN; set_actor; bloquear factura; validar
@@ -201,13 +205,14 @@ sequenceDiagram
 | `DATABASE_URL_MIGRATOR` | GitHub environment | CI `db-migrate` | 90 días |
 | `WINECORE_DATA_KEY` (AES-256 para IBAN y TOTP) | Variable secreta de Timbal | `api/` | Anual (re-cifrado con job) |
 | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` (usuario IAM limitado al bucket) | Variable secreta de Timbal | `api/` | 90 días |
-| `VERIFACTU_CERT_P12_B64` + `VERIFACTU_CERT_PASSWORD` (certificado dedicado, ADR 003) | Variable secreta de Timbal (solo `main` y `staging`) | job `verifactu-sender` | Al caducar el certificado o ante incidente |
+| Certificado dedicado de Verifactu y su contraseña (ADR 003) | **AWS Secrets Manager** (eu-north-1, clave KMS propia); nunca en Timbal | Solo `verifactu-sender` (rol IAM propio) | Al caducar o ante incidente; aviso 30 días antes |
+| Rol de BD `winecore_vf_sender` | AWS Secrets Manager | `verifactu-sender` | 90 días |
 | `CVBOT_EVENTS_URL` / `CVBOT_EVENTS_HMAC_KEY` | Variable secreta de Timbal | notificador | Anual |
 | Claves de modelos (si no se usa `timbal/auto`) | Variable secreta de Timbal | workforce | Según proveedor |
 | `TIMBAL_API_KEY` (cuenta dedicada) | GitHub environment | CI | 90 días |
 | Certificado de P.O, contraseñas de portales, token del ejecutor | **Llavero del equipo del ejecutor local** | `runner/` | Según caducidad; inmediata si hay incidente |
 
-Limitación conocida: en Timbal las variables secretas llegan a **todos** los componentes del entorno (no hay restricción por componente). Por eso el certificado de P.O **no** va a Timbal y el de Verifactu es uno **dedicado** con alcance limitado (ADR 003).
+Limitación conocida: en Timbal las variables secretas llegan a **todos** los componentes del entorno (no hay restricción por componente), agentes incluidos. Por eso **ningún certificado va a Timbal**: el de P.O se queda en el equipo del ejecutor local y el de Verifactu es uno **dedicado** que solo lee `verifactu-sender` en AWS (ADR 003). Respaldo, solo si AWS no estuviera listo el 20-11-2026: variable secreta de Timbal en `main` y `staging` con certificado de sello.
 
 ## 11. Datos personales (RGPD)
 
@@ -242,7 +247,8 @@ Limitación conocida: en Timbal las variables secretas llegan a **todos** los co
 | Modelos de IA (OCR ~50 gastos/mes, asistente, resumen diario) | 5–25 € | Modelos baratos por defecto |
 | GitHub (repo privado, Actions) | 0–4 € | Plan gratuito o Pro si faltan minutos |
 | Equipo del ejecutor local | 0 € recurrente (compra única ~800 € ya prevista en la reunión) | Q-026 |
-| Certificado dedicado para Verifactu | 0–60 €/año | Según tipo (ADR 003) |
+| Certificado dedicado para Verifactu | 0–150 €/año | Sello cualificado de empresa o representante (ADR 003) |
+| `verifactu-sender` (Lambda, Secrets Manager, KMS) | 1–2 € | ADR 003 |
 | **Total recurrente fuera de Timbal** | **≈ 30–70 €/mes** | + plan de Timbal |
 
 ## 14. Preguntas abiertas a Timbal (las canaliza Pedro; no bloquean la especificación)

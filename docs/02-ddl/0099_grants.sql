@@ -23,4 +23,17 @@ BEGIN
                   billing.invoice_tax, billing.invoice_due, billing.invoice_rectification, cellar.operation_line,
                   purchasing.supplier_invoice_line, inventory.inventory_count_line, catalog.price_list_item,
                   billing.billing_rule, regulatory.emcs_item, vineyard.parcel_variety TO winecore_app;
+
+  -- verifactu-sender (ADR 003): no puede crear registros ni facturas; solo anotar el envío y su resultado
+  GRANT USAGE ON SCHEMA core, audit, regulatory TO winecore_vf_sender;
+  GRANT SELECT ON core.legal_entity, regulatory.verifactu_installation, regulatory.verifactu_record,
+                  regulatory.submission, regulatory.submission_item, regulatory.connector_run TO winecore_vf_sender;
+  GRANT UPDATE (send_status, aeat_csv, aeat_error_code, aeat_error_text, submission_id)
+    ON regulatory.verifactu_record TO winecore_vf_sender;
+  GRANT UPDATE (next_send_not_before) ON regulatory.verifactu_installation TO winecore_vf_sender;
+  GRANT INSERT, UPDATE ON regulatory.submission, regulatory.connector_run TO winecore_vf_sender;
+  GRANT INSERT ON regulatory.submission_item TO winecore_vf_sender;
+  GRANT INSERT ON audit.audit_log TO winecore_vf_sender;
+  GRANT USAGE ON ALL SEQUENCES IN SCHEMA audit TO winecore_vf_sender;
+  GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA core, audit TO winecore_vf_sender;
 END $$;

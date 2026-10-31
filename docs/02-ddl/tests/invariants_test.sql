@@ -1,6 +1,6 @@
 -- =====================================================================
 -- WineCore · Pruebas de invariantes de base de datos (datos 100 % sintéticos)
--- Ejecutar sobre una BD vacía tras aplicar 0001..0015:
+-- Ejecutar sobre una BD vacía tras aplicar 0000_roles, 0001..0016 y 0099_grants:
 --   psql -v ON_ERROR_STOP=1 -f docs/02-ddl/tests/invariants_test.sql
 -- Cada bloque DO comprueba que una operación prohibida falla con su código WCnnn
 -- y que una operación válida funciona. Si algo no se comporta así, RAISE y el script falla.
@@ -316,6 +316,26 @@ DO $$ BEGIN
   IF (SELECT status FROM legacy.open_item WHERE id='00000000-0000-0000-0000-0000000019c1') <> 'paid' THEN RAISE EXCEPTION 'partida abierta no cobrada'; END IF;
 END $$;
 COMMIT;
+
+-- 17) Verifactu: la hora de generación no retrocede (WC131) y el rol del emisor (ADR 003)
+--     anota el resultado del envío pero no crea registros, no altera su contenido ni toca facturas
+BEGIN;
+SELECT core.set_actor('system', 'verifactu', NULL, 'test', NULL);
+SELECT pg_temp.expect_error($q$ INSERT INTO regulatory.verifactu_record(installation_id, legal_entity_id, chain_seq, record_type, invoice_id, issuer_tax_id, invoice_number, invoice_issue_date,
+       invoice_type, total_tax, total_amount, previous_record_id, previous_hash, generated_at, hash, record_xml)
+  VALUES ('00000000-0000-0000-0000-0000000015a1','00000000-0000-0000-0000-0000000000a2',2,'alta','00000000-0000-0000-0000-0000000012d1','B00000000','CF27-0004','2027-01-16',
+          'F1',0,0,'00000000-0000-0000-0000-0000000016b1',repeat('A',64),now() - interval '1 day',repeat('B',64),'<RegistroAlta/>') $q$, 'WC131');
+ROLLBACK;
+
+BEGIN;
+SET LOCAL ROLE winecore_vf_sender;
+SELECT core.set_actor('system', 'verifactu-sender', NULL, 'test', NULL);
+UPDATE regulatory.verifactu_record SET send_status = 'accepted', aeat_error_text = NULL WHERE id = '00000000-0000-0000-0000-0000000016b1';
+SELECT pg_temp.expect_error($q$ UPDATE regulatory.verifactu_record SET hash = repeat('C',64) $q$, 'permission denied');
+SELECT pg_temp.expect_error($q$ INSERT INTO regulatory.verifactu_record(id) VALUES (gen_random_uuid()) $q$, 'permission denied');
+SELECT pg_temp.expect_error($q$ UPDATE billing.invoice SET notes = 'x' $q$, 'permission denied');
+SELECT pg_temp.expect_error($q$ UPDATE audit.audit_log SET action = 'x' $q$, 'permission denied');
+ROLLBACK;
 
 -- 15) La cadena de auditoría sigue íntegra tras todo lo anterior
 DO $$ BEGIN

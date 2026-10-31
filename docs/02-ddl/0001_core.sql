@@ -340,11 +340,18 @@ CREATE TABLE audit.audit_log (
 CREATE INDEX audit_log_row_idx ON audit.audit_log(table_name, row_id);
 CREATE INDEX audit_log_time_idx ON audit.audit_log(occurred_at);
 
+-- Devuelve solo la última huella: los roles que escriben en la auditoría no necesitan leerla entera
+CREATE FUNCTION audit.last_hash() RETURNS bytea LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = pg_catalog, audit AS $$
+  SELECT hash FROM audit.audit_log ORDER BY id DESC LIMIT 1
+$$;
+REVOKE ALL ON FUNCTION audit.last_hash() FROM PUBLIC;
+
 CREATE FUNCTION audit.chain_hash() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE v_prev bytea;
 BEGIN
   PERFORM pg_advisory_xact_lock(hashtext('winecore.audit_chain'));
-  SELECT hash INTO v_prev FROM audit.audit_log ORDER BY id DESC LIMIT 1;
+  v_prev := audit.last_hash();
   NEW.prev_hash := v_prev;
   NEW.hash := digest(
     coalesce(encode(v_prev, 'hex'), '') || '|' || NEW.occurred_at::text || '|' || NEW.actor_type || '|' ||

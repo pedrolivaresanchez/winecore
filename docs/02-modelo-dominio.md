@@ -314,7 +314,7 @@ El resultado se guarda en `regulatory.reconciliation_run/diff` (`kind = 'physica
 ### 12.6 Intercompañía P.O → CVPO (D4)
 1. **Cambio de propietario**: cuando CVPO emite un albarán de venta desde una ubicación donde el stock es de P.O, la misma transacción inserta `ownership_out` (P.O) + `ownership_in` (CVPO) en esa ubicación y después la salida (`delivery_out`, propietario CVPO). Lo mismo al traspasar stock de P.O a un almacén de CVPO.
 2. **Línea de liquidación**: por cada cambio de propietario, una `intercompany_settlement_line` en la liquidación abierta del periodo (mensual por defecto, Q-016) con precio de la tarifa intercompañía vigente en la fecha y coste estándar.
-3. **Cierre del periodo** (job `intercompany-close`, día 1 a las 06:00): cierra la liquidación del mes anterior, comprueba tarifa y costes, y crea la **factura intercompañía en borrador** (serie `PI`, fecha = último día del periodo) agrupando por producto y lote, y pide aprobación (`intercompany_invoice_issue`).
+3. **Cierre del periodo** (job `intercompany-close`, día 1 a las 06:00): cierra la liquidación del mes anterior, comprueba tarifa y costes, y crea la **factura intercompañía en borrador** (serie `PI`, recapitulativa con `operation_date` = último día del periodo) agrupando por producto y lote, y pide aprobación (`intercompany_invoice_issue`). La fecha de expedición es la del día en que se emite y debe ser **anterior al día 16** del mes siguiente (RD 1619/2012, arts. 11 y 13); el vigilante avisa desde el día 12.
 4. **Emisión**: al aprobar, se emite la factura de P.O (Verifactu de P.O cuando proceda), se crea la **factura recibida espejo** en CVPO (`purchasing.supplier_invoice`, `source = 'intercompany'`, aprobada en la misma acción) y se generan las salidas fiscales de la fábrica con la fecha de la factura (D2).
 
 ## 13. Compras y gastos (`purchasing`)
@@ -409,6 +409,7 @@ Instalación por entidad y entorno, registros de alta y anulación **encadenados
 | WC110 / WC111 | Asiento descuadrado / inmutable | 422 / 409 |
 | WC120 / WC121 | Envío congelado / cerrado | 409 |
 | WC130 | Encadenamiento Verifactu incorrecto o registro inmutable | 409 |
+| WC131 | Hora de generación del registro Verifactu anterior a la del registro anterior | 409 |
 | `WC_MODULE_DISABLED` | Módulo desactivado | 404 |
 | `WC_FORBIDDEN` | Sin permiso | 403 |
 | `WC_STEP_UP_REQUIRED` | Falta verificación reforzada reciente | 401 |

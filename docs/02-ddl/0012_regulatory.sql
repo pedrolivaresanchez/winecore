@@ -192,6 +192,8 @@ BEGIN
       END IF;
     ELSIF NEW.chain_seq <> v_last.chain_seq + 1 OR NEW.previous_record_id <> v_last.id OR NEW.previous_hash <> v_last.hash THEN
       RAISE EXCEPTION 'WC130: encadenamiento incorrecto (esperado seq %, anterior %)', v_last.chain_seq + 1, v_last.id;
+    ELSIF NEW.generated_at < v_last.generated_at THEN
+      RAISE EXCEPTION 'WC131: FechaHoraHusoGenRegistro anterior a la del registro anterior (% < %)', NEW.generated_at, v_last.generated_at;
     END IF;
     RETURN NEW;
   END IF;

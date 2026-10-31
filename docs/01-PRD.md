@@ -195,7 +195,7 @@ CRM con embudos, proyectos y horas, RR. HH. y nóminas, FACe (no se usa), la tie
 - Cuando selecciono 10 borradores y pido emitirlos · Entonces se crea una aprobación con el resumen (nº, clientes, total); al aprobarla se emiten en orden de fecha con números consecutivos.
 
 **US-FACT-09 · Intercompañía mensual** (M2)
-- Dado ventas de CVPO con stock de P.O en octubre · Cuando llega el 1 de noviembre · Entonces se cierra la liquidación de octubre, se crea el borrador de factura P.O → CVPO con fecha 31 de octubre y la tarifa vigente, y se pide aprobación.
+- Dado ventas de CVPO con stock de P.O en octubre · Cuando llega el 1 de noviembre · Entonces se cierra la liquidación de octubre, se crea el borrador de factura recapitulativa P.O → CVPO con **fecha de operación 31 de octubre** y la tarifa vigente, y se pide aprobación con aviso si quedan menos de 3 días para el día 16 (RD 1619/2012, arts. 11 y 13: se expide antes del día 16 de noviembre, con la fecha real de expedición).
 - Cuando se aprueba · Entonces se emite la factura de P.O y se crea la factura recibida espejo en CVPO.
 
 **US-FACT-10 · Enviar al cliente** (M1 descarga / M2 correo)

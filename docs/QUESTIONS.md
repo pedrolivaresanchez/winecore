@@ -100,21 +100,23 @@
 
 ## Q-006 · Certificado para Verifactu y su custodia — BLOQUEANTE para M1
 
-- **Preguntas**: ¿qué certificado firmará/autenticará los envíos de CVPO (representante de persona jurídica o sello de entidad) y de P.O (persona física)? ¿Se puede emitir uno específico para el sistema?
-- **Opciones** (ADR 003): (1) certificado específico cifrado como secreto de Timbal, usado solo por el paso de envío tras la aprobación; (2) un pequeño servicio de envío en un equipo de Pedro; (3) proveedor externo de envío.
-- **Recomendación**: (1) con un certificado **dedicado** (no el personal del móvil), rotación anual y revocación inmediata si hay incidente. Para preproducción vale cualquier certificado reconocido.
-- **Dueño**: Pedro · **Fecha límite**: 12-11-2026.
+- **Hechos** (31-10-2026): vale cualquier certificado válido en la sede de la AEAT, y puede enviar el propio obligado o un tercero con apoderamiento o colaboración social (Orden HAC/1177/2024, art. 5). La AEAT tiene un servicio específico para **certificados de sello** (`www10`). En Timbal las variables secretas llegan a todos los componentes del entorno, agentes incluidos.
+- **Preguntas**: (a) ¿CVPO puede obtener un **sello electrónico cualificado** de empresa para Verifactu (preferido) o usamos un certificado de representante dedicado? (b) ¿P.O apodera a CVPO para el trámite de Verifactu, de modo que un solo certificado envíe los registros de ambas? (c) ¿Quién sube el certificado al almacén de secretos? (propuesta: solo Pedro, con el procedimiento guiado).
+- **Opciones** (ADR 003): (1) emisor aislado en AWS Lambda con el certificado en AWS Secrets Manager, que solo él puede leer; (2) certificado como variable secreta de Timbal; (3) emisor en el equipo del ejecutor local; (4) proveedor externo.
+- **Recomendación**: (1), con sello de CVPO y apoderamiento de P.O a CVPO (confirmar con el asesor y en preproducción). (2) solo como respaldo si AWS no está listo el 20-11-2026. Para preproducción vale cualquier certificado reconocido. El certificado personal de P.O no sale nunca del equipo del ejecutor local.
+- **Dueño**: Pedro (con el asesor para el apoderamiento) · **Fecha límite**: 12-11-2026.
 
 ## Q-007 · Productor del software para la declaración responsable — BLOQUEANTE para producción (M1)
 
 - **Contexto**: todo sistema de facturación debe incluir una **declaración responsable** de su productor. Si el desarrollo lo hace Pedro (o una empresa suya o Timbal) para las dos entidades familiares, hay que decidir quién figura como productor y revisarlo con el asesor.
+- **Hecho** (FAQ de la AEAT, actualizadas a 21-10-2026): si el software lo desarrolla la propia empresa para su uso, **es ella quien lo certifica** con la declaración responsable; quien programe o integre componentes (incluido código abierto) firma y responde. Contenido y orden fijados en la Orden HAC/1177/2024, art. 15; hay que firmar **una por versión** del sistema, y los componentes de otros productores aportan la suya (art. 15.4).
 - **Opciones**: (1) Pedro como persona física; (2) una sociedad (CVPO u otra); (3) Timbal.
-- **Recomendación**: decidirlo con el asesor antes del 15-12-2026; WineCore mostrará la declaración en Ajustes y en la documentación del sistema.
+- **Recomendación**: decidirlo con el asesor antes del 15-12-2026, incluida la pregunta de si la plataforma de alojamiento cuenta como "componente". WineCore muestra la declaración en Ajustes → Verifactu y la CI impide desplegar en producción una versión del módulo de facturación sin su declaración firmada (`verifactu.md` §8).
 - **Dueño**: Pedro + asesor · **Fecha límite**: 15-12-2026.
 
 ## Q-008 · Plan B de Verifactu — BLOQUEANTE para el gate del 01-12-2026
 
-- **Hecho verificado** (31-10-2026): Holded **ya está adaptado a Verifactu** en todos sus planes (puede enviar con el certificado de la empresa o actuar como colaborador social): https://help.holded.com/es/articles/11406283-como-funciona-verifactu-en-holded. Según Holded, una vez activado hay que mantenerlo hasta el 31 de diciembre del año siguiente (base legal pendiente de confirmar con el asesor).
+- **Hecho verificado** (31-10-2026): Holded **ya está adaptado a Verifactu** en todos sus planes (puede enviar con el certificado de la empresa o actuar como colaborador social): https://help.holded.com/es/articles/11406283-como-funciona-verifactu-en-holded. **Corrección verificada** (31-10-2026): la norma no dice "año siguiente": quien opta por VERI*FACTU lo mantiene **al menos hasta el 31 de diciembre del año** en que hizo el primer envío efectivo (RRSIF art. 16.5; Orden HAC/1177/2024, art. 17.2). Falta que el asesor confirme que pasar de Holded (VERI*FACTU) a WineCore (también VERI*FACTU) dentro de 2027 no es una renuncia.
 - **Pregunta**: si el 01-12-2026 WineCore no supera las pruebas en preproducción, ¿se factura CVPO en Holded con Verifactu desde el 01-01-2027?
 - **Recomendación**: sí. **No dar de baja Holded** hasta que WineCore emita en producción sin incidencias durante 2 semanas. Si se activa el plan B, Verifactu se activa en Holded para CVPO con una **serie distinta** de la de WineCore.
 - **Dueño**: Pedro · **Fecha límite**: 01-12-2026.

@@ -13,4 +13,8 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'winecore_readonly') THEN
     CREATE ROLE winecore_readonly LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION;
   END IF;
+  -- verifactu-sender (ADR 003): solo lee registros ya generados y anota el resultado del envío
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'winecore_vf_sender') THEN
+    CREATE ROLE winecore_vf_sender LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION;
+  END IF;
 END $$;
