@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
+import { copy } from '@/i18n'
 import type { Me } from '@/lib/types'
 import { NotFound } from '@/pages/NotFound'
 import { InformesPage } from '@/pages/informes/InformesPage'
@@ -101,6 +102,7 @@ export function AppRoutes({ me }: { me: Me }) {
       <Route path="intercompania/tarifas" element={<TariffList me={me} />} />
       <Route path="intercompania/tarifas/:id" element={<TariffPage me={me} />} />
       <Route path="intercompania/:period" element={<SettlementPage me={me} />} />
+      <Route path="ajustes/puesta-en-marcha" element={<div className="sr-only">{copy.settings.setup}</div>} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   )

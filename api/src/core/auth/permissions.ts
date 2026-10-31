@@ -112,3 +112,7 @@ export function seesPersonalContactData(user: UserCtx): boolean {
 export function isOwner(user: UserCtx): boolean {
   return user.roles.some((assignment) => assignment.role === 'owner');
 }
+
+export function isOwnerOrAdmin(user: UserCtx): boolean {
+  return user.roles.some((assignment) => assignment.role === 'owner' || assignment.role === 'admin');
+}

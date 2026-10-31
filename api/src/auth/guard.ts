@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { can, isOwner, isRoleCode, type Permission, type UserCtx } from '../core/auth/permissions';
+import { can, isOwner, isOwnerOrAdmin, isRoleCode, type Permission, type UserCtx } from '../core/auth/permissions';
 import { domainError, DomainError, errorBody } from '../core/errors';
 import type { Writer } from '../core/db/writer';
 import { sql } from '../core/db/sql';
@@ -149,6 +149,18 @@ export function requireOwner(deps: GuardDeps) {
     if (session instanceof DomainError) return reject(set, session);
     await rememberLogin(deps, request, session);
     if (!isOwner(session)) return reject(set, domainError('WC_FORBIDDEN'));
+  };
+}
+
+/** Dirección o administración: pueden leer la puesta en marcha. Las correcciones siguen siendo del propietario. */
+export function requireOwnerOrAdmin(deps: GuardDeps) {
+  return async ({ request, set }: GuardState) => {
+    const blocked = await rejectMachine(deps, request, set);
+    if (blocked) return blocked;
+    const session = await loadSession(deps, request);
+    if (session instanceof DomainError) return reject(set, session);
+    await rememberLogin(deps, request, session);
+    if (!isOwnerOrAdmin(session)) return reject(set, domainError('WC_FORBIDDEN'));
   };
 }
 

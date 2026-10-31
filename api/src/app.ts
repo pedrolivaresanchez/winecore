@@ -1,6 +1,6 @@
 import { cors } from '@elysiajs/cors';
 import { Elysia } from 'elysia';
-import { requestIdFor, requireOwner, requirePermission, requireUser, requireUserOrMachine } from './auth/guard';
+import { requestIdFor, requireOwner, requireOwnerOrAdmin, requirePermission, requireUser, requireUserOrMachine } from './auth/guard';
 import { createTimbalAuth } from './auth/timbal';
 import type { FetchLike } from './core/db/timbal';
 import type { Config } from './config';
@@ -126,7 +126,9 @@ import { createMcpClient, listMcpClients, revokeMcpClient, rotateMcpClient } fro
 import { me } from './routes/me';
 import { listNotifications, readAllNotifications, readNotification } from './routes/notifications';
 import { getReport } from './routes/reports';
-import { createNumberSeries, deactivateNumberSeries, listNumberSeries } from './routes/series';
+import { patchLegalEntityRoute } from './routes/legal-entities';
+import { getReadiness } from './routes/setup';
+import { createNumberSeries, createNumberSeriesBulk, deactivateNumberSeries, listNumberSeries } from './routes/series';
 import {
   closeInventoryCountRoute,
   getInventoryCountRoute,
@@ -376,6 +378,20 @@ export function createApp(deps: AppDeps) {
       return body;
     }, {
       beforeHandle: requirePermission(guardDeps, 'settings.manage'),
+    })
+    .post('/v1/number-series/bulk', async ({ request, set }) => {
+      const body = await createNumberSeriesBulk(deps.writer, request);
+      const created = body.items.some((item) => item.status !== 'skipped');
+      set.status = created ? 201 : 200;
+      return body;
+    }, {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .get('/v1/setup/readiness', ({ request }) => getReadiness(deps.writer, request, http.now(), deps.config.deliveryAlertHours), {
+      beforeHandle: requireOwnerOrAdmin(guardDeps),
+    })
+    .patch('/v1/legal-entities/:code', ({ request, params }) => patchLegalEntityRoute(deps.writer, request, params.code), {
+      beforeHandle: requireOwner(guardDeps),
     })
     .post('/v1/number-series/:id/deactivate', ({ request, params }) => deactivateNumberSeries(deps.writer, request, params.id), {
       beforeHandle: requirePermission(guardDeps, 'settings.manage'),

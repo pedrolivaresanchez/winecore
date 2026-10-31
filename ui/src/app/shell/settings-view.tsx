@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Building, List, Lock, Search, Sliders, type IconComponent } from '@/ui/icons'
+import { ArrowLeft, Building, Check, List, Lock, Search, Sliders, type IconComponent } from '@/ui/icons'
 import { Input } from '@/ui'
 import { EntityRoles } from '@/components/EntityRoles'
 import { SystemStatus } from '@/components/SystemStatus'
@@ -7,14 +7,16 @@ import { copy } from '@/i18n'
 import { isOwner } from '@/pages/aprobaciones/model'
 import { PoliciesPanel } from '@/pages/aprobaciones/PoliciesPanel'
 import { SecurityPanel } from '@/pages/ajustes/seguridad/SecurityPanel'
+import { SetupPanel } from '@/pages/ajustes/puesta-en-marcha/SetupPanel'
+import { NoPermission } from '@/components/NoPermission'
 import { cn } from '@/lib/cn'
 import { iconStroke, pressClass } from '@/lib/motion'
 import { useShell } from '@/app/shell/shell-context'
 import type { Me } from '@/lib/types'
 
-export type SettingsArea = 'entities' | 'security' | 'policies' | 'system'
+export type SettingsArea = 'entities' | 'security' | 'policies' | 'system' | 'setup'
 
-const AREAS: { id: SettingsArea; title: string; hint: string; keywords: string; icon: IconComponent; ownerOnly?: boolean }[] = [
+const AREAS: { id: SettingsArea; title: string; hint: string; keywords: string; icon: IconComponent; ownerOnly?: boolean; staff?: boolean }[] = [
   {
     id: 'entities',
     title: copy.settings.entities,
@@ -44,15 +46,30 @@ const AREAS: { id: SettingsArea; title: string; hint: string; keywords: string; 
     keywords: 'sistema version esquema base datos escritor',
     icon: Sliders,
   },
+  {
+    id: 'setup',
+    title: copy.settings.setup,
+    hint: copy.settings.setupHint,
+    keywords: 'puesta en marcha series nif eori sepa silicie cvbot',
+    icon: Check,
+    staff: true,
+  },
 ]
 
-export function settingsAreas(query: string, owner = true) {
+export function settingsAreas(query: string, me: Me) {
   const needle = query.trim().toLocaleLowerCase('es')
+  const owner = isOwner(me)
+  const staff = owner || me.roles.some((role) => role.role === 'admin')
   return AREAS.filter((area) => {
     if (area.ownerOnly && !owner) return false
+    if (area.staff && !staff) return false
     if (!needle) return true
     return `${area.title} ${area.hint} ${area.keywords}`.toLocaleLowerCase('es').includes(needle)
   })
+}
+
+export function canReadSetup(me: Me): boolean {
+  return me.roles.some((role) => role.role === 'owner' || role.role === 'admin')
 }
 
 export function SettingsSidebar({
@@ -68,8 +85,7 @@ export function SettingsSidebar({
 }) {
   const { mobile, setSidebarOpen } = useShell()
   const [query, setQuery] = useState('')
-  const owner = isOwner(me)
-  const areas = useMemo(() => settingsAreas(query, owner), [owner, query])
+  const areas = useMemo(() => settingsAreas(query, me), [me, query])
 
   function choose(next: SettingsArea) {
     onArea(next)
@@ -157,6 +173,7 @@ export function SettingsView({ me, area }: { me: Me; area: SettingsArea }) {
         {area === 'security' ? <SecurityPanel /> : null}
         {area === 'policies' ? <PoliciesPanel me={me} /> : null}
         {area === 'system' ? <SystemStatus /> : null}
+        {area === 'setup' ? (canReadSetup(me) ? <SetupPanel me={me} /> : <NoPermission />) : null}
       </div>
     </div>
   )
