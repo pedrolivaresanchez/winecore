@@ -1,5 +1,6 @@
 import {
   conservation,
+  holding,
   litresToMl,
   OP_TYPES,
   type OpType,
@@ -163,11 +164,12 @@ export function emptyDraft(op: OpType | "", performedBy: string): Draft {
 }
 
 export function withVessel(line: DraftLine, vessel: Vessel): DraftLine {
+  const inside = holding(vessel);
   return {
     ...line,
     vessel_code: vessel.code,
-    lot_id: vessel.content?.lot_id ?? "",
-    lot_code: vessel.content?.lot_code ?? "",
+    lot_id: inside?.lot_id ?? "",
+    lot_code: inside?.lot_code ?? "",
   };
 }
 
@@ -355,9 +357,9 @@ export function problems(draft: Draft, vessels: Vessel[], reveal: boolean): Issu
       if (reveal) push({ step: "origenes", key: line.key, code: "", message: "Indica los litros" });
       return;
     }
-    const available = vessel?.content?.volume_ml ?? 0;
+    const available = holding(vessel)?.volume_ml ?? 0;
     if (vessel && ml > available) {
-      const lot = vessel.content?.lot_code ?? "—";
+      const lot = holding(vessel)?.lot_code ?? "—";
       push({
         step: "origenes",
         key: line.key,
@@ -420,7 +422,8 @@ export function problems(draft: Draft, vessels: Vessel[], reveal: boolean): Issu
         push({ step: "destinos", key: line.key, code: "", message: "El destino es el mismo depósito" });
       }
       const sourceLot = draft.inputs[0]?.lot_id;
-      if (vessel?.content && sourceLot && vessel.content.lot_id !== sourceLot && (op === "racking" || op === "filtration" || op === "labeling")) {
+      const inside = holding(vessel);
+      if (inside && sourceLot && inside.lot_id !== sourceLot && (op === "racking" || op === "filtration" || op === "labeling")) {
         push({
           step: "destinos",
           key: line.key,
@@ -428,7 +431,7 @@ export function problems(draft: Draft, vessels: Vessel[], reveal: boolean): Issu
           message: "El depósito contiene otro lote; usa Ensamblaje (WC026)",
         });
       }
-      if (vessel?.content && vessel.content.volume_ml > 0 && (op === "blend" || op === "bottling")) {
+      if (vessel && inside && inside.volume_ml > 0 && (op === "blend" || op === "bottling")) {
         push({ step: "destinos", key: line.key, code: "WC026", message: `${vessel.code} contiene otro lote (WC026)` });
       }
       if (op === "labeling" || op === "bottling") {
@@ -441,9 +444,9 @@ export function problems(draft: Draft, vessels: Vessel[], reveal: boolean): Issu
       }
       if (vessel && op !== "labeling") {
         const incoming = mlOf(op, "output", line);
-        const sameLot = Boolean(vessel.content && sourceLot && vessel.content.lot_id === sourceLot);
-        const base = !vessel.content || sameLot ? (vessel.content?.volume_ml ?? 0) : 0;
-        if (incoming > 0 && (!vessel.content || sameLot) && base + incoming > vessel.capacity_ml) {
+        const sameLot = Boolean(inside && sourceLot && inside.lot_id === sourceLot);
+        const base = !inside || sameLot ? (inside?.volume_ml ?? 0) : 0;
+        if (incoming > 0 && (!inside || sameLot) && base + incoming > vessel.capacity_ml) {
           push({ step: "destinos", key: line.key, code: "WC025", message: `No cabe en ${vessel.code}: supera la capacidad (WC025)` });
         }
       }

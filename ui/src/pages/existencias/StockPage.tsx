@@ -43,17 +43,17 @@ export function StockPage({ me }: { me: Me }) {
   const { filter, entities } = useEntity();
   const ownerId = ownerEntityId(filter, entities);
   const [params, setParams] = useSearchParams();
-  const at = params.get("at") || new Date().toISOString();
+  const [now] = useState(() => new Date().toISOString());
+  const at = params.get("at") || now;
   const book = params.get("book") === "fiscal" ? "fiscal" : "physical";
   const locationId = params.get("location") ?? "";
   const state = params.get("state") ?? "";
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
-  const before = isBeforeStockEpoch(at);
   const canCount = allows(me, "inventory.count");
 
-  const physicalPath = before || book !== "physical" ? null : balancesPath({ at, locationId, ownerEntityId: ownerId, state });
-  const fiscalPath = before || book !== "fiscal" ? null : fiscalBalancesPath({ at: madridDate(at), legalEntityId: ownerId });
+  const physicalPath = book !== "physical" ? null : balancesPath({ at, locationId, ownerEntityId: ownerId, state });
+  const fiscalPath = book !== "fiscal" ? null : fiscalBalancesPath({ at: madridDate(at), legalEntityId: ownerId });
   const physical = useList<StockBalance>(physicalPath);
   const fiscal = useList<FiscalBalance>(fiscalPath);
   const loading = book === "physical" ? physical.loading : fiscal.loading;
@@ -92,6 +92,7 @@ export function StockPage({ me }: { me: Me }) {
 
   const filtersOn = Boolean(q || locationId || state || ownerId);
   const visibleCount = book === "physical" ? physicalRows.length : fiscalRows.length;
+  const before = isBeforeStockEpoch(at) && !loading && visibleCount === 0 && !filtersOn;
   const screen = loading
     ? "existencias-cargando"
     : before

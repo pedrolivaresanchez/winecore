@@ -16,15 +16,6 @@ export type OpType =
   | "destruction"
   | "cleaning";
 
-export type VesselContent = {
-  lot_id: string;
-  lot_code: string;
-  wine_name: string;
-  vintage: number | null;
-  volume_ml: number;
-  content_state: ContentState;
-};
-
 export type Vessel = {
   id: string;
   code: string;
@@ -34,14 +25,30 @@ export type Vessel = {
   has_cooling_jacket: boolean;
   material: VesselMaterial;
   location_id: string;
+  location_code?: string;
+  location_name?: string;
   zone: string | null;
   sisv_code: string | null;
-  qr_token: string | null;
+  qr_token?: string | null;
   status: VesselStatus;
+  state: string;
+  lot_id: string | null;
+  lot_code: string | null;
+  wine_name: string | null;
+  vintage: number | null;
+  volume_ml: number;
+  product_state: string | null;
+  fill_pct: string;
   notes: string | null;
-  content: VesselContent | null;
-  hygiene: "clean" | "dirty" | null;
-  alert: string | null;
+  alert?: string | null;
+};
+
+export type Holding = {
+  lot_id: string;
+  lot_code: string;
+  wine_name: string;
+  vintage: number | null;
+  volume_ml: number;
 };
 
 export type OperationLine = {
@@ -84,28 +91,37 @@ export type CleaningRecord = {
 export type Lot = {
   id: string;
   code: string;
-  kind: "grape" | "must" | "wine" | "bottled";
+  kind: "grape" | "must" | "wine" | "bottled" | string;
   wine_name: string | null;
   vintage: number | null;
   is_organic: boolean;
-  status: "active" | "depleted" | "closed";
+  status: "active" | "depleted" | "closed" | string;
   origin: string;
   notes: string | null;
-  volume_ml: number;
-  vessels: { vessel_code: string; volume_ml: number }[];
+  positions: {
+    vessel_code: string | null;
+    volume_ml: number;
+    location_code: string;
+    location_name?: string;
+  }[];
 };
 
 export type TraceNode = {
+  lot_id: string;
   code: string;
   kind: string;
-  wine_name: string | null;
-  volume_ml: number;
+  vintage: number | null;
+  depth: number;
+  wine_name?: string | null;
+  volume_ml?: number;
   mass_g?: number;
 };
 
 export type TraceEdge = {
-  parent_code: string;
-  child_code: string;
+  parent_lot_id: string;
+  child_lot_id: string;
+  parent_code?: string;
+  child_code?: string;
   volume_ml: number;
   mass_g?: number;
 };
@@ -113,7 +129,7 @@ export type TraceEdge = {
 export type VesselLabel = {
   code: string;
   qr_token: string;
-  url: string;
+  payload: string;
 };
 
 export type Traceability = {
@@ -153,18 +169,31 @@ export function kindLabel(kind: VesselKind): string {
   return KIND_LABEL[kind] ?? kind;
 }
 
+export function holding(vessel: Vessel | undefined): Holding | null {
+  if (!vessel || vessel.volume_ml <= 0 || !vessel.lot_id || !vessel.lot_code) return null;
+  return {
+    lot_id: vessel.lot_id,
+    lot_code: vessel.lot_code,
+    wine_name: vessel.wine_name ?? "",
+    vintage: vessel.vintage,
+    volume_ml: vessel.volume_ml,
+  };
+}
+
 export function contentLabel(vessel: Vessel): string {
   if (vessel.status === "out_of_service") return "Fuera de servicio";
   if (vessel.status === "retired") return "Baja";
-  if (!vessel.content || vessel.content.volume_ml <= 0) {
-    return vessel.hygiene === "dirty" ? "Vacío · sucio" : "Vacío · limpio";
-  }
-  return STATE_LABEL[vessel.content.content_state] ?? "Con vino";
+  if (vessel.volume_ml <= 0) return "Vacío";
+  if (vessel.state === "fermenting" || vessel.product_state === "must") return "En fermentación";
+  if (vessel.state === "aging") return "En crianza";
+  return STATE_LABEL.holding;
 }
 
 export function fillPercent(vessel: Vessel): number {
-  if (!vessel.content || vessel.capacity_ml <= 0) return 0;
-  return Math.max(0, Math.min(100, Math.round((vessel.content.volume_ml / vessel.capacity_ml) * 100)));
+  const parsed = Number(vessel.fill_pct);
+  if (Number.isFinite(parsed) && vessel.capacity_ml > 0) return Math.max(0, Math.min(100, Math.round(parsed)));
+  if (vessel.capacity_ml <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round((vessel.volume_ml / vessel.capacity_ml) * 100)));
 }
 
 export function litresToMl(text: string): number {
@@ -265,17 +294,18 @@ export type PreviewFiscalMove = {
   product_class: string;
   volume_ml: number;
   units: number;
+  excise_product_key?: string | null;
 };
 
 export type PreviewLot = {
   code: string;
   kind: string;
-  volume_ml: number;
+  volume_ml?: number;
 };
 
 /** Efectos que devolvería confirmar, sin escribir libros. */
 export type OperationPreview = {
-  moves: PreviewMove[];
+  stock_moves: PreviewMove[];
   fiscal_moves: PreviewFiscalMove[];
   new_lots: PreviewLot[];
 };

@@ -26,6 +26,7 @@ export interface LotView {
   code: string;
   kind: string;
   wine_id: string | null;
+  wine_name: string | null;
   vintage: number | null;
   is_organic: boolean;
   status: string;
@@ -107,6 +108,8 @@ export async function getLot(writer: Writer, request: Request, code: string): Pr
   const row = rows[0];
   if (!row) throw domainError('WC_NOT_FOUND');
   const id = textOf(row.id);
+  const wineId = textOrNull(row.wine_id);
+  const wineName = wineId ? await wineNameOf(writer, wineId) : null;
   const [composition, ancestors, descendants, positions] = await Promise.all([
     loadComposition(writer, id),
     loadNodes(writer, id, 'up'),
@@ -118,7 +121,8 @@ export async function getLot(writer: Writer, request: Request, code: string): Pr
     producer_entity_id: textOf(row.producer_entity_id),
     code: textOf(row.code),
     kind: textOf(row.kind),
-    wine_id: textOrNull(row.wine_id),
+    wine_id: wineId,
+    wine_name: wineName,
     vintage: row.vintage == null ? null : intOf(row.vintage),
     is_organic: boolOf(row.is_organic),
     status: textOf(row.status),
@@ -131,6 +135,13 @@ export async function getLot(writer: Writer, request: Request, code: string): Pr
     descendants,
     positions,
   };
+}
+
+async function wineNameOf(writer: Writer, wineId: string): Promise<string | null> {
+  const rows = await writer.read<{ name: string }>(sql`
+    SELECT name FROM catalog.wine WHERE id = CAST(${wineId} AS UUID)
+  `);
+  return rows[0]?.name ?? null;
 }
 
 function producerFilter(request: Request): string | null {

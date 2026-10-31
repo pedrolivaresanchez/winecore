@@ -74,7 +74,7 @@ export type PhysicalMove = {
   mass_g: number;
   source_table: string;
   source_id: string;
-  document_ref: string;
+  document_ref: string | null;
   justification_ref: string | null;
   silicie_entry_id: string | null;
   silicie_ref: string | null;
@@ -220,7 +220,6 @@ export function balancesPath(input: {
   return `/v1/stock/balances${query({
     at: input.at,
     location_id: input.locationId,
-    owner_entity_id: input.ownerEntityId,
     owner: input.ownerEntityId,
     product_id: input.productId,
     lot_id: input.lotId,
@@ -255,7 +254,7 @@ export function movesPath(input: {
     lot_id: input.lotId,
     source: input.source,
     location_id: input.locationId,
-    owner_entity_id: input.book === "physical" ? input.ownerEntityId : undefined,
+    owner: input.book === "physical" ? input.ownerEntityId : undefined,
     legal_entity_id: input.book === "fiscal" ? input.legalEntityId : undefined,
   })}`;
 }

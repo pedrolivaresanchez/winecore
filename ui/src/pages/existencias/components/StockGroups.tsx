@@ -96,7 +96,7 @@ export function StockGroups({
                             <td className="border border-border px-2 py-2">
                               {row.lot_code ? (
                                 <Link
-                                  to={`/bodega/lotes/${row.lot_code}`}
+                                  to={`/lotes/${row.lot_code}`}
                                   className="underline underline-offset-2"
                                   onClick={(event) => event.stopPropagation()}
                                 >

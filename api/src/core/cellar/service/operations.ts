@@ -267,7 +267,6 @@ export async function updateOperation(writer: Writer, request: Request, id: stri
     if (current.status !== 'draft') throw linesLocked(current.status);
     await assertEntity(tx, parsed.header.legal_entity_id);
     await assertReferences(tx, parsed.draft);
-    deleteDraftLines(tx, id);
     auditUpdate(tx, 'cellar.operation', id, { status: 'draft' }, parsed.header, sql`
       UPDATE cellar.operation SET
         legal_entity_id = CAST(${parsed.header.legal_entity_id} AS UUID),
@@ -278,7 +277,6 @@ export async function updateOperation(writer: Writer, request: Request, id: stri
         details = ${sql.json(parsed.draft)}
       WHERE id = CAST(${id} AS UUID) AND status = 'draft'
     `);
-    insertDraftLines(tx, id, parsed.draft.lines);
     await ensureLossApproval(tx, policies, id, parsed.header, parsed.draft, actor.id);
   });
   return readOperation(writer, id);
@@ -519,7 +517,6 @@ function insertDraft(tx: Tx, operationId: string, header: ParsedHeader, draft: S
       ${actorId}
     )
   `);
-  insertDraftLines(tx, operationId, draft.lines);
 }
 
 function insertDraftLines(tx: Tx, operationId: string, lines: readonly ParsedLine[]): void {
@@ -530,15 +527,27 @@ function insertDraftLines(tx: Tx, operationId: string, lines: readonly ParsedLin
   }
 }
 
-function deleteDraftLines(tx: Tx, operationId: string): void {
-  tx.write(sql`DELETE FROM cellar.operation_line WHERE operation_id = CAST(${operationId} AS UUID)`);
-  tx.audit({
-    table: 'cellar.operation_line',
-    rowId: operationId,
-    action: 'DELETE',
-    before: { operation_id: operationId },
-    after: null,
-  });
+async function syncDraftLines(
+  tx: Tx,
+  operationId: string,
+  lines: readonly ParsedLine[],
+  opType: string,
+  newLotId: string | null = null,
+): Promise<void> {
+  const kept = lines.filter((line) => line.lot_id && (line.vessel_id || line.location_id));
+  const existing = await tx.read<{ id: string }>(sql`
+    SELECT id::VARCHAR AS id
+    FROM cellar.operation_line
+    WHERE operation_id = CAST(${operationId} AS UUID)
+    ORDER BY id
+  `);
+  for (let index = 0; index < kept.length; index += 1) {
+    const line = kept[index];
+    if (!line) continue;
+    const currentId = existing[index]?.id;
+    if (currentId) updateLine(tx, currentId, operationId, line, newLotId, opType);
+    else insertLine(tx, operationId, line, newLotId, opType);
+  }
 }
 
 /**
@@ -556,7 +565,12 @@ async function persistConfirmed(
   for (const lot of plan.newLots) insertLot(tx, lot);
   const confirmedAt = new Date().toISOString();
   const silicie = plan.fiscalMoves.length > 0;
-  deleteDraftLines(tx, current.id);
+  const newLotId = plan.newLots[0]?.id ?? null;
+  for (const line of current.draft.lines) {
+    if (!line.lot_id && line.role !== 'output') continue;
+    if (!line.vessel_id && !line.location_id && line.product_state !== 'grape') continue;
+    insertLine(tx, current.id, line, newLotId, current.header.op_type);
+  }
   auditUpdate(tx, 'cellar.operation', current.id, { status: 'draft', number: null }, {
     status: 'confirmed',
     number,
@@ -570,8 +584,6 @@ async function persistConfirmed(
       silicie_relevant = ${silicie}
     WHERE id = CAST(${current.id} AS UUID) AND status = 'draft'
   `);
-  const newLotId = plan.newLots[0]?.id ?? null;
-  for (const line of current.draft.lines) insertLine(tx, current.id, line, newLotId, current.header.op_type);
   for (const edge of plan.lotEdges) insertEdge(tx, edge);
   for (const move of plan.stockMoves) insertStock(tx, move);
   for (const move of plan.fiscalMoves) insertFiscal(tx, move);
@@ -1404,8 +1416,53 @@ function insertLot(tx: Tx, lot: LotDraft): void {
   `);
 }
 
+function lineLotId(line: ParsedLine, newLotId: string | null, opType: string): string | null {
+  return (opType === 'blend' || opType === 'bottling') && line.role === 'output' ? newLotId : line.lot_id;
+}
+
+function updateLine(
+  tx: Tx,
+  id: string,
+  operationId: string,
+  line: ParsedLine,
+  newLotId: string | null,
+  opType: string,
+): void {
+  const lotId = lineLotId(line, newLotId, opType);
+  if (!lotId) throw new Error('La línea no tiene lote');
+  const vesselId = opType === 'bottling' && line.role === 'output' ? null : line.vessel_id;
+  const stored = {
+    id,
+    operation_id: operationId,
+    role: line.role,
+    lot_id: lotId,
+    vessel_id: vesselId,
+    location_id: line.location_id,
+    product_id: line.product_id,
+    product_state: line.product_state,
+    volume_ml: line.volume_ml,
+    qty_units: line.qty_units,
+    mass_g: 0,
+    loss_kind: line.role === 'loss' ? line.loss_kind : null,
+  };
+  auditUpdate(tx, 'cellar.operation_line', id, { id }, stored, sql`
+    UPDATE cellar.operation_line SET
+      role = ${stored.role},
+      lot_id = CAST(${stored.lot_id} AS UUID),
+      vessel_id = CAST(${stored.vessel_id} AS UUID),
+      location_id = CAST(${stored.location_id} AS UUID),
+      product_id = CAST(${stored.product_id} AS UUID),
+      product_state = ${stored.product_state},
+      volume_ml = ${stored.volume_ml},
+      qty_units = ${stored.qty_units},
+      mass_g = 0,
+      loss_kind = ${stored.loss_kind}
+    WHERE id = CAST(${id} AS UUID)
+  `);
+}
+
 function insertLine(tx: Tx, operationId: string, line: ParsedLine, newLotId: string | null, opType: string): void {
-  const lotId = (opType === 'blend' || opType === 'bottling') && line.role === 'output' ? newLotId : line.lot_id;
+  const lotId = lineLotId(line, newLotId, opType);
   if (!lotId) throw new Error('La línea no tiene lote');
   const vesselId = opType === 'bottling' && line.role === 'output' ? null : line.vessel_id;
   const id = newId();

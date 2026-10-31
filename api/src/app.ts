@@ -83,6 +83,8 @@ import { getReport } from './routes/reports';
 import { createNumberSeries, deactivateNumberSeries, listNumberSeries } from './routes/series';
 import {
   closeInventoryCountRoute,
+  getInventoryCountRoute,
+  listInventoryCountsRoute,
   postInventoryCountRoute,
   putInventoryCountLinesRoute,
   submitInventoryCountRoute,
@@ -149,6 +151,7 @@ export function createApp(deps: AppDeps) {
         request_id: requestIdFor(request),
         code: 'WC_INTERNAL',
         level: 'error',
+        message: error instanceof Error ? error.message : 'Error interno',
       }));
       set.status = 500;
       return { code: 'WC_INTERNAL', message: 'Error interno' };
@@ -318,6 +321,12 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requirePermission(guardDeps, 'inventory.read'),
     })
     .get('/v1/stock/moves', ({ request }) => stockMoves(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.read'),
+    })
+    .get('/v1/inventory-counts', ({ request }) => listInventoryCountsRoute(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.read'),
+    })
+    .get('/v1/inventory-counts/:id', ({ params }) => getInventoryCountRoute(deps.writer, params.id), {
       beforeHandle: requirePermission(guardDeps, 'inventory.read'),
     })
     .post('/v1/inventory-counts', ({ request }) => postInventoryCountRoute(deps.writer, request), {

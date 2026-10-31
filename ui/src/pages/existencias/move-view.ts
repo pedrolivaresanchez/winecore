@@ -33,7 +33,7 @@ export function physicalView(row: PhysicalMove): MoveView {
     product: productLabel(row),
     volumeMl: row.volume_ml,
     units: row.qty_units,
-    document: row.document_ref,
+    document: row.document_ref || "—",
     href: sourceHref(row.source_table, row.source_id),
     justification: row.justification_ref ?? "—",
     silicie: row.silicie_ref ?? "—",
