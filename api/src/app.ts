@@ -7,6 +7,7 @@ import type { Config } from './config';
 import type { Writer } from './core/db/writer';
 import { asDomainError, domainError, errorBody } from './core/errors';
 import { listAudit, verifyAudit } from './routes/audit';
+import { cellarRoutes } from './routes/cellar';
 import {
   archiveAddress,
   archiveContact,
@@ -129,6 +130,8 @@ export function createApp(deps: AppDeps) {
     })
     .post('/v1/contacts/:id/persons/:pid/archive', ({ request, params }) => archivePerson(deps.writer, request, params.id, params.pid), {
       beforeHandle: requirePermission(guardDeps, 'contacts.write'),
-    });
+    })
+    // --- Bodega: ubicaciones, recipientes, lotes y operaciones ---
+    .use(cellarRoutes({ writer: deps.writer, guard: guardDeps, publicUrl: deps.config.appPublicUrl }));
   return app;
 }

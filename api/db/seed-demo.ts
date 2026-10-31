@@ -1,3 +1,4 @@
+import { cellarOperationSeriesStatements } from './seed';
 import { loadConfig } from '../src/config';
 import { sql } from '../src/core/db/sql';
 import type { Writer } from '../src/core/db/writer';
@@ -85,6 +86,12 @@ export async function seedDemo(
     ...row,
     owner_entity_id: remapEntity(row.owner_entity_id),
   })));
+  await writer.withWrite(
+    { type: 'migration', id: 'seed-demo', requestId: 'seed-demo' },
+    async (tx) => {
+      for (const statement of cellarOperationSeriesStatements()) tx.write(statement);
+    },
+  );
   const counted = await writer.read<{ total: number }>('SELECT count(*)::INTEGER AS total FROM party.contact');
   return { contacts: Number(counted[0]?.total ?? 0) };
 }

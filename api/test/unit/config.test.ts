@@ -18,6 +18,7 @@ describe('loadConfig', () => {
     expect(config.timbalApiHost).toBe('api.timbal.ai');
     expect(config.devUserEmail).toBe('owner@winecore.test');
     expect(config.gitSha).toBe('dev');
+    expect(config.appPublicUrl).toBe('http://localhost:5173');
     expect(config.timbalToken).toBe(secret);
   });
 

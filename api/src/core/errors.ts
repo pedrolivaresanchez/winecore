@@ -45,6 +45,12 @@ const CATALOG = {
   WC_NO_ACCESS: [403, 'No tienes acceso a WineCore'],
   // Contactos (TASK-CONT-001)
   WC_CONTACT_DUPLICATE_TAX_ID: [409, 'Ya existe un contacto con este NIF'],
+  // --- Bodega ---
+  WC_NOT_APPROVED: [409, 'La destrucción y la merma por incidencia exigen una aprobación (cellar_loss). El módulo de aprobaciones no está disponible y la operación no se registra'],
+  WC_QR_FOREIGN: [422, 'El código QR no pertenece a WineCore'],
+  WC_VESSEL_NOT_IN_SERVICE: [409, 'El recipiente no está en servicio'],
+  WC_ILLEGAL_TRANSITION: [409, 'La transición de estado no está permitida'],
+  WC_ECO_MIX: [422, 'No se puede ensamblar un lote ecológico con uno que no lo es'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;
@@ -55,14 +61,14 @@ export class DomainError extends Error {
   readonly code: string;
   readonly httpStatus: number;
   readonly fields?: Record<string, string>;
-  readonly details?: Record<string, unknown>;
+  readonly details?: unknown;
 
   constructor(
     code: string,
     httpStatus: number,
     message: string,
     fields?: Record<string, string>,
-    details?: Record<string, unknown>,
+    details?: unknown,
   ) {
     super(message);
     this.name = 'DomainError';
@@ -80,7 +86,7 @@ export function isErrorCode(code: string): code is ErrorCode {
 export function domainError(
   code: ErrorCode,
   fields?: Record<string, string>,
-  details?: Record<string, unknown>,
+  details?: unknown,
 ): DomainError {
   const entry = CATALOG[code];
   return new DomainError(code, entry[0], entry[1], fields, details);
@@ -90,16 +96,16 @@ export function errorBody(error: DomainError): {
   code: string;
   message: string;
   fields?: Record<string, string>;
-  details?: Record<string, unknown>;
+  details?: unknown;
 } {
   const body: {
     code: string;
     message: string;
     fields?: Record<string, string>;
-    details?: Record<string, unknown>;
+    details?: unknown;
   } = { code: error.code, message: error.message };
   if (error.fields && Object.keys(error.fields).length > 0) body.fields = error.fields;
-  if (error.details && Object.keys(error.details).length > 0) body.details = error.details;
+  if (error.details !== undefined) body.details = error.details;
   return body;
 }
 

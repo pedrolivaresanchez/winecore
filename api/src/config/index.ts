@@ -17,6 +17,8 @@ export interface Config {
   authMode: AuthMode;
   devUserEmail: string;
   gitSha: string;
+  /** Public origin of the web app. QR labels point at `${appPublicUrl}/q/{token}`. */
+  appPublicUrl: string;
 }
 
 function invalid(name: string): never {
@@ -76,6 +78,11 @@ export function loadConfig(env: Env): Config {
   const gitSha = read(env, 'GIT_SHA') ?? 'dev';
   if (!/^[A-Za-z0-9._:-]{1,80}$/.test(gitSha)) invalid('GIT_SHA');
 
+  const appPublicUrl = (read(env, 'APP_PUBLIC_URL') ?? 'http://localhost:5173').replace(/\/+$/, '');
+  if (!/^https?:\/\/[A-Za-z0-9._~:-]+(?::\d+)?(?:\/[A-Za-z0-9._~/-]*)?$/.test(appPublicUrl)) {
+    invalid('APP_PUBLIC_URL');
+  }
+
   const needsOrg = dbMode === 'timbal' || authMode === 'timbal';
   const timbalOrgId = read(env, 'TIMBAL_ORG_ID') ?? (needsOrg ? invalid('TIMBAL_ORG_ID') : '');
   const timbalProjectId =
@@ -106,5 +113,6 @@ export function loadConfig(env: Env): Config {
     authMode,
     devUserEmail,
     gitSha,
+    appPublicUrl,
   };
 }
