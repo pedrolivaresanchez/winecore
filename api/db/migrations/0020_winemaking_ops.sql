@@ -1,4 +1,4 @@
--- WineCore · 0044 · elaboración: fase de fermentación, rendimientos y hechos SILICIE
+-- WineCore · 0020 · elaboración: fase de fermentación, rendimientos y hechos SILICIE
 -- DuckDB 1.5.5 no permite DROP CONSTRAINT. Los tipos nuevos de fase se guardan
 -- como stabilization y el tipo real va en details.winemaking_op (api/src/core/winemaking/ops.ts).
 -- Especificación: docs/02-modelo-dominio.md §9.2–§9.3 · silicie.md §5 (A14, A15, A32)

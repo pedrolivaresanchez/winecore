@@ -149,6 +149,7 @@ import {
   postValidateSubmission,
 } from './routes/regulatory-submissions';
 import { listSilicieLedgers, postSilicieLedger, postValidateLedger } from './routes/silicie-ledgers';
+import { vineyardNotebookRoutes } from './routes/vineyard-notebook';
 
 export interface AppDeps {
   config: Config;
@@ -722,6 +723,7 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requireOwner(guardDeps),
     })
     .use(vineyardRoutes(guardDeps))
-    .use(winemakingRoutes({ writer: deps.writer, guard: guardDeps }));
+    .use(winemakingRoutes({ writer: deps.writer, guard: guardDeps }))
+    .use(vineyardNotebookRoutes(guardDeps));
   return app;
 }

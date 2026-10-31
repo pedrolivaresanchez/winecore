@@ -6,6 +6,7 @@ data/
 *.xlsm
 *.csv
 !**/fixtures/synthetic/**/*.csv
+!api/test/vineyard-notebook/golden/*.csv
 *.zip
 *.pdf
 !docs/**/*.pdf

@@ -33,6 +33,7 @@ export const PERMISSIONS = [
   'regulatory.read',
   'regulatory.prepare',
   'regulatory.approve',
+  // Viñedo y cuaderno de explotación (07-arquitectura.md §6, UI-26).
   'vineyard.read',
   'vineyard.write',
 ] as const;

@@ -100,6 +100,9 @@ const CATALOG = {
   WC_FIN_STATE: [409, 'La transición de estado no está permitida'],
   WC_ECO_CERT_MISSING: [422, 'Falta el certificado ecológico vigente del proveedor'],
   WC_ANALYSIS_RANGE: [422, 'El valor está fuera del rango físico del parámetro'],
+  WC_VIN_ORGANIC: [422, 'El producto no está autorizado en una parcela ecológica'],
+  WC_VIN_DOSE: [422, 'La dosis supera la dosis máxima del producto'],
+  WC_VIN_AREA: [422, 'La superficie tratada supera la de la parcela'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;

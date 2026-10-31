@@ -42,6 +42,8 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
     "FK:ops.mcp_confirmation.on_behalf_of_user_id",
     "FK:vineyard.harvest.reception_operation_id",
     "FK:vineyard.parcel.supplier_contact_id",
+    "FK:vineyard.treatment.notebook_product_id",
+    "FK:vineyard.treatment.supplier_invoice_id",
     "FN:billing.resolve_issuing_entity",
     "UQ:billing.intercompany_settlement(seller_entity_id,buyer_entity_id,period_start,period_end)",
     "UQ:billing.invoice(legal_entity_id,number)",
@@ -86,5 +88,9 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
     "WC122",
     "WC_ANALYSIS_RANGE",
     "WC_ECO_CERT_MISSING",
+    "WC_VIN_AREA",
+    "WC_VIN_CUE",
+    "WC_VIN_DOSE",
+    "WC_VIN_ORGANIC",
   ]);
 });
