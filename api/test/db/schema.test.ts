@@ -32,7 +32,11 @@ const MISSING_COLUMNS: Record<string, readonly string[]> = {
 };
 const EXTRA_COLUMNS: Record<string, readonly string[]> = {
   "vineyard.parcel": ["appellation", "organic_status", "conversion_started_on"],
-  "vineyard.maturity_check": ["sugar_gl", "ph"],
+  "vineyard.maturity_check": [
+    "sugar_gl", "ph", "seed_color", "seed_crunch", "skin_astringency", "skin_color_release",
+    "pulp_sweetness", "pulp_acidity", "phenolic_maturity", "photo_attachment_id",
+  ],
+  "inventory.lot": ["segregated"],
   // TASK-VIN-002 amplía vineyard.treatment sin reescribir el DDL de referencia.
   "vineyard.treatment": [
     "active_substances",
@@ -351,8 +355,8 @@ test("el esquema DuckDB reproduce tablas, vistas y columnas de la referencia", a
   expect(migrations[0]).toBe("0001_core.sql");
   expect(migrations).toContain("0002_core_ops.sql");
   expect(migrations).toContain("0016_legacy.sql");
-  expect(migrations.at(-1)).toBe("0022_vineyard_notebook.sql");
-  expect(migrations).toHaveLength(22);
+  expect(migrations.at(-1)).toBe("0025_harvest_planner.sql");
+  expect(migrations).toHaveLength(25);
   await migrate(client);
 
   const refs = referenceObjects(root);

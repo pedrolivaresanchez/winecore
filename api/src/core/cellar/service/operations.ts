@@ -615,7 +615,18 @@ async function persistConfirmed(
   number: string,
   materials: { lines: readonly MaterialUseLine[]; exits: readonly StockMoveDraft[] } | null = null,
 ): Promise<void> {
+  const segregateChild = current.header.op_type === 'blend' && await blendSegregation(tx, current.draft.lines) === 'segregated';
   for (const lot of plan.newLots) insertLot(tx, lot);
+  if (segregateChild && plan.newLots[0]) {
+    tx.write(sql`UPDATE inventory.lot SET segregated = TRUE WHERE id = CAST(${plan.newLots[0].id} AS UUID)`);
+    tx.audit({
+      table: 'inventory.lot',
+      rowId: plan.newLots[0].id,
+      action: 'UPDATE',
+      before: { segregated: false },
+      after: { segregated: true },
+    });
+  }
   const confirmedAt = new Date().toISOString();
   const silicie = plan.fiscalMoves.length > 0 || plan.silicieFacts.length > 0;
   const details = {
@@ -821,6 +832,22 @@ async function buildTransfer(
   return { ...common, op_type: 'racking', lines: engine };
 }
 
+async function blendSegregation(tx: Tx, lines: readonly ParsedLine[]): Promise<'segregated' | 'healthy'> {
+  const ids = [...new Set(lines.filter((line) => line.role === 'input' && line.lot_id).map((line) => line.lot_id as string))];
+  if (ids.length === 0) return 'healthy';
+  const list = ids.map((id) => sql`CAST(${id} AS UUID)`).join(', ');
+  const rows = await tx.read<Record<string, unknown>>(`
+    SELECT segregated FROM inventory.lot WHERE id IN (${list})
+  `);
+  const flags = rows.map((row) => row.segregated === true || row.segregated === 'true');
+  const any = flags.some(Boolean);
+  const all = flags.length > 0 && flags.every(Boolean);
+  if (any && !all) {
+    throw new DomainError('WC_VALIDATION', 422, 'Un lote segregado no se ensambla con uno sano');
+  }
+  return all ? 'segregated' : 'healthy';
+}
+
 async function buildBlend(
   tx: Tx,
   common: Omit<BlendRequest, 'op_type' | 'lines' | 'new_lot'>,
@@ -828,6 +855,7 @@ async function buildBlend(
   newLot: NewLotInput | null,
 ): Promise<BlendRequest> {
   if (!newLot) invalid({ new_lot: 'El ensamblaje crea un lote' });
+  await blendSegregation(tx, lines);
   const engine: BlendLine[] = [];
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
