@@ -69,7 +69,7 @@ export async function loadInvoiceDocument(reader: SqlReader, id: string): Promis
     return { kind: 'not_issued', legalEntityId, status };
   }
 
-  const [lineRows, taxRows, dueRows, rectificationRows, linkRows, sentRows] = await Promise.all([
+  const [lineRows, taxRows, dueRows, rectificationRows, linkRows] = await Promise.all([
     reader.read<Record<string, unknown>>(sql`
       SELECT line_no, sku, description, lot_code, quantity, unit, unit_price, discount_pct, tax_code, line_base
       FROM billing.invoice_line
@@ -106,14 +106,6 @@ export async function loadInvoiceDocument(reader: SqlReader, id: string): Promis
       ORDER BY created_at
       LIMIT 1
     `),
-    reader.read<{ payload: unknown; occurred_at: string }>(sql`
-      SELECT payload, occurred_at
-      FROM ops.outbox_event
-      WHERE event_type = 'billing.invoice.sent'
-        AND aggregate_id = CAST(${id} AS UUID)
-      ORDER BY id DESC
-      LIMIT 1
-    `),
   ]);
 
   const language = text(header.language);
@@ -136,10 +128,9 @@ export async function loadInvoiceDocument(reader: SqlReader, id: string): Promis
   if (columnChannel !== null && !SENT.has(columnChannel)) {
     throw domainError('WC_VALIDATION', { sent_channel: 'Canal de envío desconocido' });
   }
-  const recordedSend = sendFrom(sentRows[0]);
-  const sentChannel = (columnChannel ?? recordedSend?.channel ?? null) as LoadedInvoice['sentChannel'];
-  const sentAt = header.sent_at == null ? recordedSend?.at ?? null : text(header.sent_at);
-  const sentBy = header.sent_by == null ? recordedSend?.by ?? null : text(header.sent_by);
+  const sentChannel = columnChannel as LoadedInvoice['sentChannel'];
+  const sentAt = header.sent_at == null ? null : text(header.sent_at);
+  const sentBy = header.sent_by == null ? null : text(header.sent_by);
   const linkedPdf = linkRows[0] ? text(linkRows[0].attachment_id) : null;
 
   const invoice: LoadedInvoice = {
@@ -318,20 +309,6 @@ function asDate(value: unknown): string {
     if (match?.[1]) return match[1];
   }
   throw domainError('WC_VALIDATION', { date: 'Fecha ilegible' });
-}
-
-function sendFrom(row: { payload: unknown; occurred_at: string } | undefined): {
-  at: string;
-  by: string | null;
-  channel: 'download' | 'email' | 'edi' | 'portal' | 'paper';
-} | null {
-  if (!row) return null;
-  const payload = asObject(row.payload);
-  const channel = payload ? text(payload.channel) : '';
-  if (!SENT.has(channel)) return null;
-  const by = payload?.sent_by == null ? null : text(payload.sent_by);
-  const at = payload?.sent_at == null ? text(row.occurred_at) : text(payload.sent_at);
-  return { at, by, channel: channel as 'download' | 'email' | 'edi' | 'portal' | 'paper' };
 }
 
 function asBool(value: unknown): boolean {

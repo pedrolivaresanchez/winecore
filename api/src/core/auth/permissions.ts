@@ -3,6 +3,7 @@ export const PERMISSIONS = [
   'contacts.write',
   'billing.read',
   'billing.issue',
+  'billing.deliver',
   'settings.manage',
   'users.manage',
   'audit.read',
@@ -30,7 +31,7 @@ export interface UserCtx {
 const MATRIX: Record<RoleCode, readonly Permission[]> = {
   owner: PERMISSIONS,
   approver: ['contacts.read', 'audit.read', 'billing.read', 'billing.issue'],
-  admin: ['contacts.read', 'contacts.write', 'billing.read', 'billing.issue'],
+  admin: ['contacts.read', 'contacts.write', 'billing.read', 'billing.issue', 'billing.deliver'],
   cellar: [],
   field: [],
   advisor: ['contacts.read', 'audit.read', 'billing.read'],
