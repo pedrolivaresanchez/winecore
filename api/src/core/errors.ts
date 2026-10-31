@@ -54,6 +54,9 @@ const CATALOG = {
   WC_VESSEL_NOT_IN_SERVICE: [409, 'El recipiente no está en servicio'],
   WC_ILLEGAL_TRANSITION: [409, 'La transición de estado no está permitida'],
   WC_ECO_MIX: [422, 'No se puede ensamblar un lote ecológico con uno que no lo es'],
+  WC_LOT_SINGLE_PLOT: [422, 'La parcela única no coincide con la genealogía del lote'],
+  WC_LOT_NOT_FINISHED: [422, 'El lote no tiene operaciones confirmadas para capturar la receta'],
+  WC_RECIPE_LOCKED: [409, 'La versión publicada de la receta no se edita'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;
