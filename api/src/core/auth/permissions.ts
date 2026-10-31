@@ -22,7 +22,7 @@ export const PERMISSIONS = [
   // Existencias (stock): lectura del libro y aforos.
   'inventory.read',
   'inventory.count',
-  // Bodega (07-arquitectura.md §6).
+  // Bodega (07-arquitectura.md §6). Higiene y APPCC usan estos tres: lectura, operación y owner para procedimientos.
   'cellar.read',
   'cellar.operate',
   'cellar.manage',

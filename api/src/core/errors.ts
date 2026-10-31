@@ -114,6 +114,9 @@ const CATALOG = {
   WC_TASTING_HIDDEN: [409, 'La correspondencia de la cata ciega sigue oculta'],
   WC_TASTING_CLOSED: [409, 'La sesión de cata no admite más cambios'],
   WC_TASTING_DAY: [422, 'El día no pertenece a la sesión'],
+  WC_HYGIENE_DOSE: [422, 'La dosis, el tiempo de contacto o el aclarado no cumplen el procedimiento'],
+  WC_HYGIENE_SCOPE: [422, 'El procedimiento no aplica a este equipo o recipiente'],
+  WC_HYGIENE_CHECKLIST: [409, 'El envasado exige el control de calidad antes de confirmar'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;
