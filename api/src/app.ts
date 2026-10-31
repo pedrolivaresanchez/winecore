@@ -49,6 +49,7 @@ import {
   postExportReadiness,
   putExportDocuments,
 } from './routes/export-docs';
+import { materialRoutes } from './routes/materials';
 import { health } from './routes/health';
 import { me } from './routes/me';
 import { listNotifications, readAllNotifications, readNotification } from './routes/notifications';
@@ -318,6 +319,7 @@ export function createApp(deps: AppDeps) {
     })
     .post('/v1/export/documents', ({ request }) => postExportDocuments(deps.writer, request), {
       beforeHandle: requireOwner(guardDeps),
-    });
+    })
+    .use(materialRoutes(guardDeps));
   return app;
 }

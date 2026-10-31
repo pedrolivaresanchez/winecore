@@ -37,6 +37,7 @@ import { sql } from '../../db/sql';
 import type { Tx, Writer } from '../../db/writer';
 import { DomainError, domainError } from '../../errors';
 import { businessDate } from '../../time';
+import { planBottlingMaterials, type MaterialUseLine } from './materials';
 import { takeCellarOperationNumber } from './number';
 import {
   actorFor,
@@ -119,6 +120,7 @@ export interface OperationView extends OperationHeader {
   lot_edges: Record<string, unknown>[];
   addition: Record<string, unknown> | null;
   cleaning: Record<string, unknown> | null;
+  material_consumption: Record<string, unknown>[];
 }
 
 interface OperationLineView {
@@ -203,6 +205,7 @@ export interface OperationPreview {
   new_lots: readonly LotDraft[];
   lot_edges: readonly LotEdgeDraft[];
   vessels_after: readonly VesselState[];
+  materials: readonly MaterialUseLine[];
 }
 
 export async function listOperations(writer: Writer, request: Request): Promise<ListBody<OperationHeader>> {
@@ -287,13 +290,16 @@ export async function previewOperation(writer: Writer, request: Request, id: str
   return writer.withWrite(actorFor(request, 'vista previa'), async (tx) => {
     const current = await loadStored(tx, id);
     if (current.status !== 'draft') throw linesLocked(current.status);
-    const plan = await planStored(tx, current, sessionOf(request).id);
+    const actorId = sessionOf(request).id;
+    const plan = await planStored(tx, current, actorId);
+    const materials = await materialsFor(tx, current, plan, actorId);
     return {
-      stock_moves: plan.stockMoves,
+      stock_moves: materials.short ? plan.stockMoves : [...plan.stockMoves, ...materials.exits],
       fiscal_moves: plan.fiscalMoves,
       new_lots: plan.newLots,
       lot_edges: plan.lotEdges,
       vessels_after: plan.vesselsAfter,
+      materials: materials.lines,
     };
   });
 }
@@ -309,8 +315,21 @@ export async function confirmOperation(writer: Writer, request: Request, id: str
     }
     await consumeLossApproval(tx, policies, current);
     const plan = await planStored(tx, current, actor.id);
+    const materials = await materialsFor(tx, current, plan, actor.id);
+    if (materials.short) {
+      throw new DomainError('WC024', 422, 'Saldo negativo', undefined, {
+        materials: materials.lines.filter((line) => line.short).map((line) => ({
+          product_id: line.product_id,
+          sku: line.sku,
+          name: line.name,
+          quantity: line.required_total,
+          available: line.available,
+          shortfall: line.shortfall,
+        })),
+      });
+    }
     const number = await takeCellarOperationNumber(tx, current.header.legal_entity_id, current.header.fiscal_date);
-    await persistConfirmed(tx, current, plan, actor.id, number);
+    await persistConfirmed(tx, current, plan, actor.id, number, materials);
   });
   return readOperation(writer, id);
 }
@@ -532,6 +551,7 @@ async function persistConfirmed(
   plan: PlanSuccess,
   actorId: string,
   number: string,
+  materials: { lines: readonly MaterialUseLine[]; exits: readonly StockMoveDraft[] } | null = null,
 ): Promise<void> {
   for (const lot of plan.newLots) insertLot(tx, lot);
   const confirmedAt = new Date().toISOString();
@@ -559,6 +579,67 @@ async function persistConfirmed(
     insertAddition(tx, current.id, current.draft.addition);
   }
   if (current.draft.cleaning) insertCleaning(tx, current.id, current.draft.cleaning);
+  if (materials) {
+    for (const line of materials.lines) insertConsumption(tx, current.id, line);
+    for (const move of materials.exits) insertStock(tx, move);
+  }
+}
+
+function bottledOutput(plan: PlanSuccess): {
+  productId: string;
+  qtyUnits: number;
+  volumeMl: number;
+  locationId: string;
+  ownerEntityId: string;
+} | null {
+  const move = plan.stockMoves.find((row) => (
+    row.move_type === 'cellar_in'
+    && (row.product_state === 'packaged_unlabeled' || row.product_state === 'packaged_labeled')
+    && row.product_id
+    && row.qty_units > 0
+  ));
+  if (!move?.product_id) return null;
+  return {
+    productId: move.product_id,
+    qtyUnits: move.qty_units,
+    volumeMl: move.volume_ml,
+    locationId: move.location_id,
+    ownerEntityId: move.owner_entity_id,
+  };
+}
+
+async function materialsFor(tx: Tx, current: LoadedDraft, plan: PlanSuccess, actorId: string) {
+  if (current.header.op_type !== 'bottling') {
+    return { lines: [], exits: [], short: false };
+  }
+  return planBottlingMaterials(tx, {
+    operationId: current.id,
+    occurredAt: current.header.occurred_at,
+    createdBy: actorId,
+    output: bottledOutput(plan),
+  });
+}
+
+function insertConsumption(tx: Tx, operationId: string, line: MaterialUseLine): void {
+  const id = newId();
+  const stored = {
+    id,
+    operation_id: operationId,
+    product_id: line.product_id,
+    quantity: line.quantity,
+    unit: 'ud',
+    per: line.per,
+  };
+  auditInsert(tx, 'cellar.material_consumption', id, stored, sql`
+    INSERT INTO cellar.material_consumption (id, operation_id, product_id, quantity, unit)
+    VALUES (
+      CAST(${id} AS UUID),
+      CAST(${operationId} AS UUID),
+      CAST(${line.product_id} AS UUID),
+      ${line.quantity},
+      ${'ud'}
+    )
+  `);
 }
 
 async function buildRequest(
@@ -1509,7 +1590,7 @@ async function readOperation(writer: Writer, id: string): Promise<OperationView>
   if (!row) throw domainError('WC_NOT_FOUND');
   const stored = asStored(jsonObject(row.details));
   const status = textOf(row.status);
-  const [lines, stock, fiscal, lots, edges, addition, cleaning] = await Promise.all([
+  const [lines, stock, fiscal, lots, edges, addition, cleaning, consumption] = await Promise.all([
     writer.read<Record<string, unknown>>(sql`
       SELECT id::VARCHAR AS id, operation_id::VARCHAR AS operation_id, role, lot_id::VARCHAR AS lot_id,
              vessel_id::VARCHAR AS vessel_id, location_id::VARCHAR AS location_id,
@@ -1575,6 +1656,13 @@ async function readOperation(writer: Writer, id: string): Promise<OperationView>
       FROM cellar.cleaning_record
       WHERE operation_id = CAST(${id} AS UUID)
     `),
+    writer.read<Record<string, unknown>>(sql`
+      SELECT id::VARCHAR AS id, operation_id::VARCHAR AS operation_id, product_id::VARCHAR AS product_id,
+             CAST(quantity AS VARCHAR) AS quantity, unit
+      FROM cellar.material_consumption
+      WHERE operation_id = CAST(${id} AS UUID)
+      ORDER BY id
+    `),
   ]);
   const draftLines = status === 'draft' && stored
     ? stored.lines.map((line) => ({
@@ -1606,6 +1694,10 @@ async function readOperation(writer: Writer, id: string): Promise<OperationView>
     cleaning: status === 'draft'
       ? (stored?.cleaning as Record<string, unknown> | null | undefined) ?? null
       : cleaning[0] ?? null,
+    material_consumption: consumption.map((row) => ({
+      ...row,
+      quantity: Number(row.quantity),
+    })),
   };
 }
 

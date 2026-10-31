@@ -94,6 +94,12 @@ export async function seedDemo(
     },
   );
   const counted = await writer.read<{ total: number }>('SELECT count(*)::INTEGER AS total FROM party.contact');
+  await writer.withWrite(
+    { type: 'migration', id: 'seed-demo', requestId: 'seed-demo' },
+    async (tx) => {
+      for (const statement of cellarOperationSeriesStatements()) tx.write(statement);
+    },
+  );
   return { contacts: Number(counted[0]?.total ?? 0) };
 }
 
