@@ -12,6 +12,7 @@ export async function createTestApp(options?: {
   ocr?: AppDeps['ocr'];
   approvalHook?: AppDeps['approvalHook'];
   mcpRatePerMinute?: number;
+  fetchImpl?: AppDeps['fetchImpl'];
 }) {
   const client = await createLocalClient(':memory:');
   await migrate(client);
@@ -34,6 +35,7 @@ export async function createTestApp(options?: {
     config,
     writer,
     log: options?.log ?? (() => undefined),
+    fetchImpl: options?.fetchImpl,
     now: options?.now,
     ocr: options?.ocr,
     approvalHook: options?.approvalHook,

@@ -1,12 +1,25 @@
 import { createHash } from 'node:crypto';
-import { can, isOwner, isRoleCode, type Permission, type UserCtx } from '../core/auth/permissions';
+import { can, isOwner, isOwnerOrAdmin, isRoleCode, type Permission, type UserCtx } from '../core/auth/permissions';
 import { domainError, DomainError, errorBody } from '../core/errors';
 import type { Writer } from '../core/db/writer';
 import { sql } from '../core/db/sql';
+import { sha256Hex } from '../core/hash';
 import { newId } from '../core/ids';
 import type { Config } from '../config';
 import { ensureLoginSession, sessionHash } from '../core/auth/stepup/session';
+import { devAuthEnabled } from './policy';
 import type { TimbalAuth } from './timbal';
+
+const GUARD_MARK = Symbol.for('winecore.guard');
+
+export function isAuthGuard(fn: unknown): boolean {
+  return typeof fn === 'function' && (fn as { [GUARD_MARK]?: boolean })[GUARD_MARK] === true;
+}
+
+function guard<T extends (state: GuardState) => Promise<unknown>>(fn: T): T {
+  Object.defineProperty(fn, GUARD_MARK, { value: true });
+  return fn;
+}
 
 export interface GuardDeps {
   config: Config;
@@ -60,18 +73,18 @@ export function sessionOf(request: Request): UserCtx {
 }
 
 export function requireUser(deps: GuardDeps) {
-  return async ({ request, set }: GuardState) => {
+  return guard(async ({ request, set }: GuardState) => {
     const blocked = await rejectMachine(deps, request, set);
     if (blocked) return blocked;
     const session = await loadSession(deps, request);
     if (session instanceof DomainError) return reject(set, session);
     await rememberLogin(deps, request, session);
-  };
+  });
 }
 
 /** Humano autenticado o cliente de máquina (`Authorization: Bearer wc_…`). */
 export function requireUserOrMachine(deps: GuardDeps) {
-  return async (context: GuardState) => {
+  return guard(async (context: GuardState) => {
     if (!machineBearer(context.request)) {
       const session = await loadSession(deps, context.request);
       if (session instanceof DomainError) return reject(context.set, session);
@@ -80,7 +93,7 @@ export function requireUserOrMachine(deps: GuardDeps) {
     }
     const machine = await rememberMachine(deps, context.request);
     if (machine instanceof DomainError) return reject(context.set, machine);
-  };
+  });
 }
 
 async function rejectMachine(
@@ -131,37 +144,67 @@ async function lookupMachine(writer: Writer, token: string): Promise<MachinePrin
 }
 
 export function requirePermission(deps: GuardDeps, permission: Permission) {
-  return async ({ request, set }: GuardState) => {
+  return guard(async ({ request, set }: GuardState) => {
     const blocked = await rejectMachine(deps, request, set);
     if (blocked) return blocked;
     const session = await loadSession(deps, request);
     if (session instanceof DomainError) return reject(set, session);
     await rememberLogin(deps, request, session);
     if (!can(session, permission)) return reject(set, domainError('WC_FORBIDDEN'));
-  };
+  });
+}
+
+/** Cualquiera de los permisos basta. Lo usan los selectores compartidos (parcelas). */
+export function requireAnyPermission(deps: GuardDeps, permissions: readonly Permission[]) {
+  return guard(async ({ request, set }: GuardState) => {
+    const blocked = await rejectMachine(deps, request, set);
+    if (blocked) return blocked;
+    const session = await loadSession(deps, request);
+    if (session instanceof DomainError) return reject(set, session);
+    await rememberLogin(deps, request, session);
+    if (!permissions.some((permission) => can(session, permission))) return reject(set, domainError('WC_FORBIDDEN'));
+  });
 }
 
 export function requireOwner(deps: GuardDeps) {
-  return async ({ request, set }: GuardState) => {
+  return guard(async ({ request, set }: GuardState) => {
     const blocked = await rejectMachine(deps, request, set);
     if (blocked) return blocked;
     const session = await loadSession(deps, request);
     if (session instanceof DomainError) return reject(set, session);
     await rememberLogin(deps, request, session);
     if (!isOwner(session)) return reject(set, domainError('WC_FORBIDDEN'));
-  };
+  });
+}
+
+/** Dirección o administración: pueden leer la puesta en marcha. Las correcciones siguen siendo del propietario. */
+export function requireOwnerOrAdmin(deps: GuardDeps) {
+  return guard(async ({ request, set }: GuardState) => {
+    const blocked = await rejectMachine(deps, request, set);
+    if (blocked) return blocked;
+    const session = await loadSession(deps, request);
+    if (session instanceof DomainError) return reject(set, session);
+    await rememberLogin(deps, request, session);
+    if (!isOwnerOrAdmin(session)) return reject(set, domainError('WC_FORBIDDEN'));
+  });
 }
 
 async function rememberLogin(deps: GuardDeps, request: Request, user: UserCtx): Promise<void> {
-  await ensureLoginSession(
-    deps.writer,
-    { type: 'user', id: user.id, requestId: requestIdFor(request) },
-    {
-      userId: user.id,
-      hash: sessionHash(deps.config, request, user.id),
-      at: (deps.now ?? (() => new Date()))(),
-    },
-  );
+  try {
+    await ensureLoginSession(
+      deps.writer,
+      { type: 'user', id: user.id, requestId: requestIdFor(request) },
+      {
+        userId: user.id,
+        hash: sessionHash(deps.config, request, user.id),
+        at: (deps.now ?? (() => new Date()))(),
+      },
+    );
+  } catch (error) {
+    // During a deploy the previous instance keeps the writer lease for up to a minute; the session
+    // record is retried on the next request, so reads must not fail meanwhile.
+    if (!(error instanceof DomainError) || error.code !== 'WRITER_LEASE_LOST') throw error;
+  }
 }
 
 function reject(set: GuardState['set'], error: DomainError) {
@@ -191,12 +234,13 @@ async function resolveSession(deps: GuardDeps, request: Request): Promise<UserCt
         reason: 'acceso denegado',
       },
       async (tx) => {
+        const emailSha256 = sha256Hex(email);
         tx.audit({
           table: 'core.app_user',
-          rowId: email,
+          rowId: emailSha256,
           action: 'auth.denied',
           before: null,
-          after: { email },
+          after: { email_sha256: emailSha256 },
         });
       },
     );
@@ -207,7 +251,7 @@ async function resolveSession(deps: GuardDeps, request: Request): Promise<UserCt
 }
 
 async function emailFrom(deps: GuardDeps, request: Request): Promise<string | DomainError> {
-  if (deps.config.authMode === 'dev') {
+  if (devAuthEnabled(deps.config)) {
     const override = request.headers.get('x-dev-user')?.trim();
     return (override && override.length > 0 ? override : deps.config.devUserEmail).toLowerCase();
   }

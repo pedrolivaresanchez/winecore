@@ -2,6 +2,7 @@ import { requestIdFor, sessionOf } from "../auth/guard";
 import { can } from "../core/auth/permissions";
 import { domainError } from "../core/errors";
 import { listObligations, loadHolidayCalendar, refreshRegulatoryCalendar, syncSilicieObligations } from "../core/regulatory/obligations";
+import { warehousesByEntity } from "../core/regulatory/warehouses";
 import { businessDate } from "../core/time";
 import type { RegulatoryDeps } from "./regulatory-submissions";
 
@@ -21,13 +22,21 @@ export async function listRegulatoryObligations(deps: RegulatoryDeps, request: R
     from,
     to,
   });
+  const byEntity = await warehousesByEntity(deps.writer);
   return {
     items: items
       .filter((item) => can(user, "regulatory.read", item.legal_entity_id))
-      .map((item) => ({
-        ...item,
-        display: displayOf(item.status, item.due_date, deps.now()),
-      })),
+      .map((item) => {
+        const warehouses = byEntity.get(item.legal_entity_id.toLowerCase()) ?? [];
+        const taxWarehouse = warehouses.length === 1 ? warehouses[0] ?? null : null;
+        return {
+          ...item,
+          display: displayOf(item.status, item.due_date, deps.now()),
+          tax_warehouse_id: taxWarehouse?.id ?? null,
+          tax_warehouse: taxWarehouse,
+          tax_warehouses: warehouses,
+        };
+      }),
   };
 }
 

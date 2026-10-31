@@ -1,4 +1,5 @@
 import { createApp } from './app';
+import { safeLogMessage } from './core/redact';
 import { loadConfig } from './config';
 import { openClient } from './core/db/open';
 import { createWriter, installWriter } from './core/db/writer';
@@ -62,7 +63,7 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : 'Error interno';
-  console.error(message);
+  console.error(safeLogMessage(message));
   // The platform exposes no runtime logs: keep the port open and report the startup failure on every path.
   Bun.serve({
     port: Number(process.env.PORT) || 3000,

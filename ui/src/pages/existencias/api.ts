@@ -74,7 +74,7 @@ export type PhysicalMove = {
   mass_g: number;
   source_table: string;
   source_id: string;
-  document_ref: string | null;
+  document_ref: string;
   justification_ref: string | null;
   silicie_entry_id: string | null;
   silicie_ref: string | null;
@@ -220,6 +220,7 @@ export function balancesPath(input: {
   return `/v1/stock/balances${query({
     at: input.at,
     location_id: input.locationId,
+    owner_entity_id: input.ownerEntityId,
     owner: input.ownerEntityId,
     product_id: input.productId,
     lot_id: input.lotId,
@@ -254,7 +255,7 @@ export function movesPath(input: {
     lot_id: input.lotId,
     source: input.source,
     location_id: input.locationId,
-    owner: input.book === "physical" ? input.ownerEntityId : undefined,
+    owner_entity_id: input.book === "physical" ? input.ownerEntityId : undefined,
     legal_entity_id: input.book === "fiscal" ? input.legalEntityId : undefined,
   })}`;
 }
@@ -265,6 +266,44 @@ export function countsPath(legalEntityId?: string): string {
 
 export function locationsPath(): string {
   return "/v1/locations";
+}
+
+export function materialsStockPath(at: string, owner?: string): string {
+  return `/v1/materials/stock${query({ at, owner })}`;
+}
+
+export async function fetchInspection(at: string, signal?: AbortSignal) {
+  return api<InspectionDocument>(`/v1/stock/inspection-report?at=${encodeURIComponent(at)}`, { signal });
+}
+
+export type InspectionDocument = {
+  at: string;
+  business_date?: string;
+  hash?: string | null;
+  notice?: string | null;
+  items: unknown[];
+  totals?: {
+    bulk_volume_ml?: number;
+    packaged_units?: number;
+    packaged_volume_ml?: number;
+    goods_units?: number;
+  };
+};
+
+export async function downloadInspection(at: string, format: "csv" | "html"): Promise<Blob> {
+  const headers = new Headers({ Accept: format === "csv" ? "text/csv" : "text/html" });
+  if (isAuthEnabled) {
+    const token = getAccessToken();
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+  }
+  const response = await fetch(`${apiBase()}/v1/stock/inspection-report?at=${encodeURIComponent(at)}&format=${format}`, {
+    headers,
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new ApiError(response.status, "WC_ERROR", "No se ha podido descargar el informe");
+  }
+  return response.blob();
 }
 
 export function getCount(id: string, signal?: AbortSignal) {

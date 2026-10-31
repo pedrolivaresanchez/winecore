@@ -7,6 +7,7 @@ import {
   type PublicKeyCredentialRequestOptionsJSON,
   type RegistrationResponseJSON,
 } from "@simplewebauthn/browser";
+import { copy } from "@/i18n";
 import { ApiError, api } from "@/lib/api";
 import type { ApprovalDetail, ApprovalPage, ApprovalPolicy, PolicyInput, UserCredential } from "@/pages/aprobaciones/model";
 
@@ -126,13 +127,13 @@ export function passkeyFailure(error: unknown): string {
     return error.message;
   }
   if (error instanceof WebAuthnError) {
-    if (error.code === "ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED") return "Esta passkey ya está registrada.";
+    if (error.code === "ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED") return copy.approvals.passkeyRegistered;
     if (error.code === "ERROR_INVALID_DOMAIN" || error.code === "ERROR_INVALID_RP_ID") {
-      return "Este sitio no admite passkeys. Usa el código de la app.";
+      return copy.approvals.passkeyDomain;
     }
     if (error.code === "ERROR_CEREMONY_ABORTED" || error.code === "ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY") {
-      return "No se ha confirmado la passkey. Puedes usar el código de la app.";
+      return copy.approvals.passkeyAborted;
     }
   }
-  return "No se ha podido usar la passkey. Puedes usar el código de la app.";
+  return copy.approvals.passkeyFail;
 }

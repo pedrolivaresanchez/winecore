@@ -225,7 +225,7 @@ function customerFrom(snapshot: unknown): PartyIdentity {
   const address = asObject(row.address);
   if (!address) throw domainError('WC_VALIDATION', { customer_snapshot: 'Falta la dirección del cliente' });
   return {
-    legalName: required(row.legal_name, 'customer_snapshot'),
+    legalName: required(row.legal_name ?? row.name, 'customer_snapshot'),
     tradeName: optionalText(row.trade_name),
     taxId: required(row.tax_id, 'customer_snapshot'),
     taxIdType: taxType(row.tax_id_type),

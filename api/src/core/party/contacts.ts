@@ -327,19 +327,20 @@ export function contactOf(
     eori: text(row.eori),
     tax_id_warning: warningFor(text(row.tax_id), String(row.tax_id_type), text(row.tax_id_country)),
     created_at: String(row.created_at),
-    addresses: addresses.map(addressOf),
+    addresses: addresses.map((address) => addressOf(address, viewer)),
     persons: persons.map((person) => personOf(person, viewer)),
   };
 }
 
-export function addressOf(row: Record<string, unknown>) {
+export function addressOf(row: Record<string, unknown>, viewer?: UserCtx) {
+  const personal = viewer === undefined || seesPersonalContactData(viewer);
   return {
     id: String(row.id),
     kind: String(row.kind),
-    label: text(row.label),
-    line1: String(row.line1),
-    line2: text(row.line2),
-    postal_code: String(row.postal_code),
+    label: personal ? text(row.label) : null,
+    line1: personal ? String(row.line1) : null,
+    line2: personal ? text(row.line2) : null,
+    postal_code: personal ? String(row.postal_code) : null,
     city: String(row.city),
     province: text(row.province),
     country_code: String(row.country_code),

@@ -18,7 +18,7 @@ import {
   type BarrelStatus,
   type ZoneKind,
 } from './constants';
-import { doubleOf, idOf } from './parse';
+import { doubleOf, idOf, litresOf } from './parse';
 import { PLAN_METADATA, type PlanMetadata } from './plan-metadata';
 import { holderKindLabel } from './zones';
 
@@ -39,6 +39,8 @@ export interface MapVessel {
   has_cooling_jacket: boolean;
   capacity_ml: number;
   volume_ml: number;
+  /** Litros con un decimal, para colorear y leer el llenado sin otra llamada. */
+  litres: string;
   fill_pct: string;
   lot_id: string | null;
   lot_code: string | null;
@@ -67,6 +69,7 @@ export interface MapHolder {
   nominal_volume_ml: number | null;
   format: string | null;
   count: number;
+  litres: string | null;
   fill_pct: string | null;
   lot_id: string | null;
   lot_code: string | null;
@@ -262,6 +265,7 @@ function toVessel(
     has_cooling_jacket: core.has_cooling_jacket,
     capacity_ml: core.capacity_ml,
     volume_ml: volume,
+    litres: litresOf(volume),
     fill_pct: fillPct(volume, core.capacity_ml),
     lot_id: content?.lot_id ?? null,
     lot_code: content?.lot_code ?? null,
@@ -378,6 +382,7 @@ async function holdersAt(writer: Writer, locationId: string): Promise<Map<string
     const id = idOf(row.id);
     const balance = balances.get(id);
     const capacity = row.capacity_units == null ? null : intOf(row.capacity_units);
+    const nominal = row.nominal_volume_ml == null ? null : intOf(row.nominal_volume_ml);
     const count = balance?.qty ?? 0;
     map.set(id, {
       id,
@@ -387,9 +392,10 @@ async function holdersAt(writer: Writer, locationId: string): Promise<Map<string
       kind_label: holderKindLabel(textOf(row.kind)),
       number: row.cage_number == null ? null : intOf(row.cage_number),
       capacity_bottles: capacity,
-      nominal_volume_ml: row.nominal_volume_ml == null ? null : intOf(row.nominal_volume_ml),
+      nominal_volume_ml: nominal,
       format: textOrNull(row.format_code),
       count,
+      litres: nominal == null ? null : litresOf(count * nominal),
       fill_pct: capacity === null ? null : fillPct(count, capacity),
       lot_id: balance?.lot_id ?? null,
       lot_code: balance?.lot_code ?? null,

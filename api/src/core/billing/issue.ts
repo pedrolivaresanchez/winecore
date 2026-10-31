@@ -274,6 +274,7 @@ function resultFromView(view: InvoiceView): IssueResult {
 
 function customerSnapshot(customer: CustomerView): Record<string, unknown> {
   return {
+    legal_name: customer.legalName,
     name: customer.legalName,
     trade_name: customer.tradeName,
     tax_id: customer.taxId,

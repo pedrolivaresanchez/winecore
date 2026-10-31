@@ -124,6 +124,7 @@ export function loadConfig(env: Env): Config {
   if (dataKeyRaw === undefined) {
     if (!devLike) invalid('WINECORE_DATA_KEY');
   } else {
+    if (!devLike && dataKeyRaw.toLowerCase() === TEST_DATA_KEY) invalid('WINECORE_DATA_KEY');
     dataKey = parseAes256Key(dataKeyRaw);
     if (!dataKey) invalid('WINECORE_DATA_KEY');
   }
@@ -207,6 +208,8 @@ function originMatchesRp(origin: string, rpId: string): boolean {
   const host = new URL(origin).hostname;
   return host === rpId || host.endsWith(`.${rpId}`);
 }
+
+const TEST_DATA_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 
 function parseAes256Key(value: string): Uint8Array | null {
   if (/^[0-9a-fA-F]{64}$/.test(value)) {

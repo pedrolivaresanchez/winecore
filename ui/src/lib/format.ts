@@ -45,46 +45,24 @@ export function formatMoney(value: number): string {
   return `${formatGrouped(value, 2)} €`;
 }
 
-const DECIMAL = /^(-?)(\d+)(?:\.(\d+))?$/;
-
-/** Agrupa un texto decimal: miles con punto y decimales con coma, sin pasar por Number. */
-export function formatDecimal(value: string, fractionDigits: number): string {
-  const match = DECIMAL.exec(value.trim());
-  if (!match) return "—";
-  const negative = match[1] === "-";
-  let whole = (match[2] ?? "0").replace(/^0+(?=\d)/, "");
-  if (!whole) whole = "0";
-  const frac = match[3] ?? "";
-  let outFrac = "";
-  if (fractionDigits === 0) {
-    if ((frac[0] ?? "0") >= "5") whole = (BigInt(whole) + 1n).toString();
-  } else if (frac.length <= fractionDigits) {
-    outFrac = frac.padEnd(fractionDigits, "0");
-  } else {
-    const keep = frac.slice(0, fractionDigits);
-    if ((frac[fractionDigits] ?? "0") < "5") {
-      outFrac = keep;
-    } else {
-      const bumped = (BigInt(keep || "0") + 1n).toString().padStart(fractionDigits, "0");
-      if (bumped.length > fractionDigits) {
-        whole = (BigInt(whole) + 1n).toString();
-        outFrac = "0".repeat(fractionDigits);
-      } else {
-        outFrac = bumped;
-      }
-    }
+/**
+ * A figure that no longer fits a tile: `176,1 mil €`, `1,2 mill. L`.
+ * The full `formatMoney` / `formatInteger` stays for the tooltip.
+ */
+export function formatCompact(value: number, unit = ""): string {
+  if (!Number.isFinite(value)) return "—";
+  const abs = Math.abs(value);
+  if (abs < 1000) {
+    if (unit === "€") return formatMoney(value);
+    if (unit === "L") return `${formatGrouped(value, 0)} L`;
+    return formatInteger(value);
   }
-  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  const zero = whole === "0" && (outFrac === "" || /^0+$/.test(outFrac));
-  const sign = negative && !zero ? "-" : "";
-  return fractionDigits > 0 ? `${sign}${grouped},${outFrac}` : `${sign}${grouped}`;
-}
-
-/** Importe decimal con separadores españoles. Las tarifas usan 4 decimales: `7,9000 €`. */
-export function formatDecimalMoney(value: string | null | undefined, fractionDigits = 4): string {
-  if (!value) return "—";
-  const shown = formatDecimal(value, fractionDigits);
-  return shown === "—" ? shown : `${shown} €`;
+  const scale = abs >= 1_000_000_000 ? 1_000_000_000 : abs >= 1_000_000 ? 1_000_000 : 1000;
+  const suffix = abs >= 1_000_000_000 ? "mil mill." : abs >= 1_000_000 ? "mill." : "mil";
+  const scaled = value / scale;
+  const rounded = Number(scaled.toFixed(1));
+  const text = formatGrouped(rounded, 1).replace(/,0$/, "");
+  return unit ? `${text} ${suffix} ${unit}` : `${text} ${suffix}`;
 }
 
 /** `31/10/2026` en Europe/Madrid. */
@@ -104,7 +82,7 @@ export function formatDateTime(value: Date | string | number): string {
 /** Litros con 3 decimales: `1.234,500 L`. */
 export function formatLitres(value: number): string {
   if (!Number.isFinite(value)) return "—";
-  return `${formatGrouped(value, 3)}\u00a0L`;
+  return `${formatGrouped(value, 3)} L`;
 }
 
 /** Puntos porcentuales: `21 %`. */

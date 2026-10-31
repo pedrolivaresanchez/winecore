@@ -82,7 +82,6 @@ export type Product = {
   created_at: string;
   updated_at: string;
   has_movements?: boolean;
-  is_gtin_current?: boolean;
   gtin_is_current?: boolean;
   on_hand_qty?: string | null;
   is_organic?: boolean;
@@ -153,9 +152,7 @@ export type FormatInput = {
 export type ProductPrice = {
   price_list_id: string;
   price_list_code?: string;
-  price_list_name?: string;
-  name?: string;
-  code?: string;
+  price_list_name: string;
   version_id?: string;
   version?: number;
   currency?: string;
@@ -200,6 +197,28 @@ export type PriceListVersion = {
   created_at: string;
   items?: PriceItem[];
 };
+
+export type MaterialPer = "unit" | "case" | "pallet";
+
+export type FormatMaterial = {
+  id: string;
+  format_id: string;
+  material_product_id: string;
+  sku: string;
+  name: string;
+  per: MaterialPer;
+  quantity: string;
+};
+
+export const PER_OPTIONS: { id: MaterialPer; label: string }[] = [
+  { id: "unit", label: "Unidad" },
+  { id: "case", label: "Caja" },
+  { id: "pallet", label: "Palé" },
+];
+
+export function perLabel(per: string): string {
+  return PER_OPTIONS.find((item) => item.id === per)?.label ?? per;
+}
 
 export type StockBalance = {
   location_id?: string;
@@ -335,10 +354,6 @@ export function versionStatus(version: PriceListVersion): VersionStatus {
 
 export function versionEditable(version: PriceListVersion): boolean {
   return version.status === "draft" && !version.approval_request_id;
-}
-
-export function gtinCurrent(product: Product): boolean {
-  return Boolean(product.is_gtin_current ?? product.gtin_is_current);
 }
 
 export function productWarnings(product: Product): string[] {

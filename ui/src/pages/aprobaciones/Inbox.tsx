@@ -1,30 +1,27 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { useChromeTitle } from "@/app/shell/shell-context";
 import { useEntity } from "@/app/entity-context";
-import { ErrorState } from "@/components/ErrorState";
-import { EmptyState } from "@/components/EmptyState";
-import { PageHeader } from "@/components/PageHeader";
-import { StatusPill } from "@/components/StatusPill";
-import { Button } from "@/components/ui/button";
-import { NativeSelect } from "@/components/ui/native-field";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { copy } from "@/i18n";
+import { FRAME_GUTTER, FRAME_STRIP_SCROLL } from "@/ui/frame";
+import { Check, Search, SearchX } from "@/ui/icons";
+import { copy, fill } from "@/i18n";
 import { ApiError, isAbortError } from "@/lib/api";
-import { formatDateTime } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { cn } from "@/lib/cn";
+import { iconStroke } from "@/lib/motion";
+import type { Me } from "@/lib/types";
 import { listApprovals } from "@/pages/aprobaciones/api";
 import {
   APPROVAL_KINDS,
   entityLabel,
   expiryLabel,
   kindLabel,
-  shortHash,
+  requestedByMe,
   statusMeta,
   type ApprovalSummary,
 } from "@/pages/aprobaciones/model";
+import { Alert, Badge, Button, EmptyState, Input, SegmentedControl, Select, Skeleton } from "@/ui";
 
-type Tab = "pending" | "decided";
+type Tab = "pending" | "decided" | "mine";
 
 function useNow() {
   const [now, setNow] = useState(() => Date.now());
@@ -35,12 +32,19 @@ function useNow() {
   return now;
 }
 
-export function ApprovalInbox() {
-  const navigate = useNavigate();
+function tabOf(value: string | null): Tab {
+  if (value === "decididas") return "decided";
+  if (value === "mias") return "mine";
+  return "pending";
+}
+
+export function ApprovalInbox({ me }: { me: Me }) {
+  useChromeTitle(copy.approvals.title);
   const { entityCode } = useEntity();
-  const [params, setParams] = useSearchParams();
-  const tab: Tab = params.get("estado") === "decididas" ? "decided" : "pending";
-  const kind = params.get("tipo") ?? "";
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = tabOf(searchParams.get("estado"));
+  const kind = searchParams.get("tipo") ?? "";
+  const [search, setSearch] = useState("");
   const now = useNow();
   const [items, setItems] = useState<ApprovalSummary[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -52,7 +56,7 @@ export function ApprovalInbox() {
 
   const query = useMemo(
     () => ({
-      status: tab,
+      status: (tab === "decided" ? "decided" : tab === "mine" ? "all" : "pending") as "pending" | "decided" | "all",
       kind: kind || undefined,
       entity: entityCode ?? undefined,
     }),
@@ -83,11 +87,21 @@ export function ApprovalInbox() {
     };
   }, [attempt, query]);
 
+  const needle = search.trim().toLocaleLowerCase("es");
+  const visible = useMemo(() => {
+    return items.filter((item) => {
+      if (tab === "mine" && !requestedByMe(item, me)) return false;
+      if (!needle) return true;
+      const hay = `${item.title} ${item.summary} ${item.requested_by.display_name} ${kindLabel(item.kind)}`.toLocaleLowerCase("es");
+      return hay.includes(needle);
+    });
+  }, [items, me, needle, tab]);
+
   function setParam(key: string, value: string) {
-    const next = new URLSearchParams(params);
+    const next = new URLSearchParams(searchParams);
     if (value) next.set(key, value);
     else next.delete(key);
-    setParams(next);
+    setSearchParams(next);
   }
 
   async function loadMore() {
@@ -105,189 +119,176 @@ export function ApprovalInbox() {
     }
   }
 
-  const filtered = Boolean(kind);
-  const empty = !loading && items.length === 0;
-  const screen = loading ? "aprobaciones-cargando" : empty && !filtered && tab === "pending" ? "aprobaciones-vacio" : "aprobaciones";
+  const filtered = Boolean(kind || needle);
+  const empty = !loading && visible.length === 0;
+  const screen = loading
+    ? "aprobaciones-cargando"
+    : empty && !filtered && tab === "pending"
+      ? "aprobaciones-vacio"
+      : "aprobaciones";
+  const listQuery = searchParams.toString();
+  const suffix = listQuery ? `?${listQuery}` : "";
+
+  const emptyCopy = filtered
+    ? { title: copy.approvals.emptyFiltered, hint: copy.approvals.emptyFilteredHint }
+    : tab === "decided"
+      ? { title: copy.approvals.emptyDecided, hint: copy.approvals.emptyDecidedHint }
+      : tab === "mine"
+        ? { title: copy.approvals.emptyMine, hint: copy.approvals.emptyMineHint }
+        : { title: copy.approvals.emptyPending, hint: copy.approvals.emptyPendingHint };
+
+  const filters = (
+    <>
+      <SegmentedControl
+        size="sm"
+        className="shrink-0"
+        aria-label={copy.approvals.title}
+        value={tab}
+        onChange={(value) => setParam("estado", value === "pending" ? "" : value === "decided" ? "decididas" : "mias")}
+        options={[
+          { value: "pending", content: copy.approvals.pending },
+          { value: "decided", content: copy.approvals.decided },
+          { value: "mine", content: copy.approvals.mine },
+        ]}
+      />
+      <Select
+        id="aprobaciones-tipo"
+        size="sm"
+        aria-label={copy.approvals.kind}
+        value={kind}
+        className="w-44 shrink-0"
+        onChange={(event) => setParam("tipo", event.target.value)}
+      >
+        <option value="">{copy.approvals.allKinds}</option>
+        {APPROVAL_KINDS.map((id) => (
+          <option key={id} value={id}>
+            {kindLabel(id)}
+          </option>
+        ))}
+      </Select>
+    </>
+  );
 
   return (
-    <div data-screen={screen} className="flex flex-col gap-4">
-      <PageHeader title="Aprobaciones" description="Aprueba o rechaza exactamente lo que se va a ejecutar." />
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div role="tablist" aria-label="Estado" className="flex gap-2">
-          <TabButton
-            selected={tab === "pending"}
-            label={tab === "pending" && !loading && total > 0 ? `Pendientes ${total}` : "Pendientes"}
-            onClick={() => setParam("estado", "")}
-          />
-          <TabButton
-            selected={tab === "decided"}
-            label={tab === "decided" && !loading && total > 0 ? `Decididas ${total}` : "Decididas"}
-            onClick={() => setParam("estado", "decididas")}
+    <div data-screen={screen} className="flex min-h-0 flex-1 flex-col bg-surface">
+      <header className={cn("hidden h-12 shrink-0 items-center gap-2 border-b border-border-subtle md:flex", FRAME_GUTTER)}>
+        <Check className="size-4 shrink-0 text-icon" strokeWidth={iconStroke} />
+        <h1 className="min-w-0 truncate text-label font-medium text-ink-900">{copy.approvals.title}</h1>
+        {tab === "pending" && !loading && total > 0 ? (
+          <Badge tone="warning" dot size="sm">
+            {fill(copy.approvals.pendingCount, { n: String(total) })}
+          </Badge>
+        ) : null}
+      </header>
+      <div className={cn("flex h-11 shrink-0 items-center gap-1.5 border-b border-border-subtle", FRAME_GUTTER)}>
+        <div className={FRAME_STRIP_SCROLL}>
+          <Input
+            id="buscar-aprobaciones"
+            type="search"
+            size="sm"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder={copy.approvals.search}
+            aria-label={copy.approvals.search}
+            className="w-56 shrink-0"
+            prefix={<Search className="size-3.5" strokeWidth={iconStroke} />}
           />
         </div>
-        <label className="grid gap-1 text-meta text-muted-foreground sm:w-64" htmlFor="aprobaciones-tipo">
-          Tipo
-          <NativeSelect
-            id="aprobaciones-tipo"
-            value={kind}
-            onChange={(event) => setParam("tipo", event.target.value)}
-          >
-            <option value="">Todos</option>
-            {APPROVAL_KINDS.map((id) => (
-              <option key={id} value={id}>
-                {kindLabel(id)}
-              </option>
-            ))}
-          </NativeSelect>
-        </label>
       </div>
+      <div className={cn("flex h-10 shrink-0 items-center gap-1.5 border-b border-border-subtle bg-surface-subtle", FRAME_GUTTER)}>
+        <div className={cn(FRAME_STRIP_SCROLL, "[&>*]:shrink-0")}>{filters}</div>
+      </div>
+
       {error ? (
-        <ErrorState title={`${copy.error.load} (${error.code})`} detail={error.message} onRetry={() => setAttempt((value) => value + 1)} />
-      ) : null}
-      {loading ? <InboxSkeleton /> : null}
-      {!loading && !error && empty ? (
-        <EmptyState
-          title={filtered ? "Nada coincide con el filtro" : tab === "pending" ? "No hay nada pendiente" : "No hay decisiones"}
-          description={tab === "pending" && !filtered ? "Cuando haya algo que firmar, aparecerá aquí." : undefined}
-        />
-      ) : null}
-      {!loading && !error && items.length > 0 ? (
-        <>
-          <div className="hidden md:block">
-            <div className="overflow-x-auto border border-border">
-              <Table>
-                <caption className="sr-only">Solicitudes</caption>
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    {["Qué se aprueba", "Tipo", "Entidad", "Solicitante", "Plazo", "Hash"].map((header) => (
-                      <TableHead key={header} className="h-11 border border-border bg-muted text-compact font-medium">
-                        {header}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {items.map((item) => {
-                    const expiry = expiryLabel(item.expires_at, item.status, now);
-                    const status = statusMeta(item.status);
-                    return (
-                      <TableRow
-                        key={item.id}
-                        tabIndex={0}
-                        className="cursor-pointer"
-                        onClick={() => navigate(`/aprobaciones/${item.id}`)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            navigate(`/aprobaciones/${item.id}`);
-                          }
-                        }}
-                      >
-                        <TableCell className="border border-border whitespace-normal text-compact">
-                          <p className="font-medium break-words">{item.title}</p>
-                          <p className="mt-0.5 break-words text-muted-foreground">{item.summary}</p>
-                        </TableCell>
-                        <TableCell className="border border-border whitespace-normal text-compact">{kindLabel(item.kind)}</TableCell>
-                        <TableCell className="border border-border text-compact">{entityLabel(item.legal_entity_code)}</TableCell>
-                        <TableCell className="border border-border whitespace-normal text-compact">
-                          <p className="break-words">{item.requested_by.display_name}</p>
-                          <p className="text-meta text-muted-foreground">{formatDateTime(item.requested_at)}</p>
-                        </TableCell>
-                        <TableCell className="border border-border whitespace-normal text-compact">
-                          {item.status === "pending" ? (
-                            <span className={cn(expiry.urgent && "font-medium text-destructive")}>{expiry.text}</span>
-                          ) : (
-                            <StatusPill tone={status.tone}>{status.label}</StatusPill>
-                          )}
-                        </TableCell>
-                        <TableCell className="border border-border font-mono text-meta" title={item.payload_sha256}>
-                          {shortHash(item.payload_sha256)}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+        <div className="flex flex-col items-start gap-3 p-4">
+          <Alert tone="danger">{`${copy.error.load} (${error.code})`}</Alert>
+          <Button type="button" variant="secondary" size="sm" onClick={() => setAttempt((value) => value + 1)}>
+            {copy.error.retry}
+          </Button>
+        </div>
+      ) : loading && items.length === 0 ? (
+        <div aria-busy="true">
+          <p className="sr-only">{copy.loading}</p>
+          {Array.from({ length: 6 }, (_, index) => (
+            <div key={index} className="flex h-12 items-center gap-3 border-b border-border-subtle px-3 sm:px-4">
+              <div className="min-w-0 flex-1">
+                <Skeleton className="h-3.5 w-1/2" />
+                <Skeleton className="mt-1.5 h-3 w-1/3" />
+              </div>
+              <Skeleton className="h-3 w-12 shrink-0" />
             </div>
-          </div>
-          <ul className="grid gap-3 md:hidden">
-            {items.map((item) => (
-              <li key={item.id}>
-                <ApprovalCard item={item} now={now} />
-              </li>
+          ))}
+        </div>
+      ) : visible.length === 0 ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+          <EmptyState
+            size="sm"
+            framed={false}
+            icon={filtered ? <SearchX strokeWidth={iconStroke} /> : <Check strokeWidth={iconStroke} />}
+            title={emptyCopy.title}
+            description={emptyCopy.hint}
+            action={
+              filtered ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    setSearch("");
+                    setParam("tipo", "");
+                  }}
+                >
+                  {copy.approvals.clear}
+                </Button>
+              ) : undefined
+            }
+          />
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <ul>
+            {visible.map((item) => (
+              <RequestRow key={item.id} item={item} now={now} href={`/aprobaciones/${item.id}${suffix}`} />
             ))}
           </ul>
           {cursor ? (
-            <Button type="button" variant="secondary" className="w-full sm:w-auto sm:self-center" onClick={() => void loadMore()} disabled={loadingMore}>
-              {loadingMore ? copy.table.loading : copy.table.loadMore}
-            </Button>
+            <div className="p-3">
+              <Button type="button" variant="secondary" size="sm" loading={loadingMore} onClick={() => void loadMore()}>
+                {loadingMore ? copy.approvals.loadingMore : copy.approvals.loadMore}
+              </Button>
+            </div>
           ) : null}
-        </>
-      ) : null}
+        </div>
+      )}
     </div>
   );
 }
 
-function TabButton({ selected, label, onClick }: { selected: boolean; label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={selected}
-      className={cn(
-        "h-11 shrink-0 rounded-full px-3 text-compact whitespace-nowrap md:h-8",
-        selected ? "bg-ink font-medium text-ink-foreground" : "bg-muted text-foreground",
-      )}
-      onClick={onClick}
-    >
-      {label}
-    </button>
-  );
-}
-
-function ApprovalCard({ item, now }: { item: ApprovalSummary; now: number }) {
+function RequestRow({ item, now, href }: { item: ApprovalSummary; now: number; href: string }) {
   const expiry = expiryLabel(item.expires_at, item.status, now);
   const status = statusMeta(item.status);
   return (
-    <Link to={`/aprobaciones/${item.id}`} className="block rounded-xl border bg-card p-4 card-shadow">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-meta text-muted-foreground">
-          {kindLabel(item.kind)} · {entityLabel(item.legal_entity_code)}
-        </p>
+    <li className="border-b border-border-subtle">
+      <Link to={href} className="flex min-h-12 items-center gap-3 px-3 py-2 hover:bg-fill-hover sm:px-4">
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-label font-medium text-ink-900">
+            {item.title}
+            <span className="font-normal text-text-tertiary"> · {entityLabel(item.legal_entity_code)}</span>
+          </span>
+          <span className="mt-0.5 block truncate text-caption text-text-secondary">
+            {kindLabel(item.kind)}
+            {item.summary ? ` · ${item.summary}` : ""}
+          </span>
+        </span>
         {item.status === "pending" ? (
-          <p className={cn("shrink-0 text-meta", expiry.urgent ? "font-medium text-destructive" : "text-muted-foreground")}>{expiry.text}</p>
+          <span className={cn("shrink-0 pt-0.5 text-caption tabular-nums", expiry.urgent ? "font-medium text-danger-600" : "text-text-tertiary")}>
+            {expiry.text}
+          </span>
         ) : (
-          <StatusPill tone={status.tone}>{status.label}</StatusPill>
+          <Badge tone={status.tone} size="sm" dot>
+            {status.label}
+          </Badge>
         )}
-      </div>
-      <p className="mt-1 text-body font-medium break-words">{item.title}</p>
-      <p className="mt-1 text-compact break-words text-muted-foreground">{item.summary}</p>
-      <p className="mt-3 text-meta text-muted-foreground">
-        <span className="font-mono">{shortHash(item.payload_sha256)}</span>
-        {" · "}
-        {item.requested_by.display_name}
-      </p>
-    </Link>
-  );
-}
-
-function InboxSkeleton() {
-  return (
-    <div aria-busy="true">
-      <p className="sr-only">{copy.loading}</p>
-      <div className="hidden gap-2 md:grid">
-        {Array.from({ length: 4 }, (_, index) => (
-          <Skeleton key={index} className="h-11 w-full" />
-        ))}
-      </div>
-      <ul className="grid gap-3 md:hidden">
-        {Array.from({ length: 3 }, (_, index) => (
-          <li key={index} className="rounded-xl border p-4">
-            <Skeleton className="h-4 w-2/3" />
-            <Skeleton className="mt-2 h-3 w-full" />
-          </li>
-        ))}
-      </ul>
-    </div>
+      </Link>
+    </li>
   );
 }

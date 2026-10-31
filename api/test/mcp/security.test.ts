@@ -16,16 +16,11 @@ describe("catalogue safety", () => {
     expect(names).toContain("approvals_list_pending");
     expect(names).toContain("system_whoami");
     expect(names).not.toContain("system_modules");
+    expect(names).not.toContain("approvals_request_create_prepare");
+    expect(names).not.toContain("purchasing_expense_approve_prepare");
     expect(names).toContain("billing_invoice_pdf_get");
     expect(names).toContain("billing_invoice_delivery_mark_sent");
-    expect(names).toContain("purchasing_expense_approve_prepare");
-    expect(names).toContain("purchasing_expense_approve_commit");
-    const allowed = new Set([
-      "purchasing_expense_approve_prepare",
-      "purchasing_expense_approve_commit",
-    ]);
     for (const name of names) {
-      if (allowed.has(name)) continue;
       expect(DECISION.test(name)).toBe(false);
       expect(FORBIDDEN.test(name)).toBe(false);
     }

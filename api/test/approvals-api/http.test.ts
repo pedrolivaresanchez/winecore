@@ -573,6 +573,12 @@ describe('aprobaciones', () => {
         payload_sha256: other.payloadSha256,
       }, ownerHeaders({ authorization: `Bearer ${mcpToken}` }));
       expect(mcp.status).toBe(403);
+      const untouched = await ctx.writer.read<{ n: number }>(sql`
+        SELECT count(*)::INTEGER AS n
+        FROM ops.approval_decision
+        WHERE request_id = CAST(${other.id} AS UUID)
+      `);
+      expect(untouched[0]?.n).toBe(0);
       const listed = await call(ctx.app, 'GET', '/v1/approvals?status=all', undefined, ownerHeaders({
         authorization: `Bearer ${agentToken}`,
       }));

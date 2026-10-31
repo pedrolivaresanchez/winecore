@@ -329,7 +329,8 @@ async function lotByCode(writer: Writer, code: string): Promise<{ id: string }> 
 }
 
 async function assertId(tx: Tx, table: string, id: string, field: string, message: string): Promise<void> {
-  const rows = await tx.read(`SELECT id FROM ${table} WHERE id = CAST('${id}' AS UUID)`);
+  if (!UUID.test(id)) invalid({ [field]: 'Debe ser un UUID' });
+  const rows = await tx.read(sql`SELECT id FROM ${sql.raw(table)} WHERE id = CAST(${id} AS UUID)`);
   if (rows.length === 0) invalid({ [field]: message });
 }
 

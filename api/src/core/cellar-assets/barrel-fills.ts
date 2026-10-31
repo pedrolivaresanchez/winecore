@@ -66,7 +66,7 @@ export async function noteBarrelFills(
   const already = await tx.read<{ vessel_id: string }>(`
     SELECT vessel_id::VARCHAR AS vessel_id
     FROM cellar.barrel_fill
-    WHERE operation_id = CAST('${operationId.toLowerCase()}' AS UUID)
+    WHERE operation_id = ${sql`CAST(${operationId} AS UUID)`}
       AND vessel_id IN (${uuidList(targetIds)})
   `);
   const seen = new Set(already.map((row) => row.vessel_id.toLowerCase()));

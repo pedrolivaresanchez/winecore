@@ -524,7 +524,7 @@ function pendingItem(row: Record<string, unknown>): PendingDeliveryItem {
   }
   const snapshot = row.customer_snapshot;
   const customer = snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)
-    ? String((snapshot as { legal_name?: unknown }).legal_name ?? '')
+    ? String((snapshot as { legal_name?: unknown; name?: unknown }).legal_name ?? (snapshot as { name?: unknown }).name ?? '')
     : '';
   return {
     invoice_id: String(row.invoice_id),

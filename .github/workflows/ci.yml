@@ -106,3 +106,30 @@ jobs:
           name: real-contactos-screenshots
           path: ${{ runner.temp }}/screenshots
           if-no-files-found: ignore
+
+  e2e-flows:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - name: Install dependencies
+        run: |
+          bun install --frozen-lockfile --cwd api
+          bun install --frozen-lockfile --cwd ui
+      - name: Install Playwright Chromium
+        working-directory: ui
+        run: bunx playwright install --with-deps chromium
+      - name: Critical flows
+        working-directory: ui
+        run: bun run e2e:flows
+      - name: Upload flow screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-flows-screenshots
+          path: ui/test-results/flows
+          if-no-files-found: ignore

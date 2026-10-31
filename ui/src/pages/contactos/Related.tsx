@@ -1,10 +1,7 @@
 import { useState } from "react";
-import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/native-field";
 import { Field } from "@/components/Field";
+import { Button, Checkbox, Input, Select, useToast } from "@/ui";
 import {
   archiveAddress,
   archivePerson,
@@ -55,6 +52,7 @@ export function AddressBook({
   const [editing, setEditing] = useState<string | null>(null);
   const [archiveId, setArchiveId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const toast = useToast();
 
   async function save() {
     if (!draft.line1.trim() || !draft.city.trim()) {
@@ -85,13 +83,13 @@ export function AddressBook({
 
   return (
     <div className="grid gap-3">
-      {addresses.length === 0 ? <p className="text-compact text-muted-foreground">Sin direcciones.</p> : null}
+      {addresses.length === 0 ? <p className="text-label text-text-tertiary">Sin direcciones.</p> : null}
       <ul className="grid gap-2">
         {addresses.map((address) => (
-          <li key={address.id} className="rounded-xl border p-3">
-            <p className="text-body font-medium">{address.label || kindLabel(address.kind)}</p>
-            <p className="text-compact">{address.line1}</p>
-            <p className="text-meta text-muted-foreground">
+          <li key={address.id} className="rounded-2xl border border-border-subtle bg-surface p-3">
+            <p className="text-label font-medium text-ink-900">{address.label || kindLabel(address.kind)}</p>
+            <p className="text-label text-text-secondary">{address.line1}</p>
+            <p className="text-caption text-text-tertiary">
               {[address.postal_code, address.city, address.province, address.country_code].filter(Boolean).join(" · ")}
             </p>
             {canWrite ? (
@@ -128,12 +126,12 @@ export function AddressBook({
       </ul>
       {canWrite ? (
         open ? (
-          <div className="grid gap-3 rounded-xl border p-3">
-            <NativeSelect value={draft.kind} onChange={(event) => setDraft({ ...draft, kind: event.target.value as AddressKind })}>
+          <div className="grid gap-3 rounded-2xl border border-border-subtle bg-surface p-3">
+            <Select className="w-full" value={draft.kind} onChange={(event) => setDraft({ ...draft, kind: event.target.value as AddressKind })}>
               <option value="billing">Facturación</option>
               <option value="shipping">Envío</option>
               <option value="both">Facturación y envío</option>
-            </NativeSelect>
+            </Select>
             <Field id="addr-line1" label="Calle">
               <Input id="addr-line1" value={draft.line1 ?? ""} onChange={(event) => setDraft({ ...draft, line1: event.target.value })} />
             </Field>
@@ -148,19 +146,16 @@ export function AddressBook({
                 <Input id="addr-province" value={draft.province ?? ""} onChange={(event) => setDraft({ ...draft, province: event.target.value })} />
               </Field>
             </div>
-            <NativeSelect value={draft.country_code} onChange={(event) => setDraft({ ...draft, country_code: event.target.value })}>
+            <Select className="w-full" value={draft.country_code} onChange={(event) => setDraft({ ...draft, country_code: event.target.value })}>
               {COUNTRIES.map((country) => (
                 <option key={country.code} value={country.code}>
                   {country.label}
                 </option>
               ))}
-            </NativeSelect>
-            <label className="flex min-h-11 items-center gap-2 text-compact">
-              <input type="checkbox" checked={draft.is_default} onChange={(event) => setDraft({ ...draft, is_default: event.target.checked })} />
-              Dirección habitual
-            </label>
+            </Select>
+            <Checkbox label="Dirección habitual" checked={draft.is_default} onChange={(checked) => setDraft({ ...draft, is_default: checked })} />
             <div className="flex gap-2">
-              <Button type="button" onClick={() => void save()} disabled={busy}>
+              <Button type="button" variant="primary" size="sm" onClick={() => void save()} disabled={busy}>
                 Guardar
               </Button>
               <Button
@@ -236,6 +231,7 @@ export function PersonBook({
   const [editing, setEditing] = useState<string | null>(null);
   const [archiveId, setArchiveId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const toast = useToast();
 
   async function save() {
     if (draft.full_name.trim().length < 2) {
@@ -265,13 +261,13 @@ export function PersonBook({
 
   return (
     <div className="grid gap-3">
-      {persons.length === 0 ? <p className="text-compact text-muted-foreground">Sin personas de contacto.</p> : null}
+      {persons.length === 0 ? <p className="text-label text-text-tertiary">Sin personas de contacto.</p> : null}
       <ul className="grid gap-2">
         {persons.map((person) => (
-          <li key={person.id} className="rounded-xl border p-3">
-            <p className="text-body font-medium">{person.full_name}</p>
-            <p className="text-meta text-muted-foreground">{[person.role, person.email].filter(Boolean).join(" · ") || "—"}</p>
-            <p className="text-meta text-muted-foreground">
+          <li key={person.id} className="rounded-2xl border border-border-subtle bg-surface p-3">
+            <p className="text-label font-medium text-ink-900">{person.full_name}</p>
+            <p className="text-caption text-text-tertiary">{[person.role, person.email].filter(Boolean).join(" · ") || "—"}</p>
+            <p className="text-caption text-text-tertiary">
               {[person.receives_invoices ? "Recibe facturas" : "", person.receives_dunning ? "Recibe avisos de cobro" : ""].filter(Boolean).join(" · ")}
             </p>
             {canWrite ? (
@@ -304,7 +300,7 @@ export function PersonBook({
         ))}
       </ul>
       {canWrite && open ? (
-        <div className="grid gap-3 rounded-xl border p-3">
+        <div className="grid gap-3 rounded-2xl border border-border-subtle bg-surface p-3">
           <Field id="person-name" label="Nombre">
             <Input id="person-name" value={draft.full_name} onChange={(event) => setDraft({ ...draft, full_name: event.target.value })} />
           </Field>
@@ -314,16 +310,10 @@ export function PersonBook({
           <Field id="person-email" label="Correo">
             <Input id="person-email" type="email" value={draft.email ?? ""} onChange={(event) => setDraft({ ...draft, email: event.target.value })} />
           </Field>
-          <label className="flex min-h-11 items-center gap-2 text-compact">
-            <input type="checkbox" checked={draft.receives_invoices} onChange={(event) => setDraft({ ...draft, receives_invoices: event.target.checked })} />
-            Recibe facturas
-          </label>
-          <label className="flex min-h-11 items-center gap-2 text-compact">
-            <input type="checkbox" checked={draft.receives_dunning} onChange={(event) => setDraft({ ...draft, receives_dunning: event.target.checked })} />
-            Recibe avisos de cobro
-          </label>
+          <Checkbox label="Recibe facturas" checked={draft.receives_invoices} onChange={(checked) => setDraft({ ...draft, receives_invoices: checked })} />
+          <Checkbox label="Recibe avisos de cobro" checked={draft.receives_dunning} onChange={(checked) => setDraft({ ...draft, receives_dunning: checked })} />
           <div className="flex gap-2">
-            <Button type="button" onClick={() => void save()} disabled={busy}>
+            <Button type="button" variant="primary" size="sm" onClick={() => void save()} disabled={busy}>
               Guardar
             </Button>
             <Button

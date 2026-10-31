@@ -1,7 +1,7 @@
-import type { StatusTone } from "@/components/StatusPill";
+import { copy, fill } from "@/i18n";
 import { ApiError } from "@/lib/api";
 import { entityName, roleLabel } from "@/lib/labels";
-import type { EntityCode } from "@/lib/types";
+import type { EntityCode, Me } from "@/lib/types";
 
 export type ApprovalStatus =
   | "pending"
@@ -40,7 +40,7 @@ export type PayloadRow = {
 };
 
 export type ApprovalDecision = {
-  id: string;
+  id?: string;
   decision: "approve" | "reject";
   decided_by: ApprovalPerson;
   decided_at: string;
@@ -85,6 +85,8 @@ export type PolicyInput = {
   allow_self_approval: boolean;
 };
 
+export type StatusTone = "neutral" | "success" | "warning" | "danger" | "info";
+
 export const HUMAN_ROLES = ["owner", "approver", "admin", "cellar", "field", "advisor"] as const;
 
 export const APPROVAL_KINDS = [
@@ -102,32 +104,15 @@ export const APPROVAL_KINDS = [
   "third_party_message",
 ] as const;
 
-const KIND_LABELS: Record<string, string> = {
-  invoice_batch_issue: "Facturas en lote",
-  intercompany_invoice_issue: "Factura intercompañía",
-  regulatory_submission: "Envío regulatorio",
-  emcs_submission: "e-DA",
-  edi_submission: "Factura EDI",
-  organic_report: "Informe ecológico",
-  cellar_loss: "Mermas y destrucciones",
-  inventory_adjustment: "Regularización de aforo",
-  billing_rules_activation: "Reglas de facturación",
-  tariff_activation: "Tarifas",
-  module_toggle: "Módulos",
-  third_party_message: "Mensaje a terceros",
-};
-
 const SENSITIVE_KINDS = new Set(["regulatory_submission", "emcs_submission", "edi_submission", "organic_report"]);
 
-const DECISION_ERRORS: Record<string, string> = {
-  WC040: "El contenido ha cambiado desde que se pidió la aprobación. Vuelve a pedirla desde el origen. (WC040)",
-  WC041: "Esta decisión no se puede cambiar. (WC041)",
-  WC042: "Esta solicitud ya no está pendiente. (WC042)",
-  WC043: "Esta solicitud ha caducado. Pide una nueva desde el origen. (WC043)",
-};
+const kinds = copy.approvals.kinds as Record<string, string>;
+const statuses = copy.approvals.status as Record<string, string>;
+const closed = copy.approvals.closed as Record<string, string>;
+const decisionErrors = copy.approvals.errors as Record<string, string>;
 
 export function kindLabel(kind: string): string {
-  return KIND_LABELS[kind] ?? kind.replaceAll("_", " ");
+  return kinds[kind] ?? kind.replaceAll("_", " ");
 }
 
 export function isSensitiveKind(kind: string): boolean {
@@ -135,13 +120,14 @@ export function isSensitiveKind(kind: string): boolean {
 }
 
 export function entityLabel(code: EntityCode | null | undefined): string {
-  if (!code) return "Todas";
+  if (!code) return copy.approvals.allEntities;
   return entityName(code);
 }
 
 export function rolesLabel(roles: string[]): string {
-  if (roles.length === 0) return "Sin aprobadores";
-  return roles.map((role) => roleLabel(role)).join(", ");
+  const human = roles.filter((role) => role !== "agent" && role !== "mcp_client");
+  if (human.length === 0) return copy.approvals.noApprovers;
+  return human.map((role) => roleLabel(role)).join(", ");
 }
 
 export function shortHash(hex: string): string {
@@ -153,69 +139,54 @@ export function shortHash(hex: string): string {
 export function statusMeta(status: string): { label: string; tone: StatusTone } {
   switch (status) {
     case "pending":
-      return { label: "Pendiente", tone: "warning" };
+      return { label: statuses.pending ?? status, tone: "warning" };
     case "approved":
-      return { label: "Aprobada", tone: "success" };
+      return { label: statuses.approved ?? status, tone: "success" };
     case "rejected":
-      return { label: "Rechazada", tone: "danger" };
+      return { label: statuses.rejected ?? status, tone: "danger" };
     case "expired":
-      return { label: "Caducada", tone: "neutral" };
+      return { label: statuses.expired ?? status, tone: "neutral" };
     case "cancelled":
-      return { label: "Retirada", tone: "neutral" };
+      return { label: statuses.cancelled ?? status, tone: "neutral" };
     case "consumed":
-      return { label: "Ejecutada", tone: "success" };
+      return { label: statuses.consumed ?? status, tone: "success" };
     case "superseded":
-      return { label: "Sustituida", tone: "neutral" };
+      return { label: statuses.superseded ?? status, tone: "neutral" };
     default:
       return { label: status, tone: "neutral" };
   }
 }
 
 export function expiryLabel(expiresAt: string, status: string, now: number): { text: string; urgent: boolean } {
-  if (status === "expired") return { text: "Caducada", urgent: false };
+  if (status === "expired") return { text: copy.approvals.expired, urgent: false };
   const end = new Date(expiresAt).getTime();
-  if (Number.isNaN(end)) return { text: "Sin fecha", urgent: false };
+  if (Number.isNaN(end)) return { text: copy.approvals.noDate, urgent: false };
   const delta = end - now;
-  if (delta <= 0) return { text: "Caducada", urgent: true };
+  if (delta <= 0) return { text: copy.approvals.expired, urgent: true };
   const minutes = Math.floor(delta / 60_000);
-  if (minutes < 1) return { text: "Caduca en menos de 1 min", urgent: true };
-  if (minutes < 60) return { text: `Caduca en ${minutes} min`, urgent: true };
+  if (minutes < 1) return { text: copy.approvals.expiresSoon, urgent: true };
+  if (minutes < 60) return { text: fill(copy.approvals.expiresMinutes, { n: String(minutes) }), urgent: true };
   const hours = Math.floor(delta / 3_600_000);
-  if (hours < 48) return { text: `Caduca en ${hours} h`, urgent: hours < 6 };
+  if (hours < 48) return { text: fill(copy.approvals.expiresHours, { n: String(hours) }), urgent: hours < 6 };
   const days = Math.floor(delta / 86_400_000);
-  return { text: `Caduca en ${days} d`, urgent: false };
+  return { text: fill(copy.approvals.expiresDays, { n: String(days) }), urgent: false };
 }
 
 export function validityLabel(hours: number): string {
   if (!Number.isFinite(hours)) return "—";
   if (hours % 24 === 0 && hours >= 24) {
     const days = hours / 24;
-    return days === 1 ? "1 día" : `${days} días`;
+    return days === 1 ? copy.approvals.oneDay : fill(copy.approvals.days, { n: String(days) });
   }
-  return hours === 1 ? "1 hora" : `${hours} h`;
+  return hours === 1 ? copy.approvals.oneHour : fill(copy.approvals.hours, { n: String(hours) });
 }
 
 export function closedNote(status: string): string | null {
-  switch (status) {
-    case "expired":
-      return "Caducada. Se puede pedir de nuevo desde el origen.";
-    case "rejected":
-      return "Rechazada. Quien la pidió ha recibido el aviso.";
-    case "approved":
-      return "Aprobada. Se ejecutará en unos minutos.";
-    case "consumed":
-      return "Ya se ha ejecutado.";
-    case "cancelled":
-      return "La retiró quien la pidió.";
-    case "superseded":
-      return "El origen cambió y esta solicitud ya no vale. Pide otra.";
-    default:
-      return null;
-  }
+  return closed[status] ?? null;
 }
 
 export function explainError(error: ApiError): string {
-  const known = DECISION_ERRORS[error.code];
+  const known = decisionErrors[error.code];
   if (known) return known;
   if (error.code && error.code !== "WC_ERROR" && !error.message.includes(error.code)) {
     return `${error.message} (${error.code})`;
@@ -225,7 +196,7 @@ export function explainError(error: ApiError): string {
 
 export function quorumLabel(count: number, min: number): string {
   const safeMin = Math.max(1, min);
-  return `${count} de ${safeMin}`;
+  return fill(copy.approvals.of, { count: String(count), min: String(safeMin) });
 }
 
 export function totpSecret(otpauthUrl: string): string {
@@ -239,6 +210,19 @@ export function totpSecret(otpauthUrl: string): string {
 
 export function noteProblem(note: string): string | null {
   const length = note.trim().length;
-  if (length < 10 || length > 500) return "Escribe entre 10 y 500 caracteres.";
+  if (length < 10 || length > 500) return copy.approvals.reasonError;
   return null;
+}
+
+/** The session user has no id on `/v1/me`. The display name is the match the API gives back. */
+export function requestedByMe(item: ApprovalSummary, me: Me): boolean {
+  const name = item.requested_by.display_name.trim().toLocaleLowerCase("es");
+  const mine = me.display_name.trim().toLocaleLowerCase("es");
+  if (name !== "" && name === mine) return true;
+  const local = me.email.split("@")[0]?.toLocaleLowerCase("es") ?? "";
+  return local !== "" && name === local;
+}
+
+export function isOwner(me: Me): boolean {
+  return me.roles.some((role) => role.role === "owner");
 }

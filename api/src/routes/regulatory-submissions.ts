@@ -1,9 +1,10 @@
 import { requestIdFor, sessionOf } from "../auth/guard";
-import { can, type Permission, type UserCtx } from "../core/auth/permissions";
+import { can, entityScope, type Permission, type UserCtx } from "../core/auth/permissions";
 import type { Actor, Writer } from "../core/db/writer";
 import { domainError } from "../core/errors";
 import { isAnnulmentReason } from "../core/regulatory/silicie/iesx4";
 import {
+  cancelSubmission,
   correctSilicie,
   generateSilicie,
   getSubmission,
@@ -29,8 +30,20 @@ export async function listRegulatorySubmissions(deps: RegulatoryDeps, request: R
   const entity = optionalUuid(url.searchParams.get("entity") ?? url.searchParams.get("legal_entity_id"), "entity");
   const flow = url.searchParams.get("flow") ?? undefined;
   if (flow && !/^[a-z_]{3,20}$/.test(flow)) throw domainError("WC_VALIDATION", { flow: "Flujo no válido" });
-  const items = await listSubmissionViews(deps.writer, { legalEntityId: entity, flow });
-  return { items: items.filter((item) => can(user, "regulatory.read", item.legal_entity_id)) };
+  const page = pageOf(url);
+  if (entity && !can(user, "regulatory.read", entity)) throw domainError("WC_FORBIDDEN");
+  const scope = entityScope(user, "regulatory.read");
+  const listed = await listSubmissionViews(deps.writer, {
+    legalEntityId: entity,
+    flow,
+    entityIds: scope?.map((id) => id.toLowerCase()) ?? null,
+    limit: page.limit,
+    cursor: page.cursor,
+  });
+  return {
+    items: listed.items.filter((item) => can(user, "regulatory.read", item.legal_entity_id)),
+    next_cursor: listed.next_cursor ? encodeCursor(listed.next_cursor.at, listed.next_cursor.id) : null,
+  };
 }
 
 export async function getRegulatorySubmission(deps: RegulatoryDeps, request: Request, id: string) {
@@ -135,11 +148,23 @@ export async function postCorrectSubmission(deps: RegulatoryDeps, request: Reque
     throw domainError("WC_VALIDATION", { reason: "El motivo de anulación tiene que ser 1, 2 o 3." });
   }
   const entryIds = Array.isArray(body.entry_ids) ? body.entry_ids.map((item) => requiredUuid(item, "entry_id")) : undefined;
-  return correctSilicie(deps.writer, actor(user, request), current.id, {
+  const successor = await correctSilicie(deps.writer, actor(user, request), current.id, {
     reason,
     entryIds,
     createdBy: user.id,
   }, { now: deps.now });
+  return { ...successor, successor_id: successor.id };
+}
+
+export async function postCancelSubmission(deps: RegulatoryDeps, request: Request, id: string) {
+  const user = sessionOf(request);
+  await assertSubmission(deps, user, id, "regulatory.prepare");
+  const body = await jsonBody(request);
+  const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+  if (reason.length < 3 || reason.length > 500) {
+    throw domainError("WC_VALIDATION", { reason: "El motivo tiene que tener entre 3 y 500 caracteres." });
+  }
+  return cancelSubmission(deps.writer, actor(user, request), id, reason);
 }
 
 async function assertSubmission(
@@ -201,6 +226,44 @@ function optionalDate(value: unknown, field: string): string | undefined {
 function entryResultOf(value: unknown): "accepted" | "rejected" | undefined {
   if (value === "accepted" || value === "rejected") return value;
   return undefined;
+}
+
+function pageOf(url: URL): { limit: number; cursor: { at: string; id: string } | null } {
+  const limitRaw = url.searchParams.get("limit");
+  let limit = 50;
+  if (limitRaw !== null && limitRaw.trim() !== "") {
+    if (!/^\d{1,3}$/.test(limitRaw) || Number(limitRaw) < 1 || Number(limitRaw) > 100) {
+      throw domainError("WC_VALIDATION", { limit: "El límite debe estar entre 1 y 100" });
+    }
+    limit = Number(limitRaw);
+  }
+  const cursorRaw = url.searchParams.get("cursor");
+  const cursor = cursorRaw ? decodeCursor(cursorRaw) : null;
+  if (cursorRaw && !cursor) throw domainError("WC_VALIDATION", { cursor: "Cursor no válido" });
+  return { limit, cursor };
+}
+
+function encodeCursor(at: string, id: string): string {
+  return Buffer.from(`${at}|${id}`, "utf8").toString("base64url");
+}
+
+function cursorInstant(value: string): boolean {
+  const normalized = value.trim().replace(" ", "T").replace(/([+-])(\d{2})$/, "$1$2:00");
+  return Number.isFinite(Date.parse(normalized));
+}
+
+function decodeCursor(cursor: string): { at: string; id: string } | null {
+  try {
+    const text = Buffer.from(cursor, "base64url").toString("utf8");
+    const split = text.lastIndexOf("|");
+    if (split <= 0) return null;
+    const at = text.slice(0, split);
+    const id = text.slice(split + 1);
+    if (!cursorInstant(at) || !UUID.test(id)) return null;
+    return { at, id: id.toLowerCase() };
+  } catch {
+    return null;
+  }
 }
 
 function aggregationOf(value: unknown): "monthly" | "none" | undefined {

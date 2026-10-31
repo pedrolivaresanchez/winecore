@@ -1,6 +1,13 @@
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+export const MAX_MCP_UPLOAD_BYTES = 10 * 1024 * 1024;
 /** Tope del audio de cata (mp3, m4a, mp4, webm, ogg). */
 export const MAX_AUDIO_BYTES = 8 * 1024 * 1024;
+
+/** Last path segment only. `../` and control characters never become a stored name. */
+export function safeAttachmentName(name: string): string {
+  const base = name.split(/[/\\]/).pop()?.replace(/[\u0000-\u001f]/g, '').trim() ?? '';
+  return base.replace(/^\.+/, '').slice(0, 180);
+}
 
 const PDF = [0x25, 0x50, 0x44, 0x46]; // %PDF
 const PNG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];

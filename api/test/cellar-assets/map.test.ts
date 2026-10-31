@@ -163,9 +163,12 @@ describe('plano de bodega', () => {
         height: 22,
         rotation: 90,
         fill_pct: '100.0',
+        litres: '225.0',
         lot_id: lotId,
         lot_code: 'L25T01',
         state: 'aging',
+        status: 'in_service',
+        kind: 'barrel',
         volume_ml: 225_000,
         capacity_ml: 225_000,
       });
@@ -173,6 +176,9 @@ describe('plano de bodega', () => {
       expect(b1).toMatchObject({
         state: 'empty',
         fill_pct: '0.0',
+        litres: '0.0',
+        kind: 'tank_fermenter',
+        status: 'in_service',
         has_cooling_jacket: true,
         capacity_ml: 10_000_000,
         lot_id: null,

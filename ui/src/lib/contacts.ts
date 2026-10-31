@@ -1,4 +1,4 @@
-import { ApiError, api, apiBlob } from "@/lib/api";
+import { ApiError, api, apiText } from "@/lib/api";
 
 export type ContactKind = "company" | "person";
 export type ContactRole = "customer" | "supplier" | "carrier" | "logistics_operator";
@@ -246,27 +246,14 @@ export function recentContactAudit(limit = 5, signal?: AbortSignal) {
 
 export async function exportContacts(query: ContactQuery) {
   const path = contactQuery(query).replace("/v1/contacts?", "/v1/contacts/export.csv?");
-  const blob = await apiBlob(path);
+  const csv = await apiText(path);
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
   link.download = "contactos.csv";
-  document.body.appendChild(link);
   link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 2000);
-}
-
-/** El registro guarda INSERT/UPDATE; la ficha habla de alta, cambio y archivo. */
-export function presentAuditAction(event: AuditEvent): string {
-  const raw = event.action.toLowerCase();
-  if (raw === "insert" || raw === "create") return "create";
-  const archived = event.changes.find((change) => change.field === "archived_at");
-  if (archived && (raw === "update" || raw === "archive" || raw === "unarchive")) {
-    return archived.after ? "archive" : "unarchive";
-  }
-  if (raw === "update") return "update";
-  return event.action;
+  URL.revokeObjectURL(url);
 }
 
 export function duplicateContact(error: unknown): { id: string; name: string } | null {

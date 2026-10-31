@@ -7,7 +7,7 @@ import { planLoss } from "./ops/loss";
 import { planReception } from "./ops/reception";
 import { planTransfer } from "./ops/transfer";
 import { planBleeding } from "../winemaking/bleeding";
-import { planDelestage, planTemperatureControl } from "../winemaking/process";
+import { planDelestage, planSampling, planTemperatureControl } from "../winemaking/process";
 import { planFermentationEnd, planFermentationStart } from "../winemaking/fermentation";
 import { planPressingOff } from "../winemaking/pressing-off";
 import { planPressing } from "../winemaking/pressing";
@@ -59,6 +59,8 @@ export function planOperation(
       return planDelestage(req, state, ids);
     case "temperature_control":
       return planTemperatureControl(req, state, ids);
+    case "sampling":
+      return planSampling(req, state, ids);
     default: {
       const unknown: never = req;
       return fail("WC_VALIDATION", "WC_VALIDATION: el tipo de operación no está soportado.", {

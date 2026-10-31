@@ -192,9 +192,9 @@ export const contactsGet = defineReadTool({
       trade_name: text(row.trade_name) ?? undefined,
       addresses: addresses.map((address) => ({
         kind: String(address.kind),
-        line1: String(address.line1),
-        line2: text(address.line2),
-        postal_code: String(address.postal_code),
+        line1: personal ? String(address.line1) : undefined,
+        line2: personal ? text(address.line2) : undefined,
+        postal_code: personal ? String(address.postal_code) : undefined,
         city: String(address.city),
         province: text(address.province),
         country_code: String(address.country_code),
@@ -219,7 +219,7 @@ export const contactsGet = defineReadTool({
         })),
       open_receivables: money2(open[0]?.outstanding),
       links: { web: webLink(ctx, `/contactos/${String(row.id)}`) },
-      warnings: personal ? [] : ["Los datos de personas de contacto están ocultos para este perfil."],
+      warnings: personal ? [] : ["Los datos de contacto (correo, teléfono y calle) están ocultos para este perfil."],
     };
   },
 });

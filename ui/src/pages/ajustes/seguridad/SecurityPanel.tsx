@@ -1,13 +1,11 @@
 import { useEffect, useState } from "react";
+import { browserSupportsWebAuthn, WebAuthnAbortService } from "@simplewebauthn/browser";
 import { toDataURL } from "qrcode";
-import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import { copy } from "@/i18n";
+import { MoreVertical } from "@/ui/icons";
+import { copy, fill } from "@/i18n";
 import { ApiError, isAbortError } from "@/lib/api";
 import { formatDate } from "@/lib/format";
-import { browserSupportsWebAuthn, WebAuthnAbortService } from "@simplewebauthn/browser";
+import { iconStroke } from "@/lib/motion";
 import {
   confirmTotp,
   enrollTotp,
@@ -17,10 +15,24 @@ import {
   renameCredential,
   revokeCredential,
 } from "@/pages/aprobaciones/api";
-import { OverlayDialog } from "@/pages/aprobaciones/OverlayDialog";
 import { totpSecret, type UserCredential } from "@/pages/aprobaciones/model";
+import {
+  Alert,
+  Button,
+  Dialog,
+  DialogFooter,
+  DialogHeader,
+  EmptyState,
+  GlassMenu,
+  Input,
+  MenuItem,
+  Skeleton,
+  useMenuOpen,
+  useToast,
+} from "@/ui";
 
 export function SecurityPanel() {
+  const toast = useToast();
   const [items, setItems] = useState<UserCredential[] | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -57,11 +69,6 @@ export function SecurityPanel() {
 
   useEffect(() => {
     if (!otpauth) return;
-    document.querySelector("[data-screen='seguridad-totp']")?.scrollIntoView({ block: "start" });
-  }, [otpauth]);
-
-  useEffect(() => {
-    if (!otpauth) return;
     let active = true;
     toDataURL(otpauth, { margin: 1, width: 192, errorCorrectionLevel: "M" })
       .then((url) => {
@@ -83,11 +90,11 @@ export function SecurityPanel() {
   async function addPasskey() {
     const name = label.trim();
     if (name.length < 1 || name.length > 40) {
-      setPasskeyError("Pon un nombre de hasta 40 caracteres.");
+      setPasskeyError(copy.security.nameError);
       return;
     }
     if (!browserSupportsWebAuthn()) {
-      setPasskeyError("Este navegador no puede crear passkeys. Usa el código de la app.");
+      setPasskeyError(copy.security.unsupported);
       return;
     }
     setBusy(true);
@@ -97,7 +104,7 @@ export function SecurityPanel() {
       setItems((current) => [...(current ?? []), created]);
       setLabel("");
       setAddingPasskey(false);
-      toast("Passkey registrada");
+      toast(copy.security.registered, { tone: "success" });
     } catch (err: unknown) {
       setPasskeyError(passkeyFailure(err));
     } finally {
@@ -109,7 +116,7 @@ export function SecurityPanel() {
   async function saveRename(id: string) {
     const name = renameValue.trim();
     if (name.length < 1 || name.length > 40) {
-      toast("Pon un nombre de hasta 40 caracteres.");
+      toast(copy.security.nameError, { tone: "warning" });
       return;
     }
     setBusy(true);
@@ -117,9 +124,9 @@ export function SecurityPanel() {
       const updated = await renameCredential(id, name);
       setItems((current) => (current ?? []).map((item) => (item.id === id ? { ...item, ...updated, label: name } : item)));
       setRenameId(null);
-      toast("Nombre cambiado");
+      toast(copy.security.renamed, { tone: "success" });
     } catch (err: unknown) {
-      toast(err instanceof ApiError ? err.message : "No se ha podido cambiar el nombre.");
+      toast(err instanceof ApiError ? err.message : copy.security.renameFail, { tone: "danger" });
     } finally {
       setBusy(false);
     }
@@ -132,9 +139,9 @@ export function SecurityPanel() {
       await revokeCredential(revokeId);
       setItems((current) => (current ?? []).filter((item) => item.id !== revokeId));
       setRevokeId(null);
-      toast("Credencial revocada");
+      toast(copy.security.revoked, { tone: "success" });
     } catch (err: unknown) {
-      toast(err instanceof ApiError ? err.message : "No se ha podido revocar.");
+      toast(err instanceof ApiError ? err.message : copy.security.revokeFail, { tone: "danger" });
     } finally {
       setBusy(false);
     }
@@ -148,7 +155,7 @@ export function SecurityPanel() {
       const result = await enrollTotp();
       setOtpauth(result.otpauth_url);
     } catch (err: unknown) {
-      setTotpError(err instanceof ApiError ? err.message : "No se ha podido preparar el código.");
+      setTotpError(err instanceof ApiError ? err.message : copy.security.prepareFail);
     } finally {
       setBusy(false);
     }
@@ -157,7 +164,7 @@ export function SecurityPanel() {
   async function finishTotp() {
     const digits = code.replace(/\D/g, "");
     if (!/^\d{6}$/.test(digits)) {
-      setTotpError("El código tiene 6 cifras.");
+      setTotpError(copy.approvals.codeShort);
       return;
     }
     setBusy(true);
@@ -168,9 +175,9 @@ export function SecurityPanel() {
       setOtpauth(null);
       setQr(null);
       setCode("");
-      toast("Código activado");
+      toast(copy.security.activated, { tone: "success" });
     } catch (err: unknown) {
-      setTotpError(err instanceof ApiError ? err.message : "El código no es válido.");
+      setTotpError(err instanceof ApiError ? err.message : copy.approvals.codeInvalid);
     } finally {
       setBusy(false);
     }
@@ -180,23 +187,18 @@ export function SecurityPanel() {
     if (!secret) return;
     try {
       await navigator.clipboard.writeText(secret.replace(/\s/g, ""));
-      toast("Clave copiada");
+      toast(copy.security.copied, { tone: "success" });
     } catch {
-      toast("No se ha podido copiar. Selecciónala a mano.");
+      toast(copy.security.copyFail, { tone: "warning" });
     }
   }
 
   return (
-    <div data-screen="seguridad" className="grid gap-5">
-      <p className="text-compact text-muted-foreground">
-        Sirven para aprobar. Entrar en WineCore sigue siendo tu cuenta de Microsoft.
-      </p>
+    <div data-screen="seguridad" className="flex flex-col gap-10">
       {error ? (
-        <div role="alert" className="grid gap-2">
-          <p className="text-compact text-destructive">
-            {copy.error.load} ({error.code}). {error.message}
-          </p>
-          <Button type="button" variant="secondary" className="w-fit" onClick={() => setAttempt((value) => value + 1)}>
+        <div className="grid gap-3">
+          <Alert tone="danger">{`${copy.error.load} (${error.code}). ${error.message}`}</Alert>
+          <Button type="button" variant="secondary" size="sm" className="w-fit" onClick={() => setAttempt((value) => value + 1)}>
             {copy.error.retry}
           </Button>
         </div>
@@ -210,48 +212,48 @@ export function SecurityPanel() {
       ) : null}
       {items ? (
         <>
-          <section className="grid gap-3">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-body font-semibold">Passkeys</h2>
+          <section>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-label font-medium text-ink-900">{copy.security.passkeys}</h2>
               {addingPasskey ? null : (
-                <Button type="button" onClick={() => setAddingPasskey(true)}>
-                  Añadir passkey
+                <Button type="button" size="sm" onClick={() => setAddingPasskey(true)}>
+                  {copy.security.addPasskey}
                 </Button>
               )}
             </div>
             {addingPasskey ? (
               <form
                 data-screen="seguridad-passkey"
-                className="grid gap-3 rounded-xl border p-3"
+                className="mt-3 grid gap-3 rounded-2xl border border-border-subtle px-4 py-3"
                 onSubmit={(event) => {
                   event.preventDefault();
                   void addPasskey();
                 }}
               >
-                <label className="grid gap-1.5 text-compact font-medium" htmlFor="passkey-label">
-                  Nombre
+                <label className="grid gap-1.5 text-label font-medium text-ink-900" htmlFor="passkey-label">
+                  {copy.security.name}
                   <Input
                     id="passkey-label"
                     value={label}
                     maxLength={40}
-                    placeholder="iPhone de Pedro"
-                    data-autofocus
+                    placeholder={copy.security.placeholder}
                     onChange={(event) => setLabel(event.target.value)}
                   />
                 </label>
-                <p className="text-meta text-muted-foreground">Por ejemplo, el teléfono o el portátil.</p>
+                <p className="text-caption text-text-tertiary">{copy.security.nameHint}</p>
                 {passkeyError ? (
-                  <p role="alert" className="text-compact text-destructive">
+                  <p role="alert" className="text-caption text-danger-600">
                     {passkeyError}
                   </p>
                 ) : null}
                 <div className="flex flex-wrap gap-2">
-                  <Button type="submit" disabled={busy}>
-                    {busy ? "Esperando al dispositivo…" : "Registrar passkey"}
+                  <Button type="submit" size="sm" loading={busy}>
+                    {busy ? copy.security.waiting : copy.security.register}
                   </Button>
                   <Button
                     type="button"
                     variant="secondary"
+                    size="sm"
                     disabled={busy}
                     onClick={() => {
                       WebAuthnAbortService.cancelCeremony();
@@ -259,15 +261,17 @@ export function SecurityPanel() {
                       setPasskeyError(null);
                     }}
                   >
-                    Cancelar
+                    {copy.approvals.cancel}
                   </Button>
                 </div>
               </form>
             ) : null}
-            {passkeys.length === 0 ? (
-              <p className="text-compact text-muted-foreground">Aún no hay passkeys. Añade la del teléfono para aprobar en un toque.</p>
+            {passkeys.length === 0 && !addingPasskey ? (
+              <div className="mt-3">
+                <EmptyState size="sm" title={copy.security.emptyPasskeys} description={copy.security.emptyPasskeysHint} />
+              </div>
             ) : (
-              <ul className="grid gap-2">
+              <ul className="mt-3 divide-y divide-border-subtle overflow-hidden rounded-2xl border border-border-subtle">
                 {passkeys.map((item) => (
                   <CredentialRow
                     key={item.id}
@@ -288,17 +292,17 @@ export function SecurityPanel() {
               </ul>
             )}
           </section>
-          <section className="grid gap-3">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-body font-semibold">Código de la app</h2>
+          <section>
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-label font-medium text-ink-900">{copy.security.codeTitle}</h2>
               {totp.length === 0 && !otpauth ? (
-                <Button type="button" variant="secondary" size="md" className="min-h-11 md:min-h-8" disabled={busy} onClick={() => void startTotp()}>
-                  Añadir código
+                <Button type="button" variant="secondary" size="sm" loading={busy} onClick={() => void startTotp()}>
+                  {copy.security.addCode}
                 </Button>
               ) : null}
             </div>
             {totp.length > 0 ? (
-              <ul className="grid gap-2">
+              <ul className="mt-3 divide-y divide-border-subtle overflow-hidden rounded-2xl border border-border-subtle">
                 {totp.map((item) => (
                   <CredentialRow
                     key={item.id}
@@ -319,19 +323,19 @@ export function SecurityPanel() {
               </ul>
             ) : null}
             {otpauth ? (
-              <div data-screen="seguridad-totp" className="grid gap-3 rounded-xl border p-3">
-                <p className="text-compact">Escanea el código o copia la clave en tu app de autenticación. Si cierras ahora, no quedará activo.</p>
+              <div data-screen="seguridad-totp" className="mt-3 grid gap-3 rounded-2xl border border-border-subtle px-4 py-3">
+                <p className="text-label text-text-secondary">{copy.security.scan}</p>
                 {qr ? (
-                  <img src={qr} alt="Código QR del autenticador" width={192} height={192} className="mx-auto rounded-md bg-white p-2" />
+                  <img src={qr} alt={copy.security.qrAlt} width={192} height={192} className="rounded-md bg-white p-2" />
                 ) : (
-                  <p className="text-compact text-muted-foreground">No se ha podido dibujar el QR. Usa la clave.</p>
+                  <p className="text-label text-text-secondary">{copy.security.qrFail}</p>
                 )}
                 {secret ? (
                   <div>
-                    <p className="text-meta text-muted-foreground">Clave manual</p>
-                    <p className="mt-1 font-mono text-body break-all tracking-wide">{secret}</p>
-                    <Button type="button" variant="secondary" size="md" className="mt-2 min-h-11 md:min-h-8" onClick={() => void copySecret()}>
-                      Copiar clave
+                    <p className="text-caption text-text-tertiary">{copy.security.manual}</p>
+                    <p className="mt-1 font-mono text-body break-all tracking-wide text-ink-900">{secret}</p>
+                    <Button type="button" variant="secondary" size="sm" className="mt-2" onClick={() => void copySecret()}>
+                      {copy.security.copy}
                     </Button>
                   </div>
                 ) : null}
@@ -342,8 +346,8 @@ export function SecurityPanel() {
                     void finishTotp();
                   }}
                 >
-                  <label className="grid gap-1.5 text-compact font-medium" htmlFor="totp-confirm">
-                    Código de 6 cifras
+                  <label className="grid gap-1.5 text-label font-medium text-ink-900" htmlFor="totp-confirm">
+                    {copy.approvals.codeLabel}
                     <Input
                       id="totp-confirm"
                       inputMode="numeric"
@@ -355,17 +359,18 @@ export function SecurityPanel() {
                     />
                   </label>
                   {totpError ? (
-                    <p role="alert" className="text-compact text-destructive">
+                    <p role="alert" className="text-caption text-danger-600">
                       {totpError}
                     </p>
                   ) : null}
                   <div className="flex flex-wrap gap-2">
-                    <Button type="submit" disabled={busy || code.length !== 6}>
-                      {busy ? "Comprobando…" : "Activar código"}
+                    <Button type="submit" size="sm" loading={busy} disabled={code.length !== 6 && !busy}>
+                      {busy ? copy.approvals.checkingPasskey : copy.security.activate}
                     </Button>
                     <Button
                       type="button"
                       variant="secondary"
+                      size="sm"
                       disabled={busy}
                       onClick={() => {
                         setOtpauth(null);
@@ -373,44 +378,48 @@ export function SecurityPanel() {
                         setTotpError(null);
                       }}
                     >
-                      Cancelar
+                      {copy.approvals.cancel}
                     </Button>
                   </div>
                 </form>
               </div>
             ) : null}
-            {totp.length === 0 && !otpauth ? (
-              <p className="text-compact text-muted-foreground">Respaldo si la passkey no está a mano.</p>
-            ) : null}
+            {totp.length === 0 && !otpauth ? <p className="mt-3 text-caption text-text-tertiary">{copy.security.codeHint}</p> : null}
             {totpError && !otpauth ? (
-              <p role="alert" className="text-compact text-destructive">
+              <p role="alert" className="mt-3 text-caption text-danger-600">
                 {totpError}
               </p>
             ) : null}
           </section>
         </>
       ) : null}
-      <OverlayDialog
+      <Dialog
         open={Boolean(revoking)}
-        title="Revocar"
-        titleId="revocar-title"
-        screen="revocar"
         onClose={() => {
           if (!busy) setRevokeId(null);
         }}
+        size="sm"
+        labelledBy="revocar-title"
       >
-        <p className="text-compact text-muted-foreground">
-          Se dejará de poder usar «{revoking?.label}» para aprobar. Esta acción no se puede deshacer.
-        </p>
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          <Button type="button" variant="secondary" disabled={busy} onClick={() => setRevokeId(null)}>
-            Cancelar
-          </Button>
-          <Button type="button" variant="danger" data-autofocus disabled={busy} onClick={() => void confirmRevoke()}>
-            {busy ? "Revocando…" : "Revocar"}
-          </Button>
+        <div data-screen="revocar">
+          <DialogHeader
+            title={copy.security.revokeTitle}
+            titleId="revocar-title"
+            description={fill(copy.security.revokeBody, { name: revoking?.label ?? "" })}
+            onClose={() => {
+              if (!busy) setRevokeId(null);
+            }}
+          />
+          <DialogFooter>
+            <Button type="button" variant="secondary" size="sm" disabled={busy} onClick={() => setRevokeId(null)}>
+              {copy.approvals.cancel}
+            </Button>
+            <Button type="button" variant="danger" size="sm" loading={busy} onClick={() => void confirmRevoke()}>
+              {busy ? copy.security.revoking : copy.security.revoke}
+            </Button>
+          </DialogFooter>
         </div>
-      </OverlayDialog>
+      </Dialog>
     </div>
   );
 }
@@ -436,9 +445,10 @@ function CredentialRow({
   onSaveRename: () => void;
   onRevoke: () => void;
 }) {
-  const used = item.last_used_at ? `último uso ${formatDate(item.last_used_at)}` : "sin usar";
+  const menu = useMenuOpen();
+  const used = item.last_used_at ? fill(copy.security.used, { date: formatDate(item.last_used_at) }) : copy.security.unused;
   return (
-    <li className="rounded-xl border p-3" data-screen={editing ? "seguridad-renombrar" : undefined}>
+    <li className="px-4 py-3" data-screen={editing ? "seguridad-renombrar" : undefined}>
       {editing ? (
         <form
           className="grid gap-2"
@@ -448,33 +458,55 @@ function CredentialRow({
           }}
         >
           <label className="sr-only" htmlFor={`rename-${item.id}`}>
-            Nombre
+            {copy.security.name}
           </label>
-          <Input id={`rename-${item.id}`} value={renameValue} maxLength={40} data-autofocus onChange={(event) => onRenameValue(event.target.value)} />
+          <Input id={`rename-${item.id}`} value={renameValue} maxLength={40} onChange={(event) => onRenameValue(event.target.value)} />
           <div className="flex gap-2">
-            <Button type="submit" disabled={busy}>
-              Guardar
+            <Button type="submit" size="sm" loading={busy}>
+              {copy.approvals.save}
             </Button>
-            <Button type="button" variant="secondary" size="md" className="min-h-11 md:min-h-8" disabled={busy} onClick={onCancelRename}>
-              Cancelar
+            <Button type="button" variant="secondary" size="sm" disabled={busy} onClick={onCancelRename}>
+              {copy.approvals.cancel}
             </Button>
           </div>
         </form>
       ) : (
-        <>
-          <p className="text-body font-medium break-words">{item.label}</p>
-          <p className="text-meta text-muted-foreground">
-            Alta {formatDate(item.created_at)} · {used}
-          </p>
-          <div className="mt-2 flex flex-wrap gap-2">
-            <Button type="button" variant="secondary" size="md" className="min-h-11 md:min-h-8" onClick={onStartRename}>
-              Cambiar nombre
-            </Button>
-            <Button type="button" variant="secondary" size="md" className="min-h-11 md:min-h-8" onClick={onRevoke}>
-              Revocar
-            </Button>
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <p className="text-label font-medium break-words text-ink-900">{item.label}</p>
+            <p className="text-caption text-text-tertiary">
+              {fill(copy.security.created, { date: formatDate(item.created_at) })} · {used}
+            </p>
           </div>
-        </>
+          <GlassMenu
+            open={menu.open}
+            onOpenChange={menu.setOpen}
+            placement="bottom-end"
+            trigger={
+              <Button type="button" variant="ghost" size="sm" iconOnly aria-label={copy.approvals.more} onClick={menu.toggle}>
+                <MoreVertical strokeWidth={iconStroke} />
+              </Button>
+            }
+          >
+            <MenuItem
+              onClick={() => {
+                menu.close();
+                onStartRename();
+              }}
+            >
+              {copy.security.rename}
+            </MenuItem>
+            <MenuItem
+              tone="danger"
+              onClick={() => {
+                menu.close();
+                onRevoke();
+              }}
+            >
+              {copy.security.revoke}
+            </MenuItem>
+          </GlassMenu>
+        </div>
       )}
     </li>
   );

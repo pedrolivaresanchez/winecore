@@ -1,152 +1,337 @@
-import { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { QrCode } from "lucide-react";
-import { EmptyState } from "@/components/EmptyState";
-import { ErrorState } from "@/components/ErrorState";
-import { NoPermission } from "@/components/NoPermission";
-import { PageHeader } from "@/components/PageHeader";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useApi } from "@/hooks/use-api";
-import { contentLabel, fillPercent, holding, kindLabel, type Vessel } from "@/lib/cellar";
-import { formatLitres } from "@/lib/format";
-import { allows } from "@/lib/permissions";
-import { cn } from "@/lib/utils";
-import type { Me } from "@/lib/types";
+import { useMemo, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { useChromeTitle } from '@/app/shell/shell-context'
+import { ErrorState } from '@/components/ErrorState'
+import { NoPermission } from '@/components/NoPermission'
+import { copy } from '@/i18n'
+import { useApi } from '@/hooks/use-api'
+import { contentLabel, fillPercent, holding, kindLabel, type Vessel } from '@/lib/cellar'
+import { formatLitres } from '@/lib/format'
+import { allows } from '@/lib/permissions'
+import { iconStroke } from '@/lib/motion'
+import { cn } from '@/lib/cn'
+import type { Me } from '@/lib/types'
+import { FRAME_GUTTER, FRAME_STRIP_SCROLL } from '@/ui/frame'
+import { Layers, ScanSearch, Search } from '@/ui/icons'
+import {
+  Badge,
+  Button,
+  Chip,
+  DataGrid,
+  Dialog,
+  DialogBody,
+  DialogFooter,
+  DialogHeader,
+  EmptyState,
+  GlassMenu,
+  Input,
+  MenuChip,
+  MenuItem,
+  useMenuOpen,
+  type GridColumn,
+} from '@/ui'
+import { GRID_LABELS, vesselTone } from '@/pages/bodega/labels'
 
-type List = { items: Vessel[]; next_cursor: string | null; total: number };
+type List = { items: Vessel[]; next_cursor: string | null; total: number }
+
+const COLUMN_IDS = ['code', 'zone', 'kind', 'lot', 'litres', 'capacity', 'state'] as const
+type ColumnId = (typeof COLUMN_IDS)[number]
+
+const COLUMN_LABELS: Record<ColumnId, string> = {
+  code: 'Código',
+  zone: 'Zona',
+  kind: 'Tipo',
+  lot: 'Lote',
+  litres: 'Litros',
+  capacity: 'Capacidad',
+  state: 'Estado',
+}
 
 function vesselTargetFromScan(raw: string): string | null {
-  const text = raw.trim();
-  if (!text) return null;
-  const qr = text.match(/\/q\/([^/?#]+)/);
-  if (qr?.[1]) return `/q/${decodeURIComponent(qr[1])}`;
-  const bodega = text.match(/\/bodega\/([^/?#]+)/);
-  if (bodega?.[1]) return `/bodega/${decodeURIComponent(bodega[1])}`;
-  if (/^[A-Za-z0-9_-]{16,64}$/.test(text) && text.startsWith("wcqr_")) return `/q/${text}`;
-  if (/^[A-Z0-9-]{2,20}$/.test(text)) return `/bodega/${text}`;
-  return null;
+  const text = raw.trim()
+  if (!text) return null
+  const qr = text.match(/\/q\/([^/?#]+)/)
+  if (qr?.[1]) return `/q/${decodeURIComponent(qr[1])}`
+  const deposit = text.match(/\/bodega\/depositos\/([^/?#]+)/)
+  if (deposit?.[1]) return `/bodega/depositos/${decodeURIComponent(deposit[1])}`
+  const bodega = text.match(/\/bodega\/([^/?#]+)/)
+  if (bodega?.[1]) return `/bodega/${decodeURIComponent(bodega[1])}`
+  if (/^[A-Za-z0-9_-]{16,64}$/.test(text) && text.startsWith('wcqr_')) return `/q/${text}`
+  if (/^[A-Z0-9-]{2,20}$/.test(text)) return `/bodega/depositos/${text}`
+  return null
 }
 
 export function MapaPage({ me }: { me: Me }) {
-  const navigate = useNavigate();
-  const data = useApi<List>(allows(me, "cellar.read") ? "/v1/vessels?limit=100" : null);
-  const [zone, setZone] = useState("");
-  const [kind, setKind] = useState("");
-  const [query, setQuery] = useState("");
-  const [onlyFull, setOnlyFull] = useState(false);
-  const [table, setTable] = useState(false);
-  const [scan, setScan] = useState(false);
-  const [code, setCode] = useState("");
+  useChromeTitle(copy.cellar.vessels)
+  const navigate = useNavigate()
+  const columnsMenu = useMenuOpen()
+  const data = useApi<List>(allows(me, 'cellar.read') ? '/v1/vessels?limit=100' : null)
+  const [zone, setZone] = useState('')
+  const [kind, setKind] = useState('')
+  const [query, setQuery] = useState('')
+  const [onlyFull, setOnlyFull] = useState(false)
+  const [table, setTable] = useState(true)
+  const [scan, setScan] = useState(false)
+  const [code, setCode] = useState('')
+  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [hidden, setHidden] = useState<Set<ColumnId>>(new Set())
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [widths, setWidths] = useState<Record<string, number>>({
+    code: 132,
+    zone: 128,
+    kind: 128,
+    lot: 168,
+    litres: 128,
+    capacity: 136,
+    state: 148,
+  })
 
   const zones = useMemo(() => {
-    const names = new Set((data.data?.items ?? []).map((item) => item.zone || "Sin zona"));
-    return [...names];
-  }, [data.data]);
+    const names = new Set((data.data?.items ?? []).map((item) => item.zone || 'Sin zona'))
+    return [...names]
+  }, [data.data])
 
   const items = (data.data?.items ?? []).filter((item) => {
-    if (zone && (item.zone || "Sin zona") !== zone) return false;
-    if (kind && item.kind !== kind) return false;
-    if (onlyFull && (holding(item)?.volume_ml ?? 0) <= 0) return false;
+    if (zone && (item.zone || 'Sin zona') !== zone) return false
+    if (kind && item.kind !== kind) return false
+    if (onlyFull && item.volume_ml <= 0) return false
     if (query.trim()) {
-      const haystack = `${item.code} ${item.name} ${item.lot_code ?? ""} ${item.wine_name ?? ""}`.toLowerCase();
-      if (!haystack.includes(query.trim().toLowerCase())) return false;
+      const haystack = `${item.code} ${item.name} ${item.lot_code ?? ''} ${item.wine_name ?? ''}`.toLowerCase()
+      if (!haystack.includes(query.trim().toLowerCase())) return false
     }
-    return true;
-  });
+    return true
+  })
 
   const grouped = useMemo(() => {
-    const map = new Map<string, Vessel[]>();
+    const map = new Map<string, Vessel[]>()
     for (const item of items) {
-      const key = item.zone || "Sin zona";
-      map.set(key, [...(map.get(key) ?? []), item]);
+      const key = item.zone || 'Sin zona'
+      map.set(key, [...(map.get(key) ?? []), item])
     }
-    return [...map.entries()];
-  }, [items]);
+    return [...map.entries()]
+  }, [items])
 
-  if (!allows(me, "cellar.read")) return <NoPermission />;
+  const columns = useMemo<GridColumn<Vessel>[]>(() => {
+    const all: GridColumn<Vessel>[] = [
+      { id: 'code', header: 'Código', cell: (row) => row.code },
+      { id: 'zone', header: 'Zona', cell: (row) => row.zone || '—' },
+      { id: 'kind', header: 'Tipo', cell: (row) => kindLabel(row.kind) },
+      { id: 'lot', header: 'Lote', cell: (row) => row.lot_code || '—' },
+      {
+        id: 'litres',
+        header: 'Litros',
+        align: 'right',
+        cell: (row) => formatLitres(row.volume_ml / 1000),
+      },
+      {
+        id: 'capacity',
+        header: 'Capacidad',
+        align: 'right',
+        cell: (row) => formatLitres(row.capacity_ml / 1000),
+      },
+      { id: 'state', header: 'Estado', cell: (row) => contentLabel(row) },
+    ]
+    return all.filter((column) => !hidden.has(column.id as ColumnId))
+  }, [hidden])
 
-  const source = data.data?.items ?? [];
-  const empty = !data.loading && source.length === 0;
-  const litres = items.reduce((sum, item) => sum + (holding(item)?.volume_ml ?? 0), 0);
-  const full = items.filter((item) => (holding(item)?.volume_ml ?? 0) > 0).length;
+  if (!allows(me, 'cellar.read')) return <NoPermission />
+
+  const source = data.data?.items ?? []
+  const empty = !data.loading && source.length === 0
+  const filtersActive = Boolean(query.trim() || zone || kind || onlyFull)
+  const screen = scan
+    ? 'bodega-qr'
+    : data.loading
+      ? 'bodega-cargando'
+      : empty
+        ? 'bodega-vacio'
+        : table
+          ? 'bodega-depositos'
+          : 'bodega-mapa'
+
+  function openScanTarget(raw: string) {
+    const next = vesselTargetFromScan(raw)
+    if (!next) return
+    setScan(false)
+    setCode('')
+    navigate(next)
+  }
 
   return (
-    <div data-screen={empty ? "bodega-vacio" : "bodega-mapa"} data-view={table ? "tabla" : "tarjetas"} className="flex min-w-0 flex-col gap-4">
-      <PageHeader
-        title="Depósitos"
-        description="Qué hay en cada depósito, barrica y damajuana."
-        actions={
-          <div className="flex gap-2">
-            <Button type="button" variant="secondary" onClick={() => setScan(true)}>
-              <QrCode aria-hidden className="size-4" />
-              Escanear QR
+    <div data-screen={screen} data-view={table ? 'tabla' : 'tarjetas'} className="flex min-h-0 flex-1 flex-col">
+      <header className={cn('hidden h-12 shrink-0 items-center gap-2 border-b border-border-subtle md:flex', FRAME_GUTTER)}>
+        <Layers className="size-4 shrink-0 text-icon" strokeWidth={iconStroke} />
+        <h1 className="min-w-0 truncate text-label font-medium text-ink-900">{copy.cellar.vessels}</h1>
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          <Button type="button" variant="secondary" size="sm" onClick={() => navigate('/bodega/higiene')}>
+            {copy.nav.hygiene}
+          </Button>
+          <Button type="button" variant="secondary" size="sm" onClick={() => setScan(true)}>
+            {copy.cellar.scan}
+          </Button>
+          {allows(me, 'cellar.operate') ? (
+            <Button type="button" variant="primary" size="sm" onClick={() => navigate('/bodega/operaciones/nueva')}>
+              {copy.cellar.operation}
             </Button>
-            <Button type="button" variant="secondary" className="hidden md:inline-flex" onClick={() => setTable((value) => !value)}>
-              {table ? "Tarjetas" : "Tabla"}
-            </Button>
-          </div>
-        }
-      />
+          ) : null}
+        </div>
+      </header>
 
-      <div className="flex min-w-0 items-center gap-2">
-        <div className="-mx-4 flex min-w-0 flex-1 gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0">
-          <Filter active={zone === "" && !onlyFull && kind === ""} onClick={() => { setZone(""); setKind(""); setOnlyFull(false); }}>
-            Todos
-          </Filter>
-          {zones.map((name) => (
-            <Filter key={name} active={zone === name} onClick={() => setZone(zone === name ? "" : name)}>
-              {name}
-            </Filter>
-          ))}
-          <Filter active={onlyFull} onClick={() => setOnlyFull((value) => !value)}>
-            Ocupados
-          </Filter>
-          <Filter active={kind === "barrel"} onClick={() => setKind(kind === "barrel" ? "" : "barrel")}>
-            Barricas
-          </Filter>
-          <Filter active={kind === "tank_fermenter"} onClick={() => setKind(kind === "tank_fermenter" ? "" : "tank_fermenter")}>
-            Fermentadores
-          </Filter>
+      <div className={cn('flex h-11 shrink-0 items-center gap-1.5 border-b border-border-subtle', FRAME_GUTTER)}>
+        <div className={FRAME_STRIP_SCROLL}>
+          <Input
+            id="bodega-buscar"
+            size="sm"
+            type="search"
+            value={query}
+            placeholder={copy.cellar.searchVessels}
+            aria-label={copy.cellar.searchVessels}
+            className="w-56 shrink-0"
+            prefix={<Search className="size-3.5" strokeWidth={iconStroke} />}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <Chip pressed={table} active={table} onClick={() => setTable(true)}>
+            {copy.cellar.table}
+          </Chip>
+          <Chip pressed={!table} active={!table} onClick={() => setTable(false)}>
+            {copy.cellar.cards}
+          </Chip>
+          <Button type="button" variant="secondary" size="sm" className="shrink-0" onClick={() => navigate('/bodega/calculadoras')}>
+            {copy.nav.calculators}
+          </Button>
+          {table ? (
+            <GlassMenu
+              open={columnsMenu.open}
+              onOpenChange={columnsMenu.setOpen}
+              placement="bottom-start"
+              panelClassName="min-w-[200px]"
+              trigger={
+                <MenuChip active={columnsMenu.open} onClick={columnsMenu.toggle} title={copy.cellar.columns}>
+                  {copy.cellar.columns}
+                </MenuChip>
+              }
+            >
+              {COLUMN_IDS.map((id) => (
+                <MenuItem
+                  key={id}
+                  checked={!hidden.has(id)}
+                  disabled={id === 'code'}
+                  onClick={() =>
+                    setHidden((current) => {
+                      const next = new Set(current)
+                      if (next.has(id)) next.delete(id)
+                      else next.add(id)
+                      return next
+                    })
+                  }
+                >
+                  {COLUMN_LABELS[id]}
+                </MenuItem>
+              ))}
+            </GlassMenu>
+          ) : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5 md:hidden">
+          <Button type="button" variant="secondary" size="sm" onClick={() => navigate('/bodega/higiene')}>
+            {copy.nav.hygiene}
+          </Button>
+          <Button type="button" variant="secondary" size="sm" iconOnly aria-label={copy.cellar.scan} onClick={() => setScan(true)}>
+            <ScanSearch strokeWidth={iconStroke} />
+          </Button>
+          {allows(me, 'cellar.operate') ? (
+            <Button type="button" variant="primary" size="sm" onClick={() => navigate('/bodega/operaciones/nueva')}>
+              {copy.cellar.operation}
+            </Button>
+          ) : null}
         </div>
       </div>
 
-      <Input
-        id="bodega-buscar"
-        value={query}
-        placeholder="Lote, vino o código"
-        onChange={(event) => setQuery(event.target.value)}
-        className="md:max-w-xs"
-      />
-
-      {data.loading ? (
-        <div className="grid gap-3 sm:grid-cols-2" aria-busy="true">
-          <Skeleton className="h-36" />
-          <Skeleton className="h-36" />
+      <div className={cn('flex h-10 shrink-0 items-center gap-1.5 border-b border-border-subtle bg-surface-subtle', FRAME_GUTTER)}>
+        <div className={cn(FRAME_STRIP_SCROLL, '[&>*]:shrink-0')}>
+          <Chip
+            pressed={zone === '' && !onlyFull && kind === ''}
+            active={zone === '' && !onlyFull && kind === ''}
+            onClick={() => {
+              setZone('')
+              setKind('')
+              setOnlyFull(false)
+            }}
+          >
+            {copy.cellar.all}
+          </Chip>
+          {zones.map((name) => (
+            <Chip key={name} pressed={zone === name} active={zone === name} onClick={() => setZone(zone === name ? '' : name)}>
+              {name}
+            </Chip>
+          ))}
+          <Chip pressed={onlyFull} active={onlyFull} onClick={() => setOnlyFull((value) => !value)}>
+            {copy.cellar.occupied}
+          </Chip>
+          <span className="hidden md:contents">
+            <Chip pressed={kind === 'barrel'} active={kind === 'barrel'} onClick={() => setKind(kind === 'barrel' ? '' : 'barrel')}>
+              {copy.cellar.barrels}
+            </Chip>
+            <Chip
+              pressed={kind === 'tank_fermenter'}
+              active={kind === 'tank_fermenter'}
+              onClick={() => setKind(kind === 'tank_fermenter' ? '' : 'tank_fermenter')}
+            >
+              {copy.cellar.fermenters}
+            </Chip>
+          </span>
+          <Button type="button" variant="ghost" size="sm" className="md:hidden" onClick={() => setFiltersOpen(true)}>
+            {copy.cellar.filters}
+          </Button>
         </div>
-      ) : data.error ? (
-        <ErrorState title={`No se ha podido cargar (${data.error.code})`} detail={data.error.message} onRetry={data.reload} />
-      ) : empty ? (
-        <EmptyState title="Aún no hay depósitos" description="Cuando estén dados de alta aparecerán aquí, agrupados por nave." />
-      ) : items.length === 0 ? (
-        <EmptyState title="Nada coincide con los filtros" />
+      </div>
+
+      {data.error && source.length === 0 ? (
+        <div className="p-4">
+          <ErrorState title={`${copy.error.load} (${data.error.code})`} detail={data.error.message} onRetry={data.reload} />
+        </div>
+      ) : table ? (
+        <DataGrid
+          columns={columns}
+          rows={items}
+          rowKey={(row) => row.id}
+          labels={GRID_LABELS}
+          widths={widths}
+          onResize={(id, width) => setWidths((current) => ({ ...current, [id]: width }))}
+          selected={picked}
+          onSelectedChange={setPicked}
+          onOpenRow={(row) => navigate(`/bodega/depositos/${encodeURIComponent(row.code)}`)}
+          rowHref={(row) => `/bodega/depositos/${encodeURIComponent(row.code)}`}
+          total={items.length}
+          loading={data.loading}
+          empty={
+            <EmptyState
+              size="sm"
+              title={filtersActive ? copy.cellar.noMatch : copy.cellar.emptyVessels}
+              description={filtersActive ? undefined : copy.cellar.emptyVesselsHint}
+            />
+          }
+        />
       ) : (
-        <>
-          <p className="text-compact text-muted-foreground">
-            {items.length === source.length ? `${items.length} depósitos` : `${items.length} de ${source.length} depósitos`}
-            {` · ${full} con vino · ${formatLitres(litres / 1000)}`}
-          </p>
-          {table ? (
-            <VesselTable items={items} />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {data.loading ? (
+            <div className="p-4 text-label text-text-tertiary" aria-busy="true">
+              {copy.loading}
+            </div>
+          ) : items.length === 0 ? (
+            <div className="flex justify-center p-6">
+              <EmptyState
+                size="sm"
+                title={filtersActive ? copy.cellar.noMatch : copy.cellar.emptyVessels}
+                description={filtersActive ? undefined : copy.cellar.emptyVesselsHint}
+              />
+            </div>
           ) : (
-            <div className="grid gap-6">
+            <div className="grid gap-6 p-4">
               {grouped.map(([name, group]) => (
                 <section key={name} className="grid gap-3">
-                  <h2 className="text-body font-semibold">
+                  <h2 className="text-label font-medium text-ink-900">
                     {name}
-                    <span className="ml-2 text-compact font-normal text-muted-foreground">· {group.length}</span>
+                    <span className="ml-2 font-normal text-text-tertiary">· {group.length}</span>
                   </h2>
                   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     {group.map((vessel) => (
@@ -157,124 +342,106 @@ export function MapaPage({ me }: { me: Me }) {
               ))}
             </div>
           )}
-        </>
+        </div>
       )}
 
-      <Sheet open={scan} onOpenChange={setScan}>
-        <SheetContent side="bottom" data-screen="bodega-qr">
-          <SheetHeader>
-            <SheetTitle>Escanear QR</SheetTitle>
-          </SheetHeader>
-          <form
-            className="grid gap-3 px-4 pb-6"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const next = vesselTargetFromScan(code);
-              if (!next) return;
-              setScan(false);
-              navigate(next);
-            }}
-          >
-            <label className="text-compact text-muted-foreground" htmlFor="qr-url">
-              El lector escribe el enlace del depósito.
-            </label>
-            <Input id="qr-url" autoFocus value={code} placeholder="https://…/q/wcqr_…" onChange={(event) => setCode(event.target.value)} />
-            <Button type="submit">Abrir depósito</Button>
-          </form>
-        </SheetContent>
-      </Sheet>
+      <Dialog open={filtersOpen} onClose={() => setFiltersOpen(false)} labelledBy="bodega-filtros-titulo" size="sm">
+        <DialogHeader titleId="bodega-filtros-titulo" title={copy.cellar.filters} onClose={() => setFiltersOpen(false)} />
+        <DialogBody>
+          <div className="flex flex-wrap gap-1.5 pb-2" data-screen="bodega-filtros">
+            <Chip pressed={kind === 'barrel'} active={kind === 'barrel'} onClick={() => setKind(kind === 'barrel' ? '' : 'barrel')}>
+              {copy.cellar.barrels}
+            </Chip>
+            <Chip
+              pressed={kind === 'tank_fermenter'}
+              active={kind === 'tank_fermenter'}
+              onClick={() => setKind(kind === 'tank_fermenter' ? '' : 'tank_fermenter')}
+            >
+              {copy.cellar.fermenters}
+            </Chip>
+            <Chip pressed={kind === ''} active={kind === ''} onClick={() => setKind('')}>
+              {copy.cellar.all}
+            </Chip>
+          </div>
+        </DialogBody>
+      </Dialog>
+
+      <Dialog open={scan} onClose={() => setScan(false)} labelledBy="bodega-qr-titulo" size="sm">
+        <DialogHeader titleId="bodega-qr-titulo" title={copy.cellar.scan} description={copy.cellar.scanHint} onClose={() => setScan(false)} />
+        <form
+          onSubmit={(event) => {
+            event.preventDefault()
+            openScanTarget(code)
+          }}
+        >
+          <DialogBody>
+            <Input
+              id="qr-url"
+              autoFocus
+              value={code}
+              placeholder="INOX-003"
+              aria-label={copy.cellar.scan}
+              onChange={(event) => setCode(event.target.value)}
+            />
+          </DialogBody>
+          <DialogFooter>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setScan(false)}>
+              Cancelar
+            </Button>
+            <Button type="submit" variant="primary" size="sm">
+              {copy.cellar.openVessel}
+            </Button>
+          </DialogFooter>
+        </form>
+      </Dialog>
     </div>
-  );
-}
-
-function Filter({ active, children, onClick }: { active: boolean; children: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      className={cn(
-        "h-11 shrink-0 rounded-full px-3 text-compact whitespace-nowrap",
-        active ? "bg-ink font-medium text-ink-foreground" : "bg-muted",
-      )}
-      onClick={onClick}
-    >
-      {children}
-    </button>
-  );
+  )
 }
 
 function VesselCard({ vessel }: { vessel: Vessel }) {
-  const pct = fillPercent(vessel);
-  const litres = holding(vessel)?.volume_ml ?? 0;
+  const pct = fillPercent(vessel)
+  const inside = holding(vessel)
   return (
     <Link
-      to={`/bodega/${encodeURIComponent(vessel.code)}`}
+      to={`/bodega/depositos/${encodeURIComponent(vessel.code)}`}
       className={cn(
-        "flex min-h-36 min-w-0 flex-col gap-2 rounded-xl border bg-card p-4 card-shadow",
-        vessel.alert && "border-status-warning-fg",
-        vessel.status !== "in_service" && "opacity-70",
+        'flex min-w-0 flex-col gap-2 rounded-2xl border border-border-subtle bg-surface p-4 shadow-(--shadow-card)',
+        vessel.alert && 'border-warning-500',
+        vessel.status !== 'in_service' && 'opacity-70',
       )}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-body font-semibold">{vessel.code}</p>
-          <p className="truncate text-compact text-muted-foreground">{vessel.name}</p>
+          <p className="text-label font-medium text-ink-900">{vessel.code}</p>
+          <p className="truncate text-caption text-text-tertiary">{vessel.name}</p>
         </div>
-        <p className="shrink-0 text-meta text-muted-foreground">{kindLabel(vessel.kind)}</p>
+        <Badge tone={vesselTone(vessel)} size="sm">
+          {kindLabel(vessel.kind)}
+        </Badge>
       </div>
-      <p className="truncate text-compact">
-        {holding(vessel) ? `${holding(vessel)?.lot_code} · ${holding(vessel)?.wine_name}` : contentLabel(vessel)}
+      <p className="truncate text-label text-text-secondary">
+        {inside ? `${inside.lot_code}${inside.wine_name ? ` · ${inside.wine_name}` : ''}` : contentLabel(vessel)}
       </p>
       <div
-        className="h-2.5 overflow-hidden rounded-full bg-muted"
+        className="h-1.5 overflow-hidden rounded-full bg-ink-100"
         role="meter"
         aria-valuenow={pct}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-label={`Llenado ${pct} %`}
+        aria-label={`${copy.cellar.fill} ${pct} %`}
       >
-        <div className="h-full rounded-full bg-ink" style={{ width: `${pct}%` }} />
+        <div className="h-full bg-ink-900" style={{ width: `${pct}%` }} />
       </div>
-      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-meta tabular-nums">
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-caption tabular-nums text-text-tertiary">
         <span>
-          {formatLitres(litres / 1000)}
-          <span className="text-muted-foreground"> / {formatLitres(vessel.capacity_ml / 1000)}</span>
+          {formatLitres(vessel.volume_ml / 1000)}
+          <span> / {formatLitres(vessel.capacity_ml / 1000)}</span>
         </span>
-        <span className="text-muted-foreground">{contentLabel(vessel)} · {pct} %</span>
+        <span>
+          {contentLabel(vessel)} · {pct} %
+        </span>
       </div>
-      {vessel.alert ? <p className="text-meta text-status-warning-fg">{vessel.alert}</p> : null}
+      {vessel.alert ? <p className="text-caption text-warning-700">{vessel.alert}</p> : null}
     </Link>
-  );
-}
-
-function VesselTable({ items }: { items: Vessel[] }) {
-  return (
-    <div className="hidden min-w-0 overflow-x-auto md:block">
-      <table className="w-full border-collapse text-compact">
-        <thead>
-          <tr>
-            {["Código", "Zona", "Vino", "Litros", "Capacidad", "Estado"].map((header) => (
-              <th key={header} className="border border-border bg-muted px-3 py-2 text-left font-medium whitespace-nowrap">
-                {header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {items.map((vessel) => (
-            <tr key={vessel.id} className="hover:bg-accent">
-              <td className="border border-border px-3 py-2 font-medium whitespace-nowrap">
-                <Link to={`/bodega/${encodeURIComponent(vessel.code)}`}>{vessel.code}</Link>
-              </td>
-              <td className="border border-border px-3 py-2">{vessel.zone || "—"}</td>
-              <td className="border border-border px-3 py-2">{vessel.wine_name ?? "—"}</td>
-              <td className="border border-border px-3 py-2 text-right tabular-nums whitespace-nowrap">{formatLitres((holding(vessel)?.volume_ml ?? 0) / 1000)}</td>
-              <td className="border border-border px-3 py-2 text-right tabular-nums whitespace-nowrap">{formatLitres(vessel.capacity_ml / 1000)}</td>
-              <td className="border border-border px-3 py-2 whitespace-nowrap">{contentLabel(vessel)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+  )
 }

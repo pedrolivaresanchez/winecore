@@ -1,61 +1,65 @@
-import { ErrorState } from "@/components/ErrorState";
-import { StatTile } from "@/components/StatTile";
-import { StatusPill } from "@/components/StatusPill";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useApi } from "@/hooks/use-api";
-import { copy } from "@/i18n";
-import type { Health } from "@/lib/types";
+import { Badge, Skeleton } from '@/ui'
+import { ErrorState } from '@/components/ErrorState'
+import { useApi } from '@/hooks/use-api'
+import { copy } from '@/i18n'
+import type { Health } from '@/lib/types'
 
 function versionOf(sha: string) {
-  const clean = sha.trim();
-  return clean ? clean.slice(0, 7) : "—";
+  const clean = sha.trim()
+  return clean ? clean.slice(0, 7) : '—'
 }
 
 function databaseLabel(db: string) {
-  if (db === "local") return copy.panel.dbLocal;
-  if (db === "timbal") return copy.panel.dbTimbal;
-  return db;
+  if (db === 'local') return copy.panel.dbLocal
+  if (db === 'timbal') return copy.panel.dbTimbal
+  return db
 }
 
 function writerLabel(writer: string) {
-  if (writer === "leader") return copy.panel.writerLeader;
-  if (writer === "standby") return copy.panel.writerStandby;
-  return writer;
+  if (writer === 'leader') return copy.panel.writerLeader
+  if (writer === 'standby') return copy.panel.writerStandby
+  return writer
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 border-b border-border-subtle px-4 py-2.5 last:border-b-0">
+      <dt className="text-label text-text-tertiary">{label}</dt>
+      <dd className="min-w-0 truncate text-label text-ink-900">{value}</dd>
+    </div>
+  )
 }
 
 export function SystemStatus() {
-  const health = useApi<Health>("/health");
+  const health = useApi<Health>('/health')
   return (
-    <section aria-labelledby="estado-sistema" className="rounded-xl border bg-card p-4 card-shadow" data-health={health.error ? "error" : health.data ? "ok" : "loading"}>
-      <div className="flex items-center justify-between gap-3">
-        <h2 id="estado-sistema" className="text-body font-semibold">
+    <section aria-labelledby="estado-sistema" data-health={health.error ? 'error' : health.data ? 'ok' : 'loading'}>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 id="estado-sistema" className="sr-only">
           {copy.panel.system}
         </h2>
-        {health.data && health.data.status !== "ok" ? <StatusPill tone="warning">{copy.panel.incident}</StatusPill> : null}
+        {health.data && health.data.status !== 'ok' ? <Badge tone="warning">{copy.panel.incident}</Badge> : null}
       </div>
       {health.loading ? (
-        <div className="mt-3 grid gap-2 sm:grid-cols-2" aria-busy="true">
+        <div className="grid gap-2" aria-busy="true">
           {Array.from({ length: 4 }, (_, index) => (
-            <Skeleton key={index} className="h-11" />
+            <Skeleton key={index} className="h-9" />
           ))}
         </div>
       ) : health.error ? (
-        <div className="mt-3">
-          <ErrorState
-            framed={false}
-            title={`${copy.error.load} (${health.error.code})`}
-            detail={health.error.message}
-            onRetry={health.reload}
-          />
-        </div>
+        <ErrorState
+          title={`${copy.error.load} (${health.error.code})`}
+          detail={health.error.message}
+          onRetry={health.reload}
+        />
       ) : health.data ? (
-        <div className="mt-1 divide-y divide-border sm:mt-3 sm:grid sm:grid-cols-2 sm:gap-3 sm:divide-y-0">
-          <StatTile label={copy.panel.version} value={versionOf(health.data.sha)} hint={health.data.sha} />
-          <StatTile label={copy.panel.schema} value={health.data.schema_version || "—"} />
-          <StatTile label={copy.panel.database} value={databaseLabel(health.data.db)} />
-          <StatTile label={copy.panel.writer} value={writerLabel(health.data.writer)} />
-        </div>
+        <dl className="overflow-hidden rounded-2xl border border-border-subtle bg-surface shadow-(--shadow-panel)">
+          <Row label={copy.panel.version} value={versionOf(health.data.sha)} />
+          <Row label={copy.panel.schema} value={health.data.schema_version || '—'} />
+          <Row label={copy.panel.database} value={databaseLabel(health.data.db)} />
+          <Row label={copy.panel.writer} value={writerLabel(health.data.writer)} />
+        </dl>
       ) : null}
     </section>
-  );
+  )
 }

@@ -14,7 +14,8 @@ import { addHolderCountLine } from '../core/cellar-assets/holder-counts';
 import { createHolder, getHolder, listHolderMoves, listHolderStock, listHolders, patchHolder, postHolderMove } from '../core/cellar-assets/holders';
 import { backfillBarrelUseCounts } from '../core/cellar-assets/use-count-backfill';
 import { getCellarMap } from '../core/cellar-assets/map';
-import { createPosition, createZone, getZone, listZones, patchPosition, patchZone } from '../core/cellar-assets/zones';
+import { getPlanCard } from '../core/cellar-assets/plan-card';
+import { createPosition, createZone, deletePosition, getZone, listZones, patchPosition, patchZone } from '../core/cellar-assets/zones';
 
 /** Zonas, plano, barricas, damajuanas, nichos y jaulones. cellar.read / cellar.operate. */
 export function cellarAssetRoutes(deps: { writer: Writer; guard: GuardDeps }) {
@@ -38,6 +39,8 @@ export function cellarAssetRoutes(deps: { writer: Writer; guard: GuardDeps }) {
       return created;
     }, operate)
     .patch('/v1/cellar-zones/:code/positions/:positionId', ({ request, params }) => patchPosition(writer, request, params.code, params.positionId), operate)
+    .delete('/v1/cellar-zones/:code/positions/:positionId', ({ request, params }) => deletePosition(writer, request, params.code, params.positionId), operate)
+    .get('/v1/vessels/:code/plan-card', ({ request, params }) => getPlanCard(writer, request, params.code), read)
     .get('/v1/holder-stock', ({ request }) => listHolderStock(writer, request), read)
     .get('/v1/holders', ({ request }) => listHolders(writer, request), read)
     .post('/v1/holders', async ({ request, set }) => {

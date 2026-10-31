@@ -107,20 +107,18 @@ export const fetchCurrentUser = async (token?: string): Promise<TimbalUser | nul
   }
 };
 
-export const checkProjectAccess = async (token: string, orgId?: string, projectId?: string): Promise<void> => {
-  if (!orgId || !projectId) return;
-  const response = await fetch(`${authConfig.timbalBaseUrl}/orgs/${orgId}/projects/${projectId}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+// App sign-in tokens are project-scoped: /me?project_id= validates them. The org management API
+// (/orgs/{org}/projects/{project}) answers 403 to anyone who is not a member of the organization.
+export const validateUser = async (token: string, _orgId?: string, projectId?: string): Promise<TimbalUser> => {
+  const url = projectId
+    ? `${authConfig.timbalBaseUrl}/me?project_id=${encodeURIComponent(projectId)}`
+    : `${authConfig.timbalBaseUrl}/me`;
+  const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
   if (response.status === 403 || response.status === 404) throw new AccessDeniedError();
-  if (!response.ok) throw new Error("No se pudo comprobar el acceso al proyecto");
-};
-
-export const validateUser = async (token: string, orgId?: string, projectId?: string): Promise<TimbalUser> => {
-  const user = await fetchCurrentUser(token);
-  if (!user) throw new Error("La sesión no es válida");
-  await checkProjectAccess(token, orgId, projectId);
-  return user;
+  if (!response.ok) throw new Error("La sesión no es válida");
+  const body = (await response.json()) as { session?: TimbalUser; project?: { id?: unknown } };
+  if (projectId && body.project && String(body.project.id) !== String(projectId)) throw new AccessDeniedError();
+  return body.session ?? (body as TimbalUser);
 };
 
 export const requestMagicLink = async (email: string): Promise<void> => {
@@ -129,7 +127,7 @@ export const requestMagicLink = async (email: string): Promise<void> => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       email,
-      redirect_uri: `${window.location.origin}/login/callback`,
+      redirect_uri: `${window.location.origin}/api/auth/callback`,
     }),
   });
   if (!response.ok) {
@@ -139,7 +137,7 @@ export const requestMagicLink = async (email: string): Promise<void> => {
 };
 
 export const getOAuthUrl = (provider: string): string => {
-  const redirectUri = `${window.location.origin}/login/callback`;
+  const redirectUri = `${window.location.origin}/api/auth/callback`;
   const url = new URL(`${authConfig.timbalBaseUrl}/oauth/authorize`);
   url.searchParams.set("provider", provider);
   url.searchParams.set("redirect_uri", redirectUri);

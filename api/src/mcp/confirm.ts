@@ -1,3 +1,5 @@
+import { timingSafeEqual } from "node:crypto";
+
 import { domainError } from "../core/errors";
 
 /** Upper bound enforced by ops.mcp_confirmation (created_at + 15 minutes). */
@@ -165,6 +167,13 @@ export async function issueConfirmation(input: {
 
 const inFlight = new Map<string, Promise<unknown>>();
 
+function sameHex(left: string, right: string): boolean {
+  const a = Buffer.from(left);
+  const b = Buffer.from(right);
+  if (a.length !== b.length || a.length === 0) return false;
+  return timingSafeEqual(a, b);
+}
+
 function invalid(messageEs: string) {
   return domainError("WC_MCP_CONFIRMATION_INVALID", undefined, messageEs);
 }
@@ -190,7 +199,7 @@ async function consumeOnce(
   if (record.consumedAt !== null) return record.result;
 
   const actualHash = await sha256Hex(canonicalJson(record.payload));
-  if (actualHash !== record.payloadSha256) {
+  if (!sameHex(actualHash, record.payloadSha256)) {
     throw invalid("La confirmación no coincide con los datos preparados.");
   }
   const expiresAt = Date.parse(record.expiresAt);

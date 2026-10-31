@@ -14,7 +14,11 @@ export type OpType =
   | "addition"
   | "loss"
   | "destruction"
-  | "cleaning";
+  | "cleaning"
+  | "bleeding"
+  | "pressing_off"
+  | "delestage"
+  | "temperature_control";
 
 export type Vessel = {
   id: string;
@@ -92,6 +96,7 @@ export type Lot = {
   id: string;
   code: string;
   kind: "grape" | "must" | "wine" | "bottled" | string;
+  wine_id?: string | null;
   wine_name: string | null;
   vintage: number | null;
   is_organic: boolean;
@@ -148,6 +153,10 @@ export const OP_TYPES: { id: OpType; label: string; hint: string }[] = [
   { id: "loss", label: "Merma", hint: "Lías, derrame, rotura" },
   { id: "destruction", label: "Destrucción", hint: "Exige aprobación" },
   { id: "cleaning", label: "Limpieza", hint: "Depósito vacío" },
+  { id: "bleeding", label: "Sangrado", hint: "Parte del depósito, lote nuevo" },
+  { id: "pressing_off", label: "Descube", hint: "Yema y vino de prensa" },
+  { id: "delestage", label: "Délestage", hint: "Sin mover volumen" },
+  { id: "temperature_control", label: "Temperatura", hint: "Cambia la consigna" },
 ];
 
 const KIND_LABEL: Record<VesselKind, string> = {
@@ -210,7 +219,7 @@ export function mlToEdit(ml: number): string {
 }
 
 export function needsBalance(op: OpType | ""): boolean {
-  return op === "racking" || op === "blend" || op === "filtration" || op === "bottling";
+  return op === "racking" || op === "blend" || op === "filtration" || op === "bottling" || op === "bleeding" || op === "pressing_off";
 }
 
 export function conservation(inputMl: number, outputMl: number, lossMl: number): { ok: boolean; text: string } {
@@ -234,6 +243,9 @@ const ERROR_COPY: Record<string, string> = {
   WC028: "El cambio de mayor SILICIE (depósito ↔ barrica) no cuadra",
   WC030: "La genealogía de ese lote tendría un ciclo",
   WC_VESSEL_NOT_IN_SERVICE: "El depósito está fuera de servicio",
+  WC_NOT_APPROVED: "Falta la aprobación de la merma",
+  WC027: "El saldo fiscal no alcanza",
+  WC032: "Esa operación no se puede confirmar ni rectificar",
 };
 
 export function cellarMessage(code: string, message?: string): string {
@@ -303,12 +315,61 @@ export type PreviewLot = {
   volume_ml?: number;
 };
 
+/** Corks, capsules, cases and pallets a bottling would consume. Absent on older APIs. */
+export type PreviewMaterial = {
+  sku: string;
+  name: string;
+  per: string;
+  quantity: number;
+  available: number;
+  required_total?: number;
+  shortfall?: number;
+  short: boolean;
+  warning: string | null;
+};
+
 /** Efectos que devolvería confirmar, sin escribir libros. */
 export type OperationPreview = {
   stock_moves: PreviewMove[];
   fiscal_moves: PreviewFiscalMove[];
   new_lots: PreviewLot[];
+  materials?: PreviewMaterial[];
 };
+
+export type LotListItem = {
+  id: string;
+  code: string;
+  kind: string;
+  wine_id?: string | null;
+  vintage: number | null;
+  is_organic: boolean;
+  status: string;
+  volume_ml: number;
+  qty_units: number;
+  vessel_code: string | null;
+  location_code: string | null;
+};
+
+export type Page<T> = { items: T[]; next_cursor: string | null; total: number };
+
+export function listLots(query: { q?: string; kind?: string; vintage?: string; status?: string; cursor?: string; limit?: number } = {}, signal?: AbortSignal) {
+  const params = new URLSearchParams();
+  if (query.q) params.set("q", query.q);
+  if (query.kind) params.set("kind", query.kind);
+  if (query.vintage) params.set("vintage", query.vintage);
+  if (query.status) params.set("status", query.status);
+  if (query.cursor) params.set("cursor", query.cursor);
+  params.set("limit", String(query.limit ?? 50));
+  const suffix = params.toString();
+  return api<Page<LotListItem>>(`/v1/lots${suffix ? `?${suffix}` : ""}`, { signal });
+}
+
+export function getOperation(id: string, signal?: AbortSignal) {
+  return api<CellarOperation & { lines?: OperationLine[]; cleaning?: CleaningRecord | null }>(
+    `/v1/cellar-operations/${encodeURIComponent(id)}`,
+    { signal },
+  );
+}
 
 export function confirmOperation(id: string) {
   return api<CellarOperation>(`/v1/cellar-operations/${encodeURIComponent(id)}/confirm`, { method: "POST" });
