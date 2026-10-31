@@ -96,7 +96,7 @@ describe('recipientes', () => {
       const label = await call(ctx, 'GET', '/v1/vessels/INOX-01/qr', undefined, 'bodega@winecore.test');
       expect(label.status).toBe(200);
       const token = String(label.body.qr_token);
-      expect(label.body.payload).toBe(`winecore:vessel:${token}`);
+      expect(label.body.payload).toBe(`http://localhost:5173/q/${token}`);
       const resolved = await call(ctx, 'GET', `/v1/vessels/qr/${token}`);
       expect(resolved.status).toBe(200);
       expect(resolved.body.code).toBe('INOX-01');

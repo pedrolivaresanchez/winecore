@@ -12,6 +12,7 @@ export function isWinecoreQr(token: string): boolean {
   return token.length >= 16 && token.length <= 64 && /^wcqr_[A-Za-z0-9_-]{11,59}$/.test(token);
 }
 
-export function qrPayload(token: string): string {
-  return `winecore:vessel:${token}`;
+/** URL a phone camera can open. `publicUrl` is `APP_PUBLIC_URL` without a trailing slash. */
+export function qrPayload(publicUrl: string, token: string): string {
+  return `${publicUrl.replace(/\/+$/, '')}/q/${token}`;
 }

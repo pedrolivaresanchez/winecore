@@ -27,11 +27,13 @@ import type {
 import { findNegativeBalances } from '../../inventory/balances';
 import { assertPeriodOpen, isBusinessDate, isInstant } from '../../inventory/periods';
 import type { FiscalMove, PeriodLock, StockMove } from '../../inventory/types';
+import { sessionOf } from '../../../auth/guard';
 import { newId } from '../../ids';
 import { sql } from '../../db/sql';
 import type { Tx, Writer } from '../../db/writer';
 import { DomainError, domainError } from '../../errors';
 import { businessDate } from '../../time';
+import { takeCellarOperationNumber } from './number';
 import {
   actorFor,
   auditInsert,
@@ -116,10 +118,10 @@ export interface OperationView extends OperationHeader {
 }
 
 interface OperationLineView {
-  id: string;
+  id: string | null;
   operation_id: string;
   role: string;
-  lot_id: string;
+  lot_id: string | null;
   vessel_id: string | null;
   location_id: string | null;
   product_id: string | null;
@@ -183,6 +185,22 @@ interface NewLotInput {
   excise_product_key: string | null;
 }
 
+interface StoredDraft {
+  fiscal_date: string;
+  lines: ParsedLine[];
+  new_lot: NewLotInput | null;
+  addition: (AdditionInput & { vessel_id: string; lot_id: string }) | null;
+  cleaning: CleaningInput | null;
+}
+
+export interface OperationPreview {
+  stock_moves: readonly StockMoveDraft[];
+  fiscal_moves: readonly FiscalMoveDraft[];
+  new_lots: readonly LotDraft[];
+  lot_edges: readonly LotEdgeDraft[];
+  vessels_after: readonly VesselState[];
+}
+
 export async function listOperations(writer: Writer, request: Request): Promise<ListBody<OperationHeader>> {
   const url = new URL(request.url);
   const limit = parseLimit(url.searchParams.get('limit'));
@@ -218,106 +236,310 @@ export async function getOperation(writer: Writer, _request: Request, id: string
   return readOperation(writer, id);
 }
 
-export async function rejectOperationChange(writer: Writer, _request: Request, id: string): Promise<never> {
+export async function createOperation(writer: Writer, request: Request): Promise<OperationView> {
+  const parsed = parseBody(await readJson(request));
+  const actor = actorFor(request, parsed.header.reason ?? 'borrador de operación');
+  const operationId = newId();
+  await writer.withWrite(actor, async (tx) => {
+    await assertEntity(tx, parsed.header.legal_entity_id);
+    await assertReferences(tx, parsed.draft);
+    insertDraft(tx, operationId, parsed.header, parsed.draft, actor.id);
+  });
+  return readOperation(writer, operationId);
+}
+
+export async function updateOperation(writer: Writer, request: Request, id: string): Promise<OperationView> {
   if (!isUuid(id)) throw domainError('WC_NOT_FOUND');
-  const rows = await writer.read(sql`SELECT id FROM cellar.operation WHERE id = CAST(${id} AS UUID)`);
-  if (rows.length === 0) throw domainError('WC_NOT_FOUND');
-  // WC031 / WC032: a posted operation and its lines are insert-only.
-  throw new DomainError(
-    'WC032',
+  const parsed = parseBody(await readJson(request));
+  const actor = actorFor(request, parsed.header.reason ?? 'edición de borrador');
+  await writer.withWrite(actor, async (tx) => {
+    const current = await loadStored(tx, id);
+    if (current.status !== 'draft') throw linesLocked(current.status);
+    await assertEntity(tx, parsed.header.legal_entity_id);
+    await assertReferences(tx, parsed.draft);
+    deleteDraftLines(tx, id);
+    auditUpdate(tx, 'cellar.operation', id, { status: 'draft' }, parsed.header, sql`
+      UPDATE cellar.operation SET
+        legal_entity_id = CAST(${parsed.header.legal_entity_id} AS UUID),
+        op_type = ${parsed.header.op_type},
+        occurred_at = CAST(${parsed.header.occurred_at} AS TIMESTAMPTZ),
+        reason = ${parsed.header.reason},
+        performed_by = ${parsed.header.performed_by},
+        details = ${sql.json(parsed.draft)}
+      WHERE id = CAST(${id} AS UUID) AND status = 'draft'
+    `);
+    insertDraftLines(tx, id, parsed.draft.lines);
+  });
+  return readOperation(writer, id);
+}
+
+export async function previewOperation(writer: Writer, request: Request, id: string): Promise<OperationPreview> {
+  if (!isUuid(id)) throw domainError('WC_NOT_FOUND');
+  sessionOf(request);
+  return writer.withWrite(actorFor(request, 'vista previa'), async (tx) => {
+    const current = await loadStored(tx, id);
+    if (current.status !== 'draft') throw linesLocked(current.status);
+    const plan = await planStored(tx, current, sessionOf(request).id);
+    return {
+      stock_moves: plan.stockMoves,
+      fiscal_moves: plan.fiscalMoves,
+      new_lots: plan.newLots,
+      lot_edges: plan.lotEdges,
+      vessels_after: plan.vesselsAfter,
+    };
+  });
+}
+
+export async function confirmOperation(writer: Writer, request: Request, id: string): Promise<OperationView> {
+  if (!isUuid(id)) throw domainError('WC_NOT_FOUND');
+  const actor = actorFor(request, 'confirmación de operación');
+  await writer.withWrite(actor, async (tx) => {
+    const current = await loadStored(tx, id);
+    if (current.status !== 'draft') {
+      throw new DomainError('WC032', 409, 'Solo se confirma un borrador');
+    }
+    const plan = await planStored(tx, current, actor.id);
+    const number = await takeCellarOperationNumber(tx, current.header.legal_entity_id, current.header.fiscal_date);
+    await persistConfirmed(tx, current, plan, actor.id, number);
+  });
+  return readOperation(writer, id);
+}
+
+export async function rectifyOperation(writer: Writer, request: Request, id: string): Promise<OperationView> {
+  if (!isUuid(id)) throw domainError('WC_NOT_FOUND');
+  const body = await readJson(request);
+  const reason = requireText(body.reason, 'reason', 500);
+  const actor = actorFor(request, reason);
+  const performedBy = sessionOf(request).displayName || actor.id;
+  const rectifyId = newId();
+  await writer.withWrite(actor, async (tx) => {
+    const rows = await tx.read<Record<string, unknown>>(sql`
+      SELECT id::VARCHAR AS id, legal_entity_id::VARCHAR AS legal_entity_id, op_type, occurred_at, status
+      FROM cellar.operation
+      WHERE id = CAST(${id} AS UUID)
+    `);
+    const original = rows[0];
+    if (!original) throw domainError('WC_NOT_FOUND');
+    if (textOf(original.status) !== 'confirmed') {
+      throw new DomainError('WC032', 409, 'Solo se rectifica una operación confirmada');
+    }
+    const locks = await loadLocks(tx);
+    const physical = postingInstant(textOf(original.occurred_at), locks);
+    const fiscal = postingDay(businessDate(new Date(textOf(original.occurred_at))), locks);
+    const number = await takeCellarOperationNumber(tx, textOf(original.legal_entity_id), fiscal.date);
+    const reversals = await reversalDrafts(tx, id, rectifyId, actor.id, physical.instant, fiscal.date, reason);
+    await assertLedgers(tx, {
+      ok: true,
+      stockMoves: reversals.stock,
+      fiscalMoves: reversals.fiscal,
+      newLots: [],
+      lotEdges: [],
+      vesselsAfter: [],
+    } as unknown as PlanSuccess);
+    const confirmedAt = new Date().toISOString();
+    auditInsert(tx, 'cellar.operation', rectifyId, {
+      id: rectifyId,
+      rectifies_operation_id: id,
+      number,
+      status: 'confirmed',
+      reason,
+      regularization: physical.regularization || fiscal.regularization,
+    }, sql`
+      INSERT INTO cellar.operation (
+        id, legal_entity_id, number, op_type, occurred_at, status,
+        rectifies_operation_id, reason, details, performed_by, confirmed_by, confirmed_at,
+        sisv_relevant, silicie_relevant, created_by
+      ) VALUES (
+        CAST(${rectifyId} AS UUID),
+        CAST(${textOf(original.legal_entity_id)} AS UUID),
+        ${number},
+        ${textOf(original.op_type)},
+        CAST(${physical.instant} AS TIMESTAMPTZ),
+        'confirmed',
+        CAST(${id} AS UUID),
+        ${reason},
+        ${sql.json({
+          fiscal_date: fiscal.date,
+          regularization: physical.regularization || fiscal.regularization,
+        })},
+        ${performedBy},
+        CAST(${actor.id} AS UUID),
+        CAST(${confirmedAt} AS TIMESTAMPTZ),
+        TRUE,
+        ${reversals.fiscal.length > 0},
+        ${actor.id}
+      )
+    `);
+    for (const move of reversals.stock) insertStock(tx, move);
+    for (const move of reversals.fiscal) insertFiscal(tx, move);
+    auditUpdate(tx, 'cellar.operation', id, { status: 'confirmed' }, { status: 'rectified' }, sql`
+      UPDATE cellar.operation
+      SET status = 'rectified'
+      WHERE id = CAST(${id} AS UUID) AND status = 'confirmed'
+    `);
+  });
+  return readOperation(writer, rectifyId);
+}
+
+function linesLocked(status: string): DomainError {
+  if (status === 'draft') {
+    return new DomainError('WC031', 409, 'El borrador no está bloqueado');
+  }
+  return new DomainError(
+    status === 'confirmed' ? 'WC031' : 'WC032',
     409,
     'Una operación confirmada no se modifica; la corrección es una operación nueva',
   );
 }
 
-export async function createOperation(writer: Writer, request: Request): Promise<OperationView> {
-  const body = await readJson(request);
+function parseBody(body: Record<string, unknown>): { header: ParsedHeader; draft: StoredDraft } {
   const header = parseHeader(body);
   const lines = LINE_TYPES.has(header.op_type) ? parseLines(body) : [];
-  if (header.op_type === 'destruction' || lines.some((line) => line.loss_kind === 'incident')) {
-    throw domainError('WC_NOT_APPROVED');
-  }
-  assertNotFuture(header.occurred_at, header.fiscal_date);
   const addition = header.op_type === 'addition' ? parseAddition(body) : null;
   const cleaning = header.op_type === 'cleaning' ? parseCleaning(body) : null;
   const newLot = header.op_type === 'blend' || header.op_type === 'bottling' ? parseNewLot(body, header.op_type) : null;
-  const actor = actorFor(request, header.reason ?? 'operación de bodega');
-  const operationId = newId();
-  await writer.withWrite(actor, async (tx) => {
-    await assertEntity(tx, header.legal_entity_id);
-    const locks = await loadLocks(tx);
-    assertPeriodOpen(header.occurred_at, locks.filter((lock) => lock.ledger === 'physical'));
-    assertPeriodOpen(header.fiscal_date, locks.filter((lock) => lock.ledger === 'fiscal'));
-    const built = await buildRequest(tx, header, lines, addition, cleaning, newLot, operationId, actor.id);
-    const plan = planOperation(built, { vessels: await vesselMap(tx, built) }, { newId });
-    if (!plan.ok) throw fromPlan(plan);
-    await assertLedgers(tx, plan);
-    const number = await takeNumber(tx, header.legal_entity_id, header.fiscal_date);
-    await persist(tx, header, lines, addition, cleaning, plan, operationId, actor.id, number);
+  return {
+    header,
+    draft: { fiscal_date: header.fiscal_date, lines, new_lot: newLot, addition, cleaning },
+  };
+}
+
+interface LoadedDraft {
+  id: string;
+  status: string;
+  header: ParsedHeader;
+  draft: StoredDraft;
+}
+
+async function loadStored(tx: Tx, id: string): Promise<LoadedDraft> {
+  const rows = await tx.read<Record<string, unknown>>(sql`
+    SELECT id::VARCHAR AS id, legal_entity_id::VARCHAR AS legal_entity_id, op_type, occurred_at,
+           status, reason, performed_by, details
+    FROM cellar.operation
+    WHERE id = CAST(${id} AS UUID)
+  `);
+  const row = rows[0];
+  if (!row) throw domainError('WC_NOT_FOUND');
+  const draft = asStored(jsonObject(row.details));
+  if (!draft) invalid({ details: 'El borrador no tiene los datos de la operación' });
+  const opType = textOf(row.op_type);
+  if (!(ENGINE_TYPES as readonly string[]).includes(opType)) {
+    invalid({ op_type: 'El tipo de operación no está soportado' });
+  }
+  return {
+    id,
+    status: textOf(row.status),
+    header: {
+      op_type: opType as ParsedHeader['op_type'],
+      legal_entity_id: textOf(row.legal_entity_id),
+      occurred_at: textOf(row.occurred_at),
+      fiscal_date: draft.fiscal_date,
+      performed_by: textOf(row.performed_by),
+      reason: textOrNull(row.reason),
+    },
+    draft,
+  };
+}
+
+async function planStored(tx: Tx, current: LoadedDraft, actorId: string): Promise<PlanSuccess> {
+  const { header, draft } = current;
+  if (header.op_type === 'destruction' || draft.lines.some((line) => line.loss_kind === 'incident')) {
+    throw domainError('WC_NOT_APPROVED');
+  }
+  assertNotFuture(header.occurred_at, header.fiscal_date);
+  await assertReferences(tx, draft);
+  const locks = await loadLocks(tx);
+  assertPeriodOpen(header.occurred_at, locks.filter((lock) => lock.ledger === 'physical'));
+  assertPeriodOpen(header.fiscal_date, locks.filter((lock) => lock.ledger === 'fiscal'));
+  const built = await buildRequest(tx, header, draft.lines, draft.addition, draft.cleaning, draft.new_lot, current.id, actorId);
+  const plan = planOperation(built, { vessels: await vesselMap(tx, built) }, { newId });
+  if (!plan.ok) throw fromPlan(plan);
+  await assertLedgers(tx, plan);
+  return plan;
+}
+
+function insertDraft(tx: Tx, operationId: string, header: ParsedHeader, draft: StoredDraft, actorId: string): void {
+  auditInsert(tx, 'cellar.operation', operationId, {
+    id: operationId,
+    status: 'draft',
+    op_type: header.op_type,
+    legal_entity_id: header.legal_entity_id,
+    occurred_at: header.occurred_at,
+    number: null,
+  }, sql`
+    INSERT INTO cellar.operation (
+      id, legal_entity_id, op_type, occurred_at, status, reason, details, performed_by, created_by
+    ) VALUES (
+      CAST(${operationId} AS UUID),
+      CAST(${header.legal_entity_id} AS UUID),
+      ${header.op_type},
+      CAST(${header.occurred_at} AS TIMESTAMPTZ),
+      'draft',
+      ${header.reason},
+      ${sql.json(draft)},
+      ${header.performed_by},
+      ${actorId}
+    )
+  `);
+  insertDraftLines(tx, operationId, draft.lines);
+}
+
+function insertDraftLines(tx: Tx, operationId: string, lines: readonly ParsedLine[]): void {
+  for (const line of lines) {
+    if (!line.lot_id) continue;
+    if (!line.vessel_id && !line.location_id) continue;
+    insertLine(tx, operationId, line, line.lot_id, 'racking');
+  }
+}
+
+function deleteDraftLines(tx: Tx, operationId: string): void {
+  tx.write(sql`DELETE FROM cellar.operation_line WHERE operation_id = CAST(${operationId} AS UUID)`);
+  tx.audit({
+    table: 'cellar.operation_line',
+    rowId: operationId,
+    action: 'DELETE',
+    before: { operation_id: operationId },
+    after: null,
   });
-  return readOperation(writer, operationId);
 }
 
 /**
- * Vessel content is not a column: `vesselsAfter` from the planner is the stock
- * ledger after these moves. Persisting the stock moves persists that state.
+ * Vessel content is the stock ledger. Confirming writes the planned moves,
+ * so `vesselsAfter` becomes the balance. A failed plan writes nothing.
  */
-async function persist(
+async function persistConfirmed(
   tx: Tx,
-  header: ParsedHeader,
-  lines: readonly ParsedLine[],
-  addition: AdditionInput | null,
-  cleaning: CleaningInput | null,
+  current: LoadedDraft,
   plan: PlanSuccess,
-  operationId: string,
   actorId: string,
   number: string,
 ): Promise<void> {
   for (const lot of plan.newLots) insertLot(tx, lot);
   const confirmedAt = new Date().toISOString();
   const silicie = plan.fiscalMoves.length > 0;
-  auditInsert(tx, 'cellar.operation', operationId, {
-    id: operationId,
-    legal_entity_id: header.legal_entity_id,
-    number,
-    op_type: header.op_type,
-    occurred_at: header.occurred_at,
+  deleteDraftLines(tx, current.id);
+  auditUpdate(tx, 'cellar.operation', current.id, { status: 'draft', number: null }, {
     status: 'confirmed',
-    reason: header.reason,
-    performed_by: header.performed_by,
-    confirmed_by: actorId,
-    confirmed_at: confirmedAt,
+    number,
     silicie_relevant: silicie,
-    created_by: actorId,
   }, sql`
-    INSERT INTO cellar.operation (
-      id, legal_entity_id, number, op_type, occurred_at, status,
-      reason, details, performed_by, confirmed_by, confirmed_at,
-      sisv_relevant, silicie_relevant, created_by
-    ) VALUES (
-      CAST(${operationId} AS UUID),
-      CAST(${header.legal_entity_id} AS UUID),
-      ${number},
-      ${header.op_type},
-      CAST(${header.occurred_at} AS TIMESTAMPTZ),
-      'confirmed',
-      ${header.reason},
-      ${sql.json({})},
-      ${header.performed_by},
-      CAST(${actorId} AS UUID),
-      CAST(${confirmedAt} AS TIMESTAMPTZ),
-      TRUE,
-      ${silicie},
-      ${actorId}
-    )
+    UPDATE cellar.operation SET
+      number = ${number},
+      status = 'confirmed',
+      confirmed_by = CAST(${actorId} AS UUID),
+      confirmed_at = CAST(${confirmedAt} AS TIMESTAMPTZ),
+      silicie_relevant = ${silicie}
+    WHERE id = CAST(${current.id} AS UUID) AND status = 'draft'
   `);
   const newLotId = plan.newLots[0]?.id ?? null;
-  for (const line of lines) insertLine(tx, operationId, line, newLotId, header.op_type);
+  for (const line of current.draft.lines) insertLine(tx, current.id, line, newLotId, current.header.op_type);
   for (const edge of plan.lotEdges) insertEdge(tx, edge);
   for (const move of plan.stockMoves) insertStock(tx, move);
   for (const move of plan.fiscalMoves) insertFiscal(tx, move);
-  if (addition && header.op_type === 'addition') insertAddition(tx, operationId, addition);
-  if (cleaning) insertCleaning(tx, operationId, cleaning);
+  if (current.draft.addition && current.header.op_type === 'addition') {
+    insertAddition(tx, current.id, current.draft.addition);
+  }
+  if (current.draft.cleaning) insertCleaning(tx, current.id, current.draft.cleaning);
 }
 
 async function buildRequest(
@@ -830,34 +1052,155 @@ async function assertEntity(tx: Tx, entityId: string): Promise<void> {
   if (rows.length === 0) invalid({ legal_entity_id: 'La entidad no existe' });
 }
 
-async function takeNumber(tx: Tx, entityId: string, fiscalDate: string): Promise<string> {
-  const year = Number(fiscalDate.slice(0, 4));
-  const rows = await tx.read<{ id: string; prefix: string; padding: unknown; next_value: unknown }>(sql`
-    SELECT id::VARCHAR AS id, prefix, padding, next_value
-    FROM core.number_series
-    WHERE legal_entity_id = CAST(${entityId} AS UUID)
-      AND doc_type = 'cellar_operation'
-      AND year = ${year}
-      AND is_active
-      AND is_default
-    ORDER BY code
-    LIMIT 1
-  `);
-  const series = rows[0];
-  if (!series) {
-    throw new DomainError('WC010', 409, `No hay una serie activa de operaciones de bodega para ${year}`);
+async function assertReferences(tx: Tx, draft: StoredDraft): Promise<void> {
+  for (let index = 0; index < draft.lines.length; index += 1) {
+    const line = draft.lines[index];
+    if (!line) continue;
+    if (line.lot_id) await assertRow(tx, 'inventory.lot', line.lot_id, `lines[${index}].lot_id`, 'El lote no existe');
+    if (line.vessel_id) await assertRow(tx, 'cellar.vessel', line.vessel_id, `lines[${index}].vessel_id`, 'El recipiente no existe');
+    if (line.location_id) await assertRow(tx, 'inventory.location', line.location_id, `lines[${index}].location_id`, 'La ubicación no existe');
+    if (line.product_id) await assertRow(tx, 'catalog.product', line.product_id, `lines[${index}].product_id`, 'El producto no existe');
   }
-  const padding = intOf(series.padding);
-  const next = intOf(series.next_value);
-  const limit = 10 ** padding - 1;
-  if (!Number.isSafeInteger(limit) || next > limit) throw domainError('WC011');
-  const number = `${series.prefix}${String(next).padStart(padding, '0')}`;
-  auditUpdate(tx, 'core.number_series', series.id, { next_value: next }, { next_value: next + 1 }, sql`
-    UPDATE core.number_series
-    SET next_value = ${next + 1}
-    WHERE id = CAST(${series.id} AS UUID) AND next_value = ${next}
+  if (draft.new_lot?.wine_id) {
+    await assertRow(tx, 'catalog.wine', draft.new_lot.wine_id, 'new_lot.wine_id', 'El vino no existe');
+  }
+  if (draft.addition) {
+    await assertRow(tx, 'catalog.product', draft.addition.additive_product_id, 'addition.additive_product_id', 'El producto enológico no existe');
+    await assertRow(tx, 'inventory.lot', draft.addition.lot_id, 'lot_id', 'El lote no existe');
+    await assertRow(tx, 'cellar.vessel', draft.addition.vessel_id, 'vessel_id', 'El recipiente no existe');
+  }
+  if (draft.cleaning) {
+    await assertRow(tx, 'catalog.product', draft.cleaning.product_id, 'cleaning.product_id', 'El producto de limpieza no existe');
+    if (draft.cleaning.location_id) {
+      await assertRow(tx, 'inventory.location', draft.cleaning.location_id, 'cleaning.location_id', 'La ubicación no existe');
+    }
+    if (draft.cleaning.vessel_id) {
+      await assertRow(tx, 'cellar.vessel', draft.cleaning.vessel_id, 'cleaning.vessel_id', 'El recipiente no existe');
+    }
+  }
+}
+
+async function assertRow(tx: Tx, table: string, id: string, field: string, message: string): Promise<void> {
+  if (!isUuid(id)) invalid({ [field]: 'Debe ser un UUID' });
+  const rows = await tx.read(`SELECT id FROM ${table} WHERE id = CAST('${id}' AS UUID)`);
+  if (rows.length === 0) invalid({ [field]: message });
+}
+
+function asStored(value: unknown): StoredDraft | null {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Partial<StoredDraft>;
+  if (typeof record.fiscal_date !== 'string' || !Array.isArray(record.lines)) return null;
+  return {
+    fiscal_date: record.fiscal_date,
+    lines: record.lines,
+    new_lot: record.new_lot ?? null,
+    addition: record.addition ?? null,
+    cleaning: record.cleaning ?? null,
+  };
+}
+
+function postingInstant(occurredAt: string, locks: readonly PeriodLock[]): { instant: string; regularization: boolean } {
+  const physical = locks.filter((lock) => lock.ledger === 'physical');
+  try {
+    assertPeriodOpen(occurredAt, physical);
+    return { instant: occurredAt, regularization: false };
+  } catch (error) {
+    if (!(error instanceof DomainError) || error.code !== 'WC021') throw error;
+    const instant = new Date().toISOString();
+    assertPeriodOpen(instant, physical);
+    return { instant, regularization: true };
+  }
+}
+
+function postingDay(fiscalDate: string, locks: readonly PeriodLock[]): { date: string; regularization: boolean } {
+  const fiscal = locks.filter((lock) => lock.ledger === 'fiscal');
+  try {
+    assertPeriodOpen(fiscalDate, fiscal);
+    return { date: fiscalDate, regularization: false };
+  } catch (error) {
+    if (!(error instanceof DomainError) || error.code !== 'WC021') throw error;
+    const date = businessDate(new Date());
+    assertPeriodOpen(date, fiscal);
+    return { date, regularization: true };
+  }
+}
+
+async function reversalDrafts(
+  tx: Tx,
+  operationId: string,
+  rectifyId: string,
+  actorId: string,
+  occurredAt: string,
+  fiscalDate: string,
+  reason: string,
+): Promise<{
+  stock: Array<Omit<StockMoveDraft, 'move_type' | 'reverses_move_id'> & { move_type: 'reversal'; reverses_move_id: string }>;
+  fiscal: Array<Omit<FiscalMoveDraft, 'move_type' | 'reverses_move_id'> & { move_type: 'reversal'; reverses_move_id: string }>;
+}> {
+  const stockRows = await tx.read<Record<string, unknown>>(sql`
+    SELECT id::VARCHAR AS id, move_type, location_id::VARCHAR AS location_id, vessel_id::VARCHAR AS vessel_id,
+           owner_entity_id::VARCHAR AS owner_entity_id, lot_id::VARCHAR AS lot_id, product_id::VARCHAR AS product_id,
+           product_state, qty_units, volume_ml::VARCHAR AS volume_ml, mass_g::VARCHAR AS mass_g
+    FROM inventory.stock_move
+    WHERE source_table = 'cellar.operation' AND source_id = CAST(${operationId} AS UUID)
+    ORDER BY id
   `);
-  return number;
+  const fiscalRows = await tx.read<Record<string, unknown>>(sql`
+    SELECT id::VARCHAR AS id, tax_warehouse_id::VARCHAR AS tax_warehouse_id, move_type, product_class,
+           lot_id::VARCHAR AS lot_id, product_id::VARCHAR AS product_id, volume_ml::VARCHAR AS volume_ml, units,
+           abv_pct::VARCHAR AS abv_pct, excise_product_key, nc_code
+    FROM inventory.fiscal_move
+    WHERE source_table = 'cellar.operation' AND source_id = CAST(${operationId} AS UUID)
+    ORDER BY id
+  `);
+  const stock = stockRows.map((row) => ({
+    id: newId(),
+    occurred_at: occurredAt,
+    move_type: 'reversal' as const,
+    location_id: textOf(row.location_id),
+    vessel_id: textOrNull(row.vessel_id),
+    owner_entity_id: textOf(row.owner_entity_id),
+    lot_id: textOrNull(row.lot_id),
+    product_id: textOrNull(row.product_id),
+    product_state: textOf(row.product_state) as StockMoveDraft['product_state'],
+    qty_units: -intOf(row.qty_units),
+    volume_ml: -intOf(row.volume_ml),
+    mass_g: -intOf(row.mass_g),
+    loss_kind: null,
+    source_table: 'cellar.operation' as const,
+    source_id: rectifyId,
+    source_line_id: null,
+    reverses_move_id: textOf(row.id),
+    created_by: actorId,
+  }));
+  const fiscal = fiscalRows.map((row) => ({
+    id: newId(),
+    tax_warehouse_id: textOf(row.tax_warehouse_id),
+    fiscal_date: fiscalDate,
+    physical_date: fiscalDate,
+    move_type: 'reversal' as const,
+    product_class: textOf(row.product_class) as FiscalMoveDraft['product_class'],
+    lot_id: textOrNull(row.lot_id),
+    product_id: textOrNull(row.product_id),
+    volume_ml: -intOf(row.volume_ml),
+    units: -intOf(row.units),
+    abv_pct: abvOf(row.abv_pct),
+    excise_product_key: textOrNull(row.excise_product_key),
+    nc_code: textOrNull(row.nc_code),
+    justification_type: 'internal' as const,
+    justification_ref: rectifyId,
+    counterparty_contact_id: null,
+    counterparty_excise_number: null,
+    fiscal_trigger: 'operation' as const,
+    source_table: 'cellar.operation' as const,
+    source_id: rectifyId,
+    source_line_id: null,
+    silicie_entry_id: null,
+    reverses_move_id: textOf(row.id),
+    reason,
+    created_by: actorId,
+  }));
+  return { stock, fiscal };
 }
 
 function insertLot(tx: Tx, lot: LotDraft): void {
@@ -935,7 +1278,7 @@ function insertEdge(tx: Tx, edge: LotEdgeDraft): void {
   `);
 }
 
-function insertStock(tx: Tx, move: StockMoveDraft): void {
+function insertStock(tx: Tx, move: StockMoveDraft | (Omit<StockMoveDraft, 'move_type' | 'reverses_move_id'> & { move_type: 'reversal'; reverses_move_id: string })): void {
   auditInsert(tx, 'inventory.stock_move', move.id, move, sql`
     INSERT INTO inventory.stock_move (
       id, occurred_at, move_type, location_id, vessel_id, owner_entity_id, lot_id, product_id,
@@ -964,7 +1307,7 @@ function insertStock(tx: Tx, move: StockMoveDraft): void {
   `);
 }
 
-function insertFiscal(tx: Tx, move: FiscalMoveDraft): void {
+function insertFiscal(tx: Tx, move: FiscalMoveDraft | (Omit<FiscalMoveDraft, 'move_type' | 'reverses_move_id'> & { move_type: 'reversal'; reverses_move_id: string })): void {
   auditInsert(tx, 'inventory.fiscal_move', move.id, move, sql`
     INSERT INTO inventory.fiscal_move (
       id, tax_warehouse_id, fiscal_date, physical_date, move_type, product_class, lot_id, product_id,
@@ -1065,6 +1408,8 @@ async function readOperation(writer: Writer, id: string): Promise<OperationView>
   `);
   const row = rows[0];
   if (!row) throw domainError('WC_NOT_FOUND');
+  const stored = asStored(jsonObject(row.details));
+  const status = textOf(row.status);
   const [lines, stock, fiscal, lots, edges, addition, cleaning] = await Promise.all([
     writer.read<Record<string, unknown>>(sql`
       SELECT id::VARCHAR AS id, operation_id::VARCHAR AS operation_id, role, lot_id::VARCHAR AS lot_id,
@@ -1132,15 +1477,36 @@ async function readOperation(writer: Writer, id: string): Promise<OperationView>
       WHERE operation_id = CAST(${id} AS UUID)
     `),
   ]);
+  const draftLines = status === 'draft' && stored
+    ? stored.lines.map((line) => ({
+      id: null,
+      operation_id: textOf(row.id),
+      role: line.role,
+      lot_id: line.lot_id,
+      vessel_id: line.vessel_id,
+      location_id: line.location_id,
+      product_id: line.product_id,
+      product_state: line.product_state,
+      volume_ml: line.volume_ml,
+      qty_units: line.qty_units,
+      mass_g: 0,
+      loss_kind: line.loss_kind,
+      notes: null,
+    }))
+    : lines.map(lineOf);
   return {
     ...headerOf(row),
-    lines: lines.map(lineOf),
+    lines: draftLines,
     stock_moves: stock.map(intMove),
     fiscal_moves: fiscal.map(intFiscal),
     lots: lots.map(intLot),
     lot_edges: edges.map(intEdge),
-    addition: addition[0] ? addition[0] : null,
-    cleaning: cleaning[0] ? cleaning[0] : null,
+    addition: status === 'draft'
+      ? (stored?.addition as Record<string, unknown> | null | undefined) ?? null
+      : addition[0] ?? null,
+    cleaning: status === 'draft'
+      ? (stored?.cleaning as Record<string, unknown> | null | undefined) ?? null
+      : cleaning[0] ?? null,
   };
 }
 

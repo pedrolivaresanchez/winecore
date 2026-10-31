@@ -30,8 +30,8 @@ export function retireVesselRoute(writer: Writer, request: Request, code: string
   return retireVessel(writer, request, code);
 }
 
-export function vesselQrRoute(writer: Writer, request: Request, code: string) {
-  return vesselQr(writer, request, code);
+export function vesselQrRoute(writer: Writer, request: Request, code: string, publicUrl: string) {
+  return vesselQr(writer, request, code, publicUrl);
 }
 
 export function resolveQrRoute(writer: Writer, request: Request, token: string) {

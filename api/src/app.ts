@@ -74,6 +74,6 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requireOwner(guardDeps),
     })
     // --- Bodega: ubicaciones, recipientes, lotes y operaciones ---
-    .use(cellarRoutes({ writer: deps.writer, guard: guardDeps }));
+    .use(cellarRoutes({ writer: deps.writer, guard: guardDeps, publicUrl: deps.config.appPublicUrl }));
   return app;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { createTestApp } from '../helpers';
-import { call, counts, entityId, seedHolding, seedSeries, seedWarehouse } from './fixtures';
+import { call, counts, entityId, seedHolding, seedWarehouse } from './fixtures';
 
 interface World {
   po: string;
@@ -11,10 +11,9 @@ interface World {
   lotId: string;
 }
 
-async function world(ctx: Awaited<ReturnType<typeof createTestApp>>, withSeries = true): Promise<World> {
+async function world(ctx: Awaited<ReturnType<typeof createTestApp>>): Promise<World> {
   const po = await entityId(ctx);
   const warehouse = await seedWarehouse(ctx, po);
-  if (withSeries) await seedSeries(ctx, po);
   const location = await call(ctx, 'POST', '/v1/locations', {
     code: 'BOD',
     name: 'Bodega',
@@ -92,8 +91,20 @@ describe('operaciones de bodega', () => {
       expect(denied.status).toBe(403);
       expect(denied.body.code).toBe('WC_FORBIDDEN');
 
-      const created = await call(ctx, 'POST', '/v1/cellar-operations', transfer(cellar, 220_000, 5_000), 'bodega@winecore.test');
-      expect(created.status).toBe(201);
+      const draft = await call(ctx, 'POST', '/v1/cellar-operations', transfer(cellar, 220_000, 5_000), 'bodega@winecore.test');
+      expect(draft.status).toBe(201);
+      expect(draft.body.status).toBe('draft');
+      expect(draft.body.number).toBeNull();
+      expect(draft.body.stock_moves).toEqual([]);
+
+      const preview = await call(ctx, 'POST', `/v1/cellar-operations/${draft.body.id}/preview`, undefined, 'bodega@winecore.test');
+      expect(preview.status).toBe(200);
+      const previewFiscal = preview.body.fiscal_moves as { move_type: string }[];
+      expect(previewFiscal.map((row) => row.move_type)).toEqual(['ledger_change_out', 'ledger_change_in', 'loss']);
+      expect(await counts(ctx)).toMatchObject({ operations: 1, stock: 1, fiscal: 1, edges: 0 });
+
+      const created = await call(ctx, 'POST', `/v1/cellar-operations/${draft.body.id}/confirm`, undefined, 'bodega@winecore.test');
+      expect(created.status).toBe(200);
       expect(created.body).toMatchObject({
         number: 'OB26-0001',
         op_type: 'racking',
@@ -139,9 +150,9 @@ describe('operaciones de bodega', () => {
       expect(history.body.total).toBe(1);
       expect((history.body.items as { op_type: string; lines: unknown[] }[])[0]?.op_type).toBe('racking');
 
-      const immutable = await call(ctx, 'PATCH', `/v1/cellar-operations/${created.body.id}`, { reason: 'corrección' });
+      const immutable = await call(ctx, 'PATCH', `/v1/cellar-operations/${created.body.id}`, transfer(cellar, 220_000, 5_000));
       expect(immutable.status).toBe(409);
-      expect(immutable.body.code).toBe('WC032');
+      expect(immutable.body.code).toBe('WC031');
       const still = await call(ctx, 'GET', `/v1/cellar-operations/${created.body.id}`);
       expect(still.body.reason).toBeNull();
 
@@ -154,6 +165,24 @@ describe('operaciones de bodega', () => {
 
       const chain = await call(ctx, 'POST', '/v1/audit/verify');
       expect(chain.body.intact).toBe(true);
+
+      const rectified = await call(ctx, 'POST', `/v1/cellar-operations/${created.body.id}/rectify`, {
+        reason: 'error de litros',
+      }, 'bodega@winecore.test');
+      expect(rectified.status).toBe(201);
+      expect(rectified.body.status).toBe('confirmed');
+      expect(rectified.body.rectifies_operation_id).toBe(created.body.id);
+      const moves = rectified.body.stock_moves as { move_type: string; volume_ml: number }[];
+      expect(moves.every((row) => row.move_type === 'reversal')).toBe(true);
+      expect(moves.reduce((sum, row) => sum + row.volume_ml, 0)).toBe(5_000);
+      const original = await call(ctx, 'GET', `/v1/cellar-operations/${created.body.id}`);
+      expect(original.body.status).toBe('rectified');
+      expect(original.body.number).toBe('OB26-0001');
+      const restored = await call(ctx, 'GET', '/v1/vessels/INOX-01');
+      expect(restored.body.volume_ml).toBe(1_000_000);
+      const barrel = await call(ctx, 'GET', '/v1/vessels/BAR-001');
+      expect(barrel.body.volume_ml).toBe(0);
+      expect(barrel.body.state).toBe('empty');
     } finally {
       await ctx.close();
     }
@@ -187,7 +216,7 @@ describe('operaciones de bodega', () => {
         code: 'L25T02',
         volumeMl: 600_000,
       });
-      const created = await call(ctx, 'POST', '/v1/cellar-operations', {
+      const draft = await call(ctx, 'POST', '/v1/cellar-operations', {
         op_type: 'blend',
         legal_entity_id: cellar.po,
         occurred_at: '2026-06-16T08:00:00Z',
@@ -200,7 +229,9 @@ describe('operaciones de bodega', () => {
           { role: 'output', vessel_id: String(third.body.id), volume_ml: 1_000_000, product_state: 'wine' },
         ],
       });
-      expect(created.status).toBe(201);
+      expect(draft.status).toBe(201);
+      const created = await call(ctx, 'POST', `/v1/cellar-operations/${draft.body.id}/confirm`);
+      expect(created.status).toBe(200);
       expect(created.body.number).toBe('OB26-0001');
       const edges = created.body.lot_edges as { volume_ml: number }[];
       expect(edges.map((edge) => edge.volume_ml).sort((a, b) => a - b)).toEqual([400_000, 600_000]);
@@ -227,6 +258,24 @@ describe('operaciones de bodega', () => {
       ]);
       const missing = await call(ctx, 'GET', '/v1/lots/NOEXISTE');
       expect(missing.status).toBe(404);
+      const index = await call(ctx, 'GET', '/v1/lots?kind=wine&vintage=2025&status=active&q=ENS');
+      const found = index.body.items as { code: string; volume_ml: number; vessel_code: string | null }[];
+      expect(found.map((row) => row.code)).toContain('L25ENS1');
+      expect(found.find((row) => row.code === 'L25ENS1')).toMatchObject({ volume_ml: 1_000_000, vessel_code: 'INOX-03' });
+      const trace = await call(ctx, 'GET', '/v1/lots/L25ENS1/traceability?direction=up');
+      expect(trace.status).toBe(200);
+      const nodes = trace.body.nodes as { code: string }[];
+      expect(nodes.map((node) => node.code).sort()).toEqual(['L25ENS1', 'L25T01', 'L25T02']);
+      expect(String(trace.body.mermaid)).toContain('L25T01');
+      expect(String(trace.body.mermaid)).toContain('-->');
+      const down = await call(ctx, 'GET', '/v1/lots/L25T02/traceability?direction=down');
+      expect((down.body.nodes as { code: string }[]).map((node) => node.code).sort()).toEqual(['L25ENS1', 'L25T02']);
+      const moves = await call(ctx, 'GET', '/v1/lots/L25ENS1/moves');
+      expect((moves.body.total as number) > 0).toBe(true);
+      const analyses = await call(ctx, 'GET', '/v1/lots/L25ENS1/analyses');
+      expect(analyses.body).toEqual({ items: [], next_cursor: null, total: 0 });
+      const sales = await call(ctx, 'GET', '/v1/lots/L25ENS1/sales');
+      expect(sales.body).toEqual({ items: [], next_cursor: null, total: 0 });
     } finally {
       await ctx.close();
     }
@@ -236,19 +285,22 @@ describe('operaciones de bodega', () => {
     const ctx = await createTestApp();
     try {
       const cellar = await world(ctx);
-      const before = await counts(ctx);
-      const conserved = await call(ctx, 'POST', '/v1/cellar-operations', {
+      const unbalanced = await call(ctx, 'POST', '/v1/cellar-operations', {
         ...transfer(cellar, 900, 0),
         lines: [
           { role: 'input', lot_id: cellar.lotId, vessel_id: cellar.tankId, volume_ml: 1_000, product_state: 'wine' },
           { role: 'output', lot_id: cellar.lotId, vessel_id: cellar.barrelId, volume_ml: 900, product_state: 'wine' },
         ],
       });
+      const capacityDraft = await call(ctx, 'POST', '/v1/cellar-operations', transfer(cellar, 300_000, 0));
+      expect(unbalanced.status).toBe(201);
+      expect(capacityDraft.status).toBe(201);
+      const before = await counts(ctx);
+      const conserved = await call(ctx, 'POST', `/v1/cellar-operations/${unbalanced.body.id}/confirm`);
       expect(conserved.status).toBe(422);
       expect(conserved.body.code).toBe('WC020');
       expect(String(conserved.body.message)).toContain('no cuadra');
-
-      const capacity = await call(ctx, 'POST', '/v1/cellar-operations', transfer(cellar, 300_000, 0));
+      const capacity = await call(ctx, 'POST', `/v1/cellar-operations/${capacityDraft.body.id}/confirm`);
       expect(capacity.status).toBe(422);
       expect(capacity.body.code).toBe('WC025');
       expect(await counts(ctx)).toEqual(before);
@@ -256,9 +308,10 @@ describe('operaciones de bodega', () => {
       const vessels = await call(ctx, 'GET', '/v1/vessels/INOX-01');
       expect(vessels.body.volume_ml).toBe(1_000_000);
       const series = await ctx.writer.read<{ next_value: number }>(`
-        SELECT next_value FROM core.number_series WHERE doc_type = 'cellar_operation'
+        SELECT next_value FROM core.number_series
+        WHERE doc_type = 'cellar_operation' AND year = 2026
       `);
-      expect(series[0]?.next_value).toBe(1);
+      expect(series.every((row) => row.next_value === 1)).toBe(true);
     } finally {
       await ctx.close();
     }
@@ -268,6 +321,7 @@ describe('operaciones de bodega', () => {
     const ctx = await createTestApp();
     try {
       const cellar = await world(ctx);
+      const draft = await call(ctx, 'POST', '/v1/cellar-operations', transfer(cellar, 220_000, 5_000));
       const before = await counts(ctx);
       await ctx.writer.withWrite({ type: 'system', id: 'cellar-test', requestId: 'lock' }, async (tx) => {
         tx.write(`
@@ -275,7 +329,7 @@ describe('operaciones de bodega', () => {
           VALUES ('physical', DATE '2026-10-31', 'asesor', 'cierre de prueba')
         `);
       });
-      const closed = await call(ctx, 'POST', '/v1/cellar-operations', transfer(cellar, 220_000, 5_000), 'bodega@winecore.test');
+      const closed = await call(ctx, 'POST', `/v1/cellar-operations/${draft.body.id}/confirm`, undefined, 'bodega@winecore.test');
       expect(closed.status).toBe(409);
       expect(closed.body.code).toBe('WC021');
       expect(String(closed.body.message)).toContain('cerrado');
@@ -289,8 +343,7 @@ describe('operaciones de bodega', () => {
     const ctx = await createTestApp();
     try {
       const cellar = await world(ctx);
-      const before = await counts(ctx);
-      const destruction = await call(ctx, 'POST', '/v1/cellar-operations', {
+      const destructionDraft = await call(ctx, 'POST', '/v1/cellar-operations', {
         op_type: 'destruction',
         legal_entity_id: cellar.po,
         occurred_at: '2026-06-15T08:00:00Z',
@@ -307,10 +360,8 @@ describe('operaciones de bodega', () => {
           product_state: 'wine',
         }],
       });
-      expect(destruction.status).toBe(409);
-      expect(destruction.body.code).toBe('WC_NOT_APPROVED');
-
-      const incident = await call(ctx, 'POST', '/v1/cellar-operations', {
+      expect(destructionDraft.status).toBe(201);
+      const incidentDraft = await call(ctx, 'POST', '/v1/cellar-operations', {
         ...transfer(cellar, 220_000, 5_000),
         lines: [
           { role: 'input', lot_id: cellar.lotId, vessel_id: cellar.tankId, volume_ml: 225_000, product_state: 'wine' },
@@ -327,6 +378,12 @@ describe('operaciones de bodega', () => {
         reason: 'derrame',
         approval_request_id: '019a0000-0000-7000-8000-00000000aa01',
       });
+      expect(incidentDraft.status).toBe(201);
+      const before = await counts(ctx);
+      const destruction = await call(ctx, 'POST', `/v1/cellar-operations/${destructionDraft.body.id}/confirm`);
+      expect(destruction.status).toBe(409);
+      expect(destruction.body.code).toBe('WC_NOT_APPROVED');
+      const incident = await call(ctx, 'POST', `/v1/cellar-operations/${incidentDraft.body.id}/confirm`);
       expect(incident.status).toBe(409);
       expect(incident.body.code).toBe('WC_NOT_APPROVED');
       expect(await counts(ctx)).toEqual(before);
@@ -335,12 +392,65 @@ describe('operaciones de bodega', () => {
     }
   });
 
+  it('rechaza una referencia que no existe', async () => {
+    const ctx = await createTestApp();
+    try {
+      const cellar = await world(ctx);
+      const missingLot = await call(ctx, 'POST', '/v1/cellar-operations', {
+        ...transfer(cellar, 220_000, 5_000),
+        lines: [
+          {
+            role: 'input',
+            lot_id: '019a0000-0000-7000-8000-00000000ffff',
+            vessel_id: cellar.tankId,
+            volume_ml: 1_000,
+            product_state: 'wine',
+          },
+          {
+            role: 'output',
+            lot_id: cellar.lotId,
+            vessel_id: cellar.barrelId,
+            volume_ml: 1_000,
+            product_state: 'wine',
+          },
+        ],
+      });
+      expect(missingLot.status).toBe(422);
+      expect(missingLot.body.code).toBe('WC_VALIDATION');
+      expect((missingLot.body.fields as { 'lines[0].lot_id'?: string })['lines[0].lot_id']).toContain('lote');
+      const missingWine = await call(ctx, 'POST', '/v1/cellar-operations', {
+        op_type: 'blend',
+        legal_entity_id: cellar.po,
+        occurred_at: '2026-06-16T08:00:00Z',
+        fiscal_date: '2026-06-16',
+        performed_by: 'Operario sintético',
+        new_lot: { code: 'L25ENS9', wine_id: '019a0000-0000-7000-8000-00000000eeee' },
+        lines: [
+          { role: 'input', lot_id: cellar.lotId, vessel_id: cellar.tankId, volume_ml: 100, product_state: 'wine' },
+          { role: 'output', vessel_id: cellar.barrelId, volume_ml: 100, product_state: 'wine' },
+        ],
+      });
+      expect(missingWine.status).toBe(422);
+      expect((missingWine.body.fields as { 'new_lot.wine_id'?: string })['new_lot.wine_id']).toContain('vino');
+    } finally {
+      await ctx.close();
+    }
+  });
+
   it('sin serie de numeración responde WC010 y no escribe', async () => {
     const ctx = await createTestApp();
     try {
-      const cellar = await world(ctx, false);
+      const cellar = await world(ctx);
+      await ctx.writer.withWrite({ type: 'system', id: 'cellar-test', requestId: 'drop-series' }, async (tx) => {
+        tx.write(`
+          DELETE FROM core.number_series
+          WHERE doc_type = 'cellar_operation' AND year = 2026
+            AND legal_entity_id = CAST('${cellar.po}' AS UUID)
+        `);
+      });
+      const draft = await call(ctx, 'POST', '/v1/cellar-operations', transfer(cellar, 220_000, 5_000));
       const before = await counts(ctx);
-      const missing = await call(ctx, 'POST', '/v1/cellar-operations', transfer(cellar, 220_000, 5_000));
+      const missing = await call(ctx, 'POST', `/v1/cellar-operations/${draft.body.id}/confirm`);
       expect(missing.status).toBe(409);
       expect(missing.body.code).toBe('WC010');
       expect(await counts(ctx)).toEqual(before);

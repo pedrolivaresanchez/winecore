@@ -1,9 +1,12 @@
 import type { Writer } from '../core/db/writer';
 import {
+  confirmOperation,
   createOperation,
   getOperation,
   listOperations,
-  rejectOperationChange,
+  previewOperation,
+  rectifyOperation,
+  updateOperation,
 } from '../core/cellar/service/operations';
 
 export function listOperationRoute(writer: Writer, request: Request) {
@@ -18,6 +21,18 @@ export function createOperationRoute(writer: Writer, request: Request) {
   return createOperation(writer, request);
 }
 
-export function rejectOperationRoute(writer: Writer, request: Request, id: string) {
-  return rejectOperationChange(writer, request, id);
+export function updateOperationRoute(writer: Writer, request: Request, id: string) {
+  return updateOperation(writer, request, id);
+}
+
+export function previewOperationRoute(writer: Writer, request: Request, id: string) {
+  return previewOperation(writer, request, id);
+}
+
+export function confirmOperationRoute(writer: Writer, request: Request, id: string) {
+  return confirmOperation(writer, request, id);
+}
+
+export function rectifyOperationRoute(writer: Writer, request: Request, id: string) {
+  return rectifyOperation(writer, request, id);
 }

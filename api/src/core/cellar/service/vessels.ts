@@ -263,7 +263,7 @@ export async function retireVessel(writer: Writer, request: Request, code: strin
   return getVessel(writer, request, code);
 }
 
-export async function vesselQr(writer: Writer, _request: Request, code: string): Promise<{
+export async function vesselQr(writer: Writer, _request: Request, code: string, publicUrl: string): Promise<{
   code: string;
   qr_token: string;
   payload: string;
@@ -272,7 +272,7 @@ export async function vesselQr(writer: Writer, _request: Request, code: string):
   if (row.qr_token === null || !isWinecoreQr(row.qr_token)) {
     throw new DomainError('WC_QR_FOREIGN', 422, 'El recipiente no tiene un QR de WineCore');
   }
-  return { code: row.code, qr_token: row.qr_token, payload: qrPayload(row.qr_token) };
+  return { code: row.code, qr_token: row.qr_token, payload: qrPayload(publicUrl, row.qr_token) };
 }
 
 export async function resolveQr(writer: Writer, request: Request, token: string): Promise<VesselView> {

@@ -21,6 +21,17 @@ const CELLAR_GUARDS = new Set<string>([
   "WC032",
   "UQ:cellar.operation(legal_entity_id,number)",
   "UQ:cellar.vessel(qr_token)",
+  "FK:cellar.addition.additive_product_id",
+  "FK:cellar.addition.lot_id",
+  "FK:cellar.cleaning_record.location_id",
+  "FK:cellar.cleaning_record.product_id",
+  "FK:cellar.operation.legal_entity_id",
+  "FK:cellar.operation_line.location_id",
+  "FK:cellar.operation_line.lot_id",
+  "FK:cellar.operation_line.product_id",
+  "FK:cellar.vessel.location_id",
+  "FK:inventory.lot.wine_id",
+  "FK:inventory.stock_move.vessel_id",
 ]);
 
 const guardSpecs: readonly GuardSpec[] = [
