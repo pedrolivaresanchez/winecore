@@ -113,6 +113,45 @@ describe('ajustes de enología', () => {
       await ctx.close();
     }
   });
+
+  it('persiste confirm:false y guarda la merma máxima con la fuente pendiente', async () => {
+    const ctx = await createTestApp();
+    try {
+      const po = await entityId(ctx);
+      const confirmed = await call(ctx, 'PUT', '/v1/enology/settings', {
+        legal_entity_id: po,
+        parameters: [{ code: 'volatile_acidity_alert_g_l', value: '0.7', confirm: true }],
+      });
+      expect(confirmed.status).toBe(200);
+      const off = await call(ctx, 'PUT', '/v1/enology/settings', {
+        legal_entity_id: po,
+        parameters: [{ code: 'volatile_acidity_alert_g_l', confirm: false }],
+      });
+      expect(off.status, JSON.stringify(off.body)).toBe(200);
+      expect(asSettings(off.body).parameters.find((row) => row.code === 'volatile_acidity_alert_g_l')).toMatchObject({
+        value: '0.7',
+        pending: true,
+        status_label: 'pendiente de confirmar',
+      });
+
+      const loss = await call(ctx, 'PUT', '/v1/enology/settings', {
+        legal_entity_id: po,
+        loss_tolerances: [{ process: 'filtration', product_state: 'wine', max_pct: '1.5' }],
+      });
+      expect(loss.status, JSON.stringify(loss.body)).toBe(200);
+      const warnings = loss.body.warnings as { code: string; severity: string }[];
+      expect(warnings).toEqual([expect.objectContaining({
+        code: 'ENOLOGY_LOSS_SOURCE_PENDING',
+        severity: 'warning',
+      })]);
+      expect(asSettings(loss.body).loss_tolerances.find((row) => row.process === 'filtration' && row.product_state === 'wine')).toMatchObject({
+        max_pct: '1.5',
+        pending: true,
+      });
+    } finally {
+      await ctx.close();
+    }
+  });
 });
 
 function jsonRecord(value: unknown): Record<string, unknown> {

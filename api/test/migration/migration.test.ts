@@ -394,7 +394,12 @@ async function scalar(dbPath: string, statement: string): Promise<number> {
 }
 
 function liveContacts(dbPath: string): Promise<number> {
-  return scalar(dbPath, 'SELECT COUNT(*) AS n FROM party.contact WHERE merged_into_id IS NULL');
+  return scalar(
+    dbPath,
+    `SELECT COUNT(*) AS n FROM party.contact
+     WHERE merged_into_id IS NULL
+       AND COALESCE(json_extract_string(legacy_refs, '$.internal'), 'false') <> 'true'`,
+  );
 }
 
 function batches(dbPath: string): Promise<number> {

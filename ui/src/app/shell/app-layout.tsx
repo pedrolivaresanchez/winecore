@@ -9,12 +9,13 @@ import { SettingsView, type SettingsArea } from '@/app/shell/settings-view'
 import { copy } from '@/i18n'
 import { cn } from '@/lib/cn'
 import { iconStroke, overlayFade, railMotion } from '@/lib/motion'
+import { RAIL_OPEN, RAIL_SHUT } from '@/app/shell/rail-metrics'
 import { readStorage, SIDEBAR_KEY, writeStorage } from '@/lib/storage'
 import { useMinWidth } from '@/hooks/use-media'
 import type { Me } from '@/lib/types'
 
-const OPEN_W = 272
-const SHUT_W = 56
+const OPEN_W = RAIL_OPEN
+const SHUT_W = RAIL_SHUT
 const SETUP_PATH = '/ajustes/puesta-en-marcha'
 
 function openedOnSetup() {

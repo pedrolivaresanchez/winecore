@@ -9,9 +9,10 @@ import type { EntityChoice } from '@/lib/types'
 export function EntitySwitcher({ collapsed = false }: { collapsed?: boolean }) {
   const { filter, setFilter, entities } = useEntity()
   const menu = useMenuOpen()
+  const ordered = (['PO', 'CVPO'] as const).filter((code) => entities.some((entity) => entity.code === code))
   const options: { value: EntityChoice; label: string }[] = [
-    { value: 'all', label: copy.entity.all },
-    ...entities.map((entity) => ({ value: entity.code, label: entityName(entity.code) })),
+    ...ordered.map((code) => ({ value: code, label: entityName(code) })),
+    { value: 'all', label: copy.entity.both },
   ]
   if (collapsed) {
     return (

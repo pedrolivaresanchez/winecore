@@ -1,6 +1,10 @@
 import { sessionOf } from '../auth/guard';
 import type { Writer } from '../core/db/writer';
-import { confirmLine, ignoreLine, importStatement, listSuggestions } from '../core/finance/statements';
+import { confirmLine, ignoreLine, importStatement, listStatements, listSuggestions } from '../core/finance/statements';
+
+export function getBankStatements(writer: Writer, request: Request) {
+  return listStatements(writer, sessionOf(request), request);
+}
 
 export function postBankStatement(writer: Writer, request: Request) {
   return importStatement(writer, sessionOf(request), request);

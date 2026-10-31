@@ -95,6 +95,8 @@ export async function seed(client: KbClient, input: SeedInput): Promise<void> {
     entity(IDS.cvpo, 'CVPO', input.cvpoName ?? 'Comercializadora (CVPO)', input.cvpoTaxId, 'legal', 'IS', production),
     ...people,
     ...cellarOperationSeriesStatements(),
+    ...intercompanySeriesStatements(),
+    cvpoCustomerStatement(),
     exportDocumentsSetting(),
     'COMMIT',
   ];
@@ -190,6 +192,53 @@ export function cellarOperationSeriesStatements(now = new Date()): string[] {
     cellarSeries('PO', value),
     cellarSeries('CVPO', value),
   ]);
+}
+
+/** Series PI de factura intercompañía para 2026 y 2027, en P.O y CVPO. */
+export function intercompanySeriesStatements(): string[] {
+  return [2026, 2027].flatMap((year) => [
+    intercompanySeries('PO', year),
+    intercompanySeries('CVPO', year),
+  ]);
+}
+
+function intercompanySeries(entityCode: string, year: number): string {
+  const prefix = `PI${String(year).slice(2)}`;
+  return sql`
+    INSERT INTO core.number_series (
+      id, legal_entity_id, doc_type, code, year, prefix, padding, next_value, is_default, is_active
+    )
+    SELECT gen_random_uuid(), e.id, 'intercompany_invoice', 'PI', ${year}, ${prefix}, 4, 1, TRUE, TRUE
+    FROM core.legal_entity e
+    WHERE e.code = ${entityCode}
+      AND NOT EXISTS (
+        SELECT 1 FROM core.number_series s
+        WHERE s.legal_entity_id = e.id
+          AND s.doc_type = 'intercompany_invoice'
+          AND s.year = ${year}
+      )
+  `;
+}
+
+/** Contacto cliente de CVPO, marcado interno, si todavía no hay uno vivo con su NIF. */
+export function cvpoCustomerStatement(): string {
+  return sql`
+    INSERT INTO party.contact (
+      id, kind, legal_name, tax_id, tax_id_type, country_code, is_customer,
+      payment_terms_days, legacy_refs, created_by
+    )
+    SELECT gen_random_uuid(), 'company', e.legal_name, e.tax_id, 'nif', 'ES', TRUE,
+           30, ${sql.json({ internal: true })}, 'seed'
+    FROM core.legal_entity e
+    WHERE e.code = 'CVPO'
+      AND e.tax_id <> ${PENDING_TAX_ID}
+      AND NOT EXISTS (
+        SELECT 1 FROM party.contact c
+        WHERE c.tax_id = e.tax_id
+          AND c.archived_at IS NULL
+          AND c.merged_into_id IS NULL
+      )
+  `;
 }
 
 function cellarSeries(entityCode: string, year: number): string {

@@ -3,15 +3,17 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useEntity } from '@/app/entity-context'
 import { ErrorState } from '@/components/ErrorState'
 import { NoPermission } from '@/components/NoPermission'
-import { useApi } from '@/hooks/use-api'
 import { copy } from '@/i18n'
+import { cn } from '@/lib/cn'
 import { allows } from '@/lib/permissions'
 import { readStorage, writeStorage } from '@/lib/storage'
 import type { Me } from '@/lib/types'
 import { Search } from '@/ui/icons'
 import { iconStroke } from '@/lib/motion'
+import { FRAME_GUTTER } from '@/ui/frame'
 import { Button, Chip, DataGrid, EmptyState, GlassMenu, Input, MenuChip, MenuItem, useMenuOpen, type GridColumn } from '@/ui'
 import { submissionOf, submissionsPath, type Submission } from '@/pages/regulatorio/api'
+import { useList } from '@/pages/existencias/use-list'
 import { CreateDialog } from '@/pages/regulatorio/CreateDialog'
 import { ListFrame, StatusBadge } from '@/pages/regulatorio/frame'
 import {
@@ -64,14 +66,14 @@ export function PresentacionesPage({ me }: { me: Me }) {
   const status = params.get('estado') ?? ''
   const [search, setSearch] = useState('')
   const [hidden, setHidden] = useState(readHidden)
-  const [widths, setWidths] = useState<Record<string, number>>({ period: 280, status: 180, entity: 110, warehouse: 220, entries: 110 })
+  const [widths, setWidths] = useState<Record<string, number>>({ period: 220, status: 150, entity: 90, warehouse: 420, entries: 110 })
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [creating, setCreating] = useState(false)
-  const query = useApi<{ items: Submission[] }>(allows(me, 'regulatory.read') ? submissionsPath(entityId) : null)
+  const page = useList<Submission>(allows(me, 'regulatory.read') ? submissionsPath(entityId) : null)
   const places = useWarehouses()
   const prepare = canPrepare(me)
 
-  const items = useMemo(() => (query.data?.items ?? []).map(submissionOf), [query.data])
+  const items = useMemo(() => page.items.map(submissionOf), [page.items])
   const needle = search.trim().toLocaleLowerCase('es')
   const visible = useMemo(() => {
     return items.filter((item) => {
@@ -124,7 +126,7 @@ export function PresentacionesPage({ me }: { me: Me }) {
   if (!allows(me, 'regulatory.read')) return <NoPermission />
 
   const filtered = Boolean(status || needle)
-  const loading = query.loading && !query.data
+  const loading = page.loading && page.items.length === 0
   const empty = !loading && visible.length === 0
   const screen = loading ? 'regulatorio-cargando' : empty && !filtered ? 'regulatorio-vacio' : 'regulatorio'
 
@@ -183,12 +185,16 @@ export function PresentacionesPage({ me }: { me: Me }) {
           </>
         }
       >
-        {query.error && items.length === 0 ? (
-          <div className="p-4">
-            <ErrorState title={`${copy.error.load} (${query.error.code})`} detail={query.error.message} onRetry={query.reload} />
+        {page.error && items.length === 0 ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="p-4">
+              <ErrorState title={`${copy.error.load} (${page.error.code})`} detail={page.error.message} onRetry={page.reload} />
+            </div>
           </div>
         ) : (
+          <div className="flex min-h-0 flex-1 flex-col">
           <DataGrid
+            className="min-h-0 flex-1"
             columns={columns}
             rows={loading ? [] : visible}
             rowKey={(row) => row.id}
@@ -210,6 +216,14 @@ export function PresentacionesPage({ me }: { me: Me }) {
               />
             }
           />
+          {page.cursor ? (
+            <div className={cn('flex h-10 shrink-0 items-center border-t border-border-subtle', FRAME_GUTTER)}>
+              <Button type="button" variant="ghost" size="sm" loading={page.loadingMore} onClick={() => void page.loadMore()}>
+                {copy.table.loadMore}
+              </Button>
+            </div>
+          ) : null}
+          </div>
         )}
       </ListFrame>
       <CreateDialog

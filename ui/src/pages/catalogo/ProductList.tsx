@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useEntity } from '@/app/entity-context'
 import { ErrorState } from '@/components/ErrorState'
 import { NoPermission } from '@/components/NoPermission'
 import { copy } from '@/i18n'
 import { ApiError, isAbortError } from '@/lib/api'
 import { iconStroke } from '@/lib/motion'
+import { listLegacyProducts, type LegacyProduct } from '@/lib/legacy'
 import { allows } from '@/lib/permissions'
+import { entityFilter } from '@/lib/reports'
 import { readStorage, writeStorage } from '@/lib/storage'
 import type { Me } from '@/lib/types'
 import { useApi } from '@/hooks/use-api'
@@ -45,6 +48,37 @@ import {
   type Wine,
 } from '@/pages/catalogo/model'
 import { ProductPreview } from '@/pages/catalogo/ProductPreview'
+
+type Listed = Product & { imported?: boolean; importedStock?: string | null }
+
+function fromHolded(row: LegacyProduct): Listed {
+  return {
+    id: `holded:${row.id}`,
+    sku: row.sku ?? '—',
+    name: row.name,
+    name_en: null,
+    kind: 'merchandise',
+    wine_id: null,
+    vintage: null,
+    format_id: null,
+    unit: 'ud',
+    gtin: null,
+    gtin_case: null,
+    nc_code: null,
+    excise_product_key: null,
+    alcohol_pct: null,
+    default_tax_code: row.tax_label,
+    sales_account: null,
+    is_stock_tracked: false,
+    requires_lot: false,
+    is_active: true,
+    legacy_refs: {},
+    created_at: '',
+    updated_at: '',
+    imported: true,
+    importedStock: row.stock,
+  }
+}
 
 const COLUMN_KEY = 'winecore.columns.products'
 const COLUMN_IDS = ['name', 'sku', 'wine', 'vintage', 'format', 'gtin', 'nc', 'tax', 'alcohol', 'stock', 'active', 'warnings'] as const
@@ -91,7 +125,9 @@ export function ProductList({ me }: { me: Me }) {
   const missing = (params.get('missing') ?? '') as MissingData
   const [q, setQ] = useState(params.get('q') ?? '')
   const [debounced, setDebounced] = useState(q.trim())
-  const [items, setItems] = useState<Product[]>([])
+  const { filter } = useEntity()
+  const entity = entityFilter(filter)
+  const [items, setItems] = useState<Listed[]>([])
   const [total, setTotal] = useState(0)
   const [cursor, setCursor] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -101,7 +137,7 @@ export function ProductList({ me }: { me: Me }) {
   const [selected, setSelected] = useState<string | null>(null)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [hidden, setHidden] = useState(readHidden)
-  const [widths, setWidths] = useState<Record<string, number>>({ name: 360, sku: 168, warnings: 200, wine: 180, vintage: 88, format: 96, stock: 120, active: 110 })
+  const [widths, setWidths] = useState<Record<string, number>>({ name: 280, origin: 200, sku: 168, warnings: 200, wine: 180, vintage: 88, format: 96, stock: 120, active: 110 })
   const wines = useApi<ListPage<Wine>>('/v1/wines?limit=100')
   const formats = useApi<ListPage<Format>>('/v1/formats?limit=100')
   const wineRows = useMemo(() => wines.data?.items ?? [], [wines.data])
@@ -117,15 +153,23 @@ export function ProductList({ me }: { me: Me }) {
     [active, debounced, formatId, kind, missing, organic, vintage, wineId],
   )
 
+  const catalogOnly = Boolean(kind || wineId || formatId || vintage || active || organic || missing)
+
   useEffect(() => {
     const controller = new AbortController()
     let live = true
-    listProducts(query, controller.signal)
-      .then((page) => {
+    const holded = catalogOnly
+      ? Promise.resolve({ items: [] as LegacyProduct[], total: 0 })
+      : listLegacyProducts({ entity, q: debounced, limit: 100 }, controller.signal).catch((err: unknown) => {
+          if (isAbortError(err)) throw err
+          return { items: [] as LegacyProduct[], total: 0 }
+        })
+    Promise.all([listProducts(query, controller.signal), holded])
+      .then(([page, imported]) => {
         if (!live) return
-        setItems(page.items)
+        setItems([...page.items, ...imported.items.map(fromHolded)])
         setCursor(page.next_cursor)
-        setTotal(page.total)
+        setTotal(page.total + imported.total)
         setError(null)
         setLoading(false)
       })
@@ -138,7 +182,7 @@ export function ProductList({ me }: { me: Me }) {
       live = false
       controller.abort()
     }
-  }, [query, attempt])
+  }, [attempt, catalogOnly, debounced, entity, query])
 
   function setFilter(key: string, value: string) {
     const next = new URLSearchParams(params)
@@ -174,9 +218,19 @@ export function ProductList({ me }: { me: Me }) {
     })
   }
 
-  const columns = useMemo<GridColumn<Product>[]>(() => {
-    const all: GridColumn<Product>[] = [
+  const columns = useMemo<GridColumn<Listed>[]>(() => {
+    const all: GridColumn<Listed>[] = [
       { id: 'name', header: 'Nombre', cell: (row) => row.name },
+      {
+        id: 'origin',
+        header: 'Origen',
+        cell: (row) =>
+          row.imported ? (
+            <Badge tone="neutral" size="sm">
+              {copy.catalog.imported}
+            </Badge>
+          ) : null,
+      },
       { id: 'sku', header: 'SKU', cell: (row) => <span className="font-mono text-caption">{row.sku}</span> },
       { id: 'wine', header: 'Vino', cell: (row) => wineName(row, wineRows) },
       { id: 'vintage', header: 'Añada', cell: (row) => (row.vintage == null ? '—' : String(row.vintage)) },
@@ -190,6 +244,7 @@ export function ProductList({ me }: { me: Me }) {
         header: 'Existencias',
         align: 'right',
         cell: (row) => {
+          if (row.imported) return row.importedStock || '—'
           if (!row.is_stock_tracked) return '—'
           return (
             <Link to={`/stock?product_id=${row.id}`} className="underline" onClick={(event) => event.stopPropagation()}>
@@ -379,8 +434,11 @@ export function ProductList({ me }: { me: Me }) {
           onResize={(id, width) => setWidths((current) => ({ ...current, [id]: width }))}
           selected={picked}
           onSelectedChange={setPicked}
-          onOpenRow={(row) => setSelected(row.id)}
-          rowHref={(row) => `/catalogo/${row.id}`}
+          onOpenRow={(row) => {
+            if (row.imported) return
+            setSelected(row.id)
+          }}
+          rowHref={(row) => (row.imported ? undefined : `/catalogo/${row.id}`)}
           openRowKey={selected}
           total={total}
           loading={loading}

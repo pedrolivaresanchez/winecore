@@ -1,3 +1,4 @@
+import { sessionOf } from '../../auth/guard';
 import type { Actor, Writer } from '../db/writer';
 import { sql } from '../db/sql';
 import { domainError } from '../errors';
@@ -45,6 +46,17 @@ export interface SessionAggregate extends SampleAggregate {
   vessel_code?: string | null;
 }
 
+/** Quién ha votado, sin el contenido del voto. Solo lo ve el organizador antes del revelado. */
+export interface VoteProgress {
+  taster_name: string;
+  sample_no: number;
+  day_no: number;
+}
+
+export interface SessionViewer {
+  userId: string;
+}
+
 export interface SessionView {
   id: string;
   title: string;
@@ -57,6 +69,7 @@ export interface SessionView {
   revealed_at: string | null;
   samples: PublicSample[];
   votes: SessionVoteView[];
+  progress: VoteProgress[] | null;
   aggregate: SessionAggregate[] | null;
 }
 
@@ -110,8 +123,9 @@ export async function listSessions(writer: Writer, request: Request): Promise<{ 
   const rows = await writer.read<{ id: string }>(
     `SELECT id::VARCHAR AS id FROM tasting.blind_session WHERE ${where.join(' AND ')} ORDER BY started_on DESC, id DESC LIMIT 100`,
   );
+  const viewer = { userId: sessionOf(request).id };
   const items: SessionView[] = [];
-  for (const row of rows) items.push(await getSession(writer, asId(row.id)));
+  for (const row of rows) items.push(await getSession(writer, asId(row.id), viewer));
   return { items };
 }
 
@@ -143,34 +157,13 @@ export async function createSession(writer: Writer, actor: Actor, body: unknown)
   return getSession(writer, id);
 }
 
-export async function getSession(writer: Writer, id: string): Promise<SessionView> {
+export async function getSession(writer: Writer, id: string, viewer: SessionViewer | null = null): Promise<SessionView> {
   const session = await loadSession(writer, id);
   const samples = await loadSamples(writer, session.id);
   const votes = await loadVotes(writer, session.id);
   const revealed = session.status === 'revealed';
   const aggregate = revealed ? await withSelection(writer, session.id, samples, votes) : null;
-  return {
-    id: session.id,
-    title: session.title,
-    target: session.target,
-    status: session.status,
-    started_on: session.started_on,
-    days: session.days,
-    notes: session.notes,
-    revealed,
-    revealed_at: session.revealed_at,
-    samples: samples.map((sample) => exposeSample(sample, revealed)),
-    votes: votes.map((vote) => ({
-      id: vote.id,
-      sample_no: vote.sample_no,
-      day_no: vote.day_no,
-      taster_name: vote.taster_name,
-      vote: vote.vote,
-      score: vote.score,
-      comment: vote.comment,
-    })),
-    aggregate,
-  };
+  return presentSession(session, samples, votes, aggregate, viewer);
 }
 
 export async function listSessionSamples(writer: Writer, body: unknown): Promise<{
@@ -188,7 +181,9 @@ export async function listSessionSamples(writer: Writer, body: unknown): Promise
     status: session.status,
     revealed: session.revealed,
     target: session.target,
-    samples: session.samples,
+    samples: session.revealed
+      ? session.samples
+      : session.samples.map((sample) => ({ sample_no: sample.sample_no })),
   };
 }
 
@@ -260,6 +255,7 @@ export async function castVote(writer: Writer, actor: Actor, body: unknown): Pro
     const sample = samples.find((item) => item.sample_no === sampleNo);
     if (!sample) invalid({ sample_no: 'No hay esa muestra' });
     const taster = await resolveTaster(tx, requestedUser, requestedName, actor.id);
+    const tasterUserId = taster.userId ?? (isUuid(actor.id) ? actor.id.toLowerCase() : null);
     const existing = await tx.read<{ id: string }>(sql`
       SELECT id::VARCHAR AS id FROM tasting.blind_vote
       WHERE sample_id = CAST(${sample.id} AS UUID)
@@ -280,7 +276,7 @@ export async function castVote(writer: Writer, actor: Actor, body: unknown): Pro
         rowId: voteId,
         action: 'UPDATE',
         before: null,
-        after: { vote, score, day_no: dayNo, sample_no: sampleNo },
+        after: { vote, score, comment, day_no: dayNo, sample_no: sampleNo },
       });
       result = {
         vote_id: voteId,
@@ -300,7 +296,7 @@ export async function castVote(writer: Writer, actor: Actor, body: unknown): Pro
         id, session_id, sample_id, day_no, taster_user_id, taster_name, vote, score, comment
       ) VALUES (
         CAST(${voteId} AS UUID), CAST(${sessionId} AS UUID), CAST(${sample.id} AS UUID), ${dayNo},
-        CAST(${taster.userId} AS UUID), ${taster.name}, ${vote}, ${score}, ${comment}
+        CAST(${tasterUserId} AS UUID), ${taster.name}, ${vote}, ${score}, ${comment}
       )
     `);
     tx.audit({
@@ -308,7 +304,16 @@ export async function castVote(writer: Writer, actor: Actor, body: unknown): Pro
       rowId: voteId,
       action: 'INSERT',
       before: null,
-      after: { session_id: sessionId, sample_no: sampleNo, day_no: dayNo, vote, taster_name: taster.name },
+      after: {
+        session_id: sessionId,
+        sample_no: sampleNo,
+        day_no: dayNo,
+        vote,
+        score,
+        comment,
+        taster_name: taster.name,
+        taster_user_id: tasterUserId,
+      },
     });
     result = {
       vote_id: voteId,
@@ -370,6 +375,67 @@ export async function revealSession(writer: Writer, actor: Actor, body: unknown)
     }
   });
   return getSession(writer, sessionId);
+}
+
+/**
+ * Borra una sesión que sigue abierta y en la que nadie ha votado.
+ * Las muestras se borran en una escritura aparte: DuckDB no deja borrar
+ * la sesión mientras la clave sigue referenciada en la misma transacción.
+ */
+export async function deleteSession(writer: Writer, actor: Actor, id: string): Promise<{ id: string; deleted: true }> {
+  if (!isUuid(id)) invalid({ id: 'Debe ser un UUID' });
+  const sessionId = id.toLowerCase();
+  const session = await loadSession(writer, sessionId);
+  const votes = await loadVotes(writer, sessionId);
+  if (session.status !== 'open' || votes.length > 0) {
+    throw domainError('WC_TASTING_CLOSED', { id: 'La sesión ya ha empezado' }, 'La sesión ya ha empezado');
+  }
+  const samples = await loadSamples(writer, sessionId);
+  if (samples.length > 0) {
+    await writer.withWrite(actor, async (tx) => {
+      const still = await loadVotes(tx, sessionId);
+      if (still.length > 0) {
+        throw domainError('WC_TASTING_CLOSED', { id: 'La sesión ya ha empezado' }, 'La sesión ya ha empezado');
+      }
+      for (const sample of samples) {
+        tx.audit({
+          table: 'tasting.blind_sample',
+          rowId: sample.id,
+          action: 'DELETE',
+          before: {
+            session_id: sessionId,
+            sample_no: sample.sample_no,
+            lot_id: sample.lot_id,
+            vessel_id: sample.vessel_id,
+          },
+          after: null,
+        });
+      }
+      tx.write(sql`DELETE FROM tasting.blind_sample WHERE session_id = CAST(${sessionId} AS UUID)`);
+    });
+  }
+  await writer.withWrite(actor, async (tx) => {
+    const current = await loadSession(tx, sessionId);
+    const remainingVotes = await loadVotes(tx, sessionId);
+    const remainingSamples = await loadSamples(tx, sessionId);
+    if (current.status !== 'open' || remainingVotes.length > 0 || remainingSamples.length > 0) {
+      throw domainError('WC_TASTING_CLOSED', { id: 'La sesión ya ha empezado' }, 'La sesión ya ha empezado');
+    }
+    tx.audit({
+      table: 'tasting.blind_session',
+      rowId: sessionId,
+      action: 'DELETE',
+      before: {
+        title: current.title,
+        target: current.target,
+        status: current.status,
+        started_on: current.started_on,
+      },
+      after: null,
+    });
+    tx.write(sql`DELETE FROM tasting.blind_session WHERE id = CAST(${sessionId} AS UUID)`);
+  });
+  return { id: sessionId, deleted: true };
 }
 
 export async function getSelection(writer: Writer, sessionId: string): Promise<SelectionView> {
@@ -470,6 +536,58 @@ async function withSelection(
   });
 }
 
+function presentSession(
+  session: SessionRow,
+  samples: readonly SampleRow[],
+  votes: readonly VoteRow[],
+  aggregate: SessionAggregate[] | null,
+  viewer: SessionViewer | null,
+): SessionView {
+  const revealed = session.status === 'revealed';
+  const organiser = viewer !== null && session.created_by.toLowerCase() === viewer.userId.toLowerCase();
+  const visible = revealed
+    ? votes
+    : organiser
+      ? []
+      : votes.filter((vote) => ownsVote(vote, viewer));
+  return {
+    id: session.id,
+    title: session.title,
+    target: session.target,
+    status: session.status,
+    started_on: session.started_on,
+    days: session.days,
+    notes: session.notes,
+    revealed,
+    revealed_at: session.revealed_at,
+    samples: samples.map((sample) => exposeSample(sample, revealed)),
+    votes: visible.map(publicVote),
+    progress: revealed || !organiser ? null : votes.map((vote) => ({
+      taster_name: vote.taster_name,
+      sample_no: vote.sample_no,
+      day_no: vote.day_no,
+    })),
+    aggregate: revealed ? aggregate : null,
+  };
+}
+
+function ownsVote(vote: VoteRow, viewer: SessionViewer | null): boolean {
+  if (!viewer || !vote.taster_user_id) return false;
+  return vote.taster_user_id === viewer.userId.toLowerCase();
+}
+
+function publicVote(vote: VoteRow): SessionVoteView {
+  return {
+    id: vote.id,
+    sample_no: vote.sample_no,
+    day_no: vote.day_no,
+    taster_name: vote.taster_name,
+    vote: vote.vote,
+    score: vote.score,
+    comment: vote.comment,
+  };
+}
+
 function exposeSample(sample: SampleRow, revealed: boolean): PublicSample {
   if (!revealed) return { sample_no: sample.sample_no };
   return {
@@ -490,12 +608,13 @@ interface SessionRow {
   days: number;
   notes: string | null;
   revealed_at: string | null;
+  created_by: string;
 }
 
 async function loadSession(read: { read<T>(statement: string): Promise<T[]> }, id: string): Promise<SessionRow> {
   if (!isUuid(id)) invalid({ id: 'Debe ser un UUID' });
   const rows = await read.read<Record<string, unknown>>(sql`
-    SELECT id::VARCHAR AS id, title, target, status, started_on, days, notes, revealed_at
+    SELECT id::VARCHAR AS id, title, target, status, started_on, days, notes, revealed_at, created_by
     FROM tasting.blind_session
     WHERE id = CAST(${id} AS UUID)
     LIMIT 1
@@ -513,6 +632,7 @@ async function loadSession(read: { read<T>(statement: string): Promise<T[]> }, i
     days: asInt(row.days) ?? 0,
     notes: row.notes == null ? null : asText(row.notes),
     revealed_at: row.revealed_at == null ? null : asInstant(row.revealed_at),
+    created_by: asText(row.created_by),
   };
 }
 
@@ -536,11 +656,14 @@ async function loadSamples(read: { read<T>(statement: string): Promise<T[]> }, s
   }));
 }
 
-interface VoteRow extends SessionVoteView {}
+interface VoteRow extends SessionVoteView {
+  taster_user_id: string | null;
+}
 
 async function loadVotes(read: { read<T>(statement: string): Promise<T[]> }, sessionId: string): Promise<VoteRow[]> {
   const rows = await read.read<Record<string, unknown>>(sql`
-    SELECT v.id::VARCHAR AS id, s.sample_no, v.day_no, v.taster_name, v.vote, v.score, v.comment
+    SELECT v.id::VARCHAR AS id, s.sample_no, v.day_no, v.taster_user_id::VARCHAR AS taster_user_id,
+           v.taster_name, v.vote, v.score, v.comment
     FROM tasting.blind_vote v
     JOIN tasting.blind_sample s ON s.id = v.sample_id
     WHERE v.session_id = CAST(${sessionId} AS UUID)
@@ -552,6 +675,7 @@ async function loadVotes(read: { read<T>(statement: string): Promise<T[]> }, ses
       id: asId(row.id),
       sample_no: asInt(row.sample_no) ?? 0,
       day_no: asInt(row.day_no) ?? 0,
+      taster_user_id: row.taster_user_id == null ? null : asId(row.taster_user_id),
       taster_name: asText(row.taster_name),
       vote: vote === 'no' ? 'no' : 'yes',
       score: asNumber(row.score),

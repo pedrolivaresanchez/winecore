@@ -5,6 +5,8 @@ import type { Actor, Tx, Writer } from '../db/writer';
 import { domainError } from '../errors';
 import { newId } from '../ids';
 import { sql } from '../db/sql';
+import { payloadSha256 } from '../approvals/canonical';
+import { approvalServiceOn } from '../approvals/sql-store';
 import { add, dec, money2, near, parseAmount } from './amounts';
 import type { ApprovedSupplierInvoice, SupplierInvoiceApprovalHook } from './approval';
 import { suggestCategory } from './category';
@@ -1209,60 +1211,231 @@ export async function approveInvoice(
     if (current.status !== 'validated') invalid({ status: 'Solo se aprueba un gasto validado' });
     if (!offered) invalid({ 'if-match': 'Falta la versión del gasto' });
     if (!sameVersion(current.updated_at, offered)) throw domainError('WC_STALE_VERSION');
-    const duplicateOf = await originalOf(
-      tx,
-      current.legal_entity_id,
-      current.supplier_id,
-      current.supplier_invoice_number,
-      current.id,
-      current.created_at,
-    );
-    if (duplicateOf) {
-      await takeLines(tx, current.id);
-      tx.write(sql`
-        UPDATE purchasing.supplier_invoice SET
-          status = 'duplicate',
-          duplicate_of_id = CAST(${duplicateOf} AS UUID),
-          validated_by = NULL,
-          validated_at = NULL,
-          updated_at = ${now}
-        WHERE id = CAST(${current.id} AS UUID)
-      `);
-      insertLines(tx, current.id, current.lines);
-      tx.audit(auditInvoice(current.id, { status: 'validated' }, { status: 'duplicate', duplicate_of_id: duplicateOf }, 'UPDATE'));
-      return;
+    await settleValidated(tx, user.id, current, hook, now);
+  });
+  return getInvoice(writer, user, id);
+}
+
+const PURCHASE_KIND = 'purchase_invoice_approval';
+
+export async function requestPurchaseApproval(
+  writer: Writer,
+  actor: Actor,
+  user: UserCtx,
+  id: string,
+  offered: string | null,
+  hook: SupplierInvoiceApprovalHook,
+  now = new Date(),
+): Promise<Record<string, unknown>> {
+  if (!offered) invalid({ 'if-match': 'Falta la versión del gasto' });
+  return writer.withWrite(actor, async (tx) => {
+    const current = await requireWritable(tx, user, id);
+    if (current.status === 'approved') {
+      return approvalBody(current, null, 'approved', null);
     }
+    frozen(current.status);
+    if (current.status !== 'validated') invalid({ status: 'Solo se pide aprobación de un gasto validado' });
+    if (!sameVersion(current.updated_at, offered)) throw domainError('WC_STALE_VERSION');
+    const payload = approvalPayload(current);
+    const hash = payloadSha256(payload);
+    const existing = await latestPurchaseRequest(tx, current.id);
+    if (existing && existing.hash === hash && (existing.status === 'pending' || existing.status === 'approved')) {
+      if (existing.status === 'approved') {
+        await consumePurchaseApproval(tx, existing.id, user.id, hook, now);
+        return approvalBody({ ...current, status: 'approved' }, existing.id, 'consumed', existing.hash);
+      }
+      return approvalBody(current, existing.id, existing.status, existing.hash);
+    }
+    if (existing && (existing.status === 'pending' || existing.status === 'approved')) {
+      tx.write(sql`
+        UPDATE ops.approval_request
+        SET status = 'cancelled'
+        WHERE id = CAST(${existing.id} AS UUID) AND status IN ('pending', 'approved')
+      `);
+      tx.audit({
+        table: 'ops.approval_request',
+        rowId: existing.id,
+        action: 'UPDATE',
+        before: { status: existing.status },
+        after: { status: 'cancelled' },
+      });
+    }
+    const number = current.supplier_invoice_number ?? current.id.slice(0, 8);
+    const approval = await approvalServiceOn(tx, []).requestApproval({
+      kind: PURCHASE_KIND,
+      legalEntityId: current.legal_entity_id,
+      subjectTable: 'purchasing.supplier_invoice',
+      subjectId: current.id,
+      payload,
+      summary: `Aprobar factura de proveedor ${number}`.slice(0, 300),
+      requestedBy: user.id,
+    });
+    return approvalBody(current, approval.id, approval.status, approval.payloadSha256);
+  });
+}
+
+/** Aprueba el gasto en la misma escritura que consume la solicitud ya concedida. */
+export async function consumePurchaseApproval(
+  tx: Tx,
+  requestId: string,
+  approverId: string,
+  hook: SupplierInvoiceApprovalHook,
+  now: Date,
+): Promise<void> {
+  const rows = await tx.read<{ status: unknown; payload_sha256: unknown; subject_id: unknown; kind: unknown; details: unknown }>(sql`
+    SELECT status, payload_sha256, subject_id, kind, details
+    FROM ops.approval_request
+    WHERE id = CAST(${requestId} AS UUID)
+  `);
+  const row = rows[0];
+  if (!row || String(row.kind) !== PURCHASE_KIND) return;
+  if (String(row.status) === 'consumed') return;
+  if (String(row.status) !== 'approved') return;
+  const invoiceId = String(row.subject_id).toLowerCase();
+  const loaded = await load(tx.read.bind(tx), invoiceId);
+  if (!loaded) throw domainError('WC_NOT_FOUND');
+  const current = viewOf(loaded);
+  if (current.status === 'approved') {
+    await approvalServiceOn(tx, [], { now: () => now }).consume({
+      requestId,
+      payloadSha256: String(row.payload_sha256),
+    });
+    return;
+  }
+  if (current.status !== 'validated') invalid({ status: 'Solo se aprueba un gasto validado' });
+  const snapshot = objectOf(row.details);
+  if (snapshot && !sameVersion(current.updated_at, text(snapshot.updated_at))) {
+    throw domainError('WC_STALE_VERSION');
+  }
+  await settleValidated(tx, approverId, current, hook, now);
+  await approvalServiceOn(tx, [], { now: () => now }).consume({
+    requestId,
+    payloadSha256: String(row.payload_sha256),
+  });
+}
+
+async function settleValidated(
+  tx: Tx,
+  approverId: string,
+  current: InvoiceJson,
+  hook: SupplierInvoiceApprovalHook,
+  now: Date,
+): Promise<void> {
+  const duplicateOf = await originalOf(
+    tx,
+    current.legal_entity_id,
+    current.supplier_id,
+    current.supplier_invoice_number,
+    current.id,
+    current.created_at,
+  );
+  if (duplicateOf) {
+    await takeLines(tx, current.id);
     tx.write(sql`
       UPDATE purchasing.supplier_invoice SET
-        status = 'approved',
-        approved_by = CAST(${user.id} AS UUID),
-        approved_at = ${now},
+        status = 'duplicate',
+        duplicate_of_id = CAST(${duplicateOf} AS UUID),
+        validated_by = NULL,
+        validated_at = NULL,
         updated_at = ${now}
       WHERE id = CAST(${current.id} AS UUID)
     `);
-    tx.audit(auditInvoice(current.id, { status: 'validated' }, { status: 'approved', approved_by: user.id }, 'UPDATE'));
-    outbox(tx, 'purchasing.supplier_invoice.approved', current.id, current.legal_entity_id, {
-      status: 'approved',
-      supplier_id: current.supplier_id,
-      total: current.total,
-      accounting_date: current.accounting_date,
-    }, now);
-    const approved: ApprovedSupplierInvoice = {
-      id: current.id,
-      legalEntityId: current.legal_entity_id,
-      supplierId: current.supplier_id ?? '',
-      supplierInvoiceNumber: current.supplier_invoice_number ?? '',
-      accountingDate: current.accounting_date ?? '',
-      currency: current.currency,
-      subtotal: current.subtotal ?? '0.00',
-      taxTotal: current.tax_total ?? '0.00',
-      withholdingTotal: current.withholding_total,
-      total: current.total ?? '0.00',
-      categoryCode: current.category_code ?? '',
-    };
-    await hook.onApproved(approved);
+    insertLines(tx, current.id, current.lines);
+    tx.audit(auditInvoice(current.id, { status: 'validated' }, { status: 'duplicate', duplicate_of_id: duplicateOf }, 'UPDATE'));
+    return;
+  }
+  tx.write(sql`
+    UPDATE purchasing.supplier_invoice SET
+      status = 'approved',
+      approved_by = CAST(${approverId} AS UUID),
+      approved_at = ${now},
+      updated_at = ${now}
+    WHERE id = CAST(${current.id} AS UUID)
+  `);
+  tx.audit(auditInvoice(current.id, { status: 'validated' }, { status: 'approved', approved_by: approverId }, 'UPDATE'));
+  outbox(tx, 'purchasing.supplier_invoice.approved', current.id, current.legal_entity_id, {
+    status: 'approved',
+    supplier_id: current.supplier_id,
+    total: current.total,
+    accounting_date: current.accounting_date,
+  }, now);
+  await hook.onApproved({
+    id: current.id,
+    legalEntityId: current.legal_entity_id,
+    supplierId: current.supplier_id ?? '',
+    supplierInvoiceNumber: current.supplier_invoice_number ?? '',
+    accountingDate: current.accounting_date ?? '',
+    currency: current.currency,
+    subtotal: current.subtotal ?? '0.00',
+    taxTotal: current.tax_total ?? '0.00',
+    withholdingTotal: current.withholding_total,
+    total: current.total ?? '0.00',
+    categoryCode: current.category_code ?? '',
   });
-  return getInvoice(writer, user, id);
+}
+
+function requireWritable(tx: Tx, user: UserCtx, id: string): Promise<InvoiceJson> {
+  return requireInvoice(tx.read.bind(tx), user, id, 'purchasing.write');
+}
+
+function approvalPayload(current: InvoiceJson): Record<string, unknown> {
+  return {
+    supplier_invoice_id: current.id,
+    legal_entity_id: current.legal_entity_id,
+    supplier_id: current.supplier_id,
+    supplier_invoice_number: current.supplier_invoice_number,
+    accounting_date: current.accounting_date,
+    total: current.total,
+    updated_at: current.updated_at,
+  };
+}
+
+function approvalBody(
+  invoice: InvoiceJson,
+  requestId: string | null,
+  status: string,
+  hash: string | null,
+): Record<string, unknown> {
+  return {
+    ...invoice,
+    approval_request_id: requestId,
+    approval_status: status,
+    payload_sha256: hash,
+  };
+}
+
+async function latestPurchaseRequest(tx: Tx, invoiceId: string): Promise<{ id: string; status: string; hash: string } | null> {
+  const rows = await tx.read<{ id: unknown; status: unknown; payload_sha256: unknown }>(sql`
+    SELECT id, status, payload_sha256
+    FROM ops.approval_request
+    WHERE kind = ${PURCHASE_KIND}
+      AND subject_table = 'purchasing.supplier_invoice'
+      AND subject_id = CAST(${invoiceId} AS UUID)
+      AND status IN ('pending', 'approved')
+    ORDER BY requested_at DESC
+    LIMIT 1
+  `);
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    id: String(row.id).toLowerCase(),
+    status: String(row.status),
+    hash: String(row.payload_sha256),
+  };
+}
+
+function objectOf(value: unknown): Record<string, unknown> | null {
+  const parsed = typeof value === 'string' ? parseJson(value) : value;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  return parsed as Record<string, unknown>;
+}
+
+function parseJson(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return null;
+  }
 }
 
 export async function rejectInvoice(

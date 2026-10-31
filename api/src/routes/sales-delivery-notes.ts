@@ -14,7 +14,8 @@ import {
   uninvoicedLines,
   voidDelivery,
 } from '../core/sales/delivery';
-import { confirmShrinkage, createIncident } from '../core/sales/incidents';
+import { deliveryNotePdf } from '../core/sales/delivery-pdf';
+import { confirmShrinkage, createIncident, listIncidents } from '../core/sales/incidents';
 
 export function getNotes(writer: Writer, request: Request) {
   sessionOf(request);
@@ -29,6 +30,16 @@ export function getUninvoiced(writer: Writer, request: Request) {
 export function getNote(writer: Writer, request: Request, id: string) {
   sessionOf(request);
   return getDelivery(writer, id);
+}
+
+export function getNotePdf(writer: Writer, request: Request, id: string) {
+  sessionOf(request);
+  return deliveryNotePdf(writer, id);
+}
+
+export function getIncidents(writer: Writer, request: Request, id: string) {
+  sessionOf(request);
+  return listIncidents(writer, id);
 }
 
 export async function postNote(writer: Writer, request: Request) {

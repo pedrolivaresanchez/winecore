@@ -4,7 +4,7 @@ import type { Tx } from '../db/writer';
 import { domainError } from '../errors';
 import { newId } from '../ids';
 import { businessDate } from '../time';
-import { detectMime, MAX_ATTACHMENT_BYTES, safeAttachmentName } from './mime';
+import { audioSizeError, detectMime, MAX_ATTACHMENT_BYTES, safeAttachmentName } from './mime';
 
 type Read = <T = Record<string, unknown>>(statement: string) => Promise<T[]>;
 
@@ -140,6 +140,8 @@ export async function putAttachment(
   }
   const mime = detectMime(file.bytes);
   if (!mime) throw domainError('WC_VALIDATION', { file: 'Tipo de fichero no admitido' });
+  const audioError = audioSizeError(mime, file.bytes.byteLength);
+  if (audioError) throw domainError('WC_VALIDATION', { file: audioError });
   const filename = baseName(file.name);
   if (filename === '') throw domainError('WC_VALIDATION', { name: 'El nombre del fichero es obligatorio' });
   const role = link.role.trim().toLowerCase();

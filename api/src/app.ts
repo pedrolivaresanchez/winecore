@@ -1,6 +1,6 @@
 import { cors } from '@elysiajs/cors';
 import { Elysia } from 'elysia';
-import { requestIdFor, requireOwner, requireOwnerOrAdmin, requirePermission, requireUser, requireUserOrMachine } from './auth/guard';
+import { requestIdFor, requireAnyPermission, requireOwner, requireOwnerOrAdmin, requirePermission, requireUser, requireUserOrMachine } from './auth/guard';
 import { isAllowedOrigin, securityHeaders } from './auth/policy';
 import { createTimbalAuth } from './auth/timbal';
 import type { FetchLike } from './core/db/timbal';
@@ -20,6 +20,7 @@ import { downloadInvoicePdf } from './routes/invoice-documents';
 import {
   getInvoiceDelivery,
   listInvoiceDeliveries,
+  listInvoiceDeliveryHistory,
   markInvoiceDeliveryFailed,
   markInvoiceDeliverySent,
   resendInvoiceDelivery,
@@ -70,6 +71,7 @@ import {
 import {
   approveExpense,
   captureExpense,
+  requestExpenseApproval,
   exportExpenses,
   getExpense,
   listCategories,
@@ -92,6 +94,7 @@ import { getReceivables } from './routes/finance-receivables';
 import {
   getRemittanceById,
   getRemittanceFile,
+  getRemittances,
   postRemittance,
   postRemittanceApproval,
   postRemittanceFile,
@@ -99,6 +102,7 @@ import {
 } from './routes/finance-remittances';
 import {
   getBankStatementSuggestions,
+  getBankStatements,
   postBankStatement,
   postBankStatementConfirm,
   postBankStatementIgnore,
@@ -134,6 +138,7 @@ import { handleAuthenticatedMcp } from './mcp/http';
 import { RateLimiter } from './mcp/rate';
 import { createMcpClient, listMcpClients, revokeMcpClient, rotateMcpClient } from './routes/mcp-clients';
 import { getDashboard } from './routes/dashboard';
+import { getLegacyInvoices, getLegacyOverview, getLegacyProducts } from './routes/legacy';
 import { me } from './routes/me';
 import { getUsers, patchUserRoute, postUser } from './routes/users';
 import { listNotifications, readAllNotifications, readNotification } from './routes/notifications';
@@ -281,6 +286,15 @@ export function createApp(deps: AppDeps) {
     .get('/v1/dashboard', ({ request }) => getDashboard(deps.writer, request, guardDeps.now?.() ?? new Date()), {
       beforeHandle: requireUser(guardDeps),
     })
+    .get('/v1/legacy/overview', ({ request }) => getLegacyOverview(deps.writer, request, guardDeps.now?.() ?? new Date()), {
+      beforeHandle: requireAnyPermission(guardDeps, ['reports.read', 'finance.read', 'sales.read', 'billing.read']),
+    })
+    .get('/v1/legacy/invoices', ({ request }) => getLegacyInvoices(deps.writer, request), {
+      beforeHandle: requireAnyPermission(guardDeps, ['reports.read', 'finance.read', 'sales.read', 'billing.read']),
+    })
+    .get('/v1/legacy/products', ({ request }) => getLegacyProducts(deps.writer, request), {
+      beforeHandle: requireAnyPermission(guardDeps, ['catalog.read', 'reports.read', 'finance.read', 'sales.read']),
+    })
     .get('/v1/reports/sales.csv', ({ request }) => getReport(deps.writer, request, 'sales'), {
       beforeHandle: requirePermission(guardDeps, 'reports.read'),
     })
@@ -376,6 +390,9 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requirePermission(guardDeps, 'billing.read'),
     })
     .get('/v1/invoices/:id/pdf', ({ request, params }) => downloadInvoicePdf(invoiceDeps, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.read'),
+    })
+    .get('/v1/invoices/:id/deliveries', ({ request, params }) => listInvoiceDeliveryHistory(deliveryDeps, request, params.id), {
       beforeHandle: requirePermission(guardDeps, 'billing.read'),
     })
     .get('/v1/invoices/:id/delivery', ({ request, params }) => getInvoiceDelivery(deliveryDeps, request, params.id), {
@@ -499,7 +516,7 @@ export function createApp(deps: AppDeps) {
     .get('/v1/approvals/:id', ({ request, params }) => getApproval(http, request, params.id), {
       beforeHandle: requireUserOrMachine(guardDeps),
     })
-    .post('/v1/approvals/:id/decide', ({ request, params, body }) => decideApproval(http, request, params.id, body), {
+    .post('/v1/approvals/:id/decide', ({ request, params, body }) => decideApproval(http, request, params.id, body, expenses.approvalHook), {
       beforeHandle: requireUserOrMachine(guardDeps),
     })
     .get('/v1/approval-policies', ({ request }) => getApprovalPolicy(http, request), {
@@ -681,6 +698,9 @@ export function createApp(deps: AppDeps) {
     .post('/v1/supplier-invoices/:id/validate', ({ request, params }) => validateExpense(deps.writer, request, params.id), {
       beforeHandle: requirePermission(guardDeps, 'purchasing.write'),
     })
+    .post('/v1/supplier-invoices/:id/request-approval', ({ request, params }) => requestExpenseApproval(deps.writer, request, params.id, expenses), {
+      beforeHandle: requirePermission(guardDeps, 'purchasing.write'),
+    })
     .post('/v1/supplier-invoices/:id/approve', ({ request, params }) => approveExpense(deps.writer, request, params.id, expenses), {
       beforeHandle: requirePermission(guardDeps, 'purchasing.approve'),
     })
@@ -721,6 +741,9 @@ export function createApp(deps: AppDeps) {
     }, {
       beforeHandle: requirePermission(guardDeps, 'finance.manage'),
     })
+    .get('/v1/bank-statements', ({ request }) => getBankStatements(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'finance.read'),
+    })
     .post('/v1/bank-statements', async ({ request, set }) => {
       const result = await postBankStatement(deps.writer, request);
       set.status = result.status;
@@ -744,6 +767,9 @@ export function createApp(deps: AppDeps) {
       return result.body;
     }, {
       beforeHandle: requirePermission(guardDeps, 'finance.write'),
+    })
+    .get('/v1/remittances', ({ request }) => getRemittances(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'finance.read'),
     })
     .post('/v1/remittances', async ({ request, set }) => {
       const result = await postRemittance(deps.writer, request);

@@ -48,6 +48,15 @@ export type Submission = {
   summary: { entry_count: number; litres: string }
   entries: SubmissionEntry[]
   created_by: string
+  successor_id: string | null
+}
+
+export type ObligationWarehouse = {
+  id: string
+  code: string
+  name: string
+  activity: string
+  entity_id: string
 }
 
 export type Obligation = {
@@ -62,6 +71,9 @@ export type Obligation = {
   status: string
   submission_id: string | null
   display: string
+  tax_warehouse_id: string | null
+  tax_warehouse: ObligationWarehouse | null
+  tax_warehouses: ObligationWarehouse[]
 }
 
 export type Ledger = {
@@ -119,6 +131,7 @@ export function submissionOf(row: Submission): Submission {
       warnings: row.validation?.warnings ?? [],
     },
     summary: row.summary ?? { entry_count: 0, litres: '0' },
+    successor_id: row.successor_id ?? null,
   }
 }
 
@@ -128,7 +141,16 @@ export function obligationOf(row: Obligation): Obligation {
     period_start: day(row.period_start),
     period_end: day(row.period_end),
     due_date: day(row.due_date) ?? '',
+    tax_warehouse_id: row.tax_warehouse_id ?? null,
+    tax_warehouse: row.tax_warehouse ?? null,
+    tax_warehouses: row.tax_warehouses ?? [],
   }
+}
+
+export function obligationWarehouse(item: Pick<Obligation, 'tax_warehouse' | 'tax_warehouses'>): string | null {
+  if (item.tax_warehouse?.name) return item.tax_warehouse.name
+  const names = (item.tax_warehouses ?? []).map((warehouse) => warehouse.name).filter((name) => name.length > 0)
+  return names.length > 0 ? names.join(' · ') : null
 }
 
 export function ledgerOf(row: Record<string, unknown>): Ledger {
@@ -171,10 +193,9 @@ async function failed(response: Response): Promise<ApiError> {
 }
 
 export function submissionsPath(entityId?: string): string {
-  const params = new URLSearchParams()
+  const params = new URLSearchParams({ limit: '50' })
   if (entityId) params.set('entity', entityId)
-  const query = params.toString()
-  return query ? `/v1/regulatory/submissions?${query}` : '/v1/regulatory/submissions'
+  return `/v1/regulatory/submissions?${params.toString()}`
 }
 
 export function obligationsPath(input: { entityId?: string; flow?: string; from: string; to: string }): string {

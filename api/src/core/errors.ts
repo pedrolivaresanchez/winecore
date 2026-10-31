@@ -163,18 +163,27 @@ export function domainError(
   return new DomainError(code, entry[0], entry[1], fields, messageOrDetails);
 }
 
+const ALIAS: Partial<Record<ErrorCode, string>> = {
+  WC_LOT_SINGLE_PLOT: 'WC141',
+};
+
 export function errorBody(error: DomainError): {
   code: string;
+  alias?: string;
   message: string;
   fields?: Record<string, string>;
   details?: unknown;
 } {
+  const alias = isErrorCode(error.code) ? ALIAS[error.code] : undefined;
   const body: {
     code: string;
+    alias?: string;
     message: string;
     fields?: Record<string, string>;
     details?: unknown;
-  } = { code: error.code, message: error.message };
+  } = alias
+    ? { code: error.code, alias, message: error.message }
+    : { code: error.code, message: error.message };
   if (error.fields && Object.keys(error.fields).length > 0) body.fields = error.fields;
   if (hasDetails(error.details)) body.details = error.details;
   return body;

@@ -34,7 +34,7 @@ export async function seedCatalog(
   const lotId = newId();
   const fromLocationId = newId();
   const toLocationId = newId();
-  const seriesId = newId();
+  let seriesId = newId();
   const sku = options?.sku ?? 'VIN075';
   const unitPrice = options?.unitPrice ?? '12.500000';
   const requiresLot = options?.requiresLot ?? true;
@@ -73,18 +73,37 @@ export async function seedCatalog(
     INSERT INTO inventory.location (id, code, name, kind, controlling_entity_id)
     VALUES (CAST(${toLocationId} AS UUID), 'VLC', 'Valencia', 'own_warehouse', CAST(${CVPO} AS UUID))
   `);
-  tx.write(sql`
-    INSERT INTO party.contact (id, kind, legal_name, tax_id, tax_id_type, country_code, is_customer, payment_terms_days, created_by)
-    VALUES (
-      CAST(${newId()} AS UUID), 'company', 'Comercializadora CVPO', 'B00000000', 'nif', 'ES', TRUE, 30, ${OWNER}
-    )
+  const liveCustomer = await tx.read<{ id: string }>(sql`
+    SELECT id FROM party.contact
+    WHERE tax_id = 'B00000000' AND archived_at IS NULL AND merged_into_id IS NULL
+    LIMIT 1
   `);
-  tx.write(sql`
-    INSERT INTO core.number_series (id, legal_entity_id, doc_type, code, year, prefix, is_default, is_active)
-    VALUES (
-      CAST(${seriesId} AS UUID), CAST(${PO} AS UUID), 'intercompany_invoice', 'PI', 2027, 'PI27', TRUE, TRUE
-    )
+  if (!liveCustomer[0]) {
+    tx.write(sql`
+      INSERT INTO party.contact (id, kind, legal_name, tax_id, tax_id_type, country_code, is_customer, payment_terms_days, created_by)
+      VALUES (
+        CAST(${newId()} AS UUID), 'company', 'Comercializadora CVPO', 'B00000000', 'nif', 'ES', TRUE, 30, ${OWNER}
+      )
+    `);
+  }
+  const existingSeries = await tx.read<{ id: string }>(sql`
+    SELECT id FROM core.number_series
+    WHERE legal_entity_id = CAST(${PO} AS UUID)
+      AND doc_type = 'intercompany_invoice'
+      AND code = 'PI'
+      AND year = 2027
+    LIMIT 1
   `);
+  if (existingSeries[0]) {
+    seriesId = String(existingSeries[0].id).toLowerCase();
+  } else {
+    tx.write(sql`
+      INSERT INTO core.number_series (id, legal_entity_id, doc_type, code, year, prefix, is_default, is_active)
+      VALUES (
+        CAST(${seriesId} AS UUID), CAST(${PO} AS UUID), 'intercompany_invoice', 'PI', 2027, 'PI27', TRUE, TRUE
+      )
+    `);
+  }
   return { priceListId, versionId, productId, lotId, fromLocationId, toLocationId, seriesId };
 }
 

@@ -115,6 +115,40 @@ export async function createIncident(tx: Tx, actor: Actor, noteId: string, raw: 
   };
 }
 
+export async function listIncidents(writer: { read: Tx['read'] }, noteId: string): Promise<{ items: Record<string, unknown>[] }> {
+  const id = noteId.trim().toLowerCase();
+  if (!UUID_RE.test(id)) throw new DomainError('WC_NOT_FOUND', 404, 'No encontrado');
+  const notes = await writer.read<Record<string, unknown>>(sql`
+    SELECT id FROM sales.delivery_note WHERE id = CAST(${id} AS UUID)
+  `);
+  if (!notes[0]) throw new DomainError('WC_NOT_FOUND', 404, 'No encontrado');
+  const rows = await writer.read<Record<string, unknown>>(sql`
+    SELECT id, delivery_note_id, kind, reported_at, description, units_affected,
+           carrier_claim_ref, claim_deadline, status, created_at
+    FROM sales.shipping_incident
+    WHERE delivery_note_id = CAST(${id} AS UUID)
+    ORDER BY created_at, id
+  `);
+  return {
+    items: rows.map((row) => {
+      const parsed = splitDescription(String(row.description));
+      return {
+        id: idOf(row.id),
+        delivery_note_id: idOf(row.delivery_note_id),
+        kind: String(row.kind),
+        description: parsed.description,
+        line_id: parsed.lineId,
+        units_affected: row.units_affected == null ? null : Number(row.units_affected),
+        carrier_claim_ref: row.carrier_claim_ref == null ? null : String(row.carrier_claim_ref),
+        claim_deadline: row.claim_deadline == null ? null : String(row.claim_deadline).slice(0, 10),
+        status: String(row.status),
+        reported_at: String(row.reported_at),
+        created_at: String(row.created_at),
+      };
+    }),
+  };
+}
+
 export async function confirmShrinkage(tx: Tx, actor: Actor, noteId: string, incidentId: string): Promise<Record<string, unknown>> {
   const note = await requireIssued(tx, noteId);
   const rows = await tx.read<Record<string, unknown>>(sql`

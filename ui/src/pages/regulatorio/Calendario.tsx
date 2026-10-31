@@ -13,7 +13,7 @@ import { iconStroke } from '@/lib/motion'
 import type { Me } from '@/lib/types'
 import { ChevronLeft, ChevronRight } from '@/ui/icons'
 import { Alert, Badge, Button, EmptyState, InfoTip, Select, Skeleton, useToast, type BadgeTone } from '@/ui'
-import { obligationOf, obligationsPath, syncObligations, type Obligation } from '@/pages/regulatorio/api'
+import { obligationOf, obligationWarehouse, obligationsPath, syncObligations, type Obligation } from '@/pages/regulatorio/api'
 import { CreateDialog } from '@/pages/regulatorio/CreateDialog'
 import { ListFrame } from '@/pages/regulatorio/frame'
 import {
@@ -229,6 +229,7 @@ export function CalendarioPage({ me }: { me: Me }) {
         warehouses={places.warehouses}
         initial={{
           entityId: draft?.legal_entity_id,
+          warehouseId: draft?.tax_warehouse_id ?? undefined,
           periodStart: draft?.period_start ?? undefined,
           periodEnd: draft?.period_end ?? undefined,
         }}
@@ -255,6 +256,7 @@ function ObligationRow({
   const soon = !closed(item) && item.display !== 'preparado' && item.status !== 'in_progress' && (band === 'd7' || band === 'd1')
   const meta = obligationMeta(item)
   const canMake = prepare && item.flow === 'silicie' && item.period_start && item.period_end && !item.submission_id
+  const warehouse = obligationWarehouse(item)
   return (
     <li
       className={cn(
@@ -264,15 +266,18 @@ function ObligationRow({
       )}
     >
       <span className="w-14 shrink-0 text-caption text-text-tertiary">{dayMonth(item.due_date)}</span>
-      <div className="flex min-w-0 flex-1 items-center gap-1">
-        {item.submission_id ? (
-          <Link to={`/regulatorio/envios/${item.submission_id}`} className="truncate text-label text-ink-900 hover:underline">
-            {item.title}
-          </Link>
-        ) : (
-          <span className="truncate text-label text-ink-900">{item.title}</span>
-        )}
-        <InfoTip label={copy.regulatorio.legalBasis}>{item.legal_basis}</InfoTip>
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-1">
+          {item.submission_id ? (
+            <Link to={`/regulatorio/envios/${item.submission_id}`} className="truncate text-label text-ink-900 hover:underline">
+              {item.title}
+            </Link>
+          ) : (
+            <span className="truncate text-label text-ink-900">{item.title}</span>
+          )}
+          <InfoTip label={copy.regulatorio.legalBasis}>{item.legal_basis}</InfoTip>
+        </div>
+        {warehouse ? <p className="truncate text-caption text-text-tertiary">{warehouse}</p> : null}
       </div>
       <Badge tone={meta.tone} dot size="sm">
         {meta.label}

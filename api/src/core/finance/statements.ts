@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Decimal } from 'decimal.js';
-import type { UserCtx } from '../auth/permissions';
+import { entityScope, type UserCtx } from '../auth/permissions';
 import { sql } from '../db/sql';
 import type { Tx, Writer } from '../db/writer';
 import { domainError } from '../errors';
@@ -26,7 +26,7 @@ import {
   textOf,
   type TargetTable,
 } from './support';
-import { listOpenDocuments, loadDocument, storeBytes, type PayableDocument } from './store';
+import { findEntity, listOpenDocuments, loadDocument, storeBytes, type PayableDocument } from './store';
 import { ibanLast4, isValidIban, normalizeIban } from '../party/iban';
 
 const ROUTE = 'POST /v1/bank-statements';
@@ -44,6 +44,58 @@ export async function importStatement(writer: Writer, user: UserCtx, request: Re
     remember(tx, user.id, key, hash, ROUTE, 201, body, now);
     return { status: 201, body };
   });
+}
+
+export async function listStatements(writer: Writer, user: UserCtx, request: Request) {
+  const url = new URL(request.url);
+  const entityValue = url.searchParams.get('entity')?.trim() || null;
+  const scope = entityScope(user, 'finance.read');
+  let entityId: string | null = null;
+  if (entityValue) {
+    const entity = await findEntity(writer, entityValue);
+    if (!entity) throw domainError('WC_VALIDATION', { entity: 'La entidad no existe' });
+    assertScope(user, 'finance.read', entity.id);
+    entityId = entity.id;
+  }
+  const filters = ['TRUE'];
+  if (entityId) filters.push(sql`a.legal_entity_id = CAST(${entityId} AS UUID)`);
+  else if (scope) {
+    if (scope.length === 0) return { items: [], total: 0 };
+    filters.push(`a.legal_entity_id IN (${scope.map((id) => sql`CAST(${id} AS UUID)`).join(', ')})`);
+  }
+  const where = filters.join(' AND ');
+  const rows = await writer.read<Record<string, unknown>>(
+    `SELECT i.id, i.bank_account_id, a.legal_entity_id, e.code AS entity_code, i.format,
+            i.period_from, i.period_to, i.lines_count, i.imported_at,
+            sum(CASE WHEN l.status = 'matched' THEN 1 ELSE 0 END)::INTEGER AS matched,
+            sum(CASE WHEN l.status = 'suggested' THEN 1 ELSE 0 END)::INTEGER AS suggested,
+            sum(CASE WHEN l.status = 'ignored' THEN 1 ELSE 0 END)::INTEGER AS ignored
+     FROM finance.bank_statement_import i
+     JOIN finance.bank_account a ON a.id = i.bank_account_id
+     JOIN core.legal_entity e ON e.id = a.legal_entity_id
+     LEFT JOIN finance.bank_statement_line l ON l.import_id = i.id
+     WHERE ${where}
+     GROUP BY i.id, i.bank_account_id, a.legal_entity_id, e.code, i.format,
+              i.period_from, i.period_to, i.lines_count, i.imported_at
+     ORDER BY i.imported_at DESC, i.id DESC`,
+  );
+  return {
+    items: rows.map((row) => ({
+      id: String(row.id).toLowerCase(),
+      bank_account_id: String(row.bank_account_id).toLowerCase(),
+      legal_entity_id: String(row.legal_entity_id).toLowerCase(),
+      entity_code: String(row.entity_code),
+      format: String(row.format),
+      period_from: dateOnly(row.period_from),
+      period_to: dateOnly(row.period_to),
+      lines_count: Number(row.lines_count ?? 0),
+      imported_at: row.imported_at == null ? null : String(row.imported_at),
+      matched: Number(row.matched ?? 0),
+      suggested: Number(row.suggested ?? 0),
+      ignored: Number(row.ignored ?? 0),
+    })),
+    total: rows.length,
+  };
 }
 
 export async function listSuggestions(writer: Writer, user: UserCtx, importId: string) {

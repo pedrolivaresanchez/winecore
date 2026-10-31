@@ -852,4 +852,91 @@ describe('facturación', () => {
       await ctx.close();
     }
   });
+
+  it('guarda sin devolución física como dato de la rectificativa', async () => {
+    const ctx = await createTestApp();
+    try {
+      const po = await entityId(ctx, 'PO');
+      const year = Number(businessDate(new Date()).slice(0, 4));
+      const yy = String(year).slice(2);
+      await series(ctx, po, 'invoice', 'PF', `PF${yy}-`, year);
+      await series(ctx, po, 'credit_note', 'PR', `PR${yy}-`, year);
+      const customer = await postContact(ctx, contactBody('Cliente Devolucion SL', companyCif()));
+      const item = await product(ctx, { sku: 'DEV-01', name: 'Generico', price: '10' });
+      const original = await json(await ctx.app.handle(new Request('http://localhost/v1/invoices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ legal_entity_id: po, customer_id: customer.id, lines: [{ product_id: item, quantity: 2 }] }),
+      })));
+      expect(original.no_physical_return).toBeNull();
+      const rejected = await ctx.app.handle(new Request('http://localhost/v1/invoices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          legal_entity_id: po,
+          customer_id: customer.id,
+          no_physical_return: true,
+          lines: [{ product_id: item, quantity: 1 }],
+        }),
+      }));
+      expect(rejected.status).toBe(422);
+
+      await json(await ctx.app.handle(new Request(`http://localhost/v1/invoices/${original.id}/issue`, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': 'emitir-sin-devolucion' },
+      })));
+      const rect = await json(await ctx.app.handle(new Request('http://localhost/v1/invoices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          legal_entity_id: po,
+          customer_id: customer.id,
+          invoice_type: 'R4',
+          rectification_kind: 'I',
+          reason: 'Devolución sin mercancía',
+          no_physical_return: true,
+          rectifies: [{ invoice_id: original.id }],
+          lines: [{ product_id: item, quantity: -1 }],
+        }),
+      })));
+      expect(rect.no_physical_return).toBe(true);
+      expect(rect.return_delivery_note).toBeNull();
+      expect(rect.notes).toBeNull();
+      const withNote = await ctx.app.handle(new Request('http://localhost/v1/invoices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          legal_entity_id: po,
+          customer_id: customer.id,
+          invoice_type: 'R4',
+          rectification_kind: 'I',
+          reason: 'Devolución con albarán',
+          no_physical_return: true,
+          return_delivery_note: 'ALB-9',
+          rectifies: [{ invoice_id: original.id }],
+          lines: [{ product_id: item, quantity: -1 }],
+        }),
+      }));
+      expect(withNote.status).toBe(422);
+      const physical = await json(await ctx.app.handle(new Request('http://localhost/v1/invoices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          legal_entity_id: po,
+          customer_id: customer.id,
+          invoice_type: 'R4',
+          rectification_kind: 'I',
+          reason: 'Devolución con albarán',
+          no_physical_return: false,
+          return_delivery_note: 'ALB-9',
+          rectifies: [{ invoice_id: original.id }],
+          lines: [{ product_id: item, quantity: -1 }],
+        }),
+      })));
+      expect(physical.no_physical_return).toBe(false);
+      expect(physical.return_delivery_note).toBe('ALB-9');
+    } finally {
+      await ctx.close();
+    }
+  });
 });

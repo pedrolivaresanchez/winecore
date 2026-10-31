@@ -64,6 +64,8 @@ export interface ContactListQuery {
   kind: string | null;
   role: string | null;
   country: string | null;
+  /** P.O o CVPO. Ausente o ambas: no recorta el maestro. */
+  entity: 'PO' | 'CVPO' | null;
   archived: boolean;
   cursor: string | null;
   limit: number;
@@ -208,8 +210,19 @@ export function parseListQuery(url: URL): ContactListQuery {
   if (cursor && !decodeCursor(cursor)) fields.cursor = 'Cursor no válido';
   const q = url.searchParams.get('q')?.trim() || null;
   if (q && q.length > 120) fields.q = 'La búsqueda es demasiado larga';
+  const entity = parseContactEntity(url.searchParams.get('entity'), fields);
   if (Object.keys(fields).length > 0) throw domainError('WC_VALIDATION', fields);
-  return { q, kind, role, country, archived, cursor, limit };
+  return { q, kind, role, country, entity, archived, cursor, limit };
+}
+
+function parseContactEntity(raw: string | null, fields: Record<string, string>): 'PO' | 'CVPO' | null {
+  if (raw == null || raw.trim() === '') return null;
+  const normalized = raw.trim().toLowerCase().replace(/\./g, '');
+  if (normalized === 'po') return 'PO';
+  if (normalized === 'cvpo') return 'CVPO';
+  if (normalized === 'both' || normalized === 'ambas' || normalized === 'all' || normalized === 'todas') return null;
+  fields.entity = 'La entidad debe ser P.O, CVPO o ambas';
+  return null;
 }
 
 export function resolveTax(raw: string | undefined, country: string): StoredTax {
@@ -243,6 +256,16 @@ export function listFilters(query: ContactListQuery): string[] {
   if (query.role === 'supplier') filters.push('c.is_supplier');
   if (query.role === 'carrier') filters.push('c.is_carrier');
   if (query.role === 'logistics_operator') filters.push('c.is_logistics_operator');
+  if (query.entity === 'PO' || query.entity === 'CVPO') {
+    filters.push(sql`(
+      NOT EXISTS (SELECT 1 FROM party.contact_entity_terms t WHERE t.contact_id = c.id)
+      OR EXISTS (
+        SELECT 1 FROM party.contact_entity_terms t
+        JOIN core.legal_entity e ON e.id = t.legal_entity_id
+        WHERE t.contact_id = c.id AND e.code = ${query.entity}
+      )
+    )`);
+  }
   if (query.q) {
     const folded = `%${escapeLike(fold(query.q))}%`;
     const tax = `%${normalizeTaxId(query.q).normalized ?? fold(query.q).toUpperCase()}%`;

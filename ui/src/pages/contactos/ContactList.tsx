@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useEntity } from '@/app/entity-context'
 import { useChromeTitle } from '@/app/shell/shell-context'
 import { ErrorState } from '@/components/ErrorState'
 import { NoPermission } from '@/components/NoPermission'
@@ -99,6 +100,8 @@ export function ContactList({ me }: { me: Me }) {
   const toast = useToast()
   const columnsMenu = useMenuOpen()
   const [params, setParams] = useSearchParams()
+  const { filter } = useEntity()
+  const entity = filter === 'PO' || filter === 'CVPO' ? filter : ''
   const canWrite = allows(me, 'contacts.write')
   const kind = (params.get('kind') ?? '') as '' | ContactKind
   const role = (params.get('role') ?? '') as '' | ContactRole
@@ -124,8 +127,8 @@ export function ContactList({ me }: { me: Me }) {
   }, [q])
 
   const query = useMemo<ContactQuery>(
-    () => ({ q: debounced, kind, role, country, archived, limit: 50 }),
-    [archived, country, debounced, kind, role],
+    () => ({ q: debounced, kind, role, country, entity, archived, limit: 50 }),
+    [archived, country, debounced, entity, kind, role],
   )
 
   useEffect(() => {

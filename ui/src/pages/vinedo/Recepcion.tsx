@@ -45,6 +45,8 @@ import {
 } from '@/pages/vinedo/api'
 import { BlockTitle, FormStack, VineyardShell } from '@/pages/vinedo/chrome'
 import { Fact, FactCard } from '@/pages/bodega/chrome'
+import { ExerciseAction } from '@/pages/regulatorio/exercise'
+import { exerciseBlocked } from '@/pages/regulatorio/model'
 import { GRID_LABELS, civil, decisionLabel, kilos, receptionStatusLabel } from '@/pages/vinedo/labels'
 
 type VesselRow = { id: string; code: string; status: string; volume_ml: number }
@@ -165,6 +167,7 @@ function Ticket({
   const more = useMenuOpen()
   const [preview, setPreview] = useState<ReceptionPreview | null>(null)
   const [previewError, setPreviewError] = useState('')
+  const [exerciseBlock, setExerciseBlock] = useState(false)
   const [rectify, setRectify] = useState(false)
   const [busy, setBusy] = useState<'save' | 'preview' | 'confirm' | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -320,13 +323,15 @@ function Ticket({
     }
     setBusy('preview')
     setPreviewError('')
+    setExerciseBlock(false)
     try {
       const payload = body()
       if (payload && existing.data?.status === 'draft') await updateReception(id, payload)
       setPreview(await previewReception(id))
     } catch (error: unknown) {
       setPreview(null)
-      setPreviewError(error instanceof ApiError ? error.message : copy.error.load)
+      setExerciseBlock(exerciseBlocked(error))
+      setPreviewError(error instanceof ApiError ? (error.fields?.fiscal_date ?? error.message) : copy.error.load)
     } finally {
       setBusy(null)
     }
@@ -335,13 +340,16 @@ function Ticket({
   async function confirmNow() {
     if (!id) return
     setBusy('confirm')
+    setExerciseBlock(false)
     try {
       await confirmReception(id)
       toast(copy.vinedo.saved)
       setPreview(null)
+      setPreviewError('')
       existing.reload()
     } catch (error: unknown) {
-      toast(error instanceof ApiError ? error.message : copy.error.load)
+      setExerciseBlock(exerciseBlocked(error))
+      setPreviewError(error instanceof ApiError ? (error.fields?.fiscal_date ?? error.message) : copy.error.load)
     } finally {
       setBusy(null)
     }
@@ -537,6 +545,9 @@ function Ticket({
           </div>
         ) : null}
         {previewError ? <Alert tone="danger">{previewError}</Alert> : null}
+        {exerciseBlock && entity ? (
+          <ExerciseAction me={me} entityId={entity.id} year={Number((existing.data?.ticket?.fiscal_date ?? when).slice(0, 4))} />
+        ) : null}
         {preview ? <SilicieNote entry={preview.silicie} rejected={decision === 'rejected'} /> : null}
         {existing.data?.silicie ? <SilicieNote entry={existing.data.silicie} rejected={false} /> : null}
       </FormStack>

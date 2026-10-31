@@ -1,15 +1,16 @@
+import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { PanelLeft, Search } from '@/ui/icons'
+import { ChevronDown, PanelLeft, Search, Settings2 } from '@/ui/icons'
 import { GlassMenu, MenuItem, Tooltip, useMenuOpen } from '@/ui'
 import { textureSecondary } from '@/ui/button'
-import { EntitySwitcher } from '@/app/EntitySwitcher'
-import { footerNav, mainNav, visibleChildren, type NavEntry } from '@/app/nav'
+import { activeRailId, visibleGroups, type RailGroup, type RailItem } from '@/app/nav'
 import { PendingBadge } from '@/pages/aprobaciones/PendingBadge'
 import { RailRow } from '@/app/shell/rail-row'
+import { railMetrics } from '@/app/shell/rail-metrics'
 import { useShell } from '@/app/shell/shell-context'
 import { SettingsSidebar, type SettingsArea } from '@/app/shell/settings-view'
 import { UserMenu } from '@/app/shell/user-menu'
-import { copy } from '@/i18n'
+import { copy, fill } from '@/i18n'
 import { cn } from '@/lib/cn'
 import { iconStroke } from '@/lib/motion'
 import type { Me } from '@/lib/types'
@@ -17,10 +18,6 @@ import type { Me } from '@/lib/types'
 function commandChord() {
   const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
   return mac ? '⌘K' : 'Ctrl K'
-}
-
-function RailGroup({ label, first }: { label: string; first: boolean }) {
-  return <p className={cn('px-2 pb-0.5 text-caption text-text-tertiary', first ? 'pt-1' : 'pt-3')}>{label}</p>
 }
 
 export function AppSidebar({
@@ -42,7 +39,7 @@ export function AppSidebar({
     return (
       <div className="flex h-full min-h-0 flex-col">
         <SettingsSidebar me={me} area={area} onArea={onArea} onBack={onBack} />
-        <div className="mt-auto shrink-0 px-2 pb-2">
+        <div className={cn('mt-auto shrink-0 pb-2', railMetrics.pad)}>
           <UserMenu me={me} collapsed={false} />
         </div>
       </div>
@@ -57,27 +54,20 @@ function WorkspaceRail({ me, collapsed }: { me: Me; collapsed: boolean }) {
   const navigate = useNavigate()
   const location = useLocation()
   const search = useMenuOpen()
-  const items = mainNav(me)
-  const footer = footerNav(me)
+  const groups = visibleGroups(me)
+  const activeId = activeRailId(location.pathname, groups)
+  const [moreOpen, setMoreOpen] = useState<Record<string, boolean>>({})
 
   function go(path: string) {
     navigate(path)
     if (mobile) setSidebarOpen(false)
   }
 
-  function active(entry: NavEntry) {
-    if (entry.path) {
-      if (entry.end) return location.pathname === entry.path
-      return location.pathname === entry.path || location.pathname.startsWith(`${entry.path}/`)
-    }
-    return visibleChildren(me, entry).some(
-      (child) => location.pathname === child.path || location.pathname.startsWith(`${child.path}/`),
-    )
-  }
+  const destinations = groups.flatMap((group) => group.items)
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className={cn('flex h-12 shrink-0 items-center px-2', collapsed ? 'justify-center' : 'gap-1')}>
+      <div className={cn('flex shrink-0 items-center', railMetrics.header, railMetrics.pad, collapsed ? 'justify-center' : 'gap-1')}>
         {collapsed ? (
           <Tooltip label={copy.nav.expand}>
             <button
@@ -104,14 +94,14 @@ function WorkspaceRail({ me, collapsed }: { me: Me; collapsed: boolean }) {
                 aria-label={copy.nav.collapse}
                 className="flex size-7 shrink-0 items-center justify-center rounded-md text-icon-muted hover:bg-sidebar-hover hover:text-ink-900"
               >
-                <PanelLeft className="size-3.5" strokeWidth={iconStroke} />
+                <PanelLeft className={railMetrics.icon} strokeWidth={iconStroke} />
               </button>
             </Tooltip>
           </>
         )}
       </div>
 
-      <div className={cn('flex shrink-0 pb-2 px-2', collapsed && 'justify-center')}>
+      <div className={cn('flex shrink-0 pb-2', railMetrics.pad, collapsed && 'justify-center')}>
         <GlassMenu
           open={search.open}
           onOpenChange={search.setOpen}
@@ -129,124 +119,166 @@ function WorkspaceRail({ me, collapsed }: { me: Me; collapsed: boolean }) {
                   textureSecondary,
                 )}
               >
-                <Search className="size-3.5" strokeWidth={iconStroke} />
+                <Search className={railMetrics.icon} strokeWidth={iconStroke} />
               </button>
             ) : (
               <button
                 type="button"
                 onClick={search.toggle}
                 className={cn(
-                  'flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-label text-text-tertiary hover:text-ink-900',
+                  'flex w-full items-center gap-2 rounded-md px-2 text-left text-label text-text-tertiary hover:text-ink-900',
+                  railMetrics.search,
                   textureSecondary,
                 )}
               >
-                <Search className="size-3.5 shrink-0" strokeWidth={iconStroke} />
+                <Search className={cn(railMetrics.icon, 'shrink-0')} strokeWidth={iconStroke} />
                 <span className="min-w-0 flex-1 truncate">{copy.table.search}</span>
                 <kbd className="shrink-0 text-caption text-text-tertiary">{commandChord()}</kbd>
               </button>
             )
           }
         >
-          {items.flatMap((entry) => {
-            const Icon = entry.icon
-            const rows: { id: string; label: string; path: string }[] = []
-            if (entry.path) rows.push({ id: entry.id, label: entry.label, path: entry.path })
-            for (const child of visibleChildren(me, entry)) rows.push({ id: child.id, label: child.label, path: child.path })
-            return rows.map((row) => (
+          {destinations.map((item) => {
+            const Icon = item.icon
+            return (
               <MenuItem
-                key={row.id}
-                icon={<Icon className="size-3.5" strokeWidth={iconStroke} />}
+                key={item.id}
+                icon={<Icon className={railMetrics.icon} strokeWidth={iconStroke} />}
                 onClick={() => {
                   search.close()
-                  go(row.path)
+                  go(item.path)
                 }}
               >
-                {row.label}
+                {item.label}
               </MenuItem>
-            ))
+            )
           })}
+          <MenuItem
+            icon={<Settings2 className={railMetrics.icon} strokeWidth={iconStroke} />}
+            onClick={() => {
+              search.close()
+              openSettings()
+            }}
+          >
+            {copy.nav.settings}
+          </MenuItem>
         </GlassMenu>
       </div>
 
-      {collapsed ? (
-        <div className="flex justify-center px-2 pb-2">
-          <EntitySwitcher collapsed />
-        </div>
-      ) : (
-        <div className="px-2 pb-2">
-          <EntitySwitcher />
-        </div>
-      )}
-
-      <nav className={cn('flex min-h-0 flex-1 flex-col gap-px overflow-y-auto px-2 pb-3 scrollbar-none', collapsed && 'items-center')}>
-        {items.map((entry, index) => {
-          const Icon = entry.icon
-          const children = visibleChildren(me, entry)
-          const previous = items[index - 1]?.group
-          const showGroup = !collapsed && entry.group && entry.group !== previous
-          return (
-            <div key={entry.id} className={cn('flex flex-col gap-px', collapsed && 'items-center')}>
-              {showGroup && entry.group ? <RailGroup label={copy.nav.groups[entry.group]} first={index === 0} /> : null}
-              {entry.path ? (
-                <RailRow
-                  active={active(entry)}
-                  label={entry.label}
-                  collapsed={collapsed}
-                  glyph={
-                    <span className="relative inline-flex">
-                      <Icon className="size-3.5 shrink-0" strokeWidth={iconStroke} />
-                      {collapsed && entry.id === 'approvals' ? <PendingBadge size="sm" /> : null}
-                    </span>
-                  }
-                  trailing={!collapsed && entry.id === 'approvals' ? <PendingBadge inline /> : undefined}
-                  onNavigate={() => go(entry.path ?? '/')}
-                />
-              ) : null}
-              {children.map((child) => (
-                <div key={child.id} className={cn(!collapsed && entry.path && 'pl-4')}>
-                  <RailRow
-                    active={location.pathname === child.path || location.pathname.startsWith(`${child.path}/`)}
-                    label={child.label}
-                    collapsed={collapsed}
-                    glyph={<Icon className="size-3.5 shrink-0" strokeWidth={iconStroke} />}
-                    onNavigate={() => go(child.path)}
-                  />
-                </div>
-              ))}
-            </div>
-          )
-        })}
+      <nav className={cn('flex min-h-0 flex-1 flex-col overflow-y-auto pb-3 scrollbar-none', railMetrics.pad, railMetrics.gap, collapsed && 'items-center')}>
+        {groups.map((group, index) => (
+          <RailSection
+            key={group.id}
+            group={group}
+            first={index === 0}
+            collapsed={collapsed}
+            activeId={activeId}
+            expanded={moreOpen[group.id] ?? group.items.some((item) => item.tier === 'more' && item.id === activeId)}
+            onToggle={() =>
+              setMoreOpen((current) => {
+                const open = current[group.id] ?? group.items.some((item) => item.tier === 'more' && item.id === activeId)
+                return { ...current, [group.id]: !open }
+              })
+            }
+            onNavigate={go}
+          />
+        ))}
       </nav>
 
-      <div className={cn('mt-auto flex shrink-0 flex-col gap-1 px-2 pb-2', collapsed && 'items-center')}>
-        {footer.map((entry) => {
-          const Icon = entry.icon
-          if (entry.action === 'settings') {
-            return (
-              <RailRow
-                key={entry.id}
-                active={false}
-                label={entry.label}
-                collapsed={collapsed}
-                glyph={<Icon className="size-3.5 shrink-0" strokeWidth={iconStroke} />}
-                onNavigate={openSettings}
-              />
-            )
-          }
-          if (!entry.path) return null
-          return (
-            <RailRow
-              key={entry.id}
-              active={active(entry)}
-              label={entry.label}
-              collapsed={collapsed}
-              glyph={<Icon className="size-3.5 shrink-0" strokeWidth={iconStroke} />}
-              onNavigate={() => go(entry.path ?? '/')}
-            />
-          )
-        })}
+      <div className={cn('mt-auto shrink-0 pb-2', railMetrics.pad, collapsed && 'flex justify-center')}>
         <UserMenu me={me} collapsed={collapsed} />
       </div>
+    </div>
+  )
+}
+
+function RailSection({
+  group,
+  first,
+  collapsed,
+  activeId,
+  expanded,
+  onToggle,
+  onNavigate,
+}: {
+  group: RailGroup
+  first: boolean
+  collapsed: boolean
+  activeId: string | null
+  expanded: boolean
+  onToggle: () => void
+  onNavigate: (path: string) => void
+}) {
+  const primary = group.items.filter((item) => item.tier === 'primary')
+  const more = group.items.filter((item) => item.tier === 'more')
+
+  return (
+    <div className={cn('flex flex-col', railMetrics.gap, collapsed && 'items-center')}>
+      {collapsed ? null : (
+        <p className={cn('px-2 pb-0.5 text-caption text-text-tertiary', first ? 'pt-1' : 'pt-3')}>{group.label}</p>
+      )}
+      {primary.map((item) => (
+        <NavButton key={item.id} item={item} active={item.id === activeId} collapsed={collapsed} onNavigate={onNavigate} />
+      ))}
+      {collapsed || more.length === 0 ? null : (
+        <>
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-label={fill(copy.nav.moreIn, { group: group.label })}
+            onClick={onToggle}
+            className={cn(
+              'flex w-full items-center gap-1.5 rounded-md px-2 text-left text-label text-text-tertiary',
+              railMetrics.row,
+              'hover:bg-sidebar-hover hover:text-ink-900',
+            )}
+          >
+            <ChevronDown
+              strokeWidth={iconStroke}
+              className={cn('size-3 shrink-0 transition-transform duration-(--duration-fast) ease-(--ease-smooth-out)', expanded ? 'rotate-0' : '-rotate-90')}
+            />
+            <span className="min-w-0 flex-1 truncate">{copy.nav.more}</span>
+          </button>
+          {expanded
+            ? more.map((item) => (
+                <NavButton key={item.id} item={item} active={item.id === activeId} collapsed={false} onNavigate={onNavigate} nested />
+              ))
+            : null}
+        </>
+      )}
+    </div>
+  )
+}
+
+function NavButton({
+  item,
+  active,
+  collapsed,
+  nested,
+  onNavigate,
+}: {
+  item: RailItem
+  active: boolean
+  collapsed: boolean
+  nested?: boolean
+  onNavigate: (path: string) => void
+}) {
+  const Icon = item.icon
+  return (
+    <div className={cn(nested && 'pl-4')}>
+      <RailRow
+        active={active}
+        label={item.label}
+        collapsed={collapsed}
+        glyph={
+          <span className="relative inline-flex">
+            <Icon className={cn(railMetrics.icon, 'shrink-0', active ? 'text-ink-900' : 'text-icon-muted')} strokeWidth={iconStroke} />
+            {collapsed && item.id === 'approvals' ? <PendingBadge size="sm" /> : null}
+          </span>
+        }
+        trailing={!collapsed && item.id === 'approvals' ? <PendingBadge inline /> : undefined}
+        onNavigate={() => onNavigate(item.path)}
+      />
     </div>
   )
 }

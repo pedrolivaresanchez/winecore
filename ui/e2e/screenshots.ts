@@ -261,7 +261,8 @@ async function main() {
       await mobile.page.getByRole("button", { name: "Desplegar menú" }).click();
       await mobile.page.waitForSelector("[data-screen='rail']");
       await shot(mobile.page, "mas-390");
-      await mobile.page.getByRole("button", { name: "Ajustes" }).click();
+      await mobile.page.getByRole("button", { name: /Cuenta de/ }).click();
+      await mobile.page.getByRole("menuitem", { name: "Ajustes" }).click();
       await mobile.page.waitForSelector("[data-screen='ajustes']");
       await mobile.page.getByRole("heading", { name: "Entidades y usuarios" }).waitFor();
       await shot(mobile.page, "ajustes-390");
@@ -269,7 +270,8 @@ async function main() {
 
       const desktop = await openContext(browser, viewports[1], "ok");
       await gotoReady(desktop.page, "/", "panel");
-      await desktop.page.getByRole("button", { name: "Ajustes" }).click();
+      await desktop.page.getByRole("button", { name: /Cuenta de/ }).click();
+      await desktop.page.getByRole("menuitem", { name: "Ajustes" }).click();
       await desktop.page.waitForSelector("[data-screen='ajustes']");
       await desktop.page.getByRole("heading", { name: "Entidades y usuarios" }).waitFor();
       await shot(desktop.page, "ajustes-1440");
