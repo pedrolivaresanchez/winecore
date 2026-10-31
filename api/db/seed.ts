@@ -1,5 +1,6 @@
 import type { Env } from '../src/config';
 import { loadConfig } from '../src/config';
+import { exampleExportDocuments, EXPORT_DOCUMENTS_SETTING_KEY } from '../src/core/billing/export/setting';
 import type { KbClient } from '../src/core/db/client';
 import { openClient } from '../src/core/db/open';
 import { sql } from '../src/core/db/sql';
@@ -58,6 +59,7 @@ export async function seed(client: KbClient, input: SeedInput): Promise<void> {
     role(IDS.adminRole, IDS.admin, 'admin'),
     role(IDS.advisorRole, IDS.advisor, 'advisor'),
     role(IDS.cellarRole, IDS.cellar, 'cellar'),
+    exportDocumentsSetting(),
     'COMMIT',
   ];
   try {
@@ -96,6 +98,16 @@ function user(id: string, email: string, displayName: string): string {
     INSERT INTO core.app_user (id, email, display_name, locale, status)
     SELECT CAST(${id} AS UUID), ${email}, ${displayName}, 'es-ES', 'active'
     WHERE NOT EXISTS (SELECT 1 FROM core.app_user WHERE lower(email) = ${email})
+  `;
+}
+
+function exportDocumentsSetting(): string {
+  return sql`
+    INSERT INTO core.setting (key, value, updated_by)
+    SELECT ${EXPORT_DOCUMENTS_SETTING_KEY}, ${sql.json(exampleExportDocuments())}, 'seed'
+    WHERE NOT EXISTS (
+      SELECT 1 FROM core.setting WHERE key = ${EXPORT_DOCUMENTS_SETTING_KEY}
+    )
   `;
 }
 

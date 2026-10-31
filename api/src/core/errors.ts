@@ -45,6 +45,9 @@ const CATALOG = {
   WC_NO_ACCESS: [403, 'No tienes acceso a WineCore'],
   // Contactos (TASK-CONT-001)
   WC_CONTACT_DUPLICATE_TAX_ID: [409, 'Ya existe un contacto con este NIF'],
+  // Exportación (TASK-FACT-013)
+  WC_INV_ENTITY_EORI_REQUIRED: [422, 'La factura de exportación no se emite: falta el EORI de la entidad.'],
+  WC_EXPORT_NOT_READY: [422, 'La factura de exportación no está lista'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;
