@@ -11,6 +11,7 @@ import type { AuditEvent } from '@/lib/contacts'
 import { formatDateTime, formatLitres, formatPercent } from '@/lib/format'
 import { allows } from '@/lib/permissions'
 import { cn } from '@/lib/cn'
+import { texturePrimary } from '@/ui/button'
 import type { Me } from '@/lib/types'
 import { Alert, Badge, EmptyState, Skeleton } from '@/ui'
 import { ReadingColumn, RecordBar, SectionTabs } from '@/pages/bodega/chrome'
@@ -187,7 +188,25 @@ export function LotePage({ me }: { me: Me }) {
             />
           ) : null}
           {tab === 'ventas' ? <RecordList page={sales} emptyTitle={copy.cellar.emptySales} emptyHint="Albaranes y facturas de este lote." render={(row) => String(row.id ?? 'Venta')} /> : null}
-          {tab === 'catas' ? <EmptyState size="sm" title={copy.cellar.emptyTastings} description="Las notas de cata se anotarán aquí." /> : null}
+          {tab === 'catas' ? (
+            <EmptyState
+              size="sm"
+              title={copy.cellar.emptyTastings}
+              description={copy.catas.fromLot}
+              action={
+                <Link
+                  to={`/bodega/catas?lot_id=${encodeURIComponent(item.id)}`}
+                  className={cn(
+                    'inline-flex h-7 items-center rounded-[7px] px-2.5 text-label font-medium',
+                    'outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring',
+                    texturePrimary,
+                  )}
+                >
+                  {copy.nav.tastings}
+                </Link>
+              }
+            />
+          ) : null}
           {tab === 'historial' ? (
             <AuditTrail
               items={history.data?.items ?? []}
