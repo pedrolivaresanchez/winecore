@@ -1,5 +1,5 @@
 # TASK-BOD-011 · Analíticas y catas
-- Hito M4 · 1 día · Escalado: no
+- Hito M2 · 1 día · Escalado: no
 - Historias / RNF: US-BOD-11
 - Depende de: TASK-BOD-002
 

@@ -1,5 +1,5 @@
 # TASK-VIN-001 · Parcelas y variedades (UI-26)
-- Hito M4 · 1,5 días · Escalado: no
+- Hito M3 · 1,5 días · Escalado: no
 - Historias / RNF: US-VIN-01
 - Depende de: TASK-CORE-003, TASK-UI-002
 

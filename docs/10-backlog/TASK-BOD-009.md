@@ -1,5 +1,5 @@
 # TASK-BOD-009 · Recepción de uva, prensado y fin de fermentación
-- Hito M4 · 2 días · Escalado: no
+- Hito M2 · 2 días · Escalado: no
 - Historias / RNF: US-BOD-08, US-BOD-09
 - Depende de: TASK-BOD-002
 

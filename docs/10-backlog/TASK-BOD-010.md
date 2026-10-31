@@ -1,5 +1,5 @@
 # TASK-BOD-010 · Lecturas de fermentación y alertas
-- Hito M4 · 1 día · Escalado: no
+- Hito M2 · 1 día · Escalado: no
 - Historias / RNF: US-BOD-10
 - Depende de: TASK-BOD-009
 

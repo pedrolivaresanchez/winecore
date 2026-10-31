@@ -106,12 +106,12 @@ Reglas para todas las tareas: primero los tests; PR pequeño con el TASK-ID; sin
 | TASK-BOD-006 | Adiciones y limpiezas | US-BOD-05, US-BOD-13 | M2 | BOD-002 | 1 | no |
 | TASK-BOD-007 | Mermas y destrucciones con aprobación | US-BOD-06 | M2 | BOD-002, APR-001 | 1 | no |
 | TASK-BOD-008 | Formulario de operación (UI-25) | US-BOD-02, US-BOD-04, US-BOD-05, US-BOD-06, US-BOD-07 | M2 | BOD-003…BOD-007, UI-002 | 2 | no |
-| TASK-BOD-009 | Recepción de uva, prensado y fin de fermentación | US-BOD-08, US-BOD-09 | M4 | BOD-002 | 2 | no |
-| TASK-BOD-010 | Lecturas de fermentación y alertas | US-BOD-10 | M4 | BOD-009 | 1 | no |
-| TASK-BOD-011 | Analíticas y catas | US-BOD-11 | M4 | BOD-002 | 1 | no |
-| TASK-VIN-001 | Parcelas y variedades (UI-26) | US-VIN-01 | M4 | CORE-003, UI-002 | 1,5 | no |
-| TASK-VIN-002 | Tratamientos y cuaderno (CUE) | US-VIN-02 | M4 | VIN-001 | 1,5 | no |
-| TASK-VIN-003 | Labores, maduración y vendimia | US-VIN-03, US-VIN-04, US-VIN-05 | M4 | VIN-001, BOD-009 | 1,5 | no |
+| TASK-BOD-009 | Recepción de uva, prensado y fin de fermentación | US-BOD-08, US-BOD-09 | M2 | BOD-002 | 2 | no |
+| TASK-BOD-010 | Lecturas de fermentación y alertas | US-BOD-10 | M2 | BOD-009 | 1 | no |
+| TASK-BOD-011 | Analíticas y catas | US-BOD-11 | M2 | BOD-002 | 1 | no |
+| TASK-VIN-001 | Parcelas y variedades (UI-26) | US-VIN-01 | M3 | CORE-003, UI-002 | 1,5 | no |
+| TASK-VIN-002 | Tratamientos y cuaderno (CUE) | US-VIN-02 | M3 | VIN-001 | 1,5 | no |
+| TASK-VIN-003 | Labores, maduración y vendimia | US-VIN-03, US-VIN-04, US-VIN-05 | M3 | VIN-001, BOD-009 | 1,5 | no |
 | TASK-COMP-001 | Captura de gastos y extracción | US-COMP-01 | M2 | CORE-006 | 2 | no |
 | TASK-COMP-002 | Validación y aprobación de gastos (UI-17) | US-COMP-02 | M2 | COMP-001, UI-002 | 1,5 | no |
 | TASK-COMP-003 | Libro de recibidas | US-COMP-03 | M2 | COMP-002 | 1 | sí (fiscal) |
@@ -140,9 +140,9 @@ Reglas para todas las tareas: primero los tests; PR pequeño con el TASK-ID; sin
 | TASK-REG-021 | Factura a El Corte Inglés en AecocEDI | US-EDI-03 | M3 | REG-020, FACT-003 | 2 | sí (envío a terceros) |
 | TASK-REG-022 | Confirmaciones de pago y bandeja EDI (UI-30) | US-EDI-04 | M3 | REG-020, FIN-001 | 1 | no |
 | TASK-REG-023 | INFOVI y declaración de cosecha | US-INFOVI-01 | M3 | INV-005, REG-002 | 1 | sí (declaraciones obligatorias) |
-| TASK-REG-024 | Certificados ecológicos | US-ECO-01 | M4 | CONT-001 | 1 | sí (normativa ecológica) |
-| TASK-REG-025 | Informe para el organismo de control | US-ECO-01 | M4 | REG-024, VIN-002, BOD-006 | 1,5 | sí (normativa ecológica) |
-| TASK-REG-026 | Límites de SO₂ y sustancias autorizadas | US-ECO-02 | M4 | BOD-011, REG-024 | 0,5 | sí (normativa ecológica) |
+| TASK-REG-024 | Certificados ecológicos | US-ECO-01 | M3 | CONT-001 | 1 | sí (normativa ecológica) |
+| TASK-REG-025 | Informe para el organismo de control | US-ECO-01 | M3 | REG-024, VIN-002, BOD-006 | 1,5 | sí (normativa ecológica) |
+| TASK-REG-026 | Límites de SO₂ y sustancias autorizadas | US-ECO-02 | M3 | BOD-011, REG-024 | 0,5 | sí (normativa ecológica) |
 | TASK-MIG-001 | Pipeline de migración | US-MIG-01 | M1 | CORE-002 | 1,5 | sí (migración) |
 | TASK-MIG-002 | Contactos desde Holded y Shopify | US-MIG-01 | M1 | MIG-001, CONT-003 | 1,5 | sí (migración) |
 | TASK-MIG-003 | Catálogo propuesto y aprobado | US-MIG-02 | M1 | MIG-001, CAT-001 | 1 | sí (migración) |
@@ -159,11 +159,20 @@ Reglas para todas las tareas: primero los tests; PR pequeño con el TASK-ID; sin
 | TASK-REP-001 | Informes y paquete para la asesoría (UI-33) | US-FACT-11, US-COMP-03 | M3 | FACT-011, COMP-003, INV-005 | 1,5 | sí (fiscal) |
 | TASK-REP-002 | Gráficos de ventas, gastos y stock por producto, lote y año | US-REP-01 | M1 (stock) / M2 | INV-005, FACT-011, COMP-003 | 1,5 | no |
 | TASK-BOD-012 | Materiales de envasado: lista por formato, stock y consumo al envasar | US-BOD-14 | M1 | BOD-005, CAT-001 | 1,5 | no |
+| TASK-BOD-013 | Zonas y plano, barricas, jaulones y nichos | US-BOD-01 | M2 | BOD-001, INV-001 | 2 | no |
+| TASK-BOD-014 | Recepción con sanidad y vinificación: tipos, fases, délestage, sangrado, descube y control de temperatura | US-BOD-08, US-BOD-09, US-BOD-10 | M2 | BOD-009, BOD-010 | 2 | sí (SILICIE de sangrado y descube, Q-040) |
+| TASK-BOD-015 | Calculadoras enológicas, ajustes, reglas de la casa y mermas legales | US-BOD-15, US-BOD-16 | M2 | BOD-002, BOD-011 | 2 | sí (mermas legales) |
+| TASK-BOD-016 | Estabilización y filtración por placas con consumibles | US-BOD-17 | M2 | BOD-002, BOD-012 | 1 | no |
+| TASK-BOD-017 | Catas estructuradas y cata a ciegas | US-BOD-18, US-BOD-19 | M2 | BOD-011 | 2 | no |
+| TASK-BOD-018 | Destino del lote, parcela única, recetas y comparador de añadas | US-BOD-20, US-VIN-07 | M2 | BOD-002, BOD-011 | 2 | no |
+| TASK-BOD-019 | Higiene, equipos, control de envasado y registro APPCC | US-BOD-21 | M2 | BOD-005, BOD-006 | 1,5 | no |
+| TASK-VIN-004 | Cata de uva, muestras por parcela y planificador de vendimia | US-VIN-04, US-VIN-06 | M3 | VIN-003, BOD-011 | 1,5 | no |
+| TASK-ASIS-004 | Diagrama de trazabilidad por chat | US-ASIS-04 | M3 | ASIS-001, MCP-003 | 1 | no |
 | TASK-FACT-013 | EORI y documentos de exportación por país | US-FACT-12, US-FACT-07 | M2 | FACT-004, FACT-007 | 1,5 | sí (aduanas) |
 | TASK-FIN-003 | Extractos y conciliación de transferencias (Norma 43/CAMT) | US-FIN-03 | M2 | FIN-001 | 2 | no |
 | TASK-FIN-004 | Remesas SEPA (adeudos pain.008 y transferencias pain.001) | US-FIN-04 | M2 | FIN-001, APR-001 | 1,5 | sí (bancos) |
 
-**Total**: 137 tareas · 188 días de agente · 73 con escalado a Opus (revisión).
+**Total**: 146 tareas · 203 días de agente · 75 con escalado a Opus (revisión).
 
 ## 3. Trazabilidad historia → tareas (MVP)
 
@@ -211,19 +220,21 @@ Reglas para todas las tareas: primero los tests; PR pequeño con el TASK-ID; sin
 | US-INV-04 | INV-003 |
 | US-INV-05 | INV-001 |
 | US-INV-06 | INV-007 |
-| US-BOD-01 | BOD-001 |
+| US-BOD-01 | BOD-001, BOD-013 |
 | US-BOD-02 | BOD-002, BOD-003, BOD-008 |
-| US-BOD-03 | BOD-004 |
+| US-BOD-03 | BOD-004, BOD-017 |
 | US-BOD-04 / 07 | BOD-005, BOD-008 |
 | US-BOD-05 / 13 | BOD-006 |
 | US-BOD-06 | BOD-007 |
-| US-BOD-08 / 09 | BOD-009 |
-| US-BOD-10 | BOD-010 |
+| US-BOD-08 / 09 | BOD-009, BOD-014 |
+| US-BOD-10 | BOD-010, BOD-014 |
 | US-BOD-11 | BOD-011 |
 | US-BOD-12 | BOD-002 |
 | US-VIN-01 | VIN-001 |
 | US-VIN-02 | VIN-002 |
-| US-VIN-03 / 04 / 05 | VIN-003 |
+| US-VIN-03 / 04 / 05 | VIN-003, VIN-004 |
+| US-VIN-06 | VIN-004 |
+| US-VIN-07 | BOD-018 |
 | US-COMP-01 / 02 / 03 | COMP-001, COMP-002, COMP-003 |
 | US-FIN-01 / 02 | FIN-001, FIN-002 |
 | US-SIL-01 | REG-004, REG-005 |
@@ -251,7 +262,13 @@ Reglas para todas las tareas: primero los tests; PR pequeño con el TASK-ID; sin
 | US-MIG-04 | MIG-005 |
 | US-MCP-01 / 02 / 03 | MCP-001, MCP-002, MCP-003, MCP-004 |
 | US-ASIS-01 / 02 / 03 | ASIS-001, ASIS-002, ASIS-003 |
+| US-ASIS-04 | ASIS-004 |
 | US-BOD-14 | BOD-012 |
+| US-BOD-15 / 16 | BOD-015 |
+| US-BOD-17 | BOD-016 |
+| US-BOD-18 / 19 | BOD-017 |
+| US-BOD-20 | BOD-018 |
+| US-BOD-21 | BOD-019 |
 | US-FACT-12 | FACT-013 |
 | US-FIN-03 / 04 | FIN-003, FIN-004 |
 | US-REP-01 | REP-002 |

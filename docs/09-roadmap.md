@@ -16,14 +16,16 @@ gantt
   Aforo de arranque                         :milestone, a1, 2026-12-31, 0d
   section M2
   Ventas, facturación sin Verifactu y SILICIE :m2, 2027-01-11, 75d
+  Elaboración completa (adelantada, en paralelo desde ya) :m2e, 2026-11-02, 144d
   section M3
   Regulatorio por computer use y asistente  :m3, 2027-03-29, 61d
+  Viñedo, planificador de vendimia y ecológico (en paralelo desde ya) :m3v, 2026-11-02, 207d
   section M4
   Verifactu CVPO y P.O                      :m4, 2027-05-03, 59d
   Control de preproducción                  :milestone, g4, 2027-06-01, 0d
   Obligación P.O y paso de CVPO desde Holded :milestone, g5, 2027-07-01, 0d
   section M5
-  Bodega completa, viñedo y ecológico (antes de la vendimia) :m5, 2027-05-03, 75d
+  Puesta a punto con datos reales y ensayo (antes de la vendimia) :m5, 2027-05-03, 75d
   section M6–M8
   Previsión de tesorería y datos para modelos :m6, 2027-07-05, 88d
   Contabilidad y migración histórica        :m7, 2027-10-01, 61d
@@ -43,11 +45,12 @@ gantt
 
 ### M2 · Ventas, facturación sin Verifactu y SILICIE — 11-01 → 26-03-2027
 - **Entrega**: reglas de entidad facturadora (D3); pedidos; albaranes con lote (venta, consigna, traspaso, devolución) e incidencias; **facturación de P.O** (completas y rectificativas, IRPF, recargo, exportación, intracomunitaria, Canarias, PDF ES/EN, emisión en lote con aprobación); cobros y partidas abiertas; intercompañía mensual; **SILICIE**: mayores, asientos al día (incluidos los cambios depósito ↔ barrica) y fichero CSV oficial, con la presentación aún manual hasta M3; gastos con OCR y libros de IVA; **conciliación de transferencias (Norma 43/CAMT) y remesas SEPA**, para poder dejar Holded; EORI y documentos de exportación por país en las facturas; gráficos de ventas y gastos por producto, lote y año; revisión de albaranes pendientes de Holded; MCP de ventas y facturación.
+- **Elaboración completa (adelantada desde M5; en construcción en paralelo desde el 31-10-2026)**: zonas y plano, barricas, jaulones y nichos; recepción con sanidad; vinificación por tipo, maceraciones, délestage, sangrado y descube; FA espontánea y FML; analíticas con calculadoras (SO2 por pH, estabilización por frío, alcohol probable) y reglas de la casa; mermas legales; estabilización y filtración por placas; catas y cata a ciegas; ensamblaje con fórmula; destino del lote, parcela única y recetas; higiene, equipos y control de envasado (US-BOD-01, 03, 08–11, 15–21).
 - **CVPO**: hasta M4 sigue facturando en **Holded con Verifactu** (obligatorio desde el 01-01-2027); WineCore lleva sus pedidos, albaranes y cobros e importa sus facturas de Holded como externas (Q-033, supuesto).
 - **Depende de**: M1; Q-009, Q-010, Q-016, Q-017, Q-033.
 
 ### M3 · Regulatorio por *computer use* y asistente — 29-03 → 28-05-2027
-- **Entrega**: ejecutor local; presentación de SILICIE (importación de fichero), SISV (importación mensual), EMCS (e-DA y mensajes), AecocEDI (pedidos, factura, aviso de pago) e INFOVI; calendario de obligaciones; cuadre SISV ↔ SILICIE; asistente interno; resumen diario; vigilantes; pedidos web (si Q-018).
+- **Entrega**: ejecutor local; presentación de SILICIE (importación de fichero), SISV (importación mensual), EMCS (e-DA y mensajes), AecocEDI (pedidos, factura, aviso de pago) e INFOVI; calendario de obligaciones; cuadre SISV ↔ SILICIE; asistente interno con diagrama de trazabilidad; resumen diario; vigilantes; pedidos web (si Q-018). **Viñedo y ecológico** (adelantados desde M5; en construcción en paralelo desde el 31-10-2026): parcelas, tratamientos y cuaderno, labores, maduración con cata de uva y muestras de laboratorio, planificador de vendimia, vendimia, comparador de añadas e informe para la certificadora.
 - **Depende de**: M2; Q-012, Q-018, Q-019, Q-024, Q-026, Q-030, Q-031.
 
 ### M4 · Verifactu (CVPO y P.O) — 03-05 → 30-06-2027 · control 01-06-2027
@@ -55,8 +58,8 @@ gantt
 - **Control del 01-06-2027**: batería al 100 % en preproducción. **01-07-2027**: P.O factura con Verifactu en WineCore (obligación legal) y CVPO pasa de Holded a WineCore.
 - **Depende de**: Q-002 y Q-003 (supuestos), Q-006 (certificado, se decide al final), Q-007 (declaración responsable), Q-008.
 
-### M5 · Bodega completa, viñedo y ecológico — 03-05 → 16-07-2027 (antes de la vendimia)
-- **Entrega**: recepción de uva, prensado, fin de fermentación, lecturas con alertas, analíticas y catas, ensamblaje con fórmula; parcelas, tratamientos y cuaderno (CUE), labores, maduración, vendimia; certificados e informe ecológicos; trazabilidad completa botella → parcela. Va en paralelo a M4.
+### M5 · Puesta a punto con datos reales y ensayo — 03-05 → 16-07-2027 (antes de la vendimia)
+- **Entrega**: la elaboración y el viñedo ya están construidos (M2–M3). En M5 se cargan los maestros reales (parcelas, barricas, equipos, procedimientos, recetas), se confirman los ajustes enológicos y las mermas legales (Q-035, Q-036), se forma al equipo y se ensaya el ciclo completo (maduración → planificador → recepción → fermentaciones → analíticas) antes de la vendimia 2027; trazabilidad completa botella → parcela verificada con datos reales. Va en paralelo a M4.
 
 ### M6 · Tesorería y datos para modelos — 05-07 → 30-09-2027
 - Previsión de tesorería y exportaciones para 303/390/347/349/115/130 (`modelos-aeat.md`). La conciliación bancaria y las remesas SEPA pasan a M2.
@@ -68,7 +71,7 @@ gantt
 - Recepción y emisión estructuradas (UBL) y estados (Q-032); decisión AecocEDI (ADR 006).
 
 ### Posterior (sin fecha)
-Etiqueta electrónica, conocimiento de añadas, planificador de vendimia, costes por partida, TPV con simplificadas, OSS, paquetería, APPCC.
+Etiqueta electrónica, previsión meteorológica automática en el planificador, costes por partida, TPV con simplificadas, OSS, integración de paquetería.
 
 ## 3. Calendario regulatorio que condiciona los hitos
 
