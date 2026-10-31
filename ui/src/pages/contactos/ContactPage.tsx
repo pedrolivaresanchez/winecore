@@ -22,6 +22,7 @@ import { ApiError } from "@/lib/api";
 import {
   archiveContact,
   cleanInput,
+  presentAuditAction,
   countryLabel,
   inputFromContact,
   isStale,
@@ -30,6 +31,7 @@ import {
   unarchiveContact,
   updateContact,
   vatLabel,
+  type AuditChange,
   type Contact,
   type ContactInput,
 } from "@/lib/contacts";
@@ -40,6 +42,43 @@ import { NoPermission } from "@/components/NoPermission";
 import { validateContact } from "@/lib/contact-validate";
 import { ContactForm } from "@/pages/contactos/ContactForm";
 import { AddressBook, PersonBook } from "@/pages/contactos/Related";
+
+const FIELD_LABELS: Record<string, string> = {
+  kind: "Tipo",
+  tax_id_type: "Tipo de NIF",
+};
+
+const KIND_LABELS: Record<string, string> = {
+  company: "Empresa",
+  person: "Persona",
+};
+
+const TAX_TYPE_LABELS: Record<string, string> = {
+  none: "Sin validar",
+  nif: "NIF",
+  nie: "NIE",
+  vat_eu: "NIF-IVA",
+  foreign_id: "Extranjero",
+  passport: "Pasaporte",
+};
+
+function presentValue(field: string, raw: unknown): unknown {
+  if (typeof raw !== "string" || raw === "") return raw;
+  if (field === "kind") return KIND_LABELS[raw] ?? raw;
+  if (field === "language") return raw === "en" ? "Inglés" : raw === "es" ? "Español" : raw;
+  if (field === "vat_regime") return vatLabel(raw);
+  if (field === "tax_id_type") return TAX_TYPE_LABELS[raw] ?? raw;
+  if (field === "payment_method") return paymentLabel(raw);
+  return raw;
+}
+
+function presentChanges(changes: AuditChange[]) {
+  return changes.map((change) => ({
+    field: FIELD_LABELS[change.field] ?? change.field,
+    before: presentValue(change.field, change.before),
+    after: presentValue(change.field, change.after),
+  }));
+}
 
 const TABS = [
   { id: "resumen", label: "Resumen" },
@@ -58,7 +97,13 @@ export function ContactPage({ me }: { me: Me }) {
     tab === "historial" && id ? `/v1/audit?table=party.contact&row_id=${id}` : null,
   );
 
-  if (!allows(me, "contacts.read")) return <NoPermission />;
+  if (!allows(me, "contacts.read")) {
+    return (
+      <div data-screen="contactos-sin-permiso">
+        <NoPermission />
+      </div>
+    );
+  }
   if (contact.loading && !contact.data) {
     return (
       <div aria-busy="true" className="grid gap-3">
@@ -157,7 +202,7 @@ function Loaded({
   }
 
   return (
-    <div data-screen="ficha" data-tab={tab} className="flex flex-col gap-4">
+    <div data-screen="ficha" data-tab={tab} className="flex min-w-0 flex-col gap-4">
       <Link to="/contactos" className="text-compact text-muted-foreground">
         ← Contactos
       </Link>
@@ -274,7 +319,11 @@ function Loaded({
       {tab === "historial" ? (
         <div className="max-w-3xl">
           <AuditTrail
-            items={history.data?.items ?? []}
+            items={(history.data?.items ?? []).map((event) => ({
+              ...event,
+              action: presentAuditAction(event),
+              changes: presentChanges(event.changes),
+            }))}
             loading={history.loading}
             error={history.error ? `${copy.error.load} (${history.error.code})` : undefined}
             onRetry={history.reload}
