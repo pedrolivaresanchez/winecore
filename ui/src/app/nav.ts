@@ -1,4 +1,4 @@
-import { ChartBar, Check, Home, Settings2, Users, type IconComponent, Box, Layers } from '@/ui/icons'
+import { ChartBar, Check, Home, Settings2, Users, type IconComponent, Box, Layers, Receipt } from '@/ui/icons'
 import { copy } from '@/i18n'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
@@ -85,6 +85,14 @@ export const navigation: NavEntry[] = [
     icon: Box,
     path: '/stock',
     permission: 'inventory.read',
+  },
+  {
+    id: 'sales',
+    module: 'sales',
+    label: copy.nav.sales,
+    icon: Receipt,
+    path: '/ventas',
+    permission: 'sales.read',
     mobile: 'tab',
     placement: 'main',
   },
@@ -105,6 +113,7 @@ export const navigation: NavEntry[] = [
     ],
   },
   {
+
 
     id: 'settings',
     module: 'core',
