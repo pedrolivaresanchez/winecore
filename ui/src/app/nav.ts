@@ -11,6 +11,9 @@ export type NavChild = {
   mobile?: 'tab'
 }
 
+/** Menu groups from docs/08-ui/01-navegacion.md, in that order. */
+export type NavGroup = 'inicio' | 'ventas' | 'catalogo' | 'compras' | 'stock' | 'bodega' | 'informes'
+
 export type NavEntry = {
   id: string
   module: string
@@ -24,6 +27,8 @@ export type NavEntry = {
   mobile: 'tab' | 'more' | 'none'
   action?: 'settings'
   placement: 'main' | 'footer'
+  /** One rail entry per area. Sub-routes stay on `children`. */
+  group?: NavGroup
 }
 
 export const navigation: NavEntry[] = [
@@ -36,6 +41,7 @@ export const navigation: NavEntry[] = [
     end: true,
     mobile: 'tab',
     placement: 'main',
+    group: 'inicio',
   },
   {
     id: 'approvals',
@@ -45,6 +51,7 @@ export const navigation: NavEntry[] = [
     path: '/aprobaciones',
     mobile: 'more',
     placement: 'main',
+    group: 'inicio',
   },
   {
     id: 'contacts',
@@ -55,6 +62,7 @@ export const navigation: NavEntry[] = [
     permission: 'contacts.read',
     mobile: 'tab',
     placement: 'main',
+    group: 'ventas',
   },
   {
     id: 'sales',
@@ -65,6 +73,7 @@ export const navigation: NavEntry[] = [
     permission: 'sales.read',
     mobile: 'tab',
     placement: 'main',
+    group: 'ventas',
   },
   {
     id: 'catalog',
@@ -76,6 +85,7 @@ export const navigation: NavEntry[] = [
     permission: 'catalog.read',
     mobile: 'more',
     placement: 'main',
+    group: 'catalogo',
     children: [
       { id: 'wines', label: copy.catalog.wines, path: '/catalogo/vinos', permission: 'catalog.read' },
       { id: 'formats', label: copy.catalog.formats, path: '/catalogo/formatos', permission: 'catalog.read' },
@@ -91,6 +101,7 @@ export const navigation: NavEntry[] = [
     permission: 'purchasing.read',
     mobile: 'tab',
     placement: 'main',
+    group: 'compras',
   },
   {
     id: 'stock',
@@ -101,6 +112,7 @@ export const navigation: NavEntry[] = [
     permission: 'inventory.read',
     mobile: 'tab',
     placement: 'main',
+    group: 'stock',
   },
   {
     id: 'cellar',
@@ -110,6 +122,7 @@ export const navigation: NavEntry[] = [
     permission: 'cellar.read',
     mobile: 'tab',
     placement: 'main',
+    group: 'bodega',
     children: [
       { id: 'vessels', label: copy.nav.vessels, path: '/bodega/depositos', permission: 'cellar.read' },
       { id: 'lots', label: copy.nav.lots, path: '/bodega/lotes', permission: 'cellar.read' },
@@ -125,6 +138,7 @@ export const navigation: NavEntry[] = [
     permission: 'reports.read',
     mobile: 'tab',
     placement: 'main',
+    group: 'informes',
   },
   {
     id: 'settings',

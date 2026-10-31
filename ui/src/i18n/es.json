@@ -16,6 +16,15 @@
     "lots": "Lotes",
     "newOperation": "Nueva operación",
     "reports": "Informes",
+    "groups": {
+      "inicio": "Inicio",
+      "ventas": "Ventas",
+      "catalogo": "Catálogo",
+      "compras": "Compras",
+      "stock": "Stock",
+      "bodega": "Bodega",
+      "informes": "Informes"
+    },
     "more": "Más",
     "collapse": "Plegar menú",
     "expand": "Desplegar menú"
