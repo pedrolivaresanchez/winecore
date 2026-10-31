@@ -4,21 +4,8 @@
  * `inventory.inventory_count_line`). Quantities are safe integers: millilitres,
  * units and grams — never decimal litres. Instants are ISO-8601 strings with a
  * zone; business dates are `YYYY-MM-DD`. No clock is read here.
+ * Domain errors are `DomainError` from `../errors`.
  */
-
-export class DomainError extends Error {
-  readonly code: string;
-  readonly httpStatus: number;
-  readonly details?: unknown;
-
-  constructor(code: string, message: string, httpStatus = 422, details?: unknown) {
-    super(message);
-    this.name = "DomainError";
-    this.code = code;
-    this.httpStatus = httpStatus;
-    this.details = details;
-  }
-}
 
 export type IsoDate = string;
 export type IsoDateTime = string;

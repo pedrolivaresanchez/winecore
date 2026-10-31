@@ -1,10 +1,11 @@
-import { DomainError, type IsoDate, type PeriodLock } from "./types";
-
-const MADRID = "Europe/Madrid";
+import { DomainError } from '../errors';
+import { businessDate as madridBusinessDate, toMadridOffsetString } from '../time';
+import type { IsoDate, PeriodLock } from './types';
 
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const INSTANT_RE =
   /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})$/;
+const CLOCK_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/;
 
 export interface MadridDateTime {
   year: number;
@@ -27,6 +28,10 @@ export interface MadridPeriod {
   start: IsoDate;
   /** Last civil day of the month, inclusive. */
   end: IsoDate;
+}
+
+function invalid(message: string, fields?: Record<string, string>): never {
+  throw new DomainError('WC_VALIDATION', 422, message, fields);
 }
 
 export function isBusinessDate(value: string): boolean {
@@ -55,18 +60,15 @@ export function isInstant(value: string): boolean {
 /** Milliseconds since the epoch. The instant must carry an explicit zone. */
 export function instantMs(value: string): number {
   if (!isInstant(value)) {
-    throw new DomainError(
-      "WC_VALIDATION",
-      "El instante debe ser ISO-8601 con zona horaria (por ejemplo 2027-01-01T00:00:00+01:00).",
-      422,
-      { value },
-    );
+    invalid('El instante debe ser ISO-8601 con zona horaria (por ejemplo 2027-01-01T00:00:00+01:00).', {
+      value,
+    });
   }
   return Date.parse(value);
 }
 
 function pad(value: number, width: number): string {
-  return String(value).padStart(width, "0");
+  return String(value).padStart(width, '0');
 }
 
 export function formatIsoDate(year: number, month: number, day: number): IsoDate {
@@ -74,50 +76,37 @@ export function formatIsoDate(year: number, month: number, day: number): IsoDate
 }
 
 /**
- * Wall-clock parts in Europe/Madrid. DST is whatever ICU knows for that zone
- * (last Sunday of March and October). The input is an absolute instant, so the
- * overlap on the October change is unambiguous.
+ * Wall-clock parts in Europe/Madrid. The conversion is `toMadridOffsetString`
+ * from `core/time` (date-fns, zone Europe/Madrid). The input is an absolute
+ * instant, so the overlap on the October change is unambiguous.
  */
 export function madridDateTime(instant: string): MadridDateTime {
-  const ms = instantMs(instant);
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: MADRID,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(new Date(ms));
-  const pick = (type: Intl.DateTimeFormatPartTypes): number => {
-    const part = parts.find((item) => item.type === type);
-    if (!part) {
-      throw new DomainError("WC_VALIDATION", "No se pudo convertir la fecha a Europe/Madrid.", 422, {
-        value: instant,
-      });
-    }
-    return Number(part.value);
-  };
-  let hour = pick("hour");
-  if (hour === 24) hour = 0;
-  const year = pick("year");
-  const month = pick("month");
-  const day = pick("day");
+  const date = new Date(instantMs(instant));
+  const formatted = toMadridOffsetString(date);
+  const match = CLOCK_RE.exec(formatted);
+  const year = Number(match?.[1]);
+  const month = Number(match?.[2]);
+  const day = Number(match?.[3]);
+  const hour = Number(match?.[4]);
+  const minute = Number(match?.[5]);
+  const second = Number(match?.[6]);
+  if (!match || [year, month, day, hour, minute, second].some((part) => Number.isNaN(part))) {
+    invalid('No se pudo convertir la fecha a Europe/Madrid.', { value: instant });
+  }
   return {
     year,
     month,
     day,
     hour,
-    minute: pick("minute"),
-    second: pick("second"),
-    date: formatIsoDate(year, month, day),
+    minute,
+    second,
+    date: madridBusinessDate(date),
   };
 }
 
-/** Business date `YYYY-MM-DD` of an instant in Europe/Madrid. */
+/** Business date `YYYY-MM-DD` of an instant in Europe/Madrid (`core/time`). */
 export function businessDate(instant: string): IsoDate {
-  return madridDateTime(instant).date;
+  return madridBusinessDate(new Date(instantMs(instant)));
 }
 
 /**
@@ -127,12 +116,9 @@ export function businessDate(instant: string): IsoDate {
 export function resolveBusinessDate(input: string): IsoDate {
   if (isBusinessDate(input)) return input;
   if (isInstant(input)) return businessDate(input);
-  throw new DomainError(
-    "WC_VALIDATION",
-    "La fecha debe ser un día (YYYY-MM-DD) o un instante ISO-8601 con zona horaria.",
-    422,
-    { value: input },
-  );
+  invalid('La fecha debe ser un día (YYYY-MM-DD) o un instante ISO-8601 con zona horaria.', {
+    value: input,
+  });
 }
 
 function daysInMonth(year: number, month: number): number {
@@ -145,6 +131,9 @@ export function periodOf(input: string): MadridPeriod {
   const match = DATE_RE.exec(date);
   const year = Number(match?.[1]);
   const month = Number(match?.[2]);
+  if (!match || Number.isNaN(year) || Number.isNaN(month)) {
+    invalid('La fecha de negocio no es válida.', { value: date });
+  }
   const key = `${pad(year, 4)}-${pad(month, 2)}`;
   return {
     year,
@@ -168,9 +157,7 @@ export function assertPeriodOpen(date: string, locks: readonly PeriodLock[]): vo
   let closing: PeriodLock | null = null;
   for (const lock of locks) {
     if (!isBusinessDate(lock.locked_until)) {
-      throw new DomainError("WC_VALIDATION", "El cierre de periodo no tiene una fecha válida.", 422, {
-        locked_until: lock.locked_until,
-      });
+      invalid('El cierre de periodo no tiene una fecha válida.', { locked_until: lock.locked_until });
     }
     if (business <= lock.locked_until) {
       if (!closing || lock.locked_until > closing.locked_until) closing = lock;
@@ -178,9 +165,9 @@ export function assertPeriodOpen(date: string, locks: readonly PeriodLock[]): vo
   }
   if (closing) {
     throw new DomainError(
-      "WC021",
-      `WC021: el periodo está cerrado hasta ${closing.locked_until} (movimiento con fecha ${business})`,
+      'WC021',
       409,
+      `WC021: el periodo está cerrado hasta ${closing.locked_until} (movimiento con fecha ${business})`,
       { ledger: closing.ledger, locked_until: closing.locked_until, date: business },
     );
   }

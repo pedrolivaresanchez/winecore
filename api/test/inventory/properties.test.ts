@@ -251,7 +251,7 @@ describe("propiedades", () => {
       const after = stockAt([...book, ...stockDrafts(drafts)], countedAt, STOCK_GROUP_KEYS);
       for (const line of lines) {
         const row = after.find((item) => item.vessel_id === line.vessel_id && item.lot_id === line.lot_id);
-        expect(row?.volume_ml ?? 0).toBe(line.counted_volume_ml);
+        expect(row?.volume_ml ?? 0).toBe(line.counted_volume_ml ?? 0);
         expect(row?.qty_units ?? 0).toBe(0);
       }
       expect(after.find((row) => row.vessel_id === id(0x16ff))?.volume_ml).toBe(7_777);
@@ -331,7 +331,7 @@ describe("propiedades", () => {
       for (const line of lines) {
         const move = plan.physical.find((item) => item.vessel_id === line.vessel_id);
         expect(move?.move_type).toBe("opening");
-        expect(move?.volume_ml).toBe(line.counted_volume_ml);
+        expect(move?.volume_ml).toBe(line.counted_volume_ml ?? undefined);
         expect(move?.owner_entity_id).toBe(line.owner_entity_id);
       }
       const perimeter = lines.filter((line) => line.tax_warehouse_id !== null && line.tax_warehouse_id !== undefined);

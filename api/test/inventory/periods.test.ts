@@ -92,6 +92,6 @@ describe("assertPeriodOpen", () => {
     );
     expect(error.code).toBe("WC021");
     expect(error.message).toContain("2027-01-31");
-    expect(error.details).toMatchObject({ date: "2027-01-20", locked_until: "2027-01-31" });
+    expect(error.fields).toMatchObject({ date: "2027-01-20", locked_until: "2027-01-31" });
   });
 });

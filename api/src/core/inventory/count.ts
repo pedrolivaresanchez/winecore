@@ -1,7 +1,7 @@
+import { DomainError } from "../errors";
 import { fiscalBalanceAt, stockAt } from "./balances";
 import { isBusinessDate, isInstant } from "./periods";
 import {
-  DomainError,
   FISCAL_LEDGER_KEYS,
   STOCK_GROUP_KEYS,
   isFiscalMove,
@@ -67,8 +67,11 @@ interface FiscalBucket {
   missingReason: boolean;
 }
 
-function fail(message: string, details?: unknown): never {
-  throw new DomainError("WC_VALIDATION", message, 422, details);
+function fail(message: string, fields?: Record<string, string | number>): never {
+  const normalized = fields
+    ? Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, String(value)]))
+    : undefined;
+  throw new DomainError("WC_VALIDATION", 422, message, normalized);
 }
 
 function requireText(value: string, message: string): string {
@@ -442,8 +445,8 @@ function assertPiece(
       if (!Number.isSafeInteger(expected) || volume !== expected) {
         throw new DomainError(
           "WC023",
-          `WC023: volumen ${volume} mL incoherente con ${qty} unidades del formato (${nominal} mL)`,
           422,
+          `WC023: volumen ${volume} mL incoherente con ${qty} unidades del formato (${nominal} mL)`,
         );
       }
     }
@@ -632,6 +635,11 @@ function planFiscal(book: readonly FiscalMove[], counted: readonly CountLine[], 
  * drafts use `regularization_in` / `regularization_out` and only lines inside
  * the fiscal perimeter. Equal positions produce no draft. Posting still needs
  * approval `inventory_adjustment`.
+ *
+ * A posted count is complete for every fiscal key it names (tax warehouse,
+ * product class, excise product key). The counted lines of that key are the
+ * whole target, so book volume on the same key that was not on those lines is
+ * written off. Keys the count does not name are left untouched.
  */
 export function planCountAdjustments(
   book: readonly StockMove[] | readonly FiscalMove[],

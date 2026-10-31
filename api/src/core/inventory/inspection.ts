@@ -1,6 +1,7 @@
+import { DomainError } from "../errors";
 import { stockAt } from "./balances";
 import { resolveBusinessDate } from "./periods";
-import { DomainError, STOCK_GROUP_KEYS, type Balance, type ProductState, type StockMove } from "./types";
+import { STOCK_GROUP_KEYS, type Balance, type ProductState, type StockMove } from "./types";
 
 export interface InspectionFilters {
   location_id?: string;
@@ -100,11 +101,7 @@ function rowFromBalance(balance: Balance): InspectionRow {
   const ownerId = balance.owner_entity_id;
   const state = balance.product_state;
   if (locationId === null || ownerId === null || state === null) {
-    throw new DomainError(
-      "WC_VALIDATION",
-      "La fila de existencias no tiene ubicación, propietario o estado.",
-      422,
-    );
+    throw new DomainError("WC_VALIDATION", 422, "La fila de existencias no tiene ubicación, propietario o estado.");
   }
   return {
     location_id: locationId,

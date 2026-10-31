@@ -1,6 +1,6 @@
+import { DomainError } from "../errors";
 import { instantMs, isBusinessDate, isInstant, resolveBusinessDate } from "./periods";
 import {
-  DomainError,
   isFiscalMove,
   isStockMove,
   type Balance,
@@ -11,6 +11,10 @@ import {
   type StockGroupKey,
   type StockMove,
 } from "./types";
+
+function invalid(message: string, fields?: Record<string, string>): never {
+  throw new DomainError("WC_VALIDATION", 422, message, fields);
+}
 
 const KEY_SEP = "\u001f";
 
@@ -27,14 +31,14 @@ interface RunningFiscal {
 
 function assertInteger(value: number, label: string): void {
   if (!Number.isSafeInteger(value)) {
-    throw new DomainError("WC_VALIDATION", `${label} debe ser un entero.`, 422, { value });
+    invalid(`${label} debe ser un entero.`, { value: String(value) });
   }
 }
 
 function addInt(left: number, right: number, label: string): number {
   const sum = left + right;
   if (!Number.isSafeInteger(sum)) {
-    throw new DomainError("WC_VALIDATION", `${label} se sale del rango de enteros seguros.`, 422);
+    invalid(`${label} se sale del rango de enteros seguros.`);
   }
   return sum;
 }
@@ -55,21 +59,14 @@ function encodePart(value: string | null): string {
 export function moveOnOrBefore(occurredAt: string, at: string): boolean {
   if (isBusinessDate(at)) return resolveBusinessDate(occurredAt) <= at;
   if (!isInstant(at)) {
-    throw new DomainError(
-      "WC_VALIDATION",
-      "La fecha de existencias debe ser un día o un instante con zona horaria.",
-      422,
-      { value: at },
-    );
+    invalid("La fecha de existencias debe ser un día o un instante con zona horaria.", { value: at });
   }
   return instantMs(occurredAt) <= instantMs(at);
 }
 
 function fiscalOnOrBefore(fiscalDate: string, at: string): boolean {
   if (!isBusinessDate(fiscalDate)) {
-    throw new DomainError("WC_VALIDATION", "La fecha fiscal debe ser un día (YYYY-MM-DD).", 422, {
-      value: fiscalDate,
-    });
+    invalid("La fecha fiscal debe ser un día (YYYY-MM-DD).", { value: fiscalDate });
   }
   return fiscalDate <= resolveBusinessDate(at);
 }
@@ -144,9 +141,7 @@ function fiscalIdentity(move: FiscalMove): string {
 
 function validateStockMove(move: StockMove, index: number): void {
   if (!isInstant(move.occurred_at)) {
-    throw new DomainError("WC_VALIDATION", "La fecha del movimiento físico no es un instante válido.", 422, {
-      index,
-    });
+    invalid("La fecha del movimiento físico no es un instante válido.", { index: String(index) });
   }
   assertInteger(move.qty_units, "Las unidades");
   assertInteger(move.volume_ml, "El volumen");
@@ -155,7 +150,7 @@ function validateStockMove(move: StockMove, index: number): void {
 
 function validateFiscalMove(move: FiscalMove, index: number): void {
   if (!isBusinessDate(move.fiscal_date)) {
-    throw new DomainError("WC_VALIDATION", "La fecha fiscal del movimiento no es válida.", 422, { index });
+    invalid("La fecha fiscal del movimiento no es válida.", { index: String(index) });
   }
   assertInteger(move.volume_ml, "El volumen fiscal");
   assertInteger(move.units, "Las unidades fiscales");
@@ -241,7 +236,7 @@ function uniqueStockKeys(groupBy: readonly StockGroupKey[]): StockGroupKey[] {
   const keys: StockGroupKey[] = [];
   for (const key of groupBy) {
     if (!isStockGroupKey(key)) {
-      throw new DomainError("WC_VALIDATION", "La agrupación de existencias no es válida.", 422, { key });
+      invalid("La agrupación de existencias no es válida.", { key });
     }
     if (seen.has(key)) continue;
     seen.add(key);
@@ -266,7 +261,7 @@ function uniqueFiscalKeys(ledgerKey: readonly FiscalLedgerKey[]): FiscalLedgerKe
   const keys: FiscalLedgerKey[] = [];
   for (const key of ledgerKey) {
     if (key !== "tax_warehouse" && key !== "product_class" && key !== "excise_product_key") {
-      throw new DomainError("WC_VALIDATION", "La clave del libro fiscal no es válida.", 422, { key });
+      invalid("La clave del libro fiscal no es válida.", { key });
     }
     if (seen.has(key)) continue;
     seen.add(key);
@@ -363,7 +358,7 @@ export function findNegativeBalances(moves: readonly (StockMove | FiscalMove)[])
   if (first !== undefined && isStockMove(first)) {
     return findNegativePhysical(moves as readonly StockMove[]);
   }
-  throw new DomainError("WC_VALIDATION", "El libro de movimientos no tiene un formato reconocible.", 422);
+  invalid("El libro de movimientos no tiene un formato reconocible.");
 }
 
 function findNegativePhysical(moves: readonly StockMove[]): NegativeBalance[] {

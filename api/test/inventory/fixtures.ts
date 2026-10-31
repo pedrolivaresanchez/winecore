@@ -1,5 +1,5 @@
+import { DomainError } from "../../src/core/errors";
 import {
-  DomainError,
   isFiscalMove,
   isStockMove,
   type AdjustmentDraft,
