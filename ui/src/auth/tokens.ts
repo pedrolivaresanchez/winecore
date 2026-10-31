@@ -127,7 +127,7 @@ export const requestMagicLink = async (email: string): Promise<void> => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       email,
-      redirect_uri: `${window.location.origin}/login/callback`,
+      redirect_uri: `${window.location.origin}/api/auth/callback`,
     }),
   });
   if (!response.ok) {
@@ -137,7 +137,7 @@ export const requestMagicLink = async (email: string): Promise<void> => {
 };
 
 export const getOAuthUrl = (provider: string): string => {
-  const redirectUri = `${window.location.origin}/login/callback`;
+  const redirectUri = `${window.location.origin}/api/auth/callback`;
   const url = new URL(`${authConfig.timbalBaseUrl}/oauth/authorize`);
   url.searchParams.set("provider", provider);
   url.searchParams.set("redirect_uri", redirectUri);

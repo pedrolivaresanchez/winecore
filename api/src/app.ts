@@ -15,6 +15,7 @@ import { installIntegrations } from './core/wiring/integrations';
 import { asDomainError, domainError, errorBody } from './core/errors';
 import { safeLogMessage } from './core/redact';
 import type { InvoiceDocumentStore } from './core/billing/pdf/documents';
+import { authCallback } from './routes/auth-callback';
 import { downloadInvoicePdf } from './routes/invoice-documents';
 import {
   getInvoiceDelivery,
@@ -253,6 +254,9 @@ export function createApp(deps: AppDeps) {
     .get('/health', () => health(deps.config, deps.writer))
     // Timbal's readiness probe: liveness only, it must not depend on the Knowledge Base.
     .get('/healthcheck', () => ({ status: 'ok' }))
+    // Public on purpose: the IdP posts the session here. See routes/auth-callback.ts.
+    .get('/auth/callback', ({ request }) => authCallback(request))
+    .post('/auth/callback', ({ request }) => authCallback(request))
     .get('/v1/me', ({ request }) => me(deps.writer, request), {
       beforeHandle: requireUser(guardDeps),
     })

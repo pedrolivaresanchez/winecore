@@ -33,7 +33,12 @@ describe('rutas con guarda', () => {
       const open = routes
         .filter((route) => route.method !== 'OPTIONS' && !guarded(route))
         .map((route) => `${route.method} ${route.path}`);
-      expect(open.sort()).toEqual(['GET /health', 'GET /healthcheck']);
+      expect(open.sort()).toEqual([
+        'GET /auth/callback',
+        'GET /health',
+        'GET /healthcheck',
+        'POST /auth/callback',
+      ]);
       for (const route of routes) {
         if (route.method === 'OPTIONS') continue;
         if (route.path.startsWith('/v1') || route.path.includes('/m2m')) {
@@ -41,6 +46,38 @@ describe('rutas con guarda', () => {
           expect(guarded(route)).toBe(true);
         }
       }
+    } finally {
+      await ctx.close();
+    }
+  });
+});
+
+describe('callback de acceso', () => {
+  it('acepta el POST del proveedor y sigue con GET a la interfaz', async () => {
+    const ctx = await createTestApp();
+    try {
+      const posted = await ctx.app.handle(new Request('http://localhost/auth/callback', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: 'access_token=access-token-1&refresh_token=refresh-token-1',
+      }));
+      expect(posted.status).toBe(303);
+      expect(posted.headers.get('location')).toBe(
+        '/login/callback#access_token=access-token-1&refresh_token=refresh-token-1',
+      );
+      expect(await posted.text()).toBe('');
+
+      const missing = await ctx.app.handle(new Request('http://localhost/auth/callback', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      }));
+      expect(missing.status).toBe(303);
+      expect(missing.headers.get('location')).toBe('/login?error=auth_failed');
+
+      const get = await ctx.app.handle(new Request('http://localhost/auth/callback'));
+      expect(get.status).toBe(303);
+      expect(get.headers.get('location')).toBe('/login/callback');
     } finally {
       await ctx.close();
     }
