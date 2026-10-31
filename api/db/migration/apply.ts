@@ -3,9 +3,11 @@ import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { migrate } from '../migrate';
 import { seed, seedInputFromEnv } from '../seed';
+import { loadConfig } from '../../src/config';
 import type { AuditChange } from '../../src/core/db/audit';
 import type { KbClient } from '../../src/core/db/client';
 import { createLocalClient } from '../../src/core/db/local';
+import { openClient } from '../../src/core/db/open';
 import { sql } from '../../src/core/db/sql';
 import { createWriter, installWriter, withWrite, type Actor, type Writer } from '../../src/core/db/writer';
 import type { MigrationReport } from './report';
@@ -18,28 +20,55 @@ export interface WriteOp {
 export interface MigrationDb {
   client: KbClient;
   writer: Writer;
+  /** True for the Timbal Knowledge Base: a dry run there would hold one transaction across several requests. */
+  remote: boolean;
   close: () => Promise<void>;
 }
 
+/** `dbPath` value that targets the Knowledge Base configured by DB_MODE=timbal and the TIMBAL_* variables. */
+export const TIMBAL_TARGET = 'timbal';
+
 export async function openMigrationDb(path: string): Promise<MigrationDb> {
+  if (path === TIMBAL_TARGET) return openTimbalMigrationDb();
   if (path !== ':memory:') await mkdir(dirname(path), { recursive: true });
   const client = await createLocalClient(path);
   await migrate(client);
-  await seed(client, seedInputFromEnv({ NODE_ENV: 'development' }));
+  // A database that already has its entities (a mirror of production) keeps its own seed.
+  const seeded = await client.query<{ n: unknown }>('SELECT count(*) AS n FROM core.legal_entity');
+  if (Number(seeded[0]?.n ?? 0) === 0) await seed(client, seedInputFromEnv({ NODE_ENV: 'development' }));
   const writer = createWriter(client, { log: () => undefined });
   installWriter(writer);
-  return {
-    client,
-    writer,
-    close: async () => {
-      writer.stopMaintenance();
-      await client.query(sql`
-        UPDATE core.writer_lease
-        SET holder = NULL, expires_at = TIMESTAMPTZ '1970-01-01 00:00:00+00'
-        WHERE holder = ${writer.instanceId}
-      `).catch(() => undefined);
-      await client.close?.();
-    },
+  return { client, writer, remote: false, close: closer(client, writer) };
+}
+
+async function openTimbalMigrationDb(): Promise<MigrationDb> {
+  const config = loadConfig(process.env);
+  if (config.dbMode !== 'timbal') throw new Error('DB_MODE');
+  const client = await openClient(config);
+  // The schema is deployed separately; the migrator never changes it and never seeds production.
+  const { pending } = await migrate(client, { dryRun: true });
+  if (pending.length > 0) throw new Error('SCHEMA_PENDING');
+  const writer = createWriter(client, { log: () => undefined });
+  installWriter(writer);
+  // The running API may hold the single-writer lease; it lapses 60 s after its last renewal.
+  let acquired = false;
+  for (let attempt = 0; attempt < 24 && !acquired; attempt += 1) {
+    acquired = await writer.tryAcquireLease();
+    if (!acquired) await new Promise((resolve) => setTimeout(resolve, 5_000));
+  }
+  if (!acquired) throw new Error('WRITER_LEASE');
+  return { client, writer, remote: true, close: closer(client, writer) };
+}
+
+function closer(client: KbClient, writer: Writer): () => Promise<void> {
+  return async () => {
+    writer.stopMaintenance();
+    await client.query(sql`
+      UPDATE core.writer_lease
+      SET holder = NULL, expires_at = TIMESTAMPTZ '1970-01-01 00:00:00+00'
+      WHERE holder = ${writer.instanceId}
+    `).catch(() => undefined);
+    await client.close?.();
   };
 }
 

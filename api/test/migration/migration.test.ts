@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 import { createLocalClient } from '../../src/core/db/local';
+import { TIMBAL_TARGET } from '../../db/migration/apply';
 import { buildManifest } from '../../db/migration/manifest';
 import { parseDate, normalizePhone } from '../../db/migration/money';
 import { runMigration } from '../../db/migration/run';
@@ -103,6 +104,22 @@ describe('migration extract', () => {
       expect(iban.test(text)).toBe(false);
       expect(phone.test(text)).toBe(false);
     }
+  });
+});
+
+describe('migration target', () => {
+  test('a dry run against the Timbal Knowledge Base is refused before anything is read', async () => {
+    await expect(runMigration({
+      source: 'holded',
+      entity: 'CVPO',
+      dataset: 'contacts',
+      file: '/nonexistent.xlsx',
+      mode: 'dry-run',
+      dbPath: TIMBAL_TARGET,
+      outDir: tmpdir(),
+      operator: 'test',
+      dataKey: null,
+    })).rejects.toThrow('DRY_RUN_REMOTE');
   });
 });
 

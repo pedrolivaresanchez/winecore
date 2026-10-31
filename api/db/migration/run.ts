@@ -9,6 +9,7 @@ import {
   fileAlreadyLoaded,
   openMigrationDb,
   sha256Buffer,
+  TIMBAL_TARGET,
   type WriteOp,
 } from './apply';
 import { datasetForRole, roleOf, type FileRole } from './classify';
@@ -48,6 +49,8 @@ export async function runMigration(options: RunOptions): Promise<{ report: Migra
   const entity = canonicalEntity(options.entity);
   if (options.source !== 'holded' && options.source !== 'shopify') throw new Error('SOURCE');
   if (options.mode === 'load' && !options.approvedReport) throw new Error('APPROVED_REPORT_REQUIRED');
+  // Dry runs keep one transaction open across requests, which a shared Knowledge Base connection cannot isolate.
+  if (options.mode === 'dry-run' && options.dbPath === TIMBAL_TARGET) throw new Error('DRY_RUN_REMOTE');
   const bytes = await readFile(options.file);
   const fileSha256 = sha256Buffer(bytes);
   const loaded = await loadInput(options.file, bytes);
