@@ -43,6 +43,10 @@ const CATALOG = {
   WC_STALE_VERSION: [409, 'El registro ha cambiado; vuelve a cargarlo'],
   WC_UNAUTHENTICATED: [401, 'No autenticado'],
   WC_NO_ACCESS: [403, 'No tienes acceso a WineCore'],
+  // Contactos (TASK-CONT-001)
+  WC_CONTACT_DUPLICATE_TAX_ID: [409, 'Ya existe un contacto con este NIF'],
+  WC_REG_EAD_REQUIRED: [409, 'Hace falta el ARC (e-DA) antes de expedir'],
+  WC_IC_NO_TARIFF: [422, 'No hay tarifa intercompañía vigente'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;
@@ -75,9 +79,13 @@ export function isErrorCode(code: string): code is ErrorCode {
   return Object.prototype.hasOwnProperty.call(CATALOG, code);
 }
 
-export function domainError(code: ErrorCode, fields?: Record<string, string>): DomainError {
+export function domainError(
+  code: ErrorCode,
+  fields?: Record<string, string>,
+  details?: unknown,
+): DomainError {
   const entry = CATALOG[code];
-  return new DomainError(code, entry[0], entry[1], fields);
+  return new DomainError(code, entry[0], entry[1], fields, details);
 }
 
 export function errorBody(error: DomainError): {
@@ -93,8 +101,16 @@ export function errorBody(error: DomainError): {
     details?: unknown;
   } = { code: error.code, message: error.message };
   if (error.fields && Object.keys(error.fields).length > 0) body.fields = error.fields;
-  if (error.details !== undefined) body.details = error.details;
+  if (hasDetails(error.details)) body.details = error.details;
   return body;
+}
+
+function hasDetails(details: unknown): boolean {
+  if (details === undefined || details === null) return false;
+  if (typeof details === 'object' && !Array.isArray(details)) {
+    return Object.keys(details).length > 0;
+  }
+  return true;
 }
 
 export function asDomainError(error: unknown): DomainError | null {
