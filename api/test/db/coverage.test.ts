@@ -84,6 +84,7 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
     "WC120",
     "WC121",
     "WC122",
+    "WC_ANALYSIS_RANGE",
     "WC_ECO_CERT_MISSING",
   ]);
 });

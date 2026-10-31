@@ -99,6 +99,7 @@ const CATALOG = {
   WC_FIN_MANDATE: [422, 'El cliente no tiene mandato SEPA'],
   WC_FIN_STATE: [409, 'La transición de estado no está permitida'],
   WC_ECO_CERT_MISSING: [422, 'Falta el certificado ecológico vigente del proveedor'],
+  WC_ANALYSIS_RANGE: [422, 'El valor está fuera del rango físico del parámetro'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;
