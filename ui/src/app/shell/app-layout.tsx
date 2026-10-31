@@ -29,6 +29,25 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
   const [settings, setSettings] = useState(false)
   const [area, setArea] = useState<SettingsArea>('entities')
   const before = useRef<boolean | null>(null)
+  const openRef = useRef(open)
+  const settingsRef = useRef(settings)
+  const mobileRef = useRef(mobile)
+  openRef.current = open
+  settingsRef.current = settings
+  mobileRef.current = mobile
+
+  useEffect(() => {
+    function onFocus(event: Event) {
+      const detail = (event as CustomEvent<string>).detail
+      if (detail !== 'security' && detail !== 'approvals') return
+      if (!settingsRef.current) before.current = openRef.current
+      setSettings(true)
+      setArea(detail === 'approvals' ? 'policies' : 'security')
+      setOpen(!mobileRef.current)
+    }
+    window.addEventListener('winecore-settings', onFocus)
+    return () => window.removeEventListener('winecore-settings', onFocus)
+  }, [])
 
   useEffect(() => {
     if (readStorage(SIDEBAR_KEY) == null && !mobile) setOpen(wide)
