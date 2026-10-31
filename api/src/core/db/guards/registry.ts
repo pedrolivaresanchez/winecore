@@ -4,7 +4,7 @@ export type GuardSpec = {
   table: string;
   description: string;
   ownerTask: string;
-  implemented: false;
+  implemented: boolean;
 };
 
 export const guards: readonly GuardSpec[] = [
@@ -25,10 +25,10 @@ export const guards: readonly GuardSpec[] = [
   { id: "WC030", kind: "core", table: "inventory.lot_edge", description: "La genealogía de lotes no puede contener ciclos.", ownerTask: "TASK-BOD-002", implemented: false },
   { id: "WC031", kind: "core", table: "cellar.operation_line", description: "Las líneas de una operación que no está en borrador no se modifican.", ownerTask: "TASK-BOD-002", implemented: false },
   { id: "WC032", kind: "core", table: "cellar.operation", description: "Una operación confirmada solo puede pasar a rectificada; rectificada o descartada es definitiva.", ownerTask: "TASK-BOD-002", implemented: false },
-  { id: "WC040", kind: "core", table: "ops.approval_decision", description: "El hash aprobado no coincide con el contenido de la solicitud.", ownerTask: "TASK-APR-001", implemented: false },
-  { id: "WC041", kind: "core", table: "ops.approval_decision", description: "Una decisión de aprobación no se modifica.", ownerTask: "TASK-APR-001", implemented: false },
-  { id: "WC042", kind: "core", table: "ops.approval_request", description: "La solicitud de aprobación no está pendiente.", ownerTask: "TASK-APR-001", implemented: false },
-  { id: "WC043", kind: "core", table: "ops.approval_request", description: "La solicitud de aprobación ha caducado.", ownerTask: "TASK-APR-001", implemented: false },
+  { id: "WC040", kind: "core", table: "ops.approval_decision", description: "El hash aprobado no coincide con el contenido de la solicitud.", ownerTask: "TASK-APR-001", implemented: true },
+  { id: "WC041", kind: "core", table: "ops.approval_decision", description: "Una decisión de aprobación no se modifica.", ownerTask: "TASK-APR-001", implemented: true },
+  { id: "WC042", kind: "core", table: "ops.approval_request", description: "La solicitud de aprobación no está pendiente.", ownerTask: "TASK-APR-001", implemented: true },
+  { id: "WC043", kind: "core", table: "ops.approval_request", description: "La solicitud de aprobación ha caducado.", ownerTask: "TASK-APR-001", implemented: true },
   { id: "WC050", kind: "core", table: "catalog.price_list_item", description: "Una versión de tarifa que no está en borrador no se edita.", ownerTask: "TASK-CAT-002", implemented: false },
   { id: "WC060", kind: "core", table: "sales.delivery_note", description: "Un albarán emitido no se edita y uno anulado es definitivo.", ownerTask: "TASK-VENT-003", implemented: false },
   { id: "WC070", kind: "core", table: "billing.billing_rule", description: "Un conjunto de reglas de facturación que no está en borrador no se edita.", ownerTask: "TASK-VENT-001", implemented: false },
@@ -114,9 +114,9 @@ export const guards: readonly GuardSpec[] = [
   { id: "CK:regulatory.verifactu_record#11", kind: "core", table: "regulatory.verifactu_record", description: "CHECK de tabla que cita una clave (CHECK ((chain_seq = 1) = (previous_record_id IS NULL))); DuckDB reescribiría el UPDATE y la FK fallaría.", ownerTask: "TASK-REG-001", implemented: false },
   { id: "CK:regulatory.verifactu_record#12", kind: "core", table: "regulatory.verifactu_record", description: "CHECK de tabla que cita una clave (CHECK ((previous_record_id IS NULL) = (previous_hash IS NULL))); DuckDB reescribiría el UPDATE y la FK fallaría.", ownerTask: "TASK-REG-001", implemented: false },
   { id: "CK:accounting.journal_entry#13", kind: "core", table: "accounting.journal_entry", description: "CHECK de tabla que cita una clave (CHECK ((kind = 'reversal') = (reverses_entry_id IS NOT NULL))); DuckDB reescribiría el UPDATE y la FK fallaría.", ownerTask: "TASK-CORE-001", implemented: false },
-  { id: "FK:ops.approval_policy.legal_entity_id", kind: "core", table: "ops.approval_policy", description: "FK ops.approval_policy.legal_entity_id hacia core.legal_entity; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-APR-001", implemented: false },
-  { id: "FK:ops.approval_request.legal_entity_id", kind: "core", table: "ops.approval_request", description: "FK ops.approval_request.legal_entity_id hacia core.legal_entity; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-APR-001", implemented: false },
-  { id: "FK:ops.approval_decision.decided_by", kind: "core", table: "ops.approval_decision", description: "FK ops.approval_decision.decided_by hacia core.app_user; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-APR-001", implemented: false },
+  { id: "FK:ops.approval_policy.legal_entity_id", kind: "core", table: "ops.approval_policy", description: "FK ops.approval_policy.legal_entity_id hacia core.legal_entity; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-APR-001", implemented: true },
+  { id: "FK:ops.approval_request.legal_entity_id", kind: "core", table: "ops.approval_request", description: "FK ops.approval_request.legal_entity_id hacia core.legal_entity; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-APR-001", implemented: true },
+  { id: "FK:ops.approval_decision.decided_by", kind: "core", table: "ops.approval_decision", description: "FK ops.approval_decision.decided_by hacia core.app_user; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-APR-001", implemented: true },
   { id: "FK:ops.outbox_event.legal_entity_id", kind: "core", table: "ops.outbox_event", description: "FK ops.outbox_event.legal_entity_id hacia core.legal_entity; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-APR-001", implemented: false },
   { id: "FK:ops.mcp_confirmation.client_id", kind: "core", table: "ops.mcp_confirmation", description: "FK ops.mcp_confirmation.client_id hacia core.api_client; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-APR-001", implemented: false },
   { id: "FK:ops.mcp_confirmation.on_behalf_of_user_id", kind: "core", table: "ops.mcp_confirmation", description: "FK ops.mcp_confirmation.on_behalf_of_user_id hacia core.app_user; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-APR-001", implemented: false },
