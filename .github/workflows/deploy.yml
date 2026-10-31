@@ -1,0 +1,157 @@
+name: deploy
+
+# Plan B (ADR 007): db-migrate → push-timbal → deploy-timbal → smoke-remote.
+# No hace nada salvo que la variable de repositorio TIMBAL_DEPLOY_ENABLED sea 'true'.
+# El environment timbal-main tiene que exigir la aprobación de Pedro
+# (Settings → Environments → Required reviewers). Eso se configura en GitHub, no aquí.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: timbal-main
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  db-migrate:
+    if: ${{ vars.TIMBAL_DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    environment: timbal-main
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2.2.0
+
+      - name: Enmascarar TIMBAL_API_KEY
+        env:
+          TIMBAL_API_KEY: ${{ secrets.TIMBAL_API_KEY }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "::add-mask::${TIMBAL_API_KEY}"
+
+      - name: Migrar la Knowledge Base
+        env:
+          DB_MODE: timbal
+          TIMBAL_ORG_ID: "122"
+          TIMBAL_KB_ID: ${{ vars.TIMBAL_KB_ID }}
+          TIMBAL_API_KEY: ${{ secrets.TIMBAL_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TIMBAL_API_KEY}" ]; then
+            echo "::error::Falta el secreto TIMBAL_API_KEY"
+            exit 1
+          fi
+          if [ -z "${TIMBAL_KB_ID}" ]; then
+            echo "::error::Falta la variable TIMBAL_KB_ID"
+            exit 1
+          fi
+          cd api
+          bun install --frozen-lockfile
+          bun run migrate
+
+  push-timbal:
+    needs: db-migrate
+    if: ${{ vars.TIMBAL_DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    environment: timbal-main
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2.2.0
+
+      - name: Enmascarar TIMBAL_API_KEY
+        env:
+          TIMBAL_API_KEY: ${{ secrets.TIMBAL_API_KEY }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "::add-mask::${TIMBAL_API_KEY}"
+
+      - name: Empujar la SHA exacta a Timbal main
+        env:
+          TIMBAL_API_KEY: ${{ secrets.TIMBAL_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TIMBAL_API_KEY}" ]; then
+            echo "::error::Falta el secreto TIMBAL_API_KEY"
+            exit 1
+          fi
+          bun scripts/timbal/push.ts
+
+  deploy-timbal:
+    needs: push-timbal
+    if: ${{ vars.TIMBAL_DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    environment: timbal-main
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2.2.0
+
+      - name: Enmascarar TIMBAL_API_KEY
+        env:
+          TIMBAL_API_KEY: ${{ secrets.TIMBAL_API_KEY }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "::add-mask::${TIMBAL_API_KEY}"
+
+      - name: Desplegar la SHA y esperar
+        env:
+          TIMBAL_API_KEY: ${{ secrets.TIMBAL_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TIMBAL_API_KEY}" ]; then
+            echo "::error::Falta el secreto TIMBAL_API_KEY"
+            exit 1
+          fi
+          bun scripts/timbal/deploy.ts
+
+  smoke-remote:
+    needs: deploy-timbal
+    if: ${{ vars.TIMBAL_DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    environment: timbal-main
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2.2.0
+
+      - name: Comprobar /api/health
+        env:
+          TIMBAL_MAIN_URL: ${{ vars.TIMBAL_MAIN_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TIMBAL_MAIN_URL}" ]; then
+            echo "::error::Falta la variable TIMBAL_MAIN_URL"
+            exit 1
+          fi
+          bun scripts/timbal/smoke.ts
