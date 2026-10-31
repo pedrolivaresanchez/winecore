@@ -1,6 +1,7 @@
 import { Route, Routes } from 'react-router-dom'
 import type { Me } from '@/lib/types'
 import { NotFound } from '@/pages/NotFound'
+import { InformesPage } from '@/pages/informes/InformesPage'
 import { Panel } from '@/pages/Panel'
 import { ContactCreate } from '@/pages/contactos/ContactCreate'
 import { ContactList } from '@/pages/contactos/ContactList'
@@ -14,6 +15,7 @@ export function AppRoutes({ me }: { me: Me }) {
       <Route path="contactos" element={<ContactList me={me} />} />
       <Route path="contactos/nuevo" element={<ContactCreate me={me} />} />
       <Route path="contactos/:id" element={<ContactPage me={me} />} />
+      <Route path="informes" element={<InformesPage me={me} />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   )
