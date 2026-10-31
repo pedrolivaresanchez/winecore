@@ -17,6 +17,8 @@ jobs:
         with:
           bun-version-file: package.json
       - run: bun install --frozen-lockfile
+      - name: xmllint para validar los ficheros SEPA contra el XSD
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libxml2-utils
       - run: bun run typecheck
       - run: bun test
 
