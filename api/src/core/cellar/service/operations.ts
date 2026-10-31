@@ -29,6 +29,7 @@ import type {
   PressingOffLine,
   PressingOffRequest,
   PressingRequest,
+  SamplingRequest,
   TemperatureControlRequest,
   StockMoveDraft,
   TransferLine,
@@ -127,6 +128,7 @@ const ENGINE_TYPES = [
   'pressing_off',
   'delestage',
   'temperature_control',
+  'sampling',
 ] as const;
 const WINEMAKING_LINE_OPS = new Set(['crushing_pressing', 'fermentation_end', 'malolactic_end', 'bleeding', 'pressing_off']);
 const WINEMAKING_START_OPS = new Set([
@@ -135,11 +137,12 @@ const WINEMAKING_START_OPS = new Set([
   'delestage',
   'temperature_control',
 ]);
-const NO_VOLUME_OPS = new Set(['delestage', 'temperature_control']);
+const NO_VOLUME_OPS = new Set(['delestage', 'temperature_control', 'sampling']);
 const LINE_TYPES = new Set(['racking', 'blend', 'bottling', 'loss', 'destruction']);
 const STATUSES = ['draft', 'confirmed', 'rectified', 'discarded'] as const;
 const LOSS_KINDS = ['authorized', 'incident'] as const;
 const LOT_CODE = /^[A-Z0-9][A-Z0-9./-]{1,29}$/;
+const SAMPLE_CODE = /^[A-Z0-9][A-Z0-9./-]{0,31}$/;
 const LOT_KINDS = ['grape', 'must', 'wine', 'bottled'] as const;
 
 export interface OperationHeader {
@@ -266,6 +269,10 @@ interface StoredDraft {
   end_evidence: 'sensory' | 'analysis' | 'both' | null;
   end_analysis_id: string | null;
   observations: string | null;
+  sampled_at: string | null;
+  sample_code: string | null;
+  sample_destination: 'internal' | 'lab' | null;
+  lab_contact_id: string | null;
 }
 
 export interface OperationPreview {
@@ -595,6 +602,7 @@ function parseBody(body: Record<string, unknown>): { header: ParsedHeader; draft
       if (line.role === 'output' && !line.new_lot_code) line.new_lot_code = newLot.code;
     }
   }
+  const sampling = header.op_type === 'sampling' ? parseSampling(body) : null;
   const winemaking = isWinemakingOp(header.op_type);
   const inoculation = optionalInoculation(body.inoculation);
   if (inoculation === 'commercial' && (body.inoculum_product_id === undefined || body.inoculum_product_id === null)) {
@@ -609,8 +617,12 @@ function parseBody(body: Record<string, unknown>): { header: ParsedHeader; draft
       addition,
       cleaning,
       winemaking_op: winemaking ? header.op_type : null,
-      focus_vessel_id: WINEMAKING_START_OPS.has(header.op_type) ? requireUuid(body.vessel_id, 'vessel_id') : null,
-      focus_lot_id: WINEMAKING_START_OPS.has(header.op_type) ? requireUuid(body.lot_id, 'lot_id') : null,
+      focus_vessel_id: WINEMAKING_START_OPS.has(header.op_type) || sampling
+        ? requireUuid(body.vessel_id, 'vessel_id')
+        : null,
+      focus_lot_id: WINEMAKING_START_OPS.has(header.op_type) || sampling
+        ? requireUuid(body.lot_id, 'lot_id')
+        : null,
       abv_pct: optionalAbv(body.abv_pct),
       excise_product_key: optionalText(body.excise_product_key, 'excise_product_key', 40),
       started_at: optionalInstant(body.started_at, 'started_at'),
@@ -625,6 +637,10 @@ function parseBody(body: Record<string, unknown>): { header: ParsedHeader; draft
       end_evidence: optionalEvidence(body.end_evidence),
       end_analysis_id: optionalUuid(body.end_analysis_id, 'end_analysis_id'),
       observations: optionalText(body.observations, 'observations', 2000),
+      sampled_at: sampling?.sampled_at ?? null,
+      sample_code: sampling?.sample_code ?? null,
+      sample_destination: sampling?.destination ?? null,
+      lab_contact_id: sampling?.lab_contact_id ?? null,
     },
   };
 }
@@ -912,6 +928,7 @@ async function buildRequest(
   if (header.op_type === 'pressing_off') return buildPressingOff(tx, common, lines);
   if (header.op_type === 'delestage') return buildDelestage(tx, common, draft);
   if (header.op_type === 'temperature_control') return buildTemperature(tx, common, draft);
+  if (header.op_type === 'sampling') return buildSampling(tx, common, draft);
   return buildCleaning(tx, common, draft.cleaning);
 }
 
@@ -930,6 +947,7 @@ function vesselIdsOf(request: OperationRequest): string[] {
     || request.op_type === 'malolactic_start'
     || request.op_type === 'delestage'
     || request.op_type === 'temperature_control'
+    || request.op_type === 'sampling'
   ) ids.add(request.vessel_id);
   if (request.op_type === 'cleaning' && request.cleaning.vessel_id) ids.add(request.cleaning.vessel_id);
   if (
@@ -1346,6 +1364,28 @@ async function buildDelestage(
   };
 }
 
+async function buildSampling(
+  tx: Tx,
+  common: Omit<SamplingRequest, 'op_type' | 'vessel_id' | 'lot' | 'sampled_at' | 'sample_code' | 'destination' | 'lab_contact_id'>,
+  draft: StoredDraft,
+): Promise<SamplingRequest> {
+  if (!draft.focus_vessel_id || !draft.focus_lot_id) invalid({ vessel_id: 'Falta el recipiente o el lote' });
+  if (!draft.sampled_at || !draft.sample_code || !draft.sample_destination) {
+    invalid({ sampled_at: 'Faltan la fecha, el código o el destino de la muestra' });
+  }
+  const lot = await requireLot(tx, draft.focus_lot_id, 'lot_id');
+  return {
+    ...common,
+    op_type: 'sampling',
+    vessel_id: draft.focus_vessel_id,
+    lot,
+    sampled_at: draft.sampled_at,
+    sample_code: draft.sample_code,
+    destination: draft.sample_destination,
+    lab_contact_id: draft.lab_contact_id,
+  };
+}
+
 async function buildTemperature(
   tx: Tx,
   common: Omit<TemperatureControlRequest, 'op_type' | 'vessel_id' | 'lot' | 'previous_setpoint_c' | 'new_setpoint_c'>,
@@ -1670,6 +1710,14 @@ async function assertReferences(tx: Tx, draft: StoredDraft): Promise<void> {
   if (draft.end_analysis_id) {
     await assertRow(tx, 'cellar.analysis', draft.end_analysis_id, 'end_analysis_id', 'La analítica no existe');
   }
+  if (draft.lab_contact_id) {
+    const contacts = await tx.read<{ is_supplier: boolean }>(sql`
+      SELECT is_supplier FROM party.contact
+      WHERE id = CAST(${draft.lab_contact_id} AS UUID) AND archived_at IS NULL
+    `);
+    if (!contacts[0]) invalid({ destination: 'El laboratorio no existe' });
+    if (contacts[0].is_supplier !== true) invalid({ destination: 'El laboratorio tiene que ser un proveedor' });
+  }
   if (draft.cleaning) {
     await assertRow(tx, 'catalog.product', draft.cleaning.product_id, 'cleaning.product_id', 'El producto de limpieza no existe');
     if (draft.cleaning.location_id) {
@@ -1720,6 +1768,12 @@ function asStored(value: unknown): StoredDraft | null {
       : null,
     end_analysis_id: typeof record.end_analysis_id === 'string' ? record.end_analysis_id : null,
     observations: typeof record.observations === 'string' ? record.observations : null,
+    sampled_at: typeof record.sampled_at === 'string' ? record.sampled_at : null,
+    sample_code: typeof record.sample_code === 'string' ? record.sample_code : null,
+    sample_destination: record.sample_destination === 'internal' || record.sample_destination === 'lab'
+      ? record.sample_destination
+      : null,
+    lab_contact_id: typeof record.lab_contact_id === 'string' ? record.lab_contact_id : null,
   };
 }
 
@@ -2289,6 +2343,39 @@ function optionalAbv(value: unknown): string | null {
   const text = requireText(value, 'abv_pct', 10);
   if (!/^(0|[1-9]\d?)(?:\.\d{1,2})?$/.test(text)) invalid({ abv_pct: 'El grado no es válido' });
   return text;
+}
+
+function parseSampling(body: Record<string, unknown>): {
+  sampled_at: string;
+  sample_code: string;
+  destination: 'internal' | 'lab';
+  lab_contact_id: string | null;
+} {
+  const sampledAt = requireText(body.sampled_at ?? body.sampledAt, 'sampled_at', 40);
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(sampledAt) || !Number.isFinite(Date.parse(sampledAt))) {
+    invalid({ sampled_at: 'Debe ser un instante ISO-8601 con zona horaria' });
+  }
+  if (Date.parse(sampledAt) > Date.now() + 60_000) invalid({ sampled_at: 'La toma de muestras no puede ser futura' });
+  const sampleCode = requireText(body.sample_code ?? body.sampleCode, 'sample_code', 32).toUpperCase();
+  if (!SAMPLE_CODE.test(sampleCode)) invalid({ sample_code: 'El código de muestra no es válido' });
+  return { sampled_at: sampledAt, sample_code: sampleCode, ...parseSampleDestination(body) };
+}
+
+function parseSampleDestination(body: Record<string, unknown>): {
+  destination: 'internal' | 'lab';
+  lab_contact_id: string | null;
+} {
+  const raw = body.destination ?? body.sample_destination;
+  if (raw === 'internal') return { destination: 'internal', lab_contact_id: null };
+  if (typeof raw === 'string' && isUuid(raw)) return { destination: 'lab', lab_contact_id: raw.toLowerCase() };
+  if (raw !== null && typeof raw === 'object' && !Array.isArray(raw)) {
+    const record = raw as Record<string, unknown>;
+    if (record.kind === 'internal') return { destination: 'internal', lab_contact_id: null };
+    if (record.kind === 'lab') {
+      return { destination: 'lab', lab_contact_id: requireUuid(record.contact_id ?? record.lab_contact_id, 'destination') };
+    }
+  }
+  invalid({ destination: 'El destino es interno o un contacto de laboratorio' });
 }
 
 function optionalInoculation(value: unknown): 'spontaneous' | 'commercial' | null {

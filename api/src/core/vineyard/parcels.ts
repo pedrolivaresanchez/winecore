@@ -7,6 +7,7 @@ import { isMadridCivilDate } from '../time';
 import { addAreas, areaExceeds, formatArea, parseArea } from './quantity';
 import { dayOf, flag, idOf, instantOf, integerOrNull, objectOf, text, textOrNull } from './rows';
 import { formatSigpac, parseSigpac, type SigpacRef } from './sigpac';
+import { latestParcelAnalysis } from '../winemaking/service';
 import { activeVariety } from './varieties';
 
 const CODE = /^[A-Z0-9-]{2,20}$/;
@@ -21,6 +22,10 @@ export interface ParcelVariety {
   area_ha: string;
   planting_year: number | null;
   rootstock: string | null;
+}
+
+export interface ParcelDetail extends Parcel {
+  latest_analysis: Record<string, unknown> | null;
 }
 
 export interface Parcel {
@@ -142,8 +147,9 @@ export async function listParcels(writer: Writer): Promise<{ items: Parcel[]; to
   return { items, total: items.length };
 }
 
-export async function getParcel(writer: Writer, code: string): Promise<Parcel> {
-  return requireParcel(writer, code);
+export async function getParcel(writer: Writer, code: string): Promise<ParcelDetail> {
+  const parcel = await requireParcel(writer, code);
+  return { ...parcel, latest_analysis: await latestParcelAnalysis(writer, parcel.id) };
 }
 
 export async function createParcel(writer: Writer, actor: Actor, body: Record<string, unknown>): Promise<Parcel> {

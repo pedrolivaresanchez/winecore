@@ -9,13 +9,13 @@ export interface BalanceLine {
 /**
  * Conservación de docs/02-modelo-dominio.md §9.2 para los tipos que DuckDB
  * no puede añadir al CHECK. El sangrado y el descube conservan mililitros.
- * El délestage y la corrección de temperatura no admiten líneas.
+ * El délestage, la corrección de temperatura y la toma de muestras no admiten líneas.
  */
 export function assertElaborationBalance(
   opType: string,
   lines: readonly BalanceLine[],
 ): PlanFailure | null {
-  if (opType === 'delestage' || opType === 'temperature_control') {
+  if (opType === 'delestage' || opType === 'temperature_control' || opType === 'sampling') {
     if (lines.length > 0) {
       return fail(
         'WC020',

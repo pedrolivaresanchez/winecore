@@ -1,4 +1,5 @@
 import { sessionOf } from '../../auth/guard';
+import { latestLabReport } from './reports';
 import { sql } from '../db/sql';
 import type { Tx, Writer } from '../db/writer';
 import { emitEvent } from '../events/emit';
@@ -321,6 +322,7 @@ export async function createAnalysis(writer: Writer, request: Request, code: str
       sampledAt,
       results,
     });
+    await applyEnologySpec(tx, id, lot.id, results);
   });
   return analysisById(writer, id);
 }
@@ -435,10 +437,17 @@ export async function createParcelAnalysis(writer: Writer, request: Request, cod
   const labRaw = requireText(body.lab, 'lab', 120);
   const lab = LABS.has(labRaw) ? labRaw : 'external';
   const labName = LABS.has(labRaw) ? optionalText(body.lab_name, 'lab_name', 120) : labRaw;
+  const labContactId = optionalUuidField(body.lab_contact_id ?? body.labContactId, 'lab_contact_id');
+  const attachmentId = attachmentOf(body);
   const results = parseResults(body.results);
   const actor = actorFor(request, 'analítica de parcela');
   const id = newId();
   await writer.withWrite(actor, async (tx) => {
+    if (labContactId) await assertLabContact(tx, labContactId, false);
+    if (attachmentId) {
+      const found = await tx.read(sql`SELECT id FROM core.attachment WHERE id = CAST(${attachmentId} AS UUID)`);
+      if (found.length === 0) invalid({ pdf: 'El informe adjunto no existe' });
+    }
     const parameters = await tx.read<{ code: string; unit: string; min_value: string | null; max_value: string | null }>(`
       SELECT code, unit, min_value::VARCHAR AS min_value, max_value::VARCHAR AS max_value
       FROM cellar.analysis_parameter
@@ -454,7 +463,7 @@ export async function createParcelAnalysis(writer: Writer, request: Request, cod
     }
     tx.write(sql`
       INSERT INTO cellar.parcel_analysis (
-        id, parcel_id, kind, sampled_at, result_at, lab, lab_name, created_by
+        id, parcel_id, kind, sampled_at, result_at, lab, lab_name, lab_contact_id, report_attachment_id, created_by
       ) VALUES (
         CAST(${id} AS UUID),
         CAST(${parcel.id} AS UUID),
@@ -463,6 +472,8 @@ export async function createParcelAnalysis(writer: Writer, request: Request, cod
         CAST(${resultAt} AS TIMESTAMPTZ),
         ${lab},
         ${labName},
+        CAST(${labContactId} AS UUID),
+        CAST(${attachmentId} AS UUID),
         ${actor.id}
       )
     `);
@@ -478,16 +489,53 @@ export async function createParcelAnalysis(writer: Writer, request: Request, cod
       `);
     }
   });
+  return parcelAnalysisById(writer, id);
+}
+
+export async function listParcelAnalyses(writer: Writer, _request: Request, code: string): Promise<{
+  items: Record<string, unknown>[];
+  next_cursor: null;
+  total: number;
+}> {
+  const parcel = await parcelByCode(writer, code);
+  const rows = await writer.read<{ id: string }>(sql`
+    SELECT id::VARCHAR AS id FROM cellar.parcel_analysis
+    WHERE parcel_id = CAST(${parcel.id} AS UUID)
+    ORDER BY sampled_at DESC, id DESC
+  `);
+  const items = [];
+  for (const row of rows) items.push(await parcelAnalysisById(writer, row.id));
+  return { items, next_cursor: null, total: items.length };
+}
+
+export async function latestParcelAnalysis(writer: Writer, parcelId: string): Promise<Record<string, unknown> | null> {
+  const rows = await writer.read<{ id: string }>(sql`
+    SELECT id::VARCHAR AS id FROM cellar.parcel_analysis
+    WHERE parcel_id = CAST(${parcelId} AS UUID)
+    ORDER BY sampled_at DESC, id DESC
+    LIMIT 1
+  `);
+  const row = rows[0];
+  if (!row) return null;
+  return parcelAnalysisById(writer, row.id);
+}
+
+export async function listLotSamples(writer: Writer, _request: Request, code: string): Promise<{
+  items: Record<string, unknown>[];
+  next_cursor: null;
+  total: number;
+}> {
+  const lot = await lotByCode(writer, code);
   const rows = await writer.read<Record<string, unknown>>(sql`
-    SELECT a.id::VARCHAR AS id, a.parcel_id::VARCHAR AS parcel_id, a.kind, a.sampled_at, a.result_at,
-           a.lab, a.lab_name, a.created_by
-    FROM cellar.parcel_analysis a WHERE a.id = CAST(${id} AS UUID)
+    SELECT id::VARCHAR AS id, number, status, occurred_at, details
+    FROM cellar.operation
+    WHERE op_type = 'sampling'
+      AND status IN ('draft', 'confirmed')
+      AND lower(json_extract_string(details, '$.focus_lot_id')) = lower(${lot.id})
+    ORDER BY occurred_at DESC, id DESC
   `);
-  const resultsRows = await writer.read<Record<string, unknown>>(sql`
-    SELECT parameter_code, value::VARCHAR AS value FROM cellar.parcel_analysis_result
-    WHERE analysis_id = CAST(${id} AS UUID)
-  `);
-  return { ...rows[0], lot_id: null, results: resultsRows };
+  const items = rows.map((row) => sampleOf(lot.id, row));
+  return { items, next_cursor: null, total: items.length };
 }
 
 export async function listTastings(writer: Writer, _request: Request, code: string): Promise<{
@@ -652,6 +700,7 @@ async function analysisById(writer: Writer, id: string): Promise<Record<string, 
   `);
   const row = rows[0];
   if (!row) throw domainError('WC_NOT_FOUND');
+  row.report_attachment_id = await latestLabReport(writer, 'cellar.analysis', id) ?? row.report_attachment_id ?? null;
   const results = await writer.read<Record<string, unknown>>(sql`
     SELECT r.parameter_code, r.value::VARCHAR AS value, p.unit, p.name_es
     FROM cellar.analysis_result r
@@ -659,34 +708,12 @@ async function analysisById(writer: Writer, id: string): Promise<Record<string, 
     WHERE r.analysis_id = CAST(${id} AS UUID)
     ORDER BY r.parameter_code
   `);
-  const flags = await writer.read<Record<string, unknown>>(sql`
+  const flagRows = await writer.read<FlagRow>(sql`
     SELECT parameter_code, category, bound, limit_value::VARCHAR AS limit_value, value::VARCHAR AS value
     FROM cellar.analysis_flag
     WHERE analysis_id = CAST(${id} AS UUID)
   `);
-  const flagged = new Set(
-    flags.filter((flag) => !String(flag.category).startsWith('assumption_ok_')).map((flag) => String(flag.parameter_code)),
-  );
-  const categories = new Set(flags.map((flag) => String(flag.category)));
-  return {
-    ...row,
-    out_of_spec: flagged.size > 0,
-    results: results.map((result) => ({
-      parameter: result.parameter_code,
-      value: result.value,
-      unit: result.unit,
-      name_es: result.name_es,
-      out_of_spec: flagged.has(String(result.parameter_code)),
-    })),
-    flags,
-    marks: {
-      volatile: categories.has('assumption_volatile'),
-      volatile_overlap: categories.has('assumption_overlap'),
-      dry: categories.has('assumption_ok_dry'),
-      malolactic_finished: categories.has('assumption_ok_fml'),
-      assumptions: true,
-    },
-  };
+  return presentAnalysis(row, results, flagRows);
 }
 
 async function readingById(writer: Writer, id: string): Promise<Record<string, unknown>> {
@@ -837,17 +864,248 @@ const ASSUMPTION_DEFAULTS = { volatile: '0.6', dry: '2', malic: '0.3' };
 const ENOLOGY_TEMPLATE = '00000000-0000-0000-0000-000000000000';
 const THRESHOLD_KEYS = ['volatile_acidity_alert', 'dry_sugars_max', 'fml_malic_max'] as const;
 
+interface FlagRow {
+  parameter_code: string;
+  category: string;
+  bound: string;
+  limit_value: string;
+  value: string;
+}
+
+interface InterpretationFlags {
+  volatile_alert: boolean;
+  dry: boolean;
+  fml_done: boolean;
+  fa_fml_overlap: boolean;
+}
+
+const CATEGORY_FLAG: Record<string, keyof InterpretationFlags> = {
+  assumption_volatile: 'volatile_alert',
+  assumption_ok_dry: 'dry',
+  assumption_ok_fml: 'fml_done',
+  assumption_overlap: 'fa_fml_overlap',
+};
+
+function emptyFlags(): InterpretationFlags {
+  return { volatile_alert: false, dry: false, fml_done: false, fa_fml_overlap: false };
+}
+
+/**
+ * out_of_spec solo si el parámetro sale de un límite configurado
+ * (cellar.analysis_limit o enology.parameter). Las marcas de lectura
+ * van en flags y, una versión más, también en marks.
+ */
+function presentAnalysis(
+  row: Record<string, unknown>,
+  results: Record<string, unknown>[],
+  flagRows: FlagRow[],
+): Record<string, unknown> {
+  const flags = emptyFlags();
+  const spec = new Set<string>();
+  for (const flag of flagRows) {
+    const mapped = CATEGORY_FLAG[String(flag.category)];
+    if (mapped) flags[mapped] = true;
+    else if (!String(flag.category).startsWith('assumption')) spec.add(String(flag.parameter_code));
+  }
+  return {
+    ...row,
+    out_of_spec: spec.size > 0,
+    results: results.map((result) => ({
+      parameter: result.parameter_code,
+      value: result.value,
+      unit: result.unit,
+      name_es: result.name_es,
+      out_of_spec: spec.has(String(result.parameter_code)),
+    })),
+    flags,
+    flag_rows: flagRows,
+    marks: {
+      volatile: flags.volatile_alert,
+      volatile_overlap: flags.fa_fml_overlap,
+      dry: flags.dry,
+      malolactic_finished: flags.fml_done,
+      assumptions: true,
+    },
+  };
+}
+
+async function parcelAnalysisById(writer: Writer, id: string): Promise<Record<string, unknown>> {
+  const rows = await writer.read<Record<string, unknown>>(sql`
+    SELECT a.id::VARCHAR AS id, a.parcel_id::VARCHAR AS parcel_id, a.kind, a.sampled_at, a.result_at,
+           a.lab, a.lab_name, a.lab_contact_id::VARCHAR AS lab_contact_id,
+           a.report_attachment_id::VARCHAR AS report_attachment_id, a.notes, a.created_by, a.created_at
+    FROM cellar.parcel_analysis a WHERE a.id = CAST(${id} AS UUID)
+  `);
+  const row = rows[0];
+  if (!row) throw domainError('WC_NOT_FOUND');
+  row.report_attachment_id = await latestLabReport(writer, 'cellar.parcel_analysis', id) ?? row.report_attachment_id ?? null;
+  const results = await writer.read<Record<string, unknown>>(sql`
+    SELECT r.parameter_code, r.value::VARCHAR AS value, p.unit, p.name_es
+    FROM cellar.parcel_analysis_result r
+    JOIN cellar.analysis_parameter p ON p.code = r.parameter_code
+    WHERE r.analysis_id = CAST(${id} AS UUID)
+    ORDER BY r.parameter_code
+  `);
+  const thresholds = await enologyThresholds(writer, null);
+  const legalMax = await enologyParameterValue(writer, null, 'volatile_acidity_legal_max_g_l');
+  const hits = assumptionHits({
+    results: results.map((result) => ({ parameter: String(result.parameter_code), value: String(result.value) })),
+    thresholds,
+    bothFermentations: false,
+    previousVolatile: null,
+  });
+  const flagRows: FlagRow[] = hits.map((hit) => ({
+    parameter_code: hit.parameter,
+    category: hit.category,
+    bound: 'max',
+    limit_value: hit.limit,
+    value: hit.value,
+  }));
+  const volatile = results.find((result) => result.parameter_code === 'volatile_acidity')?.value;
+  if (legalMax && volatile != null) {
+    const bound = outsideLimit(String(volatile), { min: null, max: legalMax });
+    if (bound) {
+      flagRows.push({
+        parameter_code: 'volatile_acidity',
+        category: 'enology_parameter',
+        bound,
+        limit_value: legalMax,
+        value: String(volatile),
+      });
+    }
+  }
+  return presentAnalysis({
+    ...row,
+    lot_id: null,
+    vessel_id: null,
+    sample_operation_id: null,
+  }, results, flagRows);
+}
+
+function sampleOf(lotId: string, row: Record<string, unknown>): Record<string, unknown> {
+  const details = jsonRecord(row.details);
+  const destination = details.sample_destination === 'lab' ? textOrEmpty(details.lab_contact_id) : 'internal';
+  return {
+    id: row.id,
+    lot_id: lotId,
+    vessel_id: textOrEmpty(details.focus_vessel_id) || null,
+    sampled_at: instantOf(details.sampled_at),
+    sample_code: textOrEmpty(details.sample_code),
+    destination: destination || 'internal',
+    lab_contact_id: details.sample_destination === 'lab' ? textOrEmpty(details.lab_contact_id) || null : null,
+    status: row.status,
+    number: row.number ?? null,
+    occurred_at: instantOf(row.occurred_at),
+  };
+}
+
+function jsonRecord(value: unknown): Record<string, unknown> {
+  const parsed = typeof value === 'string' ? safeJson(value) : value;
+  if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+  return {};
+}
+
+function safeJson(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function textOrEmpty(value: unknown): string {
+  return value == null ? '' : String(value);
+}
+
+interface AssumptionHit {
+  parameter: string;
+  category: string;
+  limit: string;
+  value: string;
+  rule: 'volatile' | 'volatile_overlap' | null;
+}
+
+function assumptionHits(input: {
+  results: { parameter: string; value: string }[];
+  thresholds: { volatile: string; dry: string; malic: string };
+  bothFermentations: boolean;
+  previousVolatile: string | null;
+}): AssumptionHit[] {
+  const valueOf = (parameter: string) => input.results.find((row) => row.parameter === parameter)?.value ?? null;
+  const hits: AssumptionHit[] = [];
+  const volatile = valueOf('volatile_acidity');
+  const sugars = valueOf('glucose_fructose');
+  const malic = valueOf('malic_acid');
+  if (volatile && !money.fromString(volatile).lt(money.fromString(input.thresholds.volatile))) {
+    hits.push({
+      parameter: 'volatile_acidity',
+      category: 'assumption_volatile',
+      limit: input.thresholds.volatile,
+      value: volatile,
+      rule: 'volatile',
+    });
+  }
+  if (sugars && !money.fromString(sugars).gt(money.fromString(input.thresholds.dry))) {
+    hits.push({
+      parameter: 'glucose_fructose',
+      category: 'assumption_ok_dry',
+      limit: input.thresholds.dry,
+      value: sugars,
+      rule: null,
+    });
+  }
+  if (malic && !money.fromString(malic).gt(money.fromString(input.thresholds.malic))) {
+    hits.push({
+      parameter: 'malic_acid',
+      category: 'assumption_ok_fml',
+      limit: input.thresholds.malic,
+      value: malic,
+      rule: null,
+    });
+  }
+  const prior = input.previousVolatile;
+  if (
+    volatile
+    && input.bothFermentations
+    && prior
+    && money.fromString(volatile).gt(money.fromString(prior))
+  ) {
+    hits.push({
+      parameter: 'volatile_acidity',
+      category: 'assumption_overlap',
+      limit: prior,
+      value: volatile,
+      rule: 'volatile_overlap',
+    });
+  }
+  return hits;
+}
+
+async function assertLabContact(tx: Tx, id: string, requireSupplier: boolean): Promise<void> {
+  const contact = await tx.read<{ is_supplier: boolean }>(sql`
+    SELECT is_supplier FROM party.contact WHERE id = CAST(${id} AS UUID) AND archived_at IS NULL
+  `);
+  if (!contact[0]) invalid({ lab_contact_id: 'El contacto del laboratorio no existe' });
+  if (requireSupplier && contact[0].is_supplier !== true) {
+    invalid({ lab_contact_id: 'El laboratorio tiene que ser un proveedor' });
+  }
+}
+
 /** Lee cellar.enology_setting (alias de enology.parameter). Si falta una clave, queda el supuesto. */
-async function enologyThresholds(tx: Tx, entityId: string | null): Promise<{ volatile: string; dry: string; malic: string }> {
+async function enologyThresholds(
+  reader: { read<T = Record<string, unknown>>(statement: string): Promise<T[]> },
+  entityId: string | null,
+): Promise<{ volatile: string; dry: string; malic: string }> {
   const found = { ...ASSUMPTION_DEFAULTS };
-  const rows = await tx.read<{ key: string; value: string | null; entity_key: string }>(sql`
+  const rows = await reader.read<{ key: string; value: string | null; entity_key: string }>(sql`
     SELECT key, value::VARCHAR AS value, entity_key
     FROM cellar.enology_setting
     WHERE key IN ('volatile_acidity_alert', 'dry_sugars_max', 'fml_malic_max')
   `);
+  const wanted = entityId?.toLowerCase() ?? null;
   const pick = (key: (typeof THRESHOLD_KEYS)[number]) => {
-    const mine = entityId
-      ? rows.find((row) => row.key === key && row.entity_key === entityId && row.value)
+    const mine = wanted
+      ? rows.find((row) => row.key === key && row.entity_key.toLowerCase() === wanted && row.value)
       : undefined;
     return mine ?? rows.find((row) => row.key === key && row.entity_key === ENOLOGY_TEMPLATE && row.value);
   };
@@ -860,6 +1118,24 @@ async function enologyThresholds(tx: Tx, entityId: string | null): Promise<{ vol
   return found;
 }
 
+async function enologyParameterValue(
+  reader: { read<T = Record<string, unknown>>(statement: string): Promise<T[]> },
+  entityId: string | null,
+  code: string,
+): Promise<string | null> {
+  const rows = await reader.read<{ value: string | null; entity_key: string }>(sql`
+    SELECT value_num::VARCHAR AS value, entity_key
+    FROM enology.parameter
+    WHERE code = ${code} AND superseded_at IS NULL AND value_num IS NOT NULL
+  `);
+  const wanted = entityId?.toLowerCase() ?? null;
+  const mine = wanted
+    ? rows.find((row) => row.entity_key.toLowerCase() === wanted && row.value)
+    : undefined;
+  const template = rows.find((row) => row.entity_key === ENOLOGY_TEMPLATE && row.value);
+  return (mine ?? template)?.value ?? null;
+}
+
 async function applyAssumptionMarks(
   tx: Tx,
   input: { analysisId: string; lotId: string; sampledAt: string; results: { parameter: string; value: string }[] },
@@ -867,65 +1143,73 @@ async function applyAssumptionMarks(
   const entity = await tx.read<{ producer_entity_id: string }>(sql`
     SELECT producer_entity_id::VARCHAR AS producer_entity_id FROM inventory.lot WHERE id = CAST(${input.lotId} AS UUID)
   `);
-  const thresholds = await enologyThresholds(tx, entity[0]?.producer_entity_id ?? null);
-  const valueOf = (parameter: string) => input.results.find((row) => row.parameter === parameter)?.value ?? null;
-  const volatile = valueOf('volatile_acidity');
-  const sugars = valueOf('glucose_fructose');
-  const malic = valueOf('malic_acid');
-  if (volatile && !money.fromString(volatile).lt(money.fromString(thresholds.volatile))) {
-    await insertFlag(tx, input.analysisId, 'volatile_acidity', 'assumption_volatile', 'max', thresholds.volatile, volatile);
+  const entityId = entity[0]?.producer_entity_id ?? null;
+  const thresholds = await enologyThresholds(tx, entityId);
+  const volatile = input.results.find((row) => row.parameter === 'volatile_acidity')?.value ?? null;
+  let bothFermentations = false;
+  let previousVolatile: string | null = null;
+  if (volatile) {
+    const phases = await tx.read<{ phase: string }>(sql`
+      SELECT phase FROM cellar.lot_phase
+      WHERE lot_id = CAST(${input.lotId} AS UUID)
+        AND status = 'in_progress'
+        AND phase IN ('alcoholic_fermentation','malolactic_fermentation')
+    `);
+    const names = new Set(phases.map((row) => row.phase));
+    bothFermentations = names.has('alcoholic_fermentation') && names.has('malolactic_fermentation');
+    if (bothFermentations) {
+      const previous = await tx.read<{ value: string }>(sql`
+        SELECT r.value::VARCHAR AS value
+        FROM cellar.analysis_result r
+        JOIN cellar.analysis a ON a.id = r.analysis_id
+        WHERE a.lot_id = CAST(${input.lotId} AS UUID)
+          AND a.id <> CAST(${input.analysisId} AS UUID)
+          AND r.parameter_code = 'volatile_acidity'
+          AND a.sampled_at <= CAST(${input.sampledAt} AS TIMESTAMPTZ)
+        ORDER BY a.sampled_at DESC
+        LIMIT 1
+      `);
+      previousVolatile = previous[0]?.value ?? null;
+    }
+  }
+  for (const hit of assumptionHits({
+    results: input.results,
+    thresholds,
+    bothFermentations,
+    previousVolatile,
+  })) {
+    await insertFlag(tx, input.analysisId, hit.parameter, hit.category, 'max', hit.limit, hit.value);
+    if (!hit.rule) continue;
     emitEvent(tx, {
       type: 'cellar.fermentation.alert',
       aggregate: 'cellar.analysis',
       aggregateId: input.analysisId,
       payload: {
         lot_id: input.lotId,
-        rule: 'volatile',
-        legal_entity_id: entity[0]?.producer_entity_id ?? null,
+        rule: hit.rule,
+        legal_entity_id: entityId,
         link: '/bodega/lotes',
       },
     });
   }
-  if (sugars && !money.fromString(sugars).gt(money.fromString(thresholds.dry))) {
-    await insertFlag(tx, input.analysisId, 'glucose_fructose', 'assumption_ok_dry', 'max', thresholds.dry, sugars);
-  }
-  if (malic && !money.fromString(malic).gt(money.fromString(thresholds.malic))) {
-    await insertFlag(tx, input.analysisId, 'malic_acid', 'assumption_ok_fml', 'max', thresholds.malic, malic);
-  }
-  if (!volatile) return;
-  const phases = await tx.read<{ phase: string }>(sql`
-    SELECT phase FROM cellar.lot_phase
-    WHERE lot_id = CAST(${input.lotId} AS UUID)
-      AND status = 'in_progress'
-      AND phase IN ('alcoholic_fermentation','malolactic_fermentation')
+}
+
+/** Límite numérico configurado en enology.parameter. No es una marca de interpretación. */
+async function applyEnologySpec(
+  tx: Tx,
+  analysisId: string,
+  lotId: string,
+  results: { parameter: string; value: string }[],
+): Promise<void> {
+  const entity = await tx.read<{ producer_entity_id: string }>(sql`
+    SELECT producer_entity_id::VARCHAR AS producer_entity_id FROM inventory.lot WHERE id = CAST(${lotId} AS UUID)
   `);
-  const names = new Set(phases.map((row) => row.phase));
-  if (!names.has('alcoholic_fermentation') || !names.has('malolactic_fermentation')) return;
-  const previous = await tx.read<{ value: string }>(sql`
-    SELECT r.value::VARCHAR AS value
-    FROM cellar.analysis_result r
-    JOIN cellar.analysis a ON a.id = r.analysis_id
-    WHERE a.lot_id = CAST(${input.lotId} AS UUID)
-      AND a.id <> CAST(${input.analysisId} AS UUID)
-      AND r.parameter_code = 'volatile_acidity'
-      AND a.sampled_at <= CAST(${input.sampledAt} AS TIMESTAMPTZ)
-    ORDER BY a.sampled_at DESC
-    LIMIT 1
-  `);
-  const prior = previous[0]?.value;
-  if (!prior || !money.fromString(volatile).gt(money.fromString(prior))) return;
-  await insertFlag(tx, input.analysisId, 'volatile_acidity', 'assumption_overlap', 'max', prior, volatile);
-  emitEvent(tx, {
-    type: 'cellar.fermentation.alert',
-    aggregate: 'cellar.analysis',
-    aggregateId: input.analysisId,
-    payload: {
-      lot_id: input.lotId,
-      rule: 'volatile_overlap',
-      legal_entity_id: entity[0]?.producer_entity_id ?? null,
-      link: '/bodega/lotes',
-    },
-  });
+  const max = await enologyParameterValue(tx, entity[0]?.producer_entity_id ?? null, 'volatile_acidity_legal_max_g_l');
+  const volatile = results.find((row) => row.parameter === 'volatile_acidity')?.value ?? null;
+  if (!max || !volatile) return;
+  const bound = outsideLimit(volatile, { min: null, max });
+  if (!bound) return;
+  await insertFlag(tx, analysisId, 'volatile_acidity', 'enology_parameter', bound, max, volatile);
 }
 
 async function insertFlag(
