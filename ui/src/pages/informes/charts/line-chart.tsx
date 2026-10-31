@@ -23,6 +23,7 @@ export function LineChart({
   currentLabel,
   previousLabel,
   formatValue,
+  color = SERIES_CURRENT,
 }: {
   points: ChartDatum[]
   height?: number
@@ -30,6 +31,8 @@ export function LineChart({
   currentLabel: string
   previousLabel: string
   formatValue: (value: number) => string
+  /** The current series. Defaults to the chart ink; a subject passes its `SERIES_TONE`. */
+  color?: string
 }) {
   const { ref, width } = useElementWidth<HTMLDivElement>()
   const svgRef = useRef<SVGSVGElement>(null)
@@ -50,7 +53,7 @@ export function LineChart({
   const active = index != null ? points[index] : null
   const rows: TooltipRow[] = active
     ? [
-        { key: 'current', label: currentLabel, color: SERIES_CURRENT, value: formatValue(active.value) },
+        { key: 'current', label: currentLabel, color, value: formatValue(active.value) },
         ...(active.previous != null
           ? [{ key: 'previous', label: previousLabel, color: SERIES_PREVIOUS, value: formatValue(active.previous) }]
           : []),
@@ -132,20 +135,20 @@ export function LineChart({
             </g>
           ))}
           {!compare && current.length > 0 ? (
-            <path d={`${linePath(current)} L ${current[current.length - 1]?.x ?? 0} ${baseline} L ${current[0]?.x ?? 0} ${baseline} Z`} fill={SERIES_CURRENT} fillOpacity={0.14} />
+            <path d={`${linePath(current)} L ${current[current.length - 1]?.x ?? 0} ${baseline} L ${current[0]?.x ?? 0} ${baseline} Z`} fill={color} fillOpacity={0.14} />
           ) : null}
           {compare ? (
             <path d={linePath(previous)} fill="none" stroke={SERIES_PREVIOUS} strokeWidth={1.5} strokeDasharray="4 3" strokeLinejoin="round" strokeLinecap="round" />
           ) : null}
-          <path d={linePath(current)} fill="none" stroke={SERIES_CURRENT} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" />
+          <path d={linePath(current)} fill="none" stroke={color} strokeWidth={1.75} strokeLinejoin="round" strokeLinecap="round" />
           {index != null ? (
             <line x1={xAt(index)} x2={xAt(index)} y1={plot.top} y2={plot.top + plot.height} stroke="var(--color-chart-rule)" strokeWidth={1} />
           ) : null}
           {points.length === 1 ? (
-            <circle cx={xAt(0)} cy={y(points[0]?.value ?? 0)} r={3.5} fill={SERIES_CURRENT} />
+            <circle cx={xAt(0)} cy={y(points[0]?.value ?? 0)} r={3.5} fill={color} />
           ) : null}
           {index != null && points.length > 1 ? (
-            <circle cx={xAt(index)} cy={y(points[index]?.value ?? 0)} r={3.5} fill="var(--color-surface)" stroke={SERIES_CURRENT} strokeWidth={1.75} />
+            <circle cx={xAt(index)} cy={y(points[index]?.value ?? 0)} r={3.5} fill="var(--color-surface)" stroke={color} strokeWidth={1.75} />
           ) : null}
           {points.map((point, pointIndex) =>
             pointIndex % step === 0 || pointIndex === points.length - 1 ? (

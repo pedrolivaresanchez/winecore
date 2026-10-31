@@ -22,6 +22,7 @@ import {
 import { copy } from '@/i18n'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
+import type { TagTone } from '@/ui/tag-palette'
 
 export type RailGroupId = 'inicio' | 'comercial' | 'bodega' | 'gestion'
 export type RailTier = 'primary' | 'more'
@@ -40,6 +41,8 @@ export type RailItem = {
 export type RailGroup = {
   id: RailGroupId
   label: string
+  /** The section's hue: its dot, its icons and its lit row. Charts reuse it for the same subject. */
+  tone: TagTone
   items: RailItem[]
 }
 
@@ -51,6 +54,7 @@ export const railGroups: RailGroup[] = [
   {
     id: 'inicio',
     label: copy.nav.groups.inicio,
+    tone: 'blue',
     items: [
       { id: 'panel', label: copy.nav.panel, icon: Home, path: '/', exact: ['/'], tier: 'primary' },
       { id: 'approvals', label: copy.nav.approvals, icon: Check, path: '/aprobaciones', tier: 'more' },
@@ -59,6 +63,7 @@ export const railGroups: RailGroup[] = [
   {
     id: 'comercial',
     label: copy.nav.groups.comercial,
+    tone: 'emerald',
     items: [
       { id: 'contacts', label: copy.nav.contacts, icon: Users, path: '/contactos', permission: 'contacts.read', tier: 'primary' },
       { id: 'sales', label: copy.nav.sales, icon: Receipt, path: '/ventas', permission: 'sales.read', tier: 'primary' },
@@ -70,6 +75,7 @@ export const railGroups: RailGroup[] = [
   {
     id: 'bodega',
     label: copy.nav.groups.bodega,
+    tone: 'rose',
     items: [
       { id: 'deposits', label: copy.nav.vessels, icon: Layers, path: '/bodega/plano', permission: 'cellar.read', tier: 'primary' },
       { id: 'vineyard', label: copy.nav.vineyard, icon: MapPin, path: '/vinedo', permission: 'vineyard.read', tier: 'primary' },
@@ -90,6 +96,7 @@ export const railGroups: RailGroup[] = [
   {
     id: 'gestion',
     label: copy.nav.groups.gestion,
+    tone: 'amber',
     items: [
       { id: 'catalog', label: copy.nav.catalog, icon: Box, path: '/catalogo', permission: 'catalog.read', tier: 'primary' },
       { id: 'expenses', label: copy.gastos.title, icon: Briefcase, path: '/gastos', permission: 'purchasing.read', tier: 'primary' },

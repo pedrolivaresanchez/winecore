@@ -19,6 +19,7 @@ export function ColumnChart({
   currentLabel,
   previousLabel,
   formatValue,
+  color = SERIES_CURRENT,
 }: {
   points: ChartDatum[]
   height?: number
@@ -26,6 +27,8 @@ export function ColumnChart({
   currentLabel: string
   previousLabel: string
   formatValue: (value: number) => string
+  /** The current series. Defaults to the chart ink; a subject passes its `SERIES_TONE`. */
+  color?: string
 }) {
   const { ref, width } = useElementWidth<HTMLDivElement>()
   const svgRef = useRef<SVGSVGElement>(null)
@@ -57,7 +60,7 @@ export function ColumnChart({
 
   const rows: TooltipRow[] = active
     ? [
-        { key: 'current', label: currentLabel, color: SERIES_CURRENT, value: formatValue(active.value) },
+        { key: 'current', label: currentLabel, color, value: formatValue(active.value) },
         ...(active.previous != null
           ? [{ key: 'previous', label: previousLabel, color: SERIES_PREVIOUS, value: formatValue(active.previous) }]
           : []),
@@ -154,7 +157,7 @@ export function ColumnChart({
                       width={barWidth}
                       height={barHeight}
                       rx={2}
-                      fill={seriesIndex === 0 ? SERIES_CURRENT : SERIES_PREVIOUS}
+                      fill={seriesIndex === 0 ? color : SERIES_PREVIOUS}
                     />
                   )
                 })}

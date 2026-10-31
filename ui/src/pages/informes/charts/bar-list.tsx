@@ -9,19 +9,22 @@ export function BarList({
   currentLabel,
   previousLabel,
   formatValue,
+  color = SERIES_CURRENT,
 }: {
   points: ChartDatum[]
   label: string
   currentLabel: string
   previousLabel: string
   formatValue: (value: number) => string
+  /** The current series. Defaults to the chart ink; a subject passes its `SERIES_TONE`. */
+  color?: string
 }) {
   const [hover, setHover] = useState<{ index: number; x: number; y: number } | null>(null)
   const max = Math.max(1, ...points.map((point) => Math.max(Math.abs(point.value), Math.abs(point.previous ?? 0))))
   const active = hover ? points[hover.index] : null
   const rows: TooltipRow[] = active
     ? [
-        { key: 'current', label: currentLabel, color: SERIES_CURRENT, value: formatValue(active.value) },
+        { key: 'current', label: currentLabel, color, value: formatValue(active.value) },
         ...(active.previous != null
           ? [{ key: 'previous', label: previousLabel, color: SERIES_PREVIOUS, value: formatValue(active.previous) }]
           : []),
@@ -61,7 +64,7 @@ export function BarList({
                 className="absolute inset-y-1 left-0 rounded-[3px]"
                 style={{
                   width: `${Math.max(point.value === 0 ? 0 : 2, (Math.abs(point.value) / max) * 100)}%`,
-                  background: SERIES_CURRENT,
+                  background: color,
                   opacity: dim ? 0.45 : 1,
                 }}
               />
