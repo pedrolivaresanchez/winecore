@@ -1,0 +1,4 @@
+Handle,Title,Option1 Name,Option1 Value,Variant SKU,Variant Price,Alcohol (product.metafields.custom.alcohol),Anada (product.metafields.custom.anada),Ecologico (product.metafields.custom.ecologico),Sulfitos (product.metafields.custom.sulfitos),Tipo (product.metafields.custom.tipo),Variedad (product.metafields.custom.variedad),Zona Origen (product.metafields.custom.zona_origen),Produccion (product.metafields.custom.produccion),Ficha Cata (product.metafields.custom.ficha_cata)
+ejemplo-tinto,Ejemplo Tinto,Tamano,75cl,,12.50,"12,5%","'2023",true,false,Tinto,Uva ejemplo,Zona ejemplo,Crianza ejemplo,Nota de cata ejemplo
+ejemplo-tinto,,Tamano,150cl,,24.00,,,,,,,
+servicio-porte,Porte de muestras,Tamano,unidad,,4.00,,,,,,,
