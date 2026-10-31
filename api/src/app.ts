@@ -10,6 +10,15 @@ import { noopApprovalHook } from './core/purchasing/approval';
 import type { OcrWorkforce } from './core/purchasing/extract';
 import { ocrFromEnv } from './core/purchasing/timbal';
 import { asDomainError, domainError, errorBody } from './core/errors';
+import type { InvoiceDocumentStore } from './core/billing/pdf/documents';
+import { downloadInvoicePdf } from './routes/invoice-documents';
+import {
+  getInvoiceDelivery,
+  listInvoiceDeliveries,
+  markInvoiceDeliveryFailed,
+  markInvoiceDeliverySent,
+  resendInvoiceDelivery,
+} from './routes/invoice-delivery';
 import { listAudit, verifyAudit } from './routes/audit';
 import {
   decideApproval,
@@ -114,6 +123,7 @@ export interface AppDeps {
   now?: () => Date;
   ocr?: OcrWorkforce;
   approvalHook?: SupplierInvoiceApprovalHook;
+  invoiceDocuments?: InvoiceDocumentStore;
 }
 
 const startedAt = new WeakMap<Request, number>();
@@ -129,6 +139,12 @@ export function createApp(deps: AppDeps) {
   };
   const http = { config: deps.config, writer: deps.writer, now: deps.now ?? (() => new Date()) };
   const expenses = { ocr: deps.ocr ?? ocrFromEnv(), approvalHook: deps.approvalHook ?? noopApprovalHook };
+  const invoiceDeps = {
+    writer: deps.writer,
+    config: deps.config,
+    documents: deps.invoiceDocuments,
+  };
+  const deliveryDeps = { writer: deps.writer, documents: deps.invoiceDocuments };
   const app = new Elysia(deps.config.apiBasePath ? { prefix: deps.config.apiBasePath } : {})
     .use(cors())
     .onRequest(({ request, set }) => {
@@ -250,6 +266,9 @@ export function createApp(deps: AppDeps) {
     .get('/v1/invoices/export', ({ request }) => exportInvoices(deps.writer, request), {
       beforeHandle: requirePermission(guardDeps, 'billing.read'),
     })
+    .get('/v1/invoices/deliveries/pending', ({ request }) => listInvoiceDeliveries(deliveryDeps, request), {
+      beforeHandle: requirePermission(guardDeps, 'billing.deliver'),
+    })
     .post('/v1/invoices/batch-issue-request', ({ request }) => batchIssueRequest(deps.writer, request), {
       beforeHandle: requirePermission(guardDeps, 'billing.write'),
     })
@@ -265,6 +284,21 @@ export function createApp(deps: AppDeps) {
     })
     .get('/v1/invoices/:id', ({ request, params }) => getInvoice(deps.writer, request, params.id), {
       beforeHandle: requirePermission(guardDeps, 'billing.read'),
+    })
+    .get('/v1/invoices/:id/pdf', ({ request, params }) => downloadInvoicePdf(invoiceDeps, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.read'),
+    })
+    .get('/v1/invoices/:id/delivery', ({ request, params }) => getInvoiceDelivery(deliveryDeps, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.deliver'),
+    })
+    .post('/v1/invoices/:id/delivery/sent', ({ request, params }) => markInvoiceDeliverySent(deliveryDeps, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.deliver'),
+    })
+    .post('/v1/invoices/:id/delivery/failed', ({ request, params }) => markInvoiceDeliveryFailed(deliveryDeps, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.deliver'),
+    })
+    .post('/v1/invoices/:id/delivery/resend', ({ request, params }) => resendInvoiceDelivery(deliveryDeps, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.deliver'),
     })
     .patch('/v1/invoices/:id', ({ request, params }) => patchInvoice(deps.writer, request, params.id), {
       beforeHandle: requirePermission(guardDeps, 'billing.write'),

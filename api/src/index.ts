@@ -6,6 +6,7 @@ import { registerOutboxDispatch } from './jobs/outbox';
 import { createScheduler } from './jobs/scheduler';
 import { migrate } from '../db/migrate';
 import { withoutApiPrefix } from './api-prefix';
+import { startDeliveryAlertJob } from './jobs/delivery-alerts';
 
 async function main(): Promise<void> {
   const config = loadConfig(process.env);
@@ -28,6 +29,7 @@ async function main(): Promise<void> {
     scheduler.start();
   }
   const app = createApp({ config, writer });
+  const stopDeliveryAlerts = startDeliveryAlertJob(writer, config.deliveryAlertHours);
   Bun.serve({
     port: config.port,
     idleTimeout: 120,
@@ -36,6 +38,7 @@ async function main(): Promise<void> {
   console.log(JSON.stringify({ level: 'info', event: 'listen', port: config.port, role }));
 
   const shutdown = async () => {
+    stopDeliveryAlerts();
     scheduler?.stop();
     writer.stopMaintenance();
     await client.close?.();
