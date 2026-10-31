@@ -1,0 +1,20 @@
+PACKING LIST
+Exporter: Productor (P.O)
+Tax ID: 00000000T
+EORI: ES00000000T
+Address: Calle Ejemplo 1, 00000, Ejemplo, Ejemplo, ES
+Customer: Cliente Ejemplo Ltd
+EORI: GB123456789000
+Address: 1 Example Street, SW1A 1AA, London, GB
+Destination country: GB
+Number: EXP-2026-0001
+Date: 2026-03-15
+Incoterm: FCA
+Origin: ES
+Packages: 2
+Line 1: Viña Arcal 2024
+Quantity: 12 ud
+Net weight (kg): 9.000
+Gross weight (kg): 14.400
+Total net weight (kg): 9.000
+Total gross weight (kg): 14.400
