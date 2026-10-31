@@ -1,0 +1,56 @@
+# --- Datos reales: NUNCA en git (RGPD; ver docs/06-migracion.md y docs/adr/001-repo-y-remotos.md) ---
+/data/
+data/
+*.xlsx
+*.xls
+*.xlsm
+*.csv
+!**/fixtures/synthetic/**/*.csv
+*.zip
+*.pdf
+!docs/**/*.pdf
+
+# --- Secretos: NUNCA en git (ver docs/adr/003-custodia-certificado.md) ---
+.env
+.env.*
+!.env.example
+*.p12
+*.pfx
+*.pem
+*.key
+*.crt
+*.cer
+*.jks
+*.keystore
+secrets/
+.secrets/
+.timbal/credentials*
+
+# --- Contexto sin sanear (solo vive en data/context-raw) ---
+context/raw/
+context/*.raw.*
+
+# --- Herramientas ---
+node_modules/
+.bun/
+dist/
+build/
+coverage/
+.turbo/
+.cache/
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+playwright-report/
+test-results/
+
+# --- SO / editores ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp

@@ -1,0 +1,2 @@
+# Valores que parecen datos personales pero son sintéticos o públicos (uno por línea, valor exacto).
+# Añadir aquí solo datos inventados para tests o identificadores públicos de entidades.
