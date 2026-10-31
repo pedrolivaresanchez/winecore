@@ -2,10 +2,23 @@ import { describe, expect, it } from 'bun:test';
 import { DuckDBInstance } from '@duckdb/node-api';
 import { createTimbalClient } from '../../src/core/db/timbal';
 import { PENDING_TAX_ID, seedInputFromEnv } from '../../db/seed';
+import { withoutApiPrefix } from '../../src/api-prefix';
 
 function fakeFetch(status: number, body: unknown) {
   return async () => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 }
+
+describe('gateway path prefix', () => {
+  it('serves the same routes with and without /api', async () => {
+    expect(new URL(withoutApiPrefix(new Request('http://x/api/v1/contacts?q=a')).url).pathname).toBe('/v1/contacts');
+    expect(new URL(withoutApiPrefix(new Request('http://x/api')).url).pathname).toBe('/');
+    expect(new URL(withoutApiPrefix(new Request('http://x/v1/contacts')).url).pathname).toBe('/v1/contacts');
+    expect(new URL(withoutApiPrefix(new Request('http://x/apiary')).url).pathname).toBe('/apiary');
+    const moved = withoutApiPrefix(new Request('http://x/api/v1/x', { method: 'POST', body: '{"a":1}', headers: { 'Content-Type': 'application/json' } }));
+    expect(moved.method).toBe('POST');
+    expect(await moved.json()).toEqual({ a: 1 });
+  });
+});
 
 describe('Knowledge Base client', () => {
   it('keeps the first line of the server message so domain codes can be mapped', async () => {

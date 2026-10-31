@@ -5,6 +5,7 @@ import { createWriter, installWriter } from './core/db/writer';
 import { registerOutboxDispatch } from './jobs/outbox';
 import { createScheduler } from './jobs/scheduler';
 import { migrate } from '../db/migrate';
+import { withoutApiPrefix } from './api-prefix';
 
 async function main(): Promise<void> {
   const config = loadConfig(process.env);
@@ -27,7 +28,11 @@ async function main(): Promise<void> {
     scheduler.start();
   }
   const app = createApp({ config, writer });
-  app.listen(config.port);
+  Bun.serve({
+    port: config.port,
+    idleTimeout: 120,
+    fetch: (request) => app.handle(config.apiBasePath ? request : withoutApiPrefix(request)),
+  });
   console.log(JSON.stringify({ level: 'info', event: 'listen', port: config.port, role }));
 
   const shutdown = async () => {
@@ -44,9 +49,7 @@ async function main(): Promise<void> {
   });
 }
 
-if (import.meta.main) {
-  main().catch((error: unknown) => {
-    console.error(error instanceof Error ? error.message : 'Error interno');
-    process.exit(1);
-  });
-}
+main().catch((error: unknown) => {
+  console.error(error instanceof Error ? error.message : 'Error interno');
+  process.exit(1);
+});
