@@ -10,8 +10,8 @@ import {
 
 const granted: Record<RoleCode, readonly Permission[]> = {
   owner: PERMISSIONS,
-  approver: ['contacts.read', 'catalog.read', 'reports.read', 'audit.read', 'billing.read', 'purchasing.read', 'purchasing.approve', 'inventory.read', 'cellar.read', 'sales.read'],
-  admin: ['contacts.read', 'contacts.write', 'catalog.read', 'catalog.write', 'reports.read', 'billing.read', 'billing.write', 'purchasing.read', 'purchasing.write', 'inventory.read', 'inventory.count', 'cellar.read', 'sales.read', 'sales.write'],
+  approver: ['contacts.read', 'catalog.read', 'reports.read', 'audit.read', 'billing.read', 'billing.write', 'billing.issue', 'billing.void', 'purchasing.read', 'purchasing.approve', 'inventory.read', 'cellar.read', 'sales.read'],
+  admin: ['contacts.read', 'contacts.write', 'catalog.read', 'catalog.write', 'reports.read', 'billing.read', 'billing.write', 'billing.issue', 'purchasing.read', 'purchasing.write', 'inventory.read', 'inventory.count', 'cellar.read', 'sales.read', 'sales.write'],
   cellar: ['catalog.read', 'inventory.read', 'inventory.count', 'cellar.read', 'cellar.operate'],
   field: ['cellar.read'],
   advisor: ['contacts.read', 'catalog.read', 'reports.read', 'audit.read', 'billing.read', 'purchasing.read', 'inventory.read', 'cellar.read', 'sales.read'],

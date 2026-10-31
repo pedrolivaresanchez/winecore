@@ -151,7 +151,7 @@ function claim(tx: Tx, seriesId: string, dbNext: number, padding: number): numbe
  */
 export async function takeNumber(
   tx: Tx,
-  input: { legalEntityId: string; docType: string; date: Date },
+  input: { legalEntityId: string; docType: string; date: Date; seriesId?: string },
 ): Promise<string> {
   if (!UUID.test(input.legalEntityId)) {
     throw domainError('WC_VALIDATION', { legal_entity_id: 'Identificador no válido' });
@@ -159,25 +159,37 @@ export async function takeNumber(
   if (!isDocType(input.docType)) {
     throw domainError('WC_VALIDATION', { doc_type: 'Tipo de documento no válido' });
   }
+  if (input.seriesId !== undefined && !UUID.test(input.seriesId)) throw domainError('WC010');
   const year = seriesYear(input.date);
+  // seriesId fija la serie del borrador (factura o rectificativa). Sin él, la de por defecto.
   const rows = await tx.read<{
     id: unknown;
     prefix: unknown;
     padding: unknown;
     next_value: unknown;
     is_default: unknown;
-  }>(sql`
-    SELECT id, prefix, padding, next_value, is_default
-    FROM core.number_series
-    WHERE legal_entity_id = CAST(${input.legalEntityId} AS UUID)
-      AND doc_type = ${input.docType}
-      AND "year" = ${year}
-      AND is_active
-    ORDER BY is_default DESC, created_at
-  `);
+  }>(input.seriesId
+    ? sql`
+      SELECT id, prefix, padding, next_value, is_default
+      FROM core.number_series
+      WHERE id = CAST(${input.seriesId} AS UUID)
+        AND legal_entity_id = CAST(${input.legalEntityId} AS UUID)
+        AND doc_type = ${input.docType}
+        AND "year" = ${year}
+        AND is_active
+    `
+    : sql`
+      SELECT id, prefix, padding, next_value, is_default
+      FROM core.number_series
+      WHERE legal_entity_id = CAST(${input.legalEntityId} AS UUID)
+        AND doc_type = ${input.docType}
+        AND "year" = ${year}
+        AND is_active
+      ORDER BY is_default DESC, created_at
+    `);
   if (rows.length === 0) throw domainError('WC010');
   const only = rows.length === 1 ? rows[0] : undefined;
-  const preferred = rows.find((row) => flag(row.is_default)) ?? only;
+  const preferred = input.seriesId ? rows[0] : rows.find((row) => flag(row.is_default)) ?? only;
   if (!preferred) throw domainError('WC010');
   const id = String(preferred.id).toLowerCase();
   const padding = num(preferred.padding);

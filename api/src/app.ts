@@ -77,6 +77,19 @@ import {
   postSettlement,
   postTariff,
 } from './routes/intercompany';
+import {
+  batchIssueExecute,
+  batchIssueRequest,
+  createInvoice,
+  discardInvoice,
+  exportInvoices,
+  getInvoice,
+  issueInvoiceRoute,
+  listInvoices,
+  patchInvoice,
+  validateInvoiceRoute,
+  voidInvoiceRoute,
+} from './routes/invoices';
 import { me } from './routes/me';
 import { listNotifications, readAllNotifications, readNotification } from './routes/notifications';
 import { getReport } from './routes/reports';
@@ -229,6 +242,52 @@ export function createApp(deps: AppDeps) {
     })
     .post('/v1/contacts/:id/persons/:pid/archive', ({ request, params }) => archivePerson(deps.writer, request, params.id, params.pid), {
       beforeHandle: requirePermission(guardDeps, 'contacts.write'),
+    })
+    // Facturación (TASK-FACT-002, 003, 005, 006, 008, 011). Sin Verifactu: el módulo sigue apagado.
+    .get('/v1/invoices', ({ request }) => listInvoices(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'billing.read'),
+    })
+    .get('/v1/invoices/export', ({ request }) => exportInvoices(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'billing.read'),
+    })
+    .post('/v1/invoices/batch-issue-request', ({ request }) => batchIssueRequest(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'billing.write'),
+    })
+    .post('/v1/invoices/batch-issue/:requestId/execute', ({ request, params }) => batchIssueExecute(deps.writer, request, params.requestId), {
+      beforeHandle: requirePermission(guardDeps, 'billing.issue'),
+    })
+    .post('/v1/invoices', async ({ request, set }) => {
+      const body = await createInvoice(deps.writer, request);
+      set.status = 201;
+      return body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'billing.write'),
+    })
+    .get('/v1/invoices/:id', ({ request, params }) => getInvoice(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.read'),
+    })
+    .patch('/v1/invoices/:id', ({ request, params }) => patchInvoice(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.write'),
+    })
+    .post('/v1/invoices/:id/validate', ({ request, params }) => validateInvoiceRoute(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.write'),
+    })
+    .post('/v1/invoices/:id/issue', async ({ request, params, set }) => {
+      const result = await issueInvoiceRoute(deps.writer, request, params.id);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'billing.issue'),
+    })
+    .post('/v1/invoices/:id/void', async ({ request, params, set }) => {
+      const result = await voidInvoiceRoute(deps.writer, request, params.id);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'billing.void'),
+    })
+    .post('/v1/invoices/:id/discard', ({ request, params }) => discardInvoice(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.write'),
     })
     // Series de numeración (TASK-CORE-004). Sin borrado.
     .get('/v1/number-series', ({ request }) => listNumberSeries(deps.writer, request), {
