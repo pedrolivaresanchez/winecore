@@ -30,6 +30,7 @@ import {
   useMenuOpen,
   type GridColumn,
 } from '@/ui'
+import { ImportSheet } from '@/pages/bodega/ImportSheet'
 import { GRID_LABELS, vesselTone } from '@/pages/bodega/labels'
 
 type List = { items: Vessel[]; next_cursor: string | null; total: number }
@@ -72,6 +73,7 @@ export function MapaPage({ me }: { me: Me }) {
   const [onlyFull, setOnlyFull] = useState(false)
   const [table, setTable] = useState(true)
   const [scan, setScan] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [code, setCode] = useState('')
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [hidden, setHidden] = useState<Set<ColumnId>>(new Set())
@@ -170,6 +172,11 @@ export function MapaPage({ me }: { me: Me }) {
             {copy.cellar.scan}
           </Button>
           {allows(me, 'cellar.operate') ? (
+            <Button type="button" variant="secondary" size="sm" onClick={() => setImportOpen(true)}>
+              {copy.cellar.importVessels}
+            </Button>
+          ) : null}
+          {allows(me, 'cellar.operate') ? (
             <Button type="button" variant="primary" size="sm" onClick={() => navigate('/bodega/operaciones/nueva')}>
               {copy.cellar.operation}
             </Button>
@@ -179,6 +186,11 @@ export function MapaPage({ me }: { me: Me }) {
 
       <div className={cn('flex h-11 shrink-0 items-center gap-1.5 border-b border-border-subtle', FRAME_GUTTER)}>
         <div className={FRAME_STRIP_SCROLL}>
+          {allows(me, 'cellar.operate') ? (
+            <Button type="button" variant="secondary" size="sm" className="shrink-0 md:hidden" onClick={() => setImportOpen(true)}>
+              {copy.cellar.importVessels}
+            </Button>
+          ) : null}
           <Input
             id="bodega-buscar"
             size="sm"
@@ -308,6 +320,13 @@ export function MapaPage({ me }: { me: Me }) {
               size="sm"
               title={filtersActive ? copy.cellar.noMatch : copy.cellar.emptyVessels}
               description={filtersActive ? undefined : copy.cellar.emptyVesselsHint}
+              action={
+                !filtersActive && allows(me, 'cellar.operate') ? (
+                  <Button type="button" variant="primary" size="sm" onClick={() => setImportOpen(true)}>
+                    {copy.cellar.importVessels}
+                  </Button>
+                ) : undefined
+              }
             />
           }
         />
@@ -323,6 +342,13 @@ export function MapaPage({ me }: { me: Me }) {
                 size="sm"
                 title={filtersActive ? copy.cellar.noMatch : copy.cellar.emptyVessels}
                 description={filtersActive ? undefined : copy.cellar.emptyVesselsHint}
+                action={
+                  !filtersActive && allows(me, 'cellar.operate') ? (
+                    <Button type="button" variant="primary" size="sm" onClick={() => setImportOpen(true)}>
+                      {copy.cellar.importVessels}
+                    </Button>
+                  ) : undefined
+                }
               />
             </div>
           ) : (
@@ -344,6 +370,8 @@ export function MapaPage({ me }: { me: Me }) {
           )}
         </div>
       )}
+
+      <ImportSheet me={me} open={importOpen} onClose={() => setImportOpen(false)} onDone={() => data.reload()} />
 
       <Dialog open={filtersOpen} onClose={() => setFiltersOpen(false)} labelledBy="bodega-filtros-titulo" size="sm">
         <DialogHeader titleId="bodega-filtros-titulo" title={copy.cellar.filters} onClose={() => setFiltersOpen(false)} />

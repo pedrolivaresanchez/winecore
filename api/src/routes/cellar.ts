@@ -29,11 +29,13 @@ import {
 import {
   createVesselRoute,
   getVesselRoute,
+  importVesselsRoute,
   listVesselRoute,
   patchVesselRoute,
   resolveQrRoute,
   retireVesselRoute,
   vesselHistoryRoute,
+  vesselImportTemplateRoute,
   vesselQrRoute,
 } from './cellar-vessels';
 
@@ -53,6 +55,8 @@ export function cellarRoutes(deps: { writer: Writer; guard: GuardDeps; publicUrl
     .get('/v1/locations/:code', ({ request, params }) => getLocationRoute(writer, request, params.code), read)
     .patch('/v1/locations/:code', ({ request, params }) => patchLocationRoute(writer, request, params.code), manage)
     .post('/v1/locations/:code/archive', ({ request, params }) => archiveLocationRoute(writer, request, params.code), manage)
+    .get('/v1/vessels/import-template', () => vesselImportTemplateRoute(), read)
+    .post('/v1/vessels/import', ({ request }) => importVesselsRoute(writer, request), operate)
     .get('/v1/vessels', ({ request }) => listVesselRoute(writer, request), read)
     .post('/v1/vessels', async ({ request, set }) => {
       const created = await createVesselRoute(writer, request);

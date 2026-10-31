@@ -1,4 +1,5 @@
 import type { Writer } from '../core/db/writer';
+import { importVessels, vesselImportTemplate } from '../core/cellar/service/import-vessels';
 import {
   createVessel,
   getVessel,
@@ -12,6 +13,14 @@ import {
 
 export function listVesselRoute(writer: Writer, request: Request) {
   return listVessels(writer, request);
+}
+
+export function vesselImportTemplateRoute(): Response {
+  return vesselImportTemplate();
+}
+
+export function importVesselsRoute(writer: Writer, request: Request) {
+  return importVessels(writer, request);
 }
 
 export function getVesselRoute(writer: Writer, request: Request, code: string) {

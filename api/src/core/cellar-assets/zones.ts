@@ -85,6 +85,43 @@ interface Geom {
   rotation: number;
 }
 
+/** Same insert the position route uses. Import places vessels through this writer. */
+export function insertPlanPosition(
+  tx: Tx,
+  id: string,
+  zoneId: string,
+  vesselId: string | null,
+  holderId: string | null,
+  geom: Geom,
+): void {
+  auditInsert(tx, 'cellar.plan_position', id, {
+    id,
+    zone_id: zoneId,
+    vessel_id: vesselId,
+    holder_id: holderId,
+    ...geom,
+  }, sql`
+    INSERT INTO cellar.plan_position (id, zone_id, vessel_id, holder_id, x, y, width, height, rotation)
+    VALUES (
+      CAST(${id} AS UUID),
+      CAST(${zoneId} AS UUID),
+      CAST(${vesselId} AS UUID),
+      CAST(${holderId} AS UUID),
+      ${geom.x},
+      ${geom.y},
+      ${geom.width},
+      ${geom.height},
+      ${geom.rotation}
+    )
+  `);
+}
+
+export function deletePlanPosition(tx: Tx, id: string, before: unknown): void {
+  auditDelete(tx, 'cellar.plan_position', id, before, sql`
+    DELETE FROM cellar.plan_position WHERE id = CAST(${id} AS UUID)
+  `);
+}
+
 type Reader = Pick<Writer, 'read'>;
 
 const ZONE_COLUMNS = `
@@ -203,20 +240,7 @@ export async function createPosition(writer: Writer, request: Request, zoneCode:
     if (!zone.is_active) invalid({ code: 'La zona está archivada' });
     const resolved = await resolveSubject(tx, subject, zone.location_id);
     await assertPositionFree(tx, resolved);
-    auditInsert(tx, 'cellar.plan_position', id, { id, zone_id: zone.id, ...resolved, ...geom }, sql`
-      INSERT INTO cellar.plan_position (id, zone_id, vessel_id, holder_id, x, y, width, height, rotation)
-      VALUES (
-        CAST(${id} AS UUID),
-        CAST(${zone.id} AS UUID),
-        CAST(${resolved.vessel_id} AS UUID),
-        CAST(${resolved.holder_id} AS UUID),
-        ${geom.x},
-        ${geom.y},
-        ${geom.width},
-        ${geom.height},
-        ${geom.rotation}
-      )
-    `);
+    insertPlanPosition(tx, id, zone.id, resolved.vessel_id, resolved.holder_id, geom);
   });
   return positionById(writer, id);
 }
@@ -265,9 +289,7 @@ export async function deletePosition(
     const zone = await zoneByCode(tx, zoneCode);
     const current = await positionById(tx, positionId);
     if (current.zone_id !== zone.id) throw domainError('WC_NOT_FOUND');
-    auditDelete(tx, 'cellar.plan_position', positionId, current, sql`
-      DELETE FROM cellar.plan_position WHERE id = CAST(${positionId} AS UUID)
-    `);
+    deletePlanPosition(tx, positionId, current);
     return { vessel_code: current.vessel_code, holder_code: current.holder_code };
   });
   return { id: positionId, deleted: true, ...removed };
