@@ -1,4 +1,4 @@
-import { LayoutDashboard, Settings, ShoppingBag, Users, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, Settings, Users, type LucideIcon } from "lucide-react";
 import { copy } from "@/i18n";
 import { allows } from "@/lib/permissions";
 import type { Me } from "@/lib/types";
@@ -38,21 +38,14 @@ export const navigation: NavEntry[] = [
     placement: "main",
   },
   {
-    id: "sales",
-    module: "sales",
-    label: "Ventas",
-    icon: ShoppingBag,
-    mobile: "none",
+    id: "contacts",
+    module: "contacts",
+    label: copy.nav.contacts,
+    icon: Users,
+    path: "/contactos",
+    permission: "contacts.read",
+    mobile: "tab",
     placement: "main",
-    children: [
-      {
-        id: "contacts",
-        label: copy.nav.contacts,
-        path: "/contactos",
-        permission: "contacts.read",
-        mobile: "tab",
-      },
-    ],
   },
   {
     id: "settings",
