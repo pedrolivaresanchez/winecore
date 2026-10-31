@@ -54,6 +54,9 @@ const CATALOG = {
   WC_VESSEL_NOT_IN_SERVICE: [409, 'El recipiente no está en servicio'],
   WC_ILLEGAL_TRANSITION: [409, 'La transición de estado no está permitida'],
   WC_ECO_MIX: [422, 'No se puede ensamblar un lote ecológico con uno que no lo es'],
+  WC_HYGIENE_DOSE: [422, 'La dosis, el tiempo de contacto o el aclarado no cumplen el procedimiento'],
+  WC_HYGIENE_SCOPE: [422, 'El procedimiento no aplica a este equipo o recipiente'],
+  WC_HYGIENE_CHECKLIST: [409, 'El envasado exige el control de calidad antes de confirmar'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;

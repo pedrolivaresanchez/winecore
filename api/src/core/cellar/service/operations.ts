@@ -1,3 +1,5 @@
+import { assertBottlingChecklist } from '../../hygiene/checklist';
+import { postPlannedConsumptions } from '../../hygiene/stock';
 import { planOperation } from '../engine';
 import type {
   AdditionRequest,
@@ -309,6 +311,16 @@ export async function confirmOperation(writer: Writer, request: Request, id: str
     }
     await consumeLossApproval(tx, policies, current);
     const plan = await planStored(tx, current, actor.id);
+    if (current.header.op_type === 'bottling') {
+      await assertBottlingChecklist(tx, current.id);
+    }
+    // Limpieza: el consumo planificado se da de baja aquí. La filtración no está en el motor;
+    // su consumo lo publica POST /v1/hygiene/filtrations en el mismo write que la ficha.
+    await postPlannedConsumptions(tx, {
+      operationId: current.id,
+      occurredAt: current.header.occurred_at,
+      actorId: actor.id,
+    });
     const number = await takeCellarOperationNumber(tx, current.header.legal_entity_id, current.header.fiscal_date);
     await persistConfirmed(tx, current, plan, actor.id, number);
   });
