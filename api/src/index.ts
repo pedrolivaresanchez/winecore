@@ -50,6 +50,11 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : 'Error interno');
-  process.exit(1);
+  const message = error instanceof Error ? error.message : 'Error interno';
+  console.error(message);
+  // The platform exposes no runtime logs: keep the port open and report the startup failure on every path.
+  Bun.serve({
+    port: Number(process.env.PORT) || 3000,
+    fetch: () => Response.json({ status: 'error', stage: 'startup', message }, { status: 503 }),
+  });
 });

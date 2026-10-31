@@ -84,7 +84,8 @@ export function loadConfig(env: Env): Config {
   const devUserEmail = read(env, 'DEV_USER_EMAIL') ?? 'owner@winecore.test';
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(devUserEmail)) invalid('DEV_USER_EMAIL');
 
-  const gitSha = read(env, 'GIT_SHA') ?? 'dev';
+  const platformRev = read(env, 'TIMBAL_PROJECT_REV');
+  const gitSha = read(env, 'GIT_SHA') ?? (platformRev && /^[A-Za-z0-9._:-]{1,80}$/.test(platformRev) ? platformRev : 'dev');
   if (!/^[A-Za-z0-9._:-]{1,80}$/.test(gitSha)) invalid('GIT_SHA');
 
   const appPublicUrl = (read(env, 'APP_PUBLIC_URL') ?? 'http://localhost:5173').replace(/\/+$/, '');
