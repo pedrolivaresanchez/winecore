@@ -1,4 +1,4 @@
-import { ChartBar, Check, Home, Settings2, Users, type IconComponent, Box, Layers, Receipt } from '@/ui/icons'
+import { Box, ChartBar, Check, Home, Layers, Receipt, Settings2, Users, type IconComponent } from '@/ui/icons'
 import { copy } from '@/i18n'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
@@ -27,25 +27,10 @@ export type NavEntry = {
 }
 
 export const navigation: NavEntry[] = [
-  {
-    id: 'panel',
-    module: 'core',
-    label: copy.nav.panel,
-    icon: Home,
-    path: '/',
-    end: true,
-    mobile: 'tab',
-    placement: 'main',
-  },
-  {
-    id: 'approvals',
-    module: 'core',
-    label: copy.nav.approvals,
-    icon: Check,
-    path: '/aprobaciones',
-    mobile: 'more',
-    placement: 'main',
-  },
+  { id: 'panel', module: 'core', label: copy.nav.panel, icon: Home, path: '/', end: true, mobile: 'tab', placement: 'main' },
+  { id: 'approvals', module: 'core', label: copy.nav.approvals, icon: Check, path: '/aprobaciones', mobile: 'more', placement: 'main' },
+  { id: 'sales', module: 'sales', label: copy.nav.sales, icon: Receipt, path: '/ventas', permission: 'sales.read', mobile: 'more', placement: 'main' },
+  { id: 'expenses', module: 'purchasing', label: copy.gastos.title, icon: Receipt, path: '/gastos', permission: 'purchasing.read', mobile: 'tab', placement: 'main' },
   {
     id: 'cellar',
     module: 'cellar',
@@ -60,50 +45,7 @@ export const navigation: NavEntry[] = [
       { id: 'new-operation', label: copy.nav.newOperation, path: '/bodega/operaciones/nueva', permission: 'cellar.operate' },
     ],
   },
-  {
-    id: 'contacts',
-    module: 'contacts',
-    label: copy.nav.contacts,
-    icon: Users,
-    path: '/contactos',
-    permission: 'contacts.read',
-    mobile: 'tab',
-    placement: 'main',
-  },
-  {
-    id: 'reports',
-    module: 'core',
-    label: copy.nav.reports,
-    icon: ChartBar,
-    path: '/informes',
-    permission: 'reports.read',
-  },
-  {
-    id: 'stock',
-    module: 'inventory',
-    label: copy.nav.stock,
-    icon: Box,
-    path: '/stock',
-    permission: 'inventory.read',
-  },
-  {
-    id: 'sales',
-    module: 'sales',
-    label: copy.nav.sales,
-    icon: Receipt,
-    path: '/ventas',
-    permission: 'sales.read',
-  },
-  {
-    id: 'expenses',
-    module: 'purchasing',
-    label: copy.gastos.title,
-    icon: Receipt,
-    path: '/gastos',
-    permission: 'purchasing.read',
-    mobile: 'tab',
-    placement: 'main',
-  },
+  { id: 'stock', module: 'inventory', label: copy.nav.stock, icon: Box, path: '/stock', permission: 'inventory.read', mobile: 'more', placement: 'main' },
   {
     id: 'catalog',
     module: 'catalog',
@@ -120,18 +62,9 @@ export const navigation: NavEntry[] = [
       { id: 'tariffs', label: copy.catalog.tariffs, path: '/catalogo/tarifas', permission: 'catalog.read' },
     ],
   },
-  {
-
-
-
-    id: 'settings',
-    module: 'core',
-    label: 'Ajustes',
-    icon: Settings2,
-    action: 'settings',
-    mobile: 'more',
-    placement: 'footer',
-  },
+  { id: 'contacts', module: 'contacts', label: copy.nav.contacts, icon: Users, path: '/contactos', permission: 'contacts.read', mobile: 'tab', placement: 'main' },
+  { id: 'reports', module: 'core', label: copy.nav.reports, icon: ChartBar, path: '/informes', permission: 'reports.read', mobile: 'more', placement: 'main' },
+  { id: 'settings', module: 'core', label: 'Ajustes', icon: Settings2, action: 'settings', mobile: 'more', placement: 'footer' },
 ]
 
 export function canSeeChild(me: Me, child: NavChild): boolean {
