@@ -1,4 +1,4 @@
-import { LayoutDashboard, Settings, ShoppingBag, Users, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, Settings, ShoppingBag, Users, Wine, type LucideIcon } from "lucide-react";
 import { copy } from "@/i18n";
 import { allows } from "@/lib/permissions";
 import type { Me } from "@/lib/types";
@@ -51,6 +51,35 @@ export const navigation: NavEntry[] = [
         path: "/contactos",
         permission: "contacts.read",
         mobile: "tab",
+      },
+    ],
+  },
+  {
+    id: "catalog",
+    module: "catalog",
+    label: "Catálogo",
+    icon: Wine,
+    mobile: "none",
+    placement: "main",
+    children: [
+      {
+        id: "products",
+        label: "Productos",
+        path: "/catalogo",
+        permission: "catalog.read",
+        mobile: "tab",
+      },
+      {
+        id: "wines",
+        label: "Vinos y formatos",
+        path: "/catalogo/vinos",
+        permission: "catalog.read",
+      },
+      {
+        id: "tariffs",
+        label: "Tarifas",
+        path: "/catalogo/tarifas",
+        permission: "catalog.read",
       },
     ],
   },
