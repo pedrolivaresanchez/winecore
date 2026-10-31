@@ -23,6 +23,7 @@ import {
 } from './routes/contacts';
 import { health } from './routes/health';
 import { me } from './routes/me';
+import { listNotifications, readAllNotifications, readNotification } from './routes/notifications';
 
 export interface AppDeps {
   config: Config;
@@ -129,6 +130,16 @@ export function createApp(deps: AppDeps) {
     })
     .post('/v1/contacts/:id/persons/:pid/archive', ({ request, params }) => archivePerson(deps.writer, request, params.id, params.pid), {
       beforeHandle: requirePermission(guardDeps, 'contacts.write'),
+    })
+    // Avisos propios (TASK-CORE-007). read-all va antes de /:id.
+    .get('/v1/notifications', ({ request }) => listNotifications(deps.writer, request), {
+      beforeHandle: requireUser(guardDeps),
+    })
+    .post('/v1/notifications/read-all', ({ request }) => readAllNotifications(deps.writer, request), {
+      beforeHandle: requireUser(guardDeps),
+    })
+    .post('/v1/notifications/:id/read', ({ request, params }) => readNotification(deps.writer, request, params.id), {
+      beforeHandle: requireUser(guardDeps),
     });
   return app;
 }
