@@ -33,7 +33,7 @@ Reglas para todas las tareas: primero los tests; PR pequeño con el TASK-ID; sin
 | TASK-INFRA-006 | Despliegue (`deploy.yml`) | RNF-04 | M0 | INFRA-002, INFRA-004, CORE-002 | 1,5 | sí (arquitectura) |
 | TASK-INFRA-007 | Comparación de remotos y trabajos nocturnos | RNF-04, RNF-07 | M0 | INFRA-006 | 1 | no |
 | TASK-INFRA-008 | Observabilidad, alertas y coste | RNF-04, RNF-06, RNF-11 | M1 | INFRA-006 | 1 | no |
-| TASK-INFRA-009 | Runbook y alta del certificado de Verifactu | US-VFT-02, RNF-05 | M1 | INFRA-003, Q-006 | 0,5 | sí (custodia del certificado) |
+| TASK-INFRA-009 | Runbook y alta del certificado de Verifactu | US-VFT-02, RNF-05 | M1 | INFRA-003, Q-006 (aplazada: solo el certificado de producción) | 0,5 | sí (custodia del certificado) |
 | TASK-INFRA-010 | Copias, exportación y prueba de restauración | RNF-04, RNF-09 | M1 | INFRA-003 | 1 | no |
 | TASK-CORE-001 | Base del núcleo: BD, errores, dinero, fechas | RNF-07, RNF-12 | M0 | INFRA-001 | 1,5 | no |
 | TASK-CORE-002 | Migraciones de BD desde la especificación | RNF-07 | M0 | CORE-001 | 1 | sí (esquema transversal) |

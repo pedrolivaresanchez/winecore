@@ -10,11 +10,11 @@
 | ID | Tema | Bloquea | Fecha límite | Estado |
 |---|---|---|---|---|
 | Q-001 | El repo de GitHub es **público** | — (Pedro decide mantenerlo público de momento) | Revisar antes del primer código de Fase 2 (M0) | RESPONDIDA (31-10-2026) |
-| Q-002 | Verifactu: modalidad y canal de envío (computer use no es viable) | M1 | **05-11-2026** | ABIERTA |
-| Q-003 | Verifactu: ¿aprobar la emisión = aprobar el envío del registro? | M1 | **05-11-2026** | ABIERTA |
+| Q-002 | Verifactu: modalidad y canal de envío (computer use no es viable) | M1 | **05-11-2026** | ABIERTA · se aplica la recomendación como SUPUESTO (31-10-2026) |
+| Q-003 | Verifactu: ¿aprobar la emisión = aprobar el envío del registro? | M1 | **05-11-2026** | ABIERTA · se aplica la recomendación como SUPUESTO (31-10-2026) |
 | Q-004 | Proyecto Timbal (existe: id 3942, entorno Main 4165), conexión con GitHub y credenciales | M0 (infraestructura) | **04-11-2026** | EN CURSO (31-10-2026) |
-| Q-005 | Quién aprueba qué (personas identificadas) y desde dónde | M1 | **05-11-2026** | ABIERTA |
-| Q-006 | Certificado para Verifactu y custodia | M1 (pruebas en preproducción y producción) | **12-11-2026** | ABIERTA |
+| Q-005 | Quién aprueba qué (personas identificadas) y desde dónde | M1 | **05-11-2026** | ABIERTA · se aplica la recomendación como SUPUESTO (31-10-2026) |
+| Q-006 | Certificado para Verifactu y custodia | Solo el paso a producción (M1b); el desarrollo y la preproducción usan un certificado de pruebas | 15-12-2026 | APLAZADA por Pedro (31-10-2026): se decide al final |
 | Q-007 | Productor del software (declaración responsable Verifactu) | Paso a producción de M1 | **15-12-2026** | ABIERTA |
 | Q-008 | Plan B de Verifactu: Holded (ya adaptado) en enero si WineCore no pasa el gate | Gate del 01-12-2026 | **01-12-2026** | ABIERTA |
 | Q-009 | Qué entidad factura a El Corte Inglés | M3 (EDI) | 15-01-2027 | ABIERTA |
@@ -66,6 +66,7 @@
   3. **Plan B**: facturar CVPO en enero con un software ya adaptado (Holded si lo está, u otro) y pasar a WineCore cuando supere las pruebas.
 - **Recomendación**: **opción 1** (VERI*FACTU por servicio web) con el gate del 01-12-2026 y la opción 3 como plan B. *Computer use* no sirve para Verifactu.
 - **Dueño**: Pedro (con su asesor) · **Fecha límite**: 05-11-2026.
+- **Estado (31-10-2026)**: sin respuesta. Por indicación de Pedro se trabaja con la recomendación (opción 1) como **SUPUESTO**, marcado así en `04-regulatorio/verifactu.md` §3 y en el ADR 004. Si Pedro elige otra opción, cambian el ADR 004, `verifactu.md` §3–§4 y las tareas TASK-VFT-003/004.
 
 ## Q-003 · ¿Aprobar la emisión de la factura = aprobar el envío del registro Verifactu? — BLOQUEANTE para M1
 
@@ -75,6 +76,7 @@
   2. Doble aprobación: aprobar la factura y, después, aprobar el envío. Incompatible con la inmediatez exigida y añade riesgo de registros sin enviar.
 - **Recomendación**: opción 1. Las facturas sueltas las aprueba quien las emite (si tiene permiso de emisión); los lotes de facturas requieren aprobación expresa en la bandeja.
 - **Dueño**: Pedro · **Fecha límite**: 05-11-2026.
+- **Estado (31-10-2026)**: sin respuesta; se aplica la recomendación (opción 1) como **SUPUESTO** (`verifactu.md` §3, `03-maquinas-estado.md` §8, ADR 004).
 
 ## Q-004 · Proyecto Timbal, conexión con GitHub y credenciales — EN CURSO (bloquea M0)
 
@@ -97,14 +99,16 @@
 - **Opciones para el canal**: (1) solo en la web de WineCore con verificación reforzada (passkey o TOTP) — CVBOT avisa y manda el enlace; (2) también por chat con un código de un solo uso.
 - **Recomendación**: aprobadores configurables por entidad y tipo de trámite; por defecto Pedro y el titular de P.O; **aprobación solo en la web con passkey/TOTP** (opción 1). Evita que una inyección de instrucciones en el chat apruebe un envío.
 - **Dueño**: Pedro · **Fecha límite**: 05-11-2026.
+- **Estado (31-10-2026)**: sin respuesta; se aplica la recomendación como **SUPUESTO**: aprobación solo en la web con passkey/TOTP y, por defecto, Pedro aprueba todo y el titular de P.O también los envíos de P.O (`03-maquinas-estado.md` §12, UI-03, UI-39).
 
-## Q-006 · Certificado para Verifactu y su custodia — BLOQUEANTE para M1
+## Q-006 · Certificado para Verifactu y su custodia — APLAZADA por decisión de Pedro (se decide al final)
 
 - **Hechos** (31-10-2026): vale cualquier certificado válido en la sede de la AEAT, y puede enviar el propio obligado o un tercero con apoderamiento o colaboración social (Orden HAC/1177/2024, art. 5). La AEAT tiene un servicio específico para **certificados de sello** (`www10`). En Timbal las variables secretas llegan a todos los componentes del entorno, agentes incluidos.
 - **Preguntas**: (a) ¿CVPO puede obtener un **sello electrónico cualificado** de empresa para Verifactu (preferido) o usamos un certificado de representante dedicado? (b) ¿P.O apodera a CVPO para el trámite de Verifactu, de modo que un solo certificado envíe los registros de ambas? (c) ¿Quién sube el certificado al almacén de secretos? (propuesta: solo Pedro, con el procedimiento guiado).
 - **Opciones** (ADR 003): (1) emisor aislado en AWS Lambda con el certificado en AWS Secrets Manager, que solo él puede leer; (2) certificado como variable secreta de Timbal; (3) emisor en el equipo del ejecutor local; (4) proveedor externo.
 - **Recomendación**: (1), con sello de CVPO y apoderamiento de P.O a CVPO (confirmar con el asesor y en preproducción). (2) solo como respaldo si AWS no está listo el 20-11-2026. Para preproducción vale cualquier certificado reconocido. El certificado personal de P.O no sale nunca del equipo del ejecutor local.
-- **Dueño**: Pedro (con el asesor para el apoderamiento) · **Fecha límite**: 12-11-2026.
+- **Decisión de Pedro (31-10-2026)**: se deja para el final. Impacto: el desarrollo y la batería de preproducción **no** la necesitan (basta un certificado reconocido de pruebas en el entorno de pruebas); solo bloquea el paso a producción de CVPO (M1b).
+- **Dueño**: Pedro (con el asesor para el apoderamiento) · **Fecha límite**: 15-12-2026 (antes de facturar en producción el 01-01-2027).
 
 ## Q-007 · Productor del software para la declaración responsable — BLOQUEANTE para producción (M1)
 

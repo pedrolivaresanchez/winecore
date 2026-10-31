@@ -1,6 +1,6 @@
 # ADR 004 · Verifactu propio en WineCore y plan B con Holded
 
-- **Estado**: propuesto (depende de Q-002, Q-003, Q-007 y Q-008) · 31-10-2026
+- **Estado**: propuesto · 31-10-2026. Q-002 y Q-003 siguen sin respuesta: la decisión se aplica como **SUPUESTO** (sus recomendaciones) hasta que Pedro responda. Depende además de Q-007 y Q-008.
 - **Relacionado**: `04-regulatorio/verifactu.md`, ADR 003 (certificado), `03-maquinas-estado.md` §5 y §8, `09-roadmap.md` (M1 y M5).
 
 ## Contexto
@@ -16,7 +16,7 @@
 
 1. WineCore implementa Verifactu **en modalidad VERI*FACTU exclusiva** ("solo VERI*FACTU"), por servicio web, para CVPO y P.O con **una cadena por entidad**.
 2. La huella, el XML, el QR y el parseo de respuestas viven en `api/src/core/regulatory/verifactu/` y se generan **dentro de la transacción de emisión**: o se emite la factura con su registro, o no se emite nada. El envío lo hace `verifactu-sender`, aislado (ADR 003).
-3. **Aprobación**: la de la emisión es la del envío (Q-003). El envío es automático e inmediato.
+3. **Aprobación** (SUPUESTO, Q-003): la de la emisión es la del envío. El envío es automático e inmediato.
 4. **Gate del 01-12-2026**: la batería VF-01…VF-22 de `verifactu.md` §16 en el entorno de pruebas de la AEAT, sin diferencias de huella, con informe aprobado por Pedro.
 5. **Plan B**: si el gate no se supera, CVPO factura desde el 01-01-2027 en **Holded con Verifactu** y una serie propia; WineCore sigue en pruebas y el cambio se hace al empezar un mes, tras dos semanas de facturación paralela en el entorno de pruebas sin incidencias. Holded no se da de baja hasta que WineCore lleve dos semanas en producción sin incidencias (Q-008).
 6. **Si se publica el aplazamiento** a 2028: no cambia el diseño. Pedro decide si CVPO arranca igualmente en VERI*FACTU el 01-01-2027 (recomendado: sí, la operativa ya está hecha y el envío voluntario es válido) o espera.

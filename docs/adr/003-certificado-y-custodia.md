@@ -1,6 +1,6 @@
 # ADR 003 · Certificado electrónico y su custodia
 
-- **Estado**: propuesto (depende de Q-006 y Q-027) · 31-10-2026
+- **Estado**: propuesto (depende de Q-027; **Q-006 aplazada por decisión de Pedro**: se decide al final, antes del paso a producción) · 31-10-2026
 - **Relacionado**: ADR 002 (AWS en eu-north-1), ADR 004 (Verifactu), ADR 007 (despliegue), ADR 009 (ejecutor local), `04-regulatorio/verifactu.md` §10, `07-arquitectura.md` §10.
 
 ## Contexto
@@ -67,4 +67,4 @@ Opciones, por orden de preferencia (PENDIENTE de confirmar con el asesor y en pr
 - Componente nuevo (`sender/`, unas 300 líneas) y un despliegue más en la CI; coste ≈ 1–2 €/mes (Lambda dentro del nivel gratuito, Secrets Manager y KMS).
 - El certificado de mayor riesgo nunca está en Timbal ni al alcance de los agentes.
 - Depende de la cuenta de AWS (Q-027), que ya hace falta para RDS (ADR 002).
-- Preguntas a Pedro: Q-006 (tipo de certificado y apoderamiento de P.O) antes del **12-11-2026**.
+- Preguntas a Pedro: Q-006 (tipo de certificado y apoderamiento de P.O), aplazada por Pedro: se decide al final y como tarde el **15-12-2026**. Mientras, el emisor se desarrolla y se prueba con un certificado reconocido de pruebas en el entorno de pruebas.

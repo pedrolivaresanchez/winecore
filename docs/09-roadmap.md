@@ -42,11 +42,11 @@ gantt
 
 ### M1 · Facturación de CVPO con Verifactu en preproducción — 09-11 → 30-11-2026 · **Gate 01-12-2026**
 - **Entrega**: contactos (con importación de CVPO y deduplicación), catálogo aprobado, tarifas, reglas de entidad facturadora (D3), pedidos (manual y MCP), facturas completas y rectificativas, IRPF y recargo, PDF ES/EN con QR, emisión en lote con aprobación, anulación, **registros Verifactu encadenados y envío al entorno de pruebas de la AEAT**, estado y subsanación, declaración responsable en Ajustes, passkeys y bandeja de aprobaciones, cobros parciales y partidas abiertas de CVPO, herramientas MCP de M1, avisos a CVBOT.
-- **Depende de**: M0; Q-002 y Q-003 (modalidad y aprobación en la emisión); Q-005 (aprobadores); Q-006 (certificado reconocido para preproducción); Q-015 y Q-025 (tienen valor por defecto).
+- **Depende de**: M0; Q-002 y Q-003 (modalidad y aprobación en la emisión) y Q-005 (aprobadores), que se aplican con su recomendación como **SUPUESTO** mientras Pedro no responda; un certificado reconocido **de pruebas** para preproducción (Q-006 queda para el final y solo bloquea M1b); Q-015 y Q-025 (tienen valor por defecto).
 - **Gate del 01-12-2026** (Pedro decide con datos): batería de preproducción de `verifactu.md` al 100 %; 0 fallos de numeración en las propiedades; QA de M1 completo. **Si no pasa → plan B (Q-008)**: CVPO factura en Holded con Verifactu desde el 01-01-2027 y WineCore entra en producción cuando pase.
 
 ### M1b · Paso a producción de CVPO — 01-12 → 31-12-2026
-- **Entrega**: certificado de producción custodiado (ADR 003), declaración responsable firmada (Q-007), instalación Verifactu de producción, series de 2027 (`CF27-`, `CR27-`), carga final de contactos y partidas abiertas de CVPO, ensayo general (emisión de facturas de prueba en el entorno de pruebas de la AEAT con datos reales en una serie de pruebas que nunca va a producción), formación de administración.
+- **Entrega**: certificado de producción custodiado (ADR 003; Q-006 se decide al final, como tarde el 15-12-2026), declaración responsable firmada (Q-007), instalación Verifactu de producción, series de 2027 (`CF27-`, `CR27-`), carga final de contactos y partidas abiertas de CVPO, ensayo general (emisión de facturas de prueba en el entorno de pruebas de la AEAT con datos reales en una serie de pruebas que nunca va a producción), formación de administración.
 - **Arranque**: **01-01-2027** CVPO factura en WineCore. Holded queda en solo lectura para CVPO (no se da de baja hasta 2 semanas sin incidencias).
 
 ### M2 · Albaranes, dos stocks, bodega mínima, SILICIE, P.O y compras — 04-01 → 26-02-2027

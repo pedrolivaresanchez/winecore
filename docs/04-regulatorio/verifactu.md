@@ -41,8 +41,8 @@
 
 ## 3. Decisión de modalidad y aprobación
 
-- **Modalidad**: **VERI*FACTU por servicio web** (Q-002, ADR 004). WineCore se declara "solo VERI*FACTU" (`TipoUsoPosibleSoloVerifactu = S`), así que **no implementa** firma XAdES ni registro de eventos en la versión 1. *Computer use* no aplica: Verifactu no es un portal.
-- **Aprobación humana** (regla dura 0.3, Q-003): la aprobación de la **emisión** (por quien emite, o en la bandeja para lotes e intercompañía) **es** la aprobación del envío del registro. El envío es automático porque la norma exige que sea inmediato. No hay segunda aprobación.
+- **Modalidad** (**SUPUESTO**: recomendación de Q-002, sin respuesta de Pedro a 31-10-2026): **VERI*FACTU por servicio web** (ADR 004). WineCore se declara "solo VERI*FACTU" (`TipoUsoPosibleSoloVerifactu = S`), así que **no implementa** firma XAdES ni registro de eventos en la versión 1. *Computer use* no aplica: Verifactu no es un portal.
+- **Aprobación humana** (regla dura 0.3; **SUPUESTO**: recomendación de Q-003, sin respuesta de Pedro): la aprobación de la **emisión** (por quien emite, o en la bandeja para lotes e intercompañía) **es** la aprobación del envío del registro. El envío es automático porque la norma exige que sea inmediato. No hay segunda aprobación.
 - **Plan B** (Q-008): si el gate del 01-12-2026 falla, CVPO factura en Holded con Verifactu desde el 01-01-2027 con una serie distinta. Por el art. 16.5 del RRSIF, VERI*FACTU se mantiene al menos hasta el 31-12-2027 en el sistema que lo inicie; el paso posterior a WineCore (también VERI*FACTU) **no es una renuncia**, pero el asesor debe confirmarlo (PENDIENTE, Pedro + asesor, 01-12-2026).
 
 ## 4. Flujo
@@ -244,7 +244,7 @@ El RD 238/2026 y la Orden HAC/1028/2026 obligan a intercambiar facturas electró
 
 ## 16. Batería de preproducción (gate del 01-12-2026, US-VFT-06)
 
-Se ejecuta contra `prewww1`/`prewww10` con un certificado reconocido (Q-006) y datos sintéticos (`api/db/synthetic.ts`). Resultado esperado "Correcto" salvo donde se indica. Golden files en `api/test/golden/verifactu/` (XML enviado, respuesta y huella).
+Se ejecuta contra `prewww1`/`prewww10` con un certificado reconocido de pruebas (no hace falta cerrar Q-006, aplazada por Pedro) y datos sintéticos (`api/db/synthetic.ts`). Resultado esperado "Correcto" salvo donde se indica. Golden files en `api/test/golden/verifactu/` (XML enviado, respuesta y huella).
 
 | Caso | Qué prueba | Esperado |
 |---|---|---|
@@ -277,7 +277,7 @@ Se ejecuta contra `prewww1`/`prewww10` con un certificado reconocido (Q-006) y d
 
 | Tema | Dueño | Fecha |
 |---|---|---|
-| Certificado (tipo, titular, apoderamiento de P.O a CVPO para el envío) y custodia | Pedro (Q-006, ADR 003) | 12-11-2026 |
+| Certificado (tipo, titular, apoderamiento de P.O a CVPO para el envío) y custodia | Pedro (Q-006, ADR 003; aplazada: se decide al final) | 15-12-2026 |
 | Productor y declaración responsable; componentes de terceros | Pedro + asesor (Q-007) | 15-12-2026 |
 | Confirmar que pasar de Holded (VERI*FACTU) a WineCore (VERI*FACTU) no es renuncia | Pedro + asesor (Q-008) | 01-12-2026 |
 | Tipo de identificación de clientes de Reino Unido (`IDType`) | Equipo, en la batería (VF-05) | 01-12-2026 |

@@ -1,7 +1,7 @@
 # TASK-INFRA-009 · Runbook y alta del certificado de Verifactu
 - Hito M1 · 0,5 días · Escalado: sí (custodia del certificado)
 - Historias / RNF: US-VFT-02, RNF-05
-- Depende de: TASK-INFRA-003, Q-006
+- Depende de: TASK-INFRA-003, Q-006 (aplazada por Pedro: solo para el certificado de producción; en M1 se usa un certificado reconocido de pruebas)
 
 ## Objetivo
 Procedimiento guiado para que **Pedro** suba el certificado dedicado a AWS Secrets Manager, lo rote y lo revoque, sin que nadie más vea el fichero ni la contraseña.

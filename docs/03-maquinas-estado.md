@@ -207,7 +207,7 @@ stateDiagram-v2
 | sending | `technical_failure` | pending | Timeout, 5xx, red | Reintento con espera exponencial (30 s, 2 min, 10 min, 1 h, después cada hora); a la 3.ª fallida → evento `billing.verifactu.send_failed` | sistema |
 | accepted_with_errors / rejected | `correct` | (nuevo registro) | Corrección de datos por una persona (rectificativa o subsanación según verifactu.md) | Nuevo registro encadenado con `Subsanacion`/`RechazoPrevio` | `billing.issue` |
 
-La **aprobación humana** del envío es la de la **emisión** de la factura (Q-003): no hay segunda aprobación. El envío es automático e inmediato por exigencia normativa (ver `04-regulatorio/verifactu.md`).
+La **aprobación humana** del envío es la de la **emisión** de la factura (**SUPUESTO**: recomendación de Q-003, pendiente de Pedro): no hay segunda aprobación. El envío es automático e inmediato por exigencia normativa (ver `04-regulatorio/verifactu.md`).
 
 ## 9. Mensaje EDI (`regulatory.edi_message`) y pedido de El Corte Inglés
 
@@ -343,7 +343,7 @@ stateDiagram-v2
 | `billing_rules_activation`, `tariff_activation` | Activar reglas D3 / tarifas / tarifa intercompañía | 1 | owner | Sí | 7 días |
 | `module_toggle` | Activar o desactivar un módulo | 1 | owner | Sí | 24 h |
 
-Las aprobaciones **solo** se deciden en la web de WineCore (bandeja `/aprobaciones`) con verificación reforzada (Q-005). Las herramientas MCP pueden **listar** aprobaciones pendientes y devolver el **enlace**, nunca aprobar.
+Las aprobaciones **solo** se deciden en la web de WineCore (bandeja `/aprobaciones`) con verificación reforzada (**SUPUESTO**: recomendación de Q-005, pendiente de Pedro). Las herramientas MCP pueden **listar** aprobaciones pendientes y devolver el **enlace**, nunca aprobar.
 
 ## 13. Aforo (`inventory.inventory_count`)
 

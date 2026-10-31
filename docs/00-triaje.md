@@ -119,9 +119,9 @@ La lista completa, con opciones, recomendación y fecha límite, está en [`QUES
 
 1. **Q-001** Repo público — **respondida** (31-10-2026): se mantiene público de momento; todo sigue anonimizado.
 2. **Q-004** Proyecto Timbal (ya existe: 3942 / Main 4165), conexión con GitHub y credenciales — **en curso** (04-11-2026).
-3. **Q-002 / Q-003** Verifactu: servicio web y aprobación en la emisión (05-11-2026).
-4. **Q-005** Aprobadores y canal de aprobación (05-11-2026).
-5. **Q-006** Certificado y custodia (12-11-2026).
+3. **Q-002 / Q-003** Verifactu: servicio web y aprobación en la emisión (05-11-2026). Sin respuesta: se aplica la recomendación como supuesto.
+4. **Q-005** Aprobadores y canal de aprobación (05-11-2026). Sin respuesta: se aplica la recomendación como supuesto.
+5. **Q-006** Certificado y custodia: aplazada por Pedro al final (como tarde 15-12-2026; solo bloquea producción).
 6. **Q-008** Plan B (01-12-2026) y **Q-007** productor del software (15-12-2026).
 7. **Q-010 / Q-013 / Q-020 / Q-021** para M2 (diciembre de 2026).
 

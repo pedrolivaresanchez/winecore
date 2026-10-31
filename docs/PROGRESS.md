@@ -1,7 +1,8 @@
-# Progreso WineCore — actualizado 31-10-2026 14:40 CET (Europe/Madrid)
+# Progreso WineCore — actualizado 31-10-2026 14:39 CET (Europe/Madrid)
 Fase: 1 · Hito: especificación (antes de M0) · Estado: en revisión de Pedro
 
 ## Hecho desde la última actualización
+- **Indicaciones de Pedro del 31-10 (14:36) aplicadas**: el certificado (Q-006) queda para el final y solo bloquea el paso a producción (el desarrollo y las pruebas usan un certificado de pruebas); Q-002, Q-003 y Q-005 siguen sin respuesta y se aplican sus recomendaciones como **supuesto** marcado en los documentos; límite de 1 subagente Opus a la vez.
 - **Especificación completa** en la rama `spec/fase-1`, lista para que Pedro la apruebe en un PR: producto, modelo de datos, estados, normativa, mapeo con Holded y Bacosoft, migración, arquitectura y decisiones técnicas, pantallas, hoja de ruta, tareas, tests y glosario.
 - **Normativa escrita con fuentes oficiales** (consultadas hoy): Verifactu, SILICIE, SISV, EMCS (e-DA), AecocEDI, INFOVI, modelos de la AEAT, producción ecológica y etiquetado. Cada dato que se envía a un organismo dice de qué campo de WineCore sale.
 - **Verifactu**: comprobadas con la AEAT las tres huellas de ejemplo oficiales; preparada una batería de 22 pruebas para el entorno de pruebas de la AEAT (control del 01-12-2026). Las fechas siguen siendo las del BOE (CVPO 01-01-2027, P.O 01-07-2027): el aplazamiento a 2028 que anunció Hacienda el 05-10-2026 **no está publicado en el BOE** (revisado hasta hoy).
@@ -24,14 +25,14 @@ Fase: 1 · Hito: especificación (antes de M0) · Estado: en revisión de Pedro
 ## Necesita decisión de Pedro   (pregunta · opciones · recomendación · fecha límite)
 - **Comprobar hoy con la administradora el cierre de SILICIE de 2025** · el plazo de comunicarlo vence ahora (el 31-10-2026 es sábado: pasa al primer día hábil) · si no se comunica, Hacienda lo cierra de oficio · **preguntarle si ya está hecho y si en 2025–2026 se anotaron los trasiegos depósito ↔ barrica** · 02-11-2026.
 - **Q-004 Conectar GitHub en Timbal** · conexión de GitHub (Plan A) / que la integración continua empuje (Plan B) · **Plan A, protegiendo antes las ramas de GitHub** · 04-11-2026.
-- **Q-002 Verifactu** · envío por servicio web / sin envío con firma / software externo en enero · **servicio web** · 05-11-2026.
-- **Q-003 Aprobación en Verifactu** · aprobar la factura ya aprueba su envío / doble aprobación · **aprobar la factura ya aprueba su envío** · 05-11-2026.
-- **Q-005 Quién aprueba** · solo en la web con verificación / también por chat · **solo en la web; CVBOT avisa y manda el enlace** · 05-11-2026.
+- **Q-002 Verifactu** · envío por servicio web / sin envío con firma / software externo en enero · **servicio web** · 05-11-2026 · *sin respuesta: se aplica como supuesto*.
+- **Q-003 Aprobación en Verifactu** · aprobar la factura ya aprueba su envío / doble aprobación · **aprobar la factura ya aprueba su envío** · 05-11-2026 · *sin respuesta: se aplica como supuesto*.
+- **Q-005 Quién aprueba** · solo en la web con verificación / también por chat · **solo en la web; CVBOT avisa y manda el enlace** · 05-11-2026 · *sin respuesta: se aplica como supuesto*.
 - **Q-027 Cuenta de AWS** · AWS (UE) / Neon / Supabase · **AWS en Estocolmo a nombre de CVPO (≈ 30–70 €/mes en total fuera de Timbal)** · 06-11-2026.
 - **Q-028 Preguntas a Timbal** · — · **reenviarles la lista de `07-arquitectura.md` §14** · 06-11-2026.
-- **Q-006 Certificado de Verifactu** · solo en AWS con un envío aislado / en Timbal / en el equipo de Pedro / proveedor externo · **solo en AWS; mejor un sello electrónico de CVPO y que P.O dé poder a CVPO para este trámite (confirmar con el asesor)** · 12-11-2026.
 - **Q-007 Quién firma la declaración responsable de Verifactu** · Pedro / una sociedad / Timbal · **decidir con el asesor** · 15-12-2026.
 - Resto (no urgentes o con valor por defecto): `docs/QUESTIONS.md` (32 preguntas).
+- **Al final (decisión de Pedro)**: **Q-006 Certificado de Verifactu** · solo en AWS con un envío aislado / en Timbal / en el equipo de Pedro / proveedor externo · **solo en AWS; mejor un sello electrónico de CVPO y que P.O dé poder a CVPO para este trámite (confirmar con el asesor)** · como tarde 15-12-2026 (solo bloquea el paso a producción).
 
 ## Riesgos (R1… con estado)
 - R1 Verifactu de CVPO no listo para el 01-01-2027 · **abierto, el más grave**; control el 01-12-2026 con plan B (Holded, ya adaptado).
@@ -48,7 +49,7 @@ Fase: 1 · Hito: especificación (antes de M0) · Estado: en revisión de Pedro
 - **Subagentes lanzados en total: 8**, todos con **Claude Opus 5.5** y todos de investigación documental (Timbal, Verifactu, SILICIE/EMCS, SISV, ecológico y etiquetado, AecocEDI, Holded/Bacosoft, modelos de la AEAT), lanzados a las 12:05 CET, **antes** de la instrucción de limitar el gasto.
   - Terminaron bien 2: Timbal (12:35) y Holded/Bacosoft (13:07).
   - Los otros 6 se cortaron con error a las 13:12 y **no se han relanzado**: aproveché lo que ya habían descargado (normas del BOE, documentación técnica de la AEAT y de la Junta) y escribí yo los documentos.
-  - **Desde el límite (12:25 CET) no se ha lanzado ningún subagente** (máximo 2 en paralelo y solo si no puedo hacerlo yo).
+  - **Desde el primer límite (12:25 CET) no se ha lanzado ningún subagente.** Límite vigente desde las 14:36 CET: **máximo 1 subagente Opus a la vez y solo si es imprescindible**; no se relanzan investigaciones terminadas.
 - Grok: no usado (Fase 2). Escalados: ninguno (aún no hay Fase 2).
 
 ## Enlaces (PRs, despliegue de staging)
