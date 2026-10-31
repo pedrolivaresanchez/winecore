@@ -43,6 +43,8 @@ const CATALOG = {
   WC_STALE_VERSION: [409, 'El registro ha cambiado; vuelve a cargarlo'],
   WC_UNAUTHENTICATED: [401, 'No autenticado'],
   WC_NO_ACCESS: [403, 'No tienes acceso a WineCore'],
+  // Contactos (TASK-CONT-001)
+  WC_CONTACT_DUPLICATE_TAX_ID: [409, 'Ya existe un contacto con este NIF'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;
@@ -53,18 +55,21 @@ export class DomainError extends Error {
   readonly code: string;
   readonly httpStatus: number;
   readonly fields?: Record<string, string>;
+  readonly details?: Record<string, unknown>;
 
   constructor(
     code: string,
     httpStatus: number,
     message: string,
     fields?: Record<string, string>,
+    details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'DomainError';
     this.code = code;
     this.httpStatus = httpStatus;
     this.fields = fields;
+    this.details = details;
   }
 }
 
@@ -72,20 +77,30 @@ export function isErrorCode(code: string): code is ErrorCode {
   return Object.prototype.hasOwnProperty.call(CATALOG, code);
 }
 
-export function domainError(code: ErrorCode, fields?: Record<string, string>): DomainError {
+export function domainError(
+  code: ErrorCode,
+  fields?: Record<string, string>,
+  details?: Record<string, unknown>,
+): DomainError {
   const entry = CATALOG[code];
-  return new DomainError(code, entry[0], entry[1], fields);
+  return new DomainError(code, entry[0], entry[1], fields, details);
 }
 
 export function errorBody(error: DomainError): {
   code: string;
   message: string;
   fields?: Record<string, string>;
+  details?: Record<string, unknown>;
 } {
-  if (error.fields && Object.keys(error.fields).length > 0) {
-    return { code: error.code, message: error.message, fields: error.fields };
-  }
-  return { code: error.code, message: error.message };
+  const body: {
+    code: string;
+    message: string;
+    fields?: Record<string, string>;
+    details?: Record<string, unknown>;
+  } = { code: error.code, message: error.message };
+  if (error.fields && Object.keys(error.fields).length > 0) body.fields = error.fields;
+  if (error.details && Object.keys(error.details).length > 0) body.details = error.details;
+  return body;
 }
 
 export function asDomainError(error: unknown): DomainError | null {

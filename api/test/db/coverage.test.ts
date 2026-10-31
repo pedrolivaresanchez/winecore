@@ -26,6 +26,8 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
     "CK:catalog.product#1",
     "UQ:catalog.price_list_version(price_list_id,valid_from,valid_to)",
     "UQ:catalog.product(wine_id,vintage,format_id)",
+    "UQ:party.contact(tax_id)",
+    "UQ:party.contact_address(contact_id,kind)",
     "WC050",
   ]);
 });
