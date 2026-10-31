@@ -23,7 +23,11 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
   expect(new Set(guards.map((guard) => guard.id)).size).toBe(guards.length);
   const implemented = guards.filter((guard) => guard.implemented).map((guard) => guard.id).sort();
   expect(implemented).toEqual([
+    "CK:catalog.product#1",
+    "UQ:catalog.price_list_version(price_list_id,valid_from,valid_to)",
+    "UQ:catalog.product(wine_id,vintage,format_id)",
     "UQ:party.contact(tax_id)",
     "UQ:party.contact_address(contact_id,kind)",
+    "WC050",
   ]);
 });
