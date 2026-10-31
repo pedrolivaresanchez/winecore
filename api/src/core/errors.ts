@@ -45,6 +45,7 @@ const CATALOG = {
   WC_NO_ACCESS: [403, 'No tienes acceso a WineCore'],
   // Contactos (TASK-CONT-001)
   WC_CONTACT_DUPLICATE_TAX_ID: [409, 'Ya existe un contacto con este NIF'],
+  WC_OCR_UNAVAILABLE: [503, 'La extracción de la factura no está disponible'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;
