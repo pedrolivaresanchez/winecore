@@ -3,6 +3,7 @@ import { loadConfig } from '../src/config';
 import type { KbClient } from '../src/core/db/client';
 import { openClient } from '../src/core/db/open';
 import { sql } from '../src/core/db/sql';
+import { businessDate } from '../src/core/time';
 
 const TAX_ID = /^[A-Z0-9]{9}$/;
 
@@ -58,6 +59,7 @@ export async function seed(client: KbClient, input: SeedInput): Promise<void> {
     role(IDS.adminRole, IDS.admin, 'admin'),
     role(IDS.advisorRole, IDS.advisor, 'advisor'),
     role(IDS.cellarRole, IDS.cellar, 'cellar'),
+    ...cellarOperationSeriesStatements(),
     'COMMIT',
   ];
   try {
@@ -110,6 +112,33 @@ function role(id: string, userId: string, roleCode: string): string {
         AND legal_entity_id IS NULL
         AND revoked_at IS NULL
     )
+  `;
+}
+
+/** Default `cellar_operation` series for P.O and CVPO, this year and the next. */
+export function cellarOperationSeriesStatements(now = new Date()): string[] {
+  const year = Number(businessDate(now).slice(0, 4));
+  return [year, year + 1].flatMap((value) => [
+    cellarSeries('PO', value),
+    cellarSeries('CVPO', value),
+  ]);
+}
+
+function cellarSeries(entityCode: string, year: number): string {
+  const prefix = `OB${String(year).slice(2)}-`;
+  return sql`
+    INSERT INTO core.number_series (
+      id, legal_entity_id, doc_type, code, year, prefix, padding, next_value, is_default, is_active
+    )
+    SELECT gen_random_uuid(), e.id, 'cellar_operation', 'OB', ${year}, ${prefix}, 4, 1, TRUE, TRUE
+    FROM core.legal_entity e
+    WHERE e.code = ${entityCode}
+      AND NOT EXISTS (
+        SELECT 1 FROM core.number_series s
+        WHERE s.legal_entity_id = e.id
+          AND s.doc_type = 'cellar_operation'
+          AND s.year = ${year}
+      )
   `;
 }
 

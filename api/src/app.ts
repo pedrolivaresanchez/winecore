@@ -26,6 +26,8 @@ import {
   stepUpVerify,
   verifyPasskeyRegistration,
 } from './routes/auth-credentials';
+import { catalogRoutes } from './routes/catalog';
+import { cellarRoutes } from './routes/cellar';
 import {
   archiveAddress,
   archiveContact,
@@ -40,7 +42,6 @@ import {
   patchContact,
   patchPerson,
 } from './routes/contacts';
-import { catalogRoutes } from './routes/catalog';
 import { health } from './routes/health';
 import { me } from './routes/me';
 import { listNotifications, readAllNotifications, readNotification } from './routes/notifications';
@@ -273,6 +274,8 @@ export function createApp(deps: AppDeps) {
     })
     .post('/v1/inventory-counts/:id/post-request', ({ request, params }) => submitInventoryCountRoute(deps.writer, request, params), {
       beforeHandle: requirePermission(guardDeps, 'inventory.count'),
-    });
+    })
+    // Bodega: ubicaciones, recipientes, lotes y operaciones.
+    .use(cellarRoutes({ writer: deps.writer, guard: guardDeps, publicUrl: deps.config.appPublicUrl }));
   return app;
 }
