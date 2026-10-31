@@ -1,6 +1,9 @@
 export const PERMISSIONS = [
   'contacts.read',
   'contacts.write',
+  'finance.read',
+  'finance.write',
+  'finance.manage',
   'settings.manage',
   'users.manage',
   'audit.read',
@@ -27,11 +30,11 @@ export interface UserCtx {
 
 const MATRIX: Record<RoleCode, readonly Permission[]> = {
   owner: PERMISSIONS,
-  approver: ['contacts.read', 'audit.read'],
-  admin: ['contacts.read', 'contacts.write'],
+  approver: ['contacts.read', 'audit.read', 'finance.read'],
+  admin: ['contacts.read', 'contacts.write', 'finance.read', 'finance.write'],
   cellar: [],
   field: [],
-  advisor: ['contacts.read', 'audit.read'],
+  advisor: ['contacts.read', 'audit.read', 'finance.read'],
 };
 
 const PERSONAL_CONTACT_ROLES = new Set<RoleCode>(['owner', 'admin', 'approver']);
@@ -50,6 +53,19 @@ export function can(user: UserCtx, permission: Permission, entityId?: string): b
     if (entityId === undefined) return true;
     return assignment.legalEntityId === null || assignment.legalEntityId === entityId;
   });
+}
+
+/** null = todas las entidades. Una lista vacía = ningún alcance. */
+export function entityScope(user: UserCtx, permission: Permission): string[] | null {
+  const ids = new Set<string>();
+  let global = false;
+  for (const assignment of user.roles) {
+    if (!MATRIX[assignment.role].includes(permission)) continue;
+    if (assignment.legalEntityId === null) global = true;
+    else ids.add(assignment.legalEntityId);
+  }
+  if (global) return null;
+  return [...ids];
 }
 
 export function permissionsFor(user: UserCtx): Permission[] {

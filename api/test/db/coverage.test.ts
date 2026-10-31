@@ -23,7 +23,10 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
   expect(new Set(guards.map((guard) => guard.id)).size).toBe(guards.length);
   const implemented = guards.filter((guard) => guard.implemented).map((guard) => guard.id).sort();
   expect(implemented).toEqual([
+    "UQ:finance.bank_account(legal_entity_id)",
     "UQ:party.contact(tax_id)",
     "UQ:party.contact_address(contact_id,kind)",
+    "WC100",
+    "WC101",
   ]);
 });

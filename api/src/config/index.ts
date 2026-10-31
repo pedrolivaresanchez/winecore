@@ -17,6 +17,8 @@ export interface Config {
   authMode: AuthMode;
   devUserEmail: string;
   gitSha: string;
+  /** 32 bytes para cifrar IBAN. null si WINECORE_DATA_KEY no está definida. */
+  dataKey: Uint8Array | null;
 }
 
 function invalid(name: string): never {
@@ -106,5 +108,15 @@ export function loadConfig(env: Env): Config {
     authMode,
     devUserEmail,
     gitSha,
+    dataKey: dataKeyFrom(env),
   };
+}
+
+function dataKeyFrom(env: Env): Uint8Array | null {
+  const raw = read(env, 'WINECORE_DATA_KEY');
+  if (!raw) return null;
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(raw)) invalid('WINECORE_DATA_KEY');
+  const bytes = Buffer.from(raw, 'base64');
+  if (bytes.length !== 32) invalid('WINECORE_DATA_KEY');
+  return new Uint8Array(bytes);
 }
