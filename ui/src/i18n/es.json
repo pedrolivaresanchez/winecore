@@ -18,7 +18,17 @@
     "lots": "Lotes",
     "newOperation": "Nueva operación",
     "stock": "Existencias",
-    "sales": "Ventas"
+    "sales": "Ventas",
+    "groups": {
+      "inicio": "Inicio",
+      "ventas": "Ventas",
+      "facturacion": "Facturación",
+      "catalogo": "Catálogo",
+      "compras": "Compras",
+      "stock": "Stock",
+      "bodega": "Bodega",
+      "informes": "Informes"
+    }
   },
   "entity": {
     "label": "Entidad",

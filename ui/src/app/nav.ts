@@ -1,4 +1,4 @@
-import { Box, ChartBar, Check, Home, Layers, Receipt, Settings2, Users, type IconComponent } from '@/ui/icons'
+import { Archive, Box, ChartBar, Check, FileText, Home, Layers, Receipt, Settings2, Users, type IconComponent } from '@/ui/icons'
 import { copy } from '@/i18n'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
@@ -10,6 +10,9 @@ export type NavChild = {
   permission?: string
   mobile?: 'tab'
 }
+
+/** Menu groups from docs/08-ui/01-navegacion.md, in that order. */
+export type NavGroup = 'inicio' | 'ventas' | 'facturacion' | 'catalogo' | 'compras' | 'stock' | 'bodega' | 'informes'
 
 export type NavEntry = {
   id: string
@@ -24,28 +27,54 @@ export type NavEntry = {
   mobile: 'tab' | 'more' | 'none'
   action?: 'settings'
   placement: 'main' | 'footer'
+  /** One rail entry per area. Sub-routes stay on `children`. */
+  group?: NavGroup
 }
 
 export const navigation: NavEntry[] = [
-  { id: 'panel', module: 'core', label: copy.nav.panel, icon: Home, path: '/', end: true, mobile: 'tab', placement: 'main' },
-  { id: 'approvals', module: 'core', label: copy.nav.approvals, icon: Check, path: '/aprobaciones', mobile: 'more', placement: 'main' },
-  { id: 'sales', module: 'sales', label: copy.nav.sales, icon: Receipt, path: '/ventas', permission: 'sales.read', mobile: 'more', placement: 'main' },
-  { id: 'expenses', module: 'purchasing', label: copy.gastos.title, icon: Receipt, path: '/gastos', permission: 'purchasing.read', mobile: 'tab', placement: 'main' },
   {
-    id: 'cellar',
-    module: 'cellar',
-    label: copy.nav.cellar,
-    icon: Layers,
-    permission: 'cellar.read',
+    id: 'panel',
+    module: 'core',
+    label: copy.nav.panel,
+    icon: Home,
+    path: '/',
+    end: true,
     mobile: 'tab',
     placement: 'main',
-    children: [
-      { id: 'vessels', label: copy.nav.vessels, path: '/bodega/depositos', permission: 'cellar.read' },
-      { id: 'lots', label: copy.nav.lots, path: '/bodega/lotes', permission: 'cellar.read' },
-      { id: 'new-operation', label: copy.nav.newOperation, path: '/bodega/operaciones/nueva', permission: 'cellar.operate' },
-    ],
+    group: 'inicio',
   },
-  { id: 'stock', module: 'inventory', label: copy.nav.stock, icon: Box, path: '/stock', permission: 'inventory.read', mobile: 'more', placement: 'main' },
+  {
+    id: 'approvals',
+    module: 'core',
+    label: copy.nav.approvals,
+    icon: Check,
+    path: '/aprobaciones',
+    mobile: 'more',
+    placement: 'main',
+    group: 'inicio',
+  },
+  {
+    id: 'contacts',
+    module: 'contacts',
+    label: copy.nav.contacts,
+    icon: Users,
+    path: '/contactos',
+    permission: 'contacts.read',
+    mobile: 'tab',
+    placement: 'main',
+    group: 'ventas',
+  },
+  {
+    id: 'sales',
+    module: 'sales',
+    label: copy.nav.sales,
+    icon: Receipt,
+    path: '/ventas',
+    permission: 'sales.read',
+    mobile: 'more',
+    placement: 'main',
+    group: 'ventas',
+  },
   {
     id: 'catalog',
     module: 'catalog',
@@ -56,15 +85,70 @@ export const navigation: NavEntry[] = [
     permission: 'catalog.read',
     mobile: 'more',
     placement: 'main',
+    group: 'catalogo',
     children: [
       { id: 'wines', label: copy.catalog.wines, path: '/catalogo/vinos', permission: 'catalog.read' },
       { id: 'formats', label: copy.catalog.formats, path: '/catalogo/formatos', permission: 'catalog.read' },
       { id: 'tariffs', label: copy.catalog.tariffs, path: '/catalogo/tarifas', permission: 'catalog.read' },
     ],
   },
-  { id: 'contacts', module: 'contacts', label: copy.nav.contacts, icon: Users, path: '/contactos', permission: 'contacts.read', mobile: 'tab', placement: 'main' },
-  { id: 'reports', module: 'core', label: copy.nav.reports, icon: ChartBar, path: '/informes', permission: 'reports.read', mobile: 'more', placement: 'main' },
-  { id: 'settings', module: 'core', label: 'Ajustes', icon: Settings2, action: 'settings', mobile: 'more', placement: 'footer' },
+  {
+    id: 'expenses',
+    module: 'purchasing',
+    label: copy.gastos.title,
+    icon: FileText,
+    path: '/gastos',
+    permission: 'purchasing.read',
+    mobile: 'tab',
+    placement: 'main',
+    group: 'compras',
+  },
+  {
+    id: 'stock',
+    module: 'inventory',
+    label: copy.nav.stock,
+    icon: Archive,
+    path: '/stock',
+    permission: 'inventory.read',
+    mobile: 'more',
+    placement: 'main',
+    group: 'stock',
+  },
+  {
+    id: 'cellar',
+    module: 'cellar',
+    label: copy.nav.cellar,
+    icon: Layers,
+    permission: 'cellar.read',
+    mobile: 'tab',
+    placement: 'main',
+    group: 'bodega',
+    children: [
+      { id: 'vessels', label: copy.nav.vessels, path: '/bodega/depositos', permission: 'cellar.read' },
+      { id: 'lots', label: copy.nav.lots, path: '/bodega/lotes', permission: 'cellar.read' },
+      { id: 'new-operation', label: copy.nav.newOperation, path: '/bodega/operaciones/nueva', permission: 'cellar.operate' },
+    ],
+  },
+  {
+    id: 'reports',
+    module: 'core',
+    label: copy.nav.reports,
+    icon: ChartBar,
+    path: '/informes',
+    permission: 'reports.read',
+    mobile: 'more',
+    placement: 'main',
+    group: 'informes',
+  },
+  {
+    id: 'settings',
+    module: 'core',
+    label: 'Ajustes',
+    icon: Settings2,
+    action: 'settings',
+    mobile: 'more',
+    placement: 'footer',
+  },
 ]
 
 export function canSeeChild(me: Me, child: NavChild): boolean {

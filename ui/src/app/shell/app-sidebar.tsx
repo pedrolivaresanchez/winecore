@@ -19,6 +19,10 @@ function commandChord() {
   return mac ? '⌘K' : 'Ctrl K'
 }
 
+function RailGroup({ label, first }: { label: string; first: boolean }) {
+  return <p className={cn('px-2 pb-0.5 text-caption text-text-tertiary', first ? 'pt-1' : 'pt-3')}>{label}</p>
+}
+
 export function AppSidebar({
   me,
   collapsed,
@@ -143,20 +147,23 @@ function WorkspaceRail({ me, collapsed }: { me: Me; collapsed: boolean }) {
             )
           }
         >
-          {items.map((entry) => {
+          {items.flatMap((entry) => {
             const Icon = entry.icon
-            return (
+            const rows: { id: string; label: string; path: string }[] = []
+            if (entry.path) rows.push({ id: entry.id, label: entry.label, path: entry.path })
+            for (const child of visibleChildren(me, entry)) rows.push({ id: child.id, label: child.label, path: child.path })
+            return rows.map((row) => (
               <MenuItem
-                key={entry.id}
+                key={row.id}
                 icon={<Icon className="size-3.5" strokeWidth={iconStroke} />}
                 onClick={() => {
                   search.close()
-                  if (entry.path) go(entry.path)
+                  go(row.path)
                 }}
               >
-                {entry.label}
+                {row.label}
               </MenuItem>
-            )
+            ))
           })}
         </GlassMenu>
       </div>
@@ -172,11 +179,14 @@ function WorkspaceRail({ me, collapsed }: { me: Me; collapsed: boolean }) {
       )}
 
       <nav className={cn('flex min-h-0 flex-1 flex-col gap-px overflow-y-auto px-2 pb-3 scrollbar-none', collapsed && 'items-center')}>
-        {items.map((entry) => {
+        {items.map((entry, index) => {
           const Icon = entry.icon
           const children = visibleChildren(me, entry)
+          const previous = items[index - 1]?.group
+          const showGroup = !collapsed && entry.group && entry.group !== previous
           return (
             <div key={entry.id} className={cn('flex flex-col gap-px', collapsed && 'items-center')}>
+              {showGroup && entry.group ? <RailGroup label={copy.nav.groups[entry.group]} first={index === 0} /> : null}
               {entry.path ? (
                 <RailRow
                   active={active(entry)}
@@ -193,14 +203,15 @@ function WorkspaceRail({ me, collapsed }: { me: Me; collapsed: boolean }) {
                 />
               ) : null}
               {children.map((child) => (
-                <RailRow
-                  key={child.id}
-                  active={location.pathname === child.path || location.pathname.startsWith(`${child.path}/`)}
-                  label={child.label}
-                  collapsed={collapsed}
-                  glyph={<Icon className="size-3.5 shrink-0" strokeWidth={iconStroke} />}
-                  onNavigate={() => go(child.path)}
-                />
+                <div key={child.id} className={cn(!collapsed && entry.path && 'pl-4')}>
+                  <RailRow
+                    active={location.pathname === child.path || location.pathname.startsWith(`${child.path}/`)}
+                    label={child.label}
+                    collapsed={collapsed}
+                    glyph={<Icon className="size-3.5 shrink-0" strokeWidth={iconStroke} />}
+                    onNavigate={() => go(child.path)}
+                  />
+                </div>
               ))}
             </div>
           )
