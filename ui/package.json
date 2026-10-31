@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "lint": "eslint .",
-    "screenshots": "bun e2e/screenshots.ts"
+    "screenshots": "bun e2e/screenshots.ts",
+    "e2e:real:catalogo": "bun e2e/real/catalogo.real.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "1.1.15",
