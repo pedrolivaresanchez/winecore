@@ -76,6 +76,17 @@ export const navigation: NavEntry[] = [
     group: 'ventas',
   },
   {
+    id: 'invoices',
+    module: 'billing',
+    label: copy.nav.invoices,
+    icon: FileText,
+    path: '/facturas',
+    permission: 'billing.read',
+    mobile: 'tab',
+    placement: 'main',
+    group: 'facturacion',
+  },
+  {
     id: 'catalog',
     module: 'catalog',
     label: copy.nav.catalog,
