@@ -22,6 +22,18 @@ import {
   patchPerson,
 } from './routes/contacts';
 import { health } from './routes/health';
+import {
+  getSettlement,
+  getTariffs,
+  patchTariff,
+  postActivateTariff,
+  postClosePeriod,
+  postCloseSettlement,
+  postInvoiceRequest,
+  postRetireTariff,
+  postSettlement,
+  postTariff,
+} from './routes/intercompany';
 import { me } from './routes/me';
 
 export interface AppDeps {
@@ -129,6 +141,41 @@ export function createApp(deps: AppDeps) {
     })
     .post('/v1/contacts/:id/persons/:pid/archive', ({ request, params }) => archivePerson(deps.writer, request, params.id, params.pid), {
       beforeHandle: requirePermission(guardDeps, 'contacts.write'),
+    })
+    // Intercompañía (TASK-CAT-003, TASK-FACT-009). La tarifa la cambia solo dirección.
+    .get('/v1/intercompany/tariffs', () => getTariffs(deps.writer), {
+      beforeHandle: requirePermission(guardDeps, 'billing.read'),
+    })
+    .post('/v1/intercompany/tariffs', async ({ request, set }) => {
+      const result = await postTariff(deps.writer, request);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .patch('/v1/intercompany/tariffs/:id', ({ request, params }) => patchTariff(deps.writer, request, params.id), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .post('/v1/intercompany/tariffs/:id/activate', ({ request, params }) => postActivateTariff(deps.writer, request, params.id), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .post('/v1/intercompany/tariffs/:id/retire', ({ request, params }) => postRetireTariff(deps.writer, request, params.id), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .get('/v1/intercompany/settlements', ({ request }) => getSettlement(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'billing.read'),
+    })
+    .post('/v1/intercompany/settlements/close', ({ request }) => postClosePeriod(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'billing.write'),
+    })
+    .post('/v1/intercompany/settlements', ({ request }) => postSettlement(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'billing.write'),
+    })
+    .post('/v1/intercompany/settlements/:id/close', ({ request, params }) => postCloseSettlement(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.write'),
+    })
+    .post('/v1/intercompany/settlements/:id/invoice-request', ({ request, params }) => postInvoiceRequest(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.write'),
     });
   return app;
 }
