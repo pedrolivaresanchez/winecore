@@ -77,6 +77,8 @@ export interface SubmissionView {
     aeat_entry_number: string | null;
   }[];
   created_by: string;
+  /** Envío que rectifica a este. Nulo si todavía no hay corrección. */
+  successor_id: string | null;
 }
 
 export function phaseOf(status: string, hasFile: boolean): string {
@@ -104,19 +106,50 @@ export function phaseOf(status: string, hasFile: boolean): string {
   }
 }
 
+export interface SubmissionListQuery {
+  legalEntityId?: string;
+  flow?: string;
+  /** null = todas las entidades. Lista vacía = ninguna. */
+  entityIds?: readonly string[] | null;
+  limit: number;
+  cursor?: { at: string; id: string } | null;
+}
+
 export async function listSubmissionViews(
   writer: Writer,
-  filter: { legalEntityId?: string; flow?: string },
-): Promise<SubmissionView[]> {
+  filter: SubmissionListQuery,
+): Promise<{ items: SubmissionView[]; next_cursor: { at: string; id: string } | null }> {
+  if (filter.entityIds && filter.entityIds.length === 0) return { items: [], next_cursor: null };
   const where = ["TRUE"];
   if (filter.legalEntityId) where.push(sql`s.legal_entity_id = CAST(${filter.legalEntityId} AS UUID)`);
+  if (filter.entityIds) {
+    const list = filter.entityIds.map((id) => sql`CAST(${id} AS UUID)`).join(", ");
+    where.push(`s.legal_entity_id IN (${list})`);
+  }
   if (filter.flow) where.push(sql`s.flow = ${filter.flow}`);
+  if (filter.cursor) {
+    where.push(sql`(
+      s.created_at < CAST(${filter.cursor.at} AS TIMESTAMPTZ)
+      OR (
+        s.created_at = CAST(${filter.cursor.at} AS TIMESTAMPTZ)
+        AND s.id < CAST(${filter.cursor.id} AS UUID)
+      )
+    )`);
+  }
   const rows = await writer.read<Record<string, unknown>>(
-    selectSubmission(where.join(" AND "), "ORDER BY s.created_at DESC, s.id"),
+    selectSubmission(where.join(" AND "), sql`ORDER BY s.created_at DESC, s.id DESC LIMIT ${filter.limit + 1}`),
   );
-  const views: SubmissionView[] = [];
-  for (const row of rows) views.push(await viewFrom(writer.read.bind(writer), asSubmission(row)));
-  return views;
+  const hasMore = rows.length > filter.limit;
+  const page = hasMore ? rows.slice(0, filter.limit) : rows;
+  const items: SubmissionView[] = [];
+  for (const row of page) items.push(await viewFrom(writer.read.bind(writer), asSubmission(row)));
+  const last = page[page.length - 1];
+  return {
+    items,
+    next_cursor: hasMore && last
+      ? { at: String(last.created_at), id: String(last.id).toLowerCase() }
+      : null,
+  };
 }
 
 export async function getSubmission(writer: Writer, id: string): Promise<SubmissionView> {
@@ -195,6 +228,70 @@ export async function correctSilicie(
 ): Promise<SubmissionView> {
   const correctionId = await writer.withWrite(actor, (tx) => correctIn(tx, id, input, clock));
   return getSubmission(writer, correctionId);
+}
+
+const CANCELLABLE = new Set(["draft", "validated", "pending_approval"]);
+
+/** Anula un envío que todavía no está aprobado. No llama a la AEAT. */
+export async function cancelSubmission(
+  writer: Writer,
+  actor: Actor,
+  id: string,
+  reason: string,
+): Promise<SubmissionView> {
+  await writer.withWrite(actor, async (tx) => {
+    const row = await requireRow(tx.read.bind(tx), id);
+    if (!CANCELLABLE.has(row.status)) {
+      throw domainError(
+        "WC_ILLEGAL_TRANSITION",
+        { status: "Solo se puede anular un envío antes de aprobarlo." },
+        "Solo se puede anular un envío antes de aprobarlo.",
+      );
+    }
+    assertStatusChange(row.status, "cancelled");
+    if (row.approval_request_id) {
+      tx.write(sql`
+        UPDATE ops.approval_request
+        SET status = 'cancelled'
+        WHERE id = CAST(${row.approval_request_id} AS UUID)
+          AND status = 'pending'
+      `);
+    }
+    const payload = parsePayload(row.payload);
+    for (const entry of payload.entries) {
+      if (!UUID.test(entry.id)) continue;
+      tx.write(sql`
+        UPDATE regulatory.silicie_entry
+        SET status = 'annulled'
+        WHERE id = CAST(${entry.id} AS UUID) AND status = 'pending'
+      `);
+    }
+    tx.write(sql`
+      UPDATE regulatory.submission
+      SET status = 'cancelled', updated_at = now()
+      WHERE id = CAST(${row.id} AS UUID)
+    `);
+    if (row.period_start && row.period_end) {
+      tx.write(sql`
+        UPDATE regulatory.obligation
+        SET status = 'open'
+        WHERE legal_entity_id = CAST(${row.legal_entity_id} AS UUID)
+          AND flow = 'silicie'
+          AND period_start = CAST(${row.period_start} AS DATE)
+          AND period_end = CAST(${row.period_end} AS DATE)
+          AND status = 'in_progress'
+          AND submission_id IS NULL
+      `);
+    }
+    tx.audit({
+      table: "regulatory.submission",
+      rowId: row.id,
+      action: "UPDATE",
+      before: { status: row.status },
+      after: { status: "cancelled", reason },
+    });
+  });
+  return getSubmission(writer, id);
 }
 
 export async function readSubmissionFile(
@@ -1136,7 +1233,8 @@ function selectSubmission(where: string, order = ""): string {
            s.validation_errors::VARCHAR AS validation_errors,
            s.response_summary::VARCHAR AS response_summary,
            s.approval_request_id::VARCHAR AS approval_request_id, s.external_ref,
-           s.rectifies_submission_id::VARCHAR AS rectifies_submission_id, s.created_by
+           s.rectifies_submission_id::VARCHAR AS rectifies_submission_id, s.created_by,
+           s.created_at::VARCHAR AS created_at
     FROM regulatory.submission s
     WHERE ${where}
     ${order}
@@ -1293,13 +1391,15 @@ async function viewFrom(read: Tx["read"], current: SubmissionRow): Promise<Submi
   const errors = asIssues(current.validation_errors);
   const warnings = asIssues(asRecord(current.response_summary).warnings);
   const hasFile = Object.keys(payload.altas_sha256).length > 0 || Object.keys(payload.anulaciones_sha256).length > 0;
-  const successor = await read<{ id: string }>(sql`
-    SELECT id::VARCHAR AS id
+  const followers = await read<{ id: string; status: string }>(sql`
+    SELECT id::VARCHAR AS id, status
     FROM regulatory.submission
     WHERE rectifies_submission_id = CAST(${current.id} AS UUID)
-      AND status = 'accepted'
-    LIMIT 1
+      AND status <> 'cancelled'
+    ORDER BY created_at DESC, id DESC
   `);
+  const successorId = followers[0] ? String(followers[0].id).toLowerCase() : null;
+  const acceptedSuccessor = followers.some((row) => row.status === "accepted");
   const entryIds = payload.entries.map((entry) => entry.id).filter((entryId) => UUID.test(entryId));
   const entryFilter = entryIds.length > 0
     ? `(submission_id = CAST(${sql`${current.id}`} AS UUID) OR id IN (${entryIds.map((entryId) => `CAST(${sql`${entryId}`} AS UUID)`).join(", ")}))`
@@ -1335,7 +1435,7 @@ async function viewFrom(read: Tx["read"], current: SubmissionRow): Promise<Submi
     period_start: current.period_start,
     period_end: current.period_end,
     status: current.status,
-    phase: successor[0] ? "corrected" : phaseOf(current.status, hasFile),
+    phase: acceptedSuccessor ? "corrected" : phaseOf(current.status, hasFile),
     content_sha256: current.payload_sha256,
     external_ref: current.external_ref,
     approval_request_id: current.approval_request_id,
@@ -1358,8 +1458,10 @@ async function viewFrom(read: Tx["read"], current: SubmissionRow): Promise<Submi
       aeat_entry_number: entry.aeat_entry_number == null ? null : String(entry.aeat_entry_number),
     })),
     created_by: current.created_by,
+    successor_id: successorId,
   };
 }
+
 
 function toMoveInput(row: Record<string, unknown>): FiscalMoveInput {
   return {

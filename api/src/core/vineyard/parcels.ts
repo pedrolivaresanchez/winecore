@@ -72,6 +72,39 @@ interface VarietyInput {
   rootstock: string | null;
 }
 
+export interface ParcelOption {
+  id: string;
+  code: string;
+  name: string;
+  area: string;
+  area_ha: string;
+  organic_status: string;
+}
+
+/** Selector ligero para catas, diseño de lote y el cuaderno. Solo parcelas activas. */
+export async function listParcelOptions(writer: Writer): Promise<{ items: ParcelOption[] }> {
+  const rows = await writer.read<Record<string, unknown>>(`
+    SELECT id::VARCHAR AS id, code, name, area_ha::VARCHAR AS area_ha, organic_status, is_organic
+    FROM vineyard.parcel
+    WHERE is_active
+    ORDER BY code
+  `);
+  return {
+    items: rows.map((row) => {
+      const area = formatArea(text(row.area_ha));
+      const organic = textOrNull(row.organic_status) ?? (flag(row.is_organic) ? 'organic' : 'conventional');
+      return {
+        id: idOf(row.id),
+        code: text(row.code),
+        name: text(row.name),
+        area,
+        area_ha: area,
+        organic_status: organic,
+      };
+    }),
+  };
+}
+
 export async function parcelSummary(writer: Writer) {
   const rows = await writer.read<Record<string, unknown>>(`
     SELECT COALESCE(sum(area_ha), 0)::VARCHAR AS area_ha, count(*)::VARCHAR AS parcels

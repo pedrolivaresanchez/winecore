@@ -22,6 +22,7 @@ export async function me(writer: Writer, request: Request) {
       (left.legal_entity_code ?? '').localeCompare(right.legal_entity_code ?? ''),
     );
   return {
+    id: user.id,
     email: user.email,
     display_name: user.displayName,
     roles,
