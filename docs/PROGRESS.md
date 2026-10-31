@@ -1,46 +1,57 @@
-# Progreso WineCore — actualizado 31-10-2026 13:00 CET (Europe/Madrid)
-Fase: 1 · Hito: especificación (antes de M0) · Estado: en curso
+# Progreso WineCore — actualizado 31-10-2026 14:40 CET (Europe/Madrid)
+Fase: 1 · Hito: especificación (antes de M0) · Estado: en revisión de Pedro
 
 ## Hecho desde la última actualización
-- **Proyecto Timbal**: anotados los datos que me ha pasado Pedro (proyecto WineCore id 3942 en la org 122, entorno Main 4165 con la rama `main`). El andamiaje que creó Timbal por su cuenta (commit `f89f339`) se descarta. Plan de remotos rehecho con dos caminos: A) conectar GitHub desde Timbal (lo hará Pedro) y comprobar 7 puntos; B) que la integración continua empuje a Timbal. Ver `docs/adr/001-repo-y-remotos.md`.
-- **Repo público**: Pedro decide mantenerlo público de momento. Todo sigue anonimizado y la integración continua bloquea datos reales y datos personales.
-- **Modelo de datos completo** (15 bloques de tablas) y **comprobado en una base de datos real de pruebas**: pasan las 15 pruebas de reglas básicas (no se borra nada, numeración sin huecos, el volumen de vino cuadra en cada operación, no hay existencias negativas, las facturas emitidas no se pueden tocar, las aprobaciones valen solo para lo que se aprobó, la cadena de Verifactu no se puede alterar).
-- Escritos: modelo de dominio, estados de cada documento, arquitectura y 9 decisiones técnicas (repo, base de datos, despliegue, acceso, conector con los portales, MCP, ubicación del núcleo) y el catálogo completo de herramientas MCP para CVBOT.
-- Hallazgos de la investigación de Timbal que cambian el plan: su base de datos interna no sirve para facturas (no garantiza transacciones), no ofrece navegador automatizado ni custodia de certificados, y sus claves de acceso valen para todas las organizaciones del usuario (riesgo para la org 1). Propuestas: base de datos PostgreSQL en AWS (UE), equipo dedicado en la bodega para los trámites con certificado, y una cuenta de Timbal solo para la org 122.
+- **Especificación completa** en la rama `spec/fase-1`, lista para que Pedro la apruebe en un PR: producto, modelo de datos, estados, normativa, mapeo con Holded y Bacosoft, migración, arquitectura y decisiones técnicas, pantallas, hoja de ruta, tareas, tests y glosario.
+- **Normativa escrita con fuentes oficiales** (consultadas hoy): Verifactu, SILICIE, SISV, EMCS (e-DA), AecocEDI, INFOVI, modelos de la AEAT, producción ecológica y etiquetado. Cada dato que se envía a un organismo dice de qué campo de WineCore sale.
+- **Verifactu**: comprobadas con la AEAT las tres huellas de ejemplo oficiales; preparada una batería de 22 pruebas para el entorno de pruebas de la AEAT (control del 01-12-2026). Las fechas siguen siendo las del BOE (CVPO 01-01-2027, P.O 01-07-2027): el aplazamiento a 2028 que anunció Hacienda el 05-10-2026 **no está publicado en el BOE** (revisado hasta hoy).
+- **Certificado**: propuesta nueva y más segura. El certificado de Verifactu vive solo en AWS y lo usa únicamente una pieza pequeña que envía los registros; nunca está en Timbal ni al alcance de los agentes. El certificado personal de P.O no sale del equipo de la bodega.
+- **Modelo de datos**: ampliado y comprobado de nuevo en una base de datos de pruebas (134 tablas; pasan las 18 pruebas de reglas básicas).
+- **Pantallas**: 41 fichas (qué muestra cada pantalla, quién puede usarla, qué pide confirmar y cómo se ve en el móvil).
+- **Tareas para la Fase 2**: 132 tareas pequeñas (180 días de agente en total), cada una con lo que hay que hacer, cómo comprobarlo y qué tests exige. Todas las historias del MVP tienen al menos una tarea.
+- **Hallazgos que cambian cosas** (detalle en `docs/00-triaje.md`):
+  - Desde 2025, en SILICIE el vino en barrica y el de depósito son cuentas distintas: **los trasiegos depósito ↔ barrica sí se anotan** (los de depósito a depósito, no).
+  - Holded dice que Verifactu se mantiene "hasta el 31 de diciembre del año siguiente"; la norma dice **del mismo año**.
+  - La factura mensual P.O → CVPO no puede llevar fecha de expedición del día 31: lleva **fecha de operación** fin de mes y se expide antes del día 16.
 
 ## Siguiente
-- Incorporar la investigación normativa que falta (Verifactu, SILICIE/EMCS, SISV, AecocEDI, modelos AEAT, Holded/Bacosoft) y escribir los documentos regulatorios.
-- Producto (PRD), pantallas, hitos con fechas, tareas pequeñas para los agentes, tests y glosario.
-- Abrir el PR de la especificación para que Pedro la apruebe.
+- Esperar la revisión de Pedro del PR y responder a sus comentarios.
+- Con las respuestas urgentes (Q-002, Q-003, Q-004, Q-005, Q-027) y la especificación aprobada, empezar M0: repositorio, integración continua, AWS y Timbal.
 
 ## Bloqueos
-- Sin credencial de Timbal (no hace falta para la especificación). Para arrancar M0 falta que Pedro conecte GitHub en Timbal, cree los entornos `staging` y `dev`, y que haya cuenta de AWS para la base de datos (Q-004, Q-027).
+- Para empezar M0 hacen falta: aprobación de esta especificación, GitHub conectado en Timbal con los entornos `dev` y `staging` (Q-004) y la cuenta de AWS (Q-027).
 
 ## Necesita decisión de Pedro   (pregunta · opciones · recomendación · fecha límite)
-- **Q-004 Conectar GitHub en Timbal** · conexión de GitHub (Plan A) / que la integración continua empuje (Plan B) · **Plan A, protegiendo antes las ramas de GitHub y anotando las 7 comprobaciones del ADR 001** · 04-11-2026.
-- **Q-002 Verifactu** · envío por servicio web / sin envío con firma / software externo en enero · **servicio web** (el *computer use* no sirve para Verifactu) · 05-11-2026.
+- **Comprobar hoy con la administradora el cierre de SILICIE de 2025** · el plazo de comunicarlo vence ahora (el 31-10-2026 es sábado: pasa al primer día hábil) · si no se comunica, Hacienda lo cierra de oficio · **preguntarle si ya está hecho y si en 2025–2026 se anotaron los trasiegos depósito ↔ barrica** · 02-11-2026.
+- **Q-004 Conectar GitHub en Timbal** · conexión de GitHub (Plan A) / que la integración continua empuje (Plan B) · **Plan A, protegiendo antes las ramas de GitHub** · 04-11-2026.
+- **Q-002 Verifactu** · envío por servicio web / sin envío con firma / software externo en enero · **servicio web** · 05-11-2026.
 - **Q-003 Aprobación en Verifactu** · aprobar la factura ya aprueba su envío / doble aprobación · **aprobar la factura ya aprueba su envío** · 05-11-2026.
 - **Q-005 Quién aprueba** · solo en la web con verificación / también por chat · **solo en la web; CVBOT avisa y manda el enlace** · 05-11-2026.
-- **Q-027 Base de datos** · AWS (UE) / Neon / Supabase · **AWS en Estocolmo, cuenta a nombre de CVPO (~25–40 €/mes)** · 06-11-2026.
-- **Q-028 Preguntas a Timbal** · — · **reenviar la lista de `07-arquitectura.md` §14** · 06-11-2026.
-- **Q-006 Certificado para Verifactu** · certificado dedicado cifrado en Timbal / equipo de Pedro / proveedor externo · **certificado dedicado** · 12-11-2026.
-- Resto (no urgentes, con valor por defecto): ver `docs/QUESTIONS.md` (29 preguntas).
+- **Q-027 Cuenta de AWS** · AWS (UE) / Neon / Supabase · **AWS en Estocolmo a nombre de CVPO (≈ 30–70 €/mes en total fuera de Timbal)** · 06-11-2026.
+- **Q-028 Preguntas a Timbal** · — · **reenviarles la lista de `07-arquitectura.md` §14** · 06-11-2026.
+- **Q-006 Certificado de Verifactu** · solo en AWS con un envío aislado / en Timbal / en el equipo de Pedro / proveedor externo · **solo en AWS; mejor un sello electrónico de CVPO y que P.O dé poder a CVPO para este trámite (confirmar con el asesor)** · 12-11-2026.
+- **Q-007 Quién firma la declaración responsable de Verifactu** · Pedro / una sociedad / Timbal · **decidir con el asesor** · 15-12-2026.
+- Resto (no urgentes o con valor por defecto): `docs/QUESTIONS.md` (32 preguntas).
 
 ## Riesgos (R1… con estado)
-- R1 Verifactu de CVPO no listo para el 01-01-2027 · **abierto, el más grave**; control el 01-12-2026 con plan B.
-- R14 Repo público · **aceptado por Pedro y vigilado** (contenido anonimizado y barreras en la integración continua).
-- R10 Despliegue doble o remotos desincronizados · abierto; **se confirmó** que Timbal hace commits por su cuenta: prohibido usar su editor en las ramas de entorno.
-- R19 Capacidades de Timbal no documentadas · abierto; preguntas en Q-028.
-- R13 Fecha fiscal por factura frente a salida física · abierto; requiere confirmación del asesor.
+- R1 Verifactu de CVPO no listo para el 01-01-2027 · **abierto, el más grave**; control el 01-12-2026 con plan B (Holded, ya adaptado).
+- R24 Posibles asientos SILICIE de 2025–2026 incompletos (trasiegos a barrica) y cierre de 2025 que vence ahora · **nuevo**; lo comprueba Pedro con la administradora.
+- R25 Aplazamiento de Verifactu anunciado pero no publicado · **nuevo**; vigilamos el BOE cada semana.
+- R7 Custodia del certificado · abierto; mitigado con la propuesta nueva (ADR 003).
+- R14 Repo público · **aceptado por Pedro y vigilado** (todo anonimizado; la integración continua bloquea datos reales y personales).
+- R10 Despliegue doble o remotos desincronizados · abierto; Timbal hace commits por su cuenta: prohibido usar su editor en las ramas de entorno.
 - R20 Plazo de M1 muy corto · abierto; depende de aprobar la especificación en 2–3 días.
-- Lista completa (R1–R23) en `docs/00-triaje.md`.
+- Lista completa (R1–R25) en `docs/00-triaje.md`.
 
 ## Coste y créditos (Opus/Grok usados; escalados con su motivo)
-- **Agente principal**: 1 especificador con Claude Opus 5.5 (razonamiento máximo).
-- **Subagentes lanzados en total: 8**, todos con **Claude Opus 5.5** y todos de **investigación documental** (Timbal, Verifactu, SILICIE/EMCS, SISV/Junta, ecológico y etiquetado, AecocEDI, Holded/Bacosoft, modelos de la AEAT). Lanzados a las 12:03 CET, antes de la instrucción de limitar el gasto. Han terminado 2 de 8 (Timbal; ecológico y etiquetado). **No se ha lanzado ninguno más**; límite desde las 12:25 CET: máximo 2 en paralelo y solo si no puedo hacerlo yo.
-- Sin escalados (aún no hay Fase 2).
+- **Agente principal**: 1 especificador con **Claude Opus 5.5** (razonamiento máximo).
+- **Subagentes lanzados en total: 8**, todos con **Claude Opus 5.5** y todos de investigación documental (Timbal, Verifactu, SILICIE/EMCS, SISV, ecológico y etiquetado, AecocEDI, Holded/Bacosoft, modelos de la AEAT), lanzados a las 12:05 CET, **antes** de la instrucción de limitar el gasto.
+  - Terminaron bien 2: Timbal (12:35) y Holded/Bacosoft (13:07).
+  - Los otros 6 se cortaron con error a las 13:12 y **no se han relanzado**: aproveché lo que ya habían descargado (normas del BOE, documentación técnica de la AEAT y de la Junta) y escribí yo los documentos.
+  - **Desde el límite (12:25 CET) no se ha lanzado ningún subagente** (máximo 2 en paralelo y solo si no puedo hacerlo yo).
+- Grok: no usado (Fase 2). Escalados: ninguno (aún no hay Fase 2).
 
 ## Enlaces (PRs, despliegue de staging)
-- Rama: `spec/fase-1` (el PR se abrirá al terminar la especificación).
+- Rama: `spec/fase-1` · PR de la especificación: se abre a continuación contra `main`.
 - Proyecto Timbal: org 122, proyecto 3942, entorno Main 4165 (sin despliegue de WineCore todavía).
 - Staging: no existe todavía.

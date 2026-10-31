@@ -21,7 +21,7 @@ gantt
   section M2
   Albaranes, dos stocks, bodega mínima, SILICIE, P.O, compras :m2, 2027-01-04, 54d
   section M3
-  SISV, EMCS, AecocEDI, INFOVI por computer use; asistente :m3, 2027-03-01, 61d
+  SISV, EMCS, AecocEDI, INFOVI por computer use y asistente :m3, 2027-03-01, 61d
   section M4
   Bodega completa, viñedo, ecológico (antes de vendimia) :m4, 2027-05-03, 75d
   section M5

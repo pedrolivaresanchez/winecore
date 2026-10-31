@@ -41,7 +41,7 @@ sequenceDiagram
   participant P as Persona aprobadora
   M-->>W: aviso "nuevo pedido" (vigilante del buzón)
   W->>R: connector_run read_inbox (sin aprobación: solo lectura)
-  R->>A: login (GLN + contraseña del llavero; CAPTCHA → persona)
+  R->>A: login (GLN + contraseña del llavero, CAPTCHA → persona)
   R->>A: Mis documentos → abrir pedido → captura
   R-->>W: pedido leído (campos §4.1) + evidencia
   W->>W: pedido de venta (canal eci_edi), validaciones

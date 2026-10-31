@@ -68,10 +68,13 @@
 | C-29 | Ventas B2B a la UE de CVPO con impuesto pagado | Export (H12) | Desde 2024, la circulación intracomunitaria con impuesto pagado va por EMCS (en verificación) | Alto | **Q-019**, riesgo R16. |
 | C-30 | Ventas a consumidores de la UE por la web | Export Shopify (H11) | II.EE. en destino y OSS de IVA | Medio | **Q-018**. |
 | C-31 | Nombres de "Pedro" | Plan: "Pedro" aprueba | Reunión: el titular de P.O es Hablante 2 | Medio | **Q-005**: aprobadores explícitos por entidad y trámite. |
+| C-32 | Trasiegos y SILICIE | Regla operativa: "los trasiegos no van a SILICIE" | SILICIE 2.0 (desde 01-01-2025): el vino en barrica y el de depósito son **mayores distintos** y los pasos entre ellos se anotan uno a uno (seminario AEAT 21-07-2025) | **Alto** | Entre depósitos, sin asiento; depósito ↔ barrica, A17/A16 + mermas A30 (`silicie.md` §5). Revisar cómo se anotaron en 2025–2026 (R24). |
+| C-33 | Permanencia en VERI*FACTU | Ayuda de Holded: "hasta el 31 de diciembre del año siguiente" | RRSIF art. 16.5 y Orden HAC/1177/2024 art. 17.2: hasta el 31 de diciembre **del año** del primer envío | Medio | Corregido en Q-008; el asesor confirma que cambiar de Holded a WineCore no es renuncia. |
+| C-34 | Fecha de la factura intercompañía | Especificación inicial: "factura con fecha 31 del mes" | RD 1619/2012 arts. 11 y 13: recapitulativa con fecha de **operación** fin de mes y **expedición** real antes del día 16 | Medio | Corregido en PRD (US-FACT-09), modelo §12.6 y `verifactu.md` §14. |
 
 ## 4. Riesgos
 
-Los R1–R12 son los del plan (§9), revisados; R13–R23 son nuevos de este triaje. Estado a 31-10-2026.
+Los R1–R12 son los del plan (§9), revisados; R13–R25 son nuevos de este triaje. Estado a 31-10-2026.
 
 | ID | Riesgo | Prob. | Impacto | Mitigación / plan B | Estado |
 |---|---|---|---|---|---|
@@ -81,7 +84,7 @@ Los R1–R12 son los del plan (§9), revisados; R13–R23 son nuevos de este tri
 | R4 | AecocEDI solo web; términos de uso | Media | Medio | Ficha para teclear como respaldo; consultar términos (Q-024). | Abierto |
 | R5 | Descuadres heredados (operador logístico, depósito, embotellado sin declarar, venta pendiente) | Alta | Alto | Aforo físico antes de cargar stock; regularización con motivo; no migrar movimientos de SISV/SILICIE (Q-013). | Abierto |
 | R6 | Histórico contable tarde (D7) | Media | Medio | El arranque no depende de él; saldos de apertura del asesor. | Abierto |
-| R7 | Custodia del certificado en la nube | Media | Crítico | ADR 003: certificado dedicado, secreto cifrado, uso solo en el paso de envío tras aprobación (Q-006). | Abierto |
+| R7 | Custodia del certificado en la nube | Media | Crítico | ADR 003: certificado dedicado (preferible sello de CVPO) solo en AWS Secrets Manager, leído únicamente por el emisor de Verifactu aislado de Timbal y de los agentes; el certificado de P.O no sale del equipo del ejecutor local (Q-006). | Abierto |
 | R8 | Sobredimensionar para 1–3 usuarios | Media | Medio | MVP estricto; H1 confirma volúmenes bajos. | Abierto |
 | R9 | Coste de agentes (escalados a Opus) | Media | Medio | Criterios §7.3; coste visible en PROGRESS. | Abierto |
 | R10 | Doble remoto o despliegue doble | Media | Medio | Un solo mecanismo (ADR 001 Plan A o B; ADR 007) + job diario de comparación de SHA. **Agravante confirmado**: el Composer de Timbal ya hizo un commit por su cuenta en el proyecto 3942 (`f89f339`); se prohíbe el Composer en ramas de entorno. | Abierto |
@@ -98,6 +101,8 @@ Los R1–R12 son los del plan (§9), revisados; R13–R23 son nuevos de este tri
 | **R21** | Aprobaciones desde el chat vulnerables a inyección de instrucciones | Media | Alto | Aprobación solo en la web con passkey/TOTP (Q-005); el MCP no expone herramientas de aprobación. | Nuevo |
 | **R22** | Factura electrónica B2B obligatoria (RD 238/2026 y Orden HAC/1028/2026, en vigor el 06-10-2026): ECI desde 06-10-2027; P.O y CVPO desde 06-10-2028 (estados de P.O desde 06-10-2029) | **Alta (hecho)** | Medio | Hito M8 (UBL por la solución pública de la AEAT o plataforma conforme); recepción de cargos de ECI a confirmar con el asesor (Q-032). | Abierto (verificado) |
 | **R23** | Un único aprobador disponible (vacaciones, enfermedad) | Media | Medio | Al menos dos aprobadores por entidad (Q-005). | Nuevo |
+| **R24** | Asientos SILICIE de 2025–2026 sin los pasos depósito ↔ barrica que exige SILICIE 2.0 (C-32), y comunicación de cierre del ejercicio 2025 que vence ahora (31-10-2026, sábado → primer día hábil siguiente; si no, cierre de oficio) | Media | Alto (inspección) | Pedro lo comprueba con la administradora; si faltan asientos, corrección con A42/A43 o en el ejercicio abierto con el asesor; WineCore los genera solos desde 2027 | Nuevo |
+| **R25** | Plazo de Verifactu aplazado a 2028 por nota de prensa (05-10-2026) pero no publicado en el BOE | Media | Medio | Se planifica con el BOE (CVPO 01-01-2027); vigilante `boe-watch` (TASK-REG-010); si se publica, Pedro decide si arrancar igualmente (ADR 004) | Nuevo |
 
 ## 5. Supuestos del plan (§9) revisados
 

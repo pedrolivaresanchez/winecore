@@ -15,7 +15,7 @@
 | Conexión con GitHub | **Aún no** conectada; la hará Pedro desde la UI de Timbal ("Settings → Git Settings → Connect GitHub") | Pedro |
 | Repo de GitHub (`origin`) | `pedrolivaresanchez/winecore`, **público** por decisión de Pedro (Q-001): todo lo que se sube va anonimizado | `gh repo view` + Pedro |
 | Credencial de Timbal en este entorno | Ninguna. No he ejecutado nada contra Timbal ni contra la org 1 | — |
-| Host del gateway de Main | `proj-env-4165.deployments.timbal.ai` o `e4165.deployments.timbal.ai` (la documentación y el SDK discrepan) | PENDIENTE |
+| Host del gateway de Main | `proj-env-4165.deployments.timbal.ai` o `e4165.deployments.timbal.ai` (la documentación y el SDK discrepan) | PENDIENTE (Q-028, Pedro con Timbal, 06-11-2026; lo comprueba TASK-INFRA-004) |
 
 ## Contexto (hechos de la documentación y el código de Timbal)
 

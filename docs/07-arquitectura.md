@@ -149,16 +149,16 @@ sequenceDiagram
   participant J as verifactu-sender (AWS Lambda, ADR 003)
   participant T as AEAT (servicio web)
   U->>A: POST /api/v1/invoices/{id}/issue (Idempotency-Key)
-  A->>D: BEGIN; set_actor; bloquear factura; validar
-  A->>D: take_number; congelar cliente; desglose; vencimientos
+  A->>D: BEGIN · set_actor · bloquear factura · validar
+  A->>D: take_number · congelar cliente · desglose · vencimientos
   A->>D: verifactu_record (alta, encadenado, huella, XML, QR)
-  A->>D: outbox billing.invoice.issued; COMMIT
+  A->>D: outbox billing.invoice.issued · COMMIT
   A-->>U: 200 factura emitida (número, QR)
   A->>A: generar PDF (QR) → S3 → pdf_attachment_id
   J->>D: registros pending y next_send_not_before ≤ now
   J->>T: RegFactuSistemaFacturacion (mTLS, ≤ máx. por envío)
   T-->>J: Correcto / AceptadoConErrores / Incorrecto + tiempo de espera
-  J->>D: estado por registro; CSV; next_send_not_before
+  J->>D: estado por registro · CSV · next_send_not_before
   J-->>U: (si error) evento a CVBOT + aviso en el panel
 ```
 
