@@ -1,4 +1,4 @@
-import { Home, Settings2, Users, type IconComponent } from '@/ui/icons'
+import { Box, Home, Settings2, Users, type IconComponent } from '@/ui/icons'
 import { copy } from '@/i18n'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
@@ -46,6 +46,22 @@ export const navigation: NavEntry[] = [
     permission: 'contacts.read',
     mobile: 'tab',
     placement: 'main',
+  },
+  {
+    id: 'catalog',
+    module: 'catalog',
+    label: copy.nav.catalog,
+    icon: Box,
+    path: '/catalogo',
+    end: true,
+    permission: 'catalog.read',
+    mobile: 'more',
+    placement: 'main',
+    children: [
+      { id: 'wines', label: copy.catalog.wines, path: '/catalogo/vinos', permission: 'catalog.read' },
+      { id: 'formats', label: copy.catalog.formats, path: '/catalogo/formatos', permission: 'catalog.read' },
+      { id: 'tariffs', label: copy.catalog.tariffs, path: '/catalogo/tarifas', permission: 'catalog.read' },
+    ],
   },
   {
     id: 'settings',
