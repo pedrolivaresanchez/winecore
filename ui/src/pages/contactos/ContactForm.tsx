@@ -43,6 +43,7 @@ export function ContactForm({
   duplicate,
   disabled,
   extra = false,
+  split = false,
 }: {
   value: ContactInput;
   onChange: (next: ContactInput) => void;
@@ -50,13 +51,16 @@ export function ContactForm({
   duplicate?: { id: string; name: string } | null;
   disabled?: boolean;
   extra?: boolean;
+  split?: boolean;
 }) {
   function set<K extends keyof ContactInput>(key: K, next: ContactInput[K]) {
     onChange({ ...value, [key]: next });
   }
 
   return (
-    <div className="grid gap-4">
+    <div className={split ? "grid items-start gap-6 lg:grid-cols-2" : "grid gap-4"}>
+      <div className="grid gap-4">
+      {split ? <h3 className="text-body font-semibold">Datos fiscales</h3> : null}
       <fieldset className="grid gap-2" disabled={disabled}>
         <legend className="text-compact font-medium">Tipo</legend>
         <div className="flex flex-wrap gap-2">
@@ -149,6 +153,9 @@ export function ContactForm({
         <Check label="Transportista" checked={value.is_carrier} disabled={disabled} onChange={(checked) => set("is_carrier", checked)} />
         <Check label="Operador logístico" checked={value.is_logistics_operator} disabled={disabled} onChange={(checked) => set("is_logistics_operator", checked)} />
       </fieldset>
+      </div>
+      <div className="grid gap-4">
+      {split ? <h3 className="text-body font-semibold">Condiciones y notas</h3> : null}
       <div className="grid gap-4 sm:grid-cols-2">
         <Field id="language" label="Idioma">
           <NativeSelect id="language" value={value.language} disabled={disabled} onChange={(event) => set("language", event.target.value)}>
@@ -202,6 +209,7 @@ export function ContactForm({
       <Field id="notes" label="Notas">
         <TextArea id="notes" value={value.notes ?? ""} disabled={disabled} onChange={(event) => set("notes", event.target.value)} />
       </Field>
+      </div>
     </div>
   );
 }

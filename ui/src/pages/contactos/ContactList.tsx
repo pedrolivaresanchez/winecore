@@ -79,7 +79,7 @@ function Pill({ active, children, onClick }: { active: boolean; children: string
       type="button"
       aria-pressed={active}
       className={cn(
-        "h-11 rounded-full px-3 text-compact md:h-8",
+        "h-11 shrink-0 rounded-full px-3 text-compact whitespace-nowrap md:h-8",
         active ? "bg-ink font-medium text-ink-foreground" : "bg-muted text-foreground",
       )}
       onClick={onClick}
@@ -248,7 +248,7 @@ export function ContactList({ me }: { me: Me }) {
         />
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 pb-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0">
         {KIND_PILLS.map((pill) => (
           <Pill key={pill.label} active={kind === pill.id} onClick={() => setFilter("kind", pill.id)}>
             {pill.label}
@@ -264,7 +264,7 @@ export function ContactList({ me }: { me: Me }) {
         </label>
         <select
           id="filtro-pais"
-          className="h-11 rounded-full bg-muted px-3 text-compact md:h-8"
+          className="h-11 shrink-0 rounded-full bg-muted px-3 text-compact whitespace-nowrap md:h-8"
           value={country}
           onChange={(event) => setFilter("country", event.target.value)}
         >

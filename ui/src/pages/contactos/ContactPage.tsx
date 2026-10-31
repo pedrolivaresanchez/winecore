@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { Ellipsis } from "lucide-react";
 import { toast } from "sonner";
 import { AuditTrail } from "@/components/AuditTrail";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -7,6 +8,12 @@ import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusPill } from "@/components/StatusPill";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { NativeSelect } from "@/components/ui/native-field";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useApi } from "@/hooks/use-api";
@@ -15,11 +22,14 @@ import { ApiError } from "@/lib/api";
 import {
   archiveContact,
   cleanInput,
+  countryLabel,
   inputFromContact,
   isStale,
+  paymentLabel,
   roleLabels,
   unarchiveContact,
   updateContact,
+  vatLabel,
   type Contact,
   type ContactInput,
 } from "@/lib/contacts";
@@ -100,7 +110,15 @@ function Loaded({
   const [stale, setStale] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
+  const [editing, setEditing] = useState(false);
   const archived = Boolean(contact.archived_at);
+
+  function cancelEdit() {
+    setValue(inputFromContact(contact));
+    setErrors({});
+    setStale(false);
+    setEditing(false);
+  }
 
   async function save() {
     const next = { ...value, tax_id: value.tax_id ? normalizeTaxId(value.tax_id) : "" };
@@ -113,6 +131,7 @@ function Loaded({
     try {
       await updateContact(contact.id, cleanInput(next), contact.updated_at);
       toast("Cambios guardados");
+      setEditing(false);
       onReload();
     } catch (error: unknown) {
       if (isStale(error)) setStale(true);
@@ -147,9 +166,44 @@ function Loaded({
         description={contact.trade_name || roleLabels(contact).join(" · ") || "Contacto"}
         actions={
           canWrite ? (
-            <Button type="button" variant={archived ? "secondary" : "danger"} onClick={() => setConfirmArchive(true)}>
-              {archived ? copy.contacts.unarchive : copy.contacts.archive}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              {editing ? (
+                <>
+                  <Button type="submit" form="contacto-editar" disabled={saving || tab !== "resumen"}>
+                    {saving ? "Guardando…" : copy.contacts.save}
+                  </Button>
+                  <Button type="button" variant="secondary" onClick={cancelEdit} disabled={saving}>
+                    Cancelar
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setEditing(true);
+                    onTab("resumen");
+                  }}
+                >
+                  Editar
+                </Button>
+              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" variant="secondary" size="icon" aria-label="Más acciones">
+                    <Ellipsis aria-hidden className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    className="min-h-11"
+                    variant={archived ? "default" : "destructive"}
+                    onSelect={() => setConfirmArchive(true)}
+                  >
+                    {archived ? copy.contacts.unarchive : copy.contacts.archive}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           ) : undefined
         }
       />
@@ -194,41 +248,42 @@ function Loaded({
           </button>
         ))}
       </div>
-      <div className="max-w-3xl">
-      {tab === "resumen" ? (
+      {tab === "resumen" && !editing ? <ContactOverview contact={contact} /> : null}
+      {editing ? (
         <form
-          className="max-w-2xl"
+          id="contacto-editar"
+          className={tab === "resumen" ? "block" : "hidden"}
           onSubmit={(event) => {
             event.preventDefault();
             void save();
           }}
         >
-          <ContactForm value={value} onChange={setValue} errors={errors} disabled={!canWrite || saving} extra />
-          {canWrite ? (
-            <Button type="submit" className="mt-4" disabled={saving}>
-              {saving ? "Guardando…" : copy.contacts.save}
-            </Button>
-          ) : null}
+          <ContactForm value={value} onChange={setValue} errors={errors} disabled={saving} extra split />
         </form>
       ) : null}
       {tab === "direcciones" ? (
-        <AddressBook contactId={contact.id} addresses={contact.addresses} canWrite={canWrite} onChanged={onReload} />
+        <div className="max-w-3xl">
+          <AddressBook contactId={contact.id} addresses={contact.addresses} canWrite={canWrite} onChanged={onReload} />
+        </div>
       ) : null}
       {tab === "personas" ? (
-        <PersonBook contactId={contact.id} persons={contact.persons} canWrite={canWrite} onChanged={onReload} />
+        <div className="max-w-3xl">
+          <PersonBook contactId={contact.id} persons={contact.persons} canWrite={canWrite} onChanged={onReload} />
+        </div>
       ) : null}
       {tab === "historial" ? (
-        <AuditTrail
-          items={history.data?.items ?? []}
-          loading={history.loading}
-          error={history.error ? `${copy.error.load} (${history.error.code})` : undefined}
-          onRetry={history.reload}
-        />
+        <div className="max-w-3xl">
+          <AuditTrail
+            items={history.data?.items ?? []}
+            loading={history.loading}
+            error={history.error ? `${copy.error.load} (${history.error.code})` : undefined}
+            onRetry={history.reload}
+          />
+        </div>
       ) : null}
-      </div>
       <ConfirmDialog
         open={confirmArchive}
-        title={archived ? "Recuperar contacto" : "Archivar contacto"}
+        title={archived ? "Reactivar contacto" : "Archivar contacto"}
         body={
           archived
             ? "Volverá a salir en las listas."
@@ -240,6 +295,43 @@ function Loaded({
         onClose={() => setConfirmArchive(false)}
         onConfirm={() => void toggleArchive()}
       />
+    </div>
+  );
+}
+
+function ContactOverview({ contact }: { contact: Contact }) {
+  return (
+    <div className="grid items-start gap-6 lg:grid-cols-2">
+      <section className="grid gap-1">
+        <h3 className="text-body font-semibold">Datos fiscales</h3>
+        <Fact label="Tipo" value={contact.kind === "person" ? "Persona" : "Empresa"} />
+        <Fact label="Nombre fiscal" value={contact.legal_name} />
+        <Fact label="Nombre comercial" value={contact.trade_name || "—"} />
+        <Fact label="NIF" value={contact.tax_id || "—"} />
+        <Fact label="País" value={countryLabel(contact.country_code)} />
+        <Fact label="Correo" value={contact.email || "—"} />
+        <Fact label="Teléfono" value={contact.phone || "—"} />
+        <Fact label="Papel" value={roleLabels(contact).join(", ") || "—"} />
+      </section>
+      <section className="grid gap-1">
+        <h3 className="text-body font-semibold">Condiciones y notas</h3>
+        <Fact label="Idioma" value={contact.language === "en" ? "Inglés" : "Español"} />
+        <Fact label="Régimen de IVA" value={vatLabel(contact.vat_regime)} />
+        <Fact label="Forma de pago" value={paymentLabel(contact.payment_method)} />
+        <Fact label="Días de pago" value={String(contact.payment_terms_days)} />
+        <Fact label="CAE" value={contact.excise_number || "—"} />
+        <Fact label="EORI" value={contact.eori || "—"} />
+        <Fact label="Notas" value={contact.notes || "—"} />
+      </section>
+    </div>
+  );
+}
+
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid gap-0.5 border-b py-2">
+      <dt className="text-meta text-muted-foreground">{label}</dt>
+      <dd className="text-compact break-words">{value}</dd>
     </div>
   );
 }

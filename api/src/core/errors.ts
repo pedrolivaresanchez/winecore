@@ -43,6 +43,12 @@ const CATALOG = {
   WC_STALE_VERSION: [409, 'El registro ha cambiado; vuelve a cargarlo'],
   WC_UNAUTHENTICATED: [401, 'No autenticado'],
   WC_NO_ACCESS: [403, 'No tienes acceso a WineCore'],
+  // --- Bodega ---
+  WC_NOT_APPROVED: [409, 'La destrucción y la merma por incidencia exigen una aprobación (cellar_loss). El módulo de aprobaciones no está disponible y la operación no se registra'],
+  WC_QR_FOREIGN: [422, 'El código QR no pertenece a WineCore'],
+  WC_VESSEL_NOT_IN_SERVICE: [409, 'El recipiente no está en servicio'],
+  WC_ILLEGAL_TRANSITION: [409, 'La transición de estado no está permitida'],
+  WC_ECO_MIX: [422, 'No se puede ensamblar un lote ecológico con uno que no lo es'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;
@@ -53,18 +59,21 @@ export class DomainError extends Error {
   readonly code: string;
   readonly httpStatus: number;
   readonly fields?: Record<string, string>;
+  readonly details?: unknown;
 
   constructor(
     code: string,
     httpStatus: number,
     message: string,
     fields?: Record<string, string>,
+    details?: unknown,
   ) {
     super(message);
     this.name = 'DomainError';
     this.code = code;
     this.httpStatus = httpStatus;
     this.fields = fields;
+    this.details = details;
   }
 }
 
@@ -81,11 +90,17 @@ export function errorBody(error: DomainError): {
   code: string;
   message: string;
   fields?: Record<string, string>;
+  details?: unknown;
 } {
-  if (error.fields && Object.keys(error.fields).length > 0) {
-    return { code: error.code, message: error.message, fields: error.fields };
-  }
-  return { code: error.code, message: error.message };
+  const body: {
+    code: string;
+    message: string;
+    fields?: Record<string, string>;
+    details?: unknown;
+  } = { code: error.code, message: error.message };
+  if (error.fields && Object.keys(error.fields).length > 0) body.fields = error.fields;
+  if (error.details !== undefined) body.details = error.details;
+  return body;
 }
 
 export function asDomainError(error: unknown): DomainError | null {

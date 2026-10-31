@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ErrorState } from "@/components/ErrorState";
 import { PageHeader } from "@/components/PageHeader";
@@ -7,8 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useApi } from "@/hooks/use-api";
 import { copy, fill } from "@/i18n";
-import { ApiError, isAbortError } from "@/lib/api";
-import { contactAudit, contactQuery, listContacts, type AuditEvent, type ContactPage } from "@/lib/contacts";
+import { contactQuery, type AuditEvent, type AuditPage, type ContactPage } from "@/lib/contacts";
 import { formatDateTime, formatInteger } from "@/lib/format";
 import { allows } from "@/lib/permissions";
 import type { Me } from "@/lib/types";
@@ -17,58 +15,14 @@ const ACTIONS: Record<string, string> = {
   create: "creó",
   update: "cambió",
   archive: "archivó",
-  unarchive: "recuperó",
+  unarchive: "reactivó",
 };
 
-function useRecent() {
-  const [items, setItems] = useState<{ id: string; contactId: string; name: string; event: AuditEvent }[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    let active = true;
-    listContacts({ limit: 8, archived: false }, controller.signal)
-      .then(async (page) => {
-        const top = [...page.items].sort((a, b) => b.updated_at.localeCompare(a.updated_at)).slice(0, 4);
-        const audits = await Promise.all(
-          top.map(async (contact) => ({ contact, audit: await contactAudit(contact.id, controller.signal) })),
-        );
-        if (!active) return;
-        const rows = audits.flatMap(({ contact, audit }) =>
-          audit.items.slice(0, 2).map((event) => ({
-            id: event.id,
-            contactId: contact.id,
-            name: contact.legal_name,
-            event,
-          })),
-        );
-        rows.sort((a, b) => b.event.occurred_at.localeCompare(a.event.occurred_at));
-        setItems(rows.slice(0, 6));
-        setError(null);
-        setLoading(false);
-      })
-      .catch((err: unknown) => {
-        if (!active || isAbortError(err)) return;
-        setError(err instanceof ApiError ? err.message : copy.error.load);
-        setLoading(false);
-      });
-    return () => {
-      active = false;
-      controller.abort();
-    };
-  }, [attempt]);
-
-  return {
-    items,
-    loading,
-    error,
-    reload: () => {
-      setLoading(true);
-      setAttempt((value) => value + 1);
-    },
-  };
+function subjectOf(event: AuditEvent): string {
+  const named = event.changes.find((change) => change.field === "legal_name" || change.field === "trade_name");
+  const value = named?.after ?? named?.before;
+  if (typeof value === "string" && value.trim()) return value;
+  return "un contacto";
 }
 
 export function Panel({ me }: { me: Me }) {
@@ -78,7 +32,7 @@ export function Panel({ me }: { me: Me }) {
   const all = useApi<ContactPage>(canRead ? contactQuery({ limit: 1, archived: false }) : null);
   const customers = useApi<ContactPage>(canRead ? contactQuery({ limit: 1, role: "customer", archived: false }) : null);
   const suppliers = useApi<ContactPage>(canRead ? contactQuery({ limit: 1, role: "supplier", archived: false }) : null);
-  const recent = useRecent();
+  const recent = useApi<AuditPage>(canRead ? "/v1/audit?table=party.contact&limit=5" : null);
   const ready = !canRead || (!all.loading && !customers.loading && !suppliers.loading && !recent.loading);
 
   return (
@@ -129,22 +83,33 @@ export function Panel({ me }: { me: Me }) {
               <Skeleton className="h-14 w-full" />
             </div>
           ) : recent.error ? (
-            <ErrorState title={recent.error} onRetry={recent.reload} />
-          ) : recent.items.length === 0 ? (
+            <ErrorState title={`${copy.error.load} (${recent.error.code})`} detail={recent.error.message} onRetry={recent.reload} />
+          ) : (recent.data?.items.length ?? 0) === 0 ? (
             <p className="text-compact text-muted-foreground">{copy.panel.recentEmpty}</p>
           ) : (
             <ul className="grid gap-2">
-              {recent.items.map((item) => (
-                <li key={item.id}>
-                  <Link to={`/contactos/${item.contactId}`} className="block rounded-xl border bg-card p-3 hover:bg-accent">
+              {recent.data?.items.map((event) => {
+                const body = (
+                  <>
                     <p className="text-body">
-                      <span className="font-medium">{item.event.actor.display_name}</span>{" "}
-                      {ACTIONS[item.event.action] ?? item.event.action} {item.name}
+                      <span className="font-medium">{event.actor.display_name}</span>{" "}
+                      {ACTIONS[event.action] ?? event.action} {subjectOf(event)}
                     </p>
-                    <p className="text-meta text-muted-foreground">{formatDateTime(item.event.occurred_at)}</p>
-                  </Link>
-                </li>
-              ))}
+                    <p className="text-meta text-muted-foreground">{formatDateTime(event.occurred_at)}</p>
+                  </>
+                );
+                return (
+                  <li key={event.id}>
+                    {event.row_id ? (
+                      <Link to={`/contactos/${event.row_id}`} className="block rounded-xl border bg-card p-3 hover:bg-accent">
+                        {body}
+                      </Link>
+                    ) : (
+                      <div className="rounded-xl border bg-card p-3">{body}</div>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>

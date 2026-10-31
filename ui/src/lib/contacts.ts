@@ -106,6 +106,7 @@ export type AuditEvent = {
   actor: { type: string; id: string; display_name: string };
   action: string;
   changes: AuditChange[];
+  row_id?: string;
 };
 
 export type AuditPage = { items: AuditEvent[]; next_cursor: string | null };
@@ -119,19 +120,32 @@ export const COUNTRIES = [
 ] as const;
 
 export const VAT_REGIMES = [
-  { value: "general", label: "Régimen general" },
-  { value: "intra_eu", label: "Intracomunitario" },
-  { value: "exempt", label: "Exento" },
+  { value: "general", label: "General" },
   { value: "equivalence_surcharge", label: "Recargo de equivalencia" },
+  { value: "export", label: "Exportación" },
+  { value: "intra_eu", label: "Intracomunitario" },
+  { value: "canary_ceuta_melilla", label: "Canarias, Ceuta y Melilla" },
+  { value: "exempt_other", label: "Exento u otros" },
 ] as const;
 
 export const PAYMENT_METHODS = [
   { value: "", label: "Sin indicar" },
   { value: "transfer", label: "Transferencia" },
+  { value: "direct_debit", label: "Domiciliación" },
   { value: "card", label: "Tarjeta" },
   { value: "cash", label: "Efectivo" },
-  { value: "confirming", label: "Confirming" },
+  { value: "stripe", label: "Stripe" },
+  { value: "other", label: "Otro" },
 ] as const;
+
+export function vatLabel(value: string): string {
+  return VAT_REGIMES.find((item) => item.value === value)?.label ?? value;
+}
+
+export function paymentLabel(value: string | null | undefined): string {
+  if (!value) return "Sin indicar";
+  return PAYMENT_METHODS.find((item) => item.value === value)?.label ?? value;
+}
 
 export function countryLabel(code: string): string {
   return COUNTRIES.find((country) => country.code === code)?.label ?? code;
@@ -222,6 +236,11 @@ export function archivePerson(contactId: string, personId: string) {
 
 export function contactAudit(id: string, signal?: AbortSignal) {
   const params = new URLSearchParams({ table: "party.contact", row_id: id });
+  return api<AuditPage>(`/v1/audit?${params.toString()}`, { signal });
+}
+
+export function recentContactAudit(limit = 5, signal?: AbortSignal) {
+  const params = new URLSearchParams({ table: "party.contact", limit: String(limit) });
   return api<AuditPage>(`/v1/audit?${params.toString()}`, { signal });
 }
 
