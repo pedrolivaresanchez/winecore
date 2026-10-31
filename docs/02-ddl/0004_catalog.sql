@@ -28,7 +28,10 @@ CREATE TABLE catalog.format (
   nominal_volume_ml integer NOT NULL CHECK (nominal_volume_ml > 0),
   units_per_case   smallint NOT NULL DEFAULT 6 CHECK (units_per_case > 0),
   cases_per_pallet smallint NOT NULL DEFAULT 112 CHECK (cases_per_pallet > 0),  -- palet americano; el europeo se configura aparte
-  is_active        boolean NOT NULL DEFAULT true
+  unit_gross_weight_g integer CHECK (unit_gross_weight_g > 0),                   -- e-DA, DESADV y transporte
+  unit_net_weight_g   integer CHECK (unit_net_weight_g > 0),
+  is_active        boolean NOT NULL DEFAULT true,
+  CHECK (unit_net_weight_g IS NULL OR unit_gross_weight_g IS NULL OR unit_net_weight_g <= unit_gross_weight_g)
 );
 
 CREATE TABLE catalog.product (
