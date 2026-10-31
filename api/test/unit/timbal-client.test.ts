@@ -61,4 +61,28 @@ describe('createTimbalAuth', () => {
       'https://api.timbal.ai/orgs/org-1/projects/proj-1',
     ]);
   });
+
+  it('lee el email de la sesión con la forma real de /me', async () => {
+    const fetchImpl: FetchLike = async (url) =>
+      String(url).endsWith('/me')
+        ? new Response(JSON.stringify({ session: { user_id: 1, user_email: 'owner@winecore.test', access_level: 'admin' } }), { status: 200 })
+        : new Response('{}', { status: 200 });
+    const auth = createTimbalAuth(
+      { timbalApiHost: 'api.timbal.ai', timbalOrgId: 'org-1', timbalProjectId: 'proj-1' },
+      fetchImpl,
+    );
+    expect(await auth.emailFor('token-2')).toBe('owner@winecore.test');
+  });
+
+  it('rechaza la sesión si no tiene acceso al proyecto', async () => {
+    const fetchImpl: FetchLike = async (url) =>
+      String(url).endsWith('/me')
+        ? new Response(JSON.stringify({ session: { user_email: 'owner@winecore.test' } }), { status: 200 })
+        : new Response('{}', { status: 403 });
+    const auth = createTimbalAuth(
+      { timbalApiHost: 'api.timbal.ai', timbalOrgId: 'org-1', timbalProjectId: 'proj-1' },
+      fetchImpl,
+    );
+    expect(await auth.emailFor('token-3')).toBeNull();
+  });
 });
