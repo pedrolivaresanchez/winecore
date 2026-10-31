@@ -16,6 +16,10 @@ const CHANNEL_LIST: Record<string, string> = {
   cellar_shop: 'shop',
 };
 
+export function priceListCodeForChannel(channel: string): string | null {
+  return CHANNEL_LIST[channel] ?? null;
+}
+
 export type PriceHit = {
   unitPrice: Decimal;
   priceListId: string;
