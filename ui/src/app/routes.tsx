@@ -32,6 +32,7 @@ import { DeliveryPage } from '@/pages/ventas/DeliveryPage'
 import { OrderPage } from '@/pages/ventas/OrderPage'
 import { QuotePage } from '@/pages/ventas/QuotePage'
 import { VentasList } from '@/pages/ventas/VentasList'
+import { Gastos } from '@/pages/gastos/Gastos'
 
 /** Authenticated routes. The shell, auth and the entity switcher stay outside. */
 export function AppRoutes({ me }: { me: Me }) {
@@ -78,6 +79,7 @@ export function AppRoutes({ me }: { me: Me }) {
       <Route path="bodega/operaciones/:id" element={<OperacionPage me={me} />} />
       <Route path="bodega/:vesselId" element={<DepositoPage me={me} />} />
       <Route path="q/:token" element={<QrOpen me={me} />} />
+      <Route path="gastos/*" element={<Gastos me={me} />} />
       <Route path="informes" element={<InformesPage me={me} />} />
       <Route path="*" element={<NotFound />} />
     </Routes>

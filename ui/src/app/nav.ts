@@ -83,6 +83,16 @@ export const navigation: NavEntry[] = [
     ],
   },
   {
+    id: 'expenses',
+    module: 'purchasing',
+    label: copy.gastos.title,
+    icon: Receipt,
+    path: '/gastos',
+    permission: 'purchasing.read',
+    mobile: 'tab',
+    placement: 'main',
+  },
+  {
     id: 'stock',
     module: 'inventory',
     label: copy.nav.stock,
