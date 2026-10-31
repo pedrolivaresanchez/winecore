@@ -71,7 +71,10 @@
 | `sales_delivery_note_get` | read | `sales.read` | `{ delivery_note_id }` | Detalle con líneas, lotes, transportista y e-DA |
 | `sales_delivery_note_from_order_prepare` / `_commit` | write | `sales.write` | `{ order_id; from_location: string; lines?: { order_line_id; quantity: Qty; lot_code?: string }[]; issue?: boolean /* def. false */ }` | prepare: lotes sugeridos (el más antiguo con saldo en origen), saldo tras la salida, efectos intercompañía; commit: `{ delivery_note_id; number? }` |
 
-### 4.5 Facturación (M1)
+### 4.5 Facturación (M2)
+
+Entrega de facturas (decisión de Pedro, 31-10-2026): WineCore **no envía** correos. Al emitir, el evento `billing.invoice.issued` avisa a CVBOT; CVBOT obtiene el PDF y los datos con `billing_invoice_pdf_get`, envía desde el Outlook de Pedro y registra el resultado con `billing_invoice_delivery_mark_sent` o `_mark_failed` (escrituras directas sin confirmación porque solo registran un hecho externo). Sin marca en 24 h (ajustable), aviso.
+
 
 | Herramienta | Tipo | Permiso | Entrada | Salida |
 |---|---|---|---|---|
@@ -82,6 +85,10 @@
 | `billing_receivables_report` | read | `billing.read` | `{ entity?; as_of?: Date; group_by?: 'customer'\|'age' }` | `{ total_outstanding: Money; overdue: Money; buckets: { label: '0-30'\|'31-60'\|'61-90'\|'>90'; amount: Money }[]; by_customer: { customer; outstanding; oldest_due: Date }[] }` |
 | `billing_verifactu_status` | read | `billing.read` | `{ entity? }` | `{ pending: number; sending: number; rejected: { invoice_number; error_code; error_text }[]; last_accepted_at?: DateTime; next_send_not_before?: DateTime }` |
 | `billing_intercompany_status` | read | `billing.read` | `{ period?: 'current'\|'previous' }` | `{ period: { start; end; status }; lines: number; amount: Money; below_cost: { sku; lot?; unit_price; unit_cost }[]; draft_invoice_id?: UUID }` |
+| `billing_invoices_pending_delivery_list` | read | `billing.read` | `{ entity?; older_than_hours?: number; cursor?; limit? }` | Facturas pendientes de envío o con envío fallido: `{ items: { invoice_id; number; entity; customer: string; issue_date; total: Money; delivery_status: 'pending'\|'failed'\|'no_recipient'; attempt; pending_since }[]; next_cursor }` |
+| `billing_invoice_pdf_get` | read | `billing.read` | `{ invoice_id }` | `{ filename; mime: 'application/pdf'; base64; to: string[] /* correos de facturación del cliente */; subject_es: string; body_es: string; attempt }` |
+| `billing_invoice_delivery_mark_sent` | write directa | `billing.deliver` | `{ invoice_id; attempt; message_id: string; sent_at: DateTime; recipients: string[] }` | `{ status: 'sent' }` — solo registra el envío que hizo CVBOT; idempotente por (`invoice_id`, `attempt`) |
+| `billing_invoice_delivery_mark_failed` | write directa | `billing.deliver` | `{ invoice_id; attempt; error: string }` | `{ status: 'failed' }` — avisa en el panel; el reenvío se pide en la web |
 | `billing_dunning_draft_prepare` / `_commit` | write | `billing.write` | `{ invoice_id; tone?: 'amable'\|'firme'; language?: 'es'\|'en' }` | prepare: texto propuesto del recordatorio; commit: `{ approval_id; link }` — **no se envía**: queda pendiente de aprobación `third_party_message` y lo envía una persona |
 
 ### 4.6 Compras y gastos (M2)

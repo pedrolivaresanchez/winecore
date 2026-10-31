@@ -90,6 +90,17 @@ CREATE TRIGGER product_no_delete BEFORE DELETE ON catalog.product FOR EACH ROW E
 -- ---------------------------------------------------------------------
 -- Tarifas versionadas (cliente final, distribuidor, tienda)
 -- ---------------------------------------------------------------------
+-- Materiales de envasado por formato (corchos, cápsulas de lacre, cajas de 6, palés de 112 cajas):
+-- el envasado los descuenta del stock de materiales (cellar.material_consumption)
+CREATE TABLE catalog.format_material (
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  format_id           uuid NOT NULL REFERENCES catalog.format(id),
+  material_product_id uuid NOT NULL REFERENCES catalog.product(id),            -- producto de tipo packaging_material
+  per                 text NOT NULL CHECK (per IN ('unit','case','pallet')),   -- por botella, por caja o por palé
+  quantity            numeric(12,3) NOT NULL CHECK (quantity > 0),
+  UNIQUE (format_id, material_product_id, per)
+);
+
 CREATE TABLE catalog.price_list (
   id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   code         text NOT NULL UNIQUE CHECK (code IN ('final','distributor','shop') OR code ~ '^custom-[a-z0-9-]{2,30}$'),
@@ -181,6 +192,7 @@ CREATE TABLE catalog.standard_cost (
 CREATE TRIGGER wine_audit AFTER INSERT OR UPDATE ON catalog.wine FOR EACH ROW EXECUTE FUNCTION audit.capture();
 CREATE TRIGGER format_audit AFTER INSERT OR UPDATE ON catalog.format FOR EACH ROW EXECUTE FUNCTION audit.capture();
 CREATE TRIGGER product_audit AFTER INSERT OR UPDATE ON catalog.product FOR EACH ROW EXECUTE FUNCTION audit.capture();
+CREATE TRIGGER format_material_audit AFTER INSERT OR UPDATE ON catalog.format_material FOR EACH ROW EXECUTE FUNCTION audit.capture();
 CREATE TRIGGER price_list_audit AFTER INSERT OR UPDATE ON catalog.price_list FOR EACH ROW EXECUTE FUNCTION audit.capture();
 CREATE TRIGGER price_list_version_audit AFTER INSERT OR UPDATE ON catalog.price_list_version FOR EACH ROW EXECUTE FUNCTION audit.capture();
 CREATE TRIGGER price_list_item_audit AFTER INSERT OR UPDATE OR DELETE ON catalog.price_list_item FOR EACH ROW EXECUTE FUNCTION audit.capture();

@@ -167,6 +167,26 @@ CREATE TABLE billing.invoice (
 );
 CREATE UNIQUE INDEX invoice_number_uq ON billing.invoice(legal_entity_id, number) WHERE number IS NOT NULL;
 CREATE INDEX invoice_customer_idx ON billing.invoice(customer_id, issue_date);
+-- Registro de entregas de facturas: CVBOT envía desde el Outlook de Pedro y marca el resultado por MCP
+CREATE TABLE billing.invoice_delivery (
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  invoice_id          uuid NOT NULL REFERENCES billing.invoice(id),
+  attempt             smallint NOT NULL DEFAULT 1 CHECK (attempt >= 1),   -- un reenvío es otro intento
+  channel             text NOT NULL DEFAULT 'cvbot_outlook' CHECK (channel IN ('cvbot_outlook','download')),
+  recipients          text[],
+  status              text NOT NULL CHECK (status IN ('pending','sent','failed','no_recipient')),
+  message_id          text,                               -- identificador del mensaje de Outlook
+  error               text,
+  requested_by        text NOT NULL,                      -- 'system' al emitir; usuario en un reenvío
+  marked_by           text,                               -- cliente MCP (CVBOT) que marca el resultado
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  sent_at             timestamptz,
+  UNIQUE (invoice_id, attempt),
+  CHECK (status <> 'sent' OR (message_id IS NOT NULL AND sent_at IS NOT NULL))
+);
+CREATE INDEX invoice_delivery_invoice_idx ON billing.invoice_delivery(invoice_id, created_at);
+CREATE TRIGGER invoice_delivery_no_delete BEFORE DELETE ON billing.invoice_delivery FOR EACH ROW EXECUTE FUNCTION core.forbid_delete();
+
 CREATE INDEX invoice_open_idx ON billing.invoice(payment_status) WHERE status = 'issued' AND payment_status IN ('unpaid','partially_paid');
 CREATE TRIGGER invoice_touch BEFORE UPDATE ON billing.invoice FOR EACH ROW EXECUTE FUNCTION core.touch_updated_at();
 CREATE TRIGGER invoice_no_delete BEFORE DELETE ON billing.invoice FOR EACH ROW EXECUTE FUNCTION core.forbid_delete();

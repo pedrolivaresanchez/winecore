@@ -38,19 +38,20 @@ WineCore es el sistema interno de la bodega y de su comercializadora: **una sola
 |---|---|---|
 | Núcleo | Acceso (Microsoft + lista blanca), roles por entidad, passkeys para aprobar, módulos activables, auditoría encadenada, series sin huecos, adjuntos, eventos a CVBOT | M0–M1 |
 | Contactos y catálogo | Contactos deduplicados compartidos por las dos entidades; vinos, formatos, productos; tarifas versionadas; tarifa intercompañía; coste estándar | M1–M2 |
-| Facturación + Verifactu | Facturas completas y rectificativas de P.O (M2, sin Verifactu hasta el 30-06-2027) y de CVPO (en Holded con Verifactu hasta M4, Q-033), IRPF y recargo, exportación/intracomunitaria/Canarias, PDF ES/EN (con QR desde M4), emisión en lote con aprobación, intercompañía mensual; registros Verifactu y envío (M4) | M2 / M4 |
+| Facturación + Verifactu | Facturas completas y rectificativas de P.O (M2, sin Verifactu hasta el 30-06-2027), EORI y documentos de exportación por país y de CVPO (en Holded con Verifactu hasta M4, Q-033), IRPF y recargo, exportación/intracomunitaria/Canarias, PDF ES/EN (con QR desde M4), emisión en lote con aprobación, intercompañía mensual; registros Verifactu y envío (M4) | M2 / M4 |
 | Ventas | Pedidos (manual, MCP, EDI, web), reglas de entidad facturadora (D3), albaranes (venta, consigna, traspaso, devolución), incidencias de transporte, proformas | M2–M3 |
 | Stock | Ubicaciones y almacenes, dos libros (físico y fiscal), aforo de arranque, existencias a fecha, bloqueo de periodos, trazabilidad (M1); conciliación con las ventas (M2) | M1–M2 |
-| Bodega | Depósitos, lotes y genealogía, trasiegos, ensamblajes, adiciones, envasado, etiquetado de jaulón, mermas, limpiezas (M1); recepción de uva, prensado, fermentación, analíticas, catas (M5) | M1 / M5 |
+| Bodega | Depósitos, lotes y genealogía, trasiegos, ensamblajes, adiciones, envasado con consumo de materiales (corchos, cápsulas de lacre, cajas de 6, palés de 112 cajas), etiquetado de jaulón, mermas, limpiezas (M1); recepción de uva, prensado, fermentación, analíticas, catas (M5) | M1 / M5 |
 | Viñedo y ecológico | Parcelas, tratamientos, labores, maduración, vendimia; informe para la certificadora | M5 |
 | Compras | Gastos por foto/PDF con OCR y validación; libro de recibidas | M2 |
-| Cobros | Cobros y pagos parciales, pendientes y vencidos, partidas abiertas de Holded | M2 |
+| Cobros y bancos | Cobros y pagos parciales, pendientes y vencidos, partidas abiertas de Holded, conciliación de transferencias (Norma 43/CAMT) y remesas SEPA, para poder dejar Holded | M2 |
+| Informes | Gráficos de ventas, gastos y stock por producto, lote y año (stock en M1) | M1–M2 |
 | Regulatorio | SILICIE (asientos y fichero en M2; presentación por el ejecutor en M3), SISV, EMCS, AecocEDI, INFOVI, calendario de obligaciones, cuadres, ejecutor local (M3) | M2–M3 |
 | IA / MCP | MCP (lectura de stock, lotes y depósitos y borradores de bodega en M1; el resto con su módulo), asistente interno, resumen diario, vigilantes (M3) | M1–M3 |
 | Migración | Contactos y catálogo (M1), partidas abiertas y revisión de albaranes (M2) | M1–M2 |
 
 ### 3.2 Posterior (M6+)
-Conciliación bancaria y remesas SEPA (M6), contabilidad PGC y exportaciones contables (M7), histórico completo de Holded con PDF y diario D7 (M7), borradores de modelos AEAT (M6–M7), etiqueta electrónica y fichas de etiqueta, conocimiento de añadas, planificador de vendimia con meteorología, costes por partida, TPV con factura simplificada, OSS, integraciones de paquetería (etiquetas y seguimiento), APPCC.
+Previsión de tesorería (M6), contabilidad PGC y exportaciones contables (M7), histórico completo de Holded con PDF y diario D7 (M7), borradores de modelos AEAT (M6–M7), etiqueta electrónica y fichas de etiqueta, conocimiento de añadas, planificador de vendimia con meteorología, costes por partida, TPV con factura simplificada, OSS, integraciones de paquetería (etiquetas y seguimiento), APPCC.
 
 ### 3.3 Fuera de alcance
 CRM con embudos, proyectos y horas, RR. HH. y nóminas, FACe (no se usa), la tienda web (proyecto aparte: WineCore solo recibe sus pedidos), presentación de modelos fiscales (la hace la asesoría), cualquier envío automático a terceros sin aprobación, "escenarios" para optimizar IRPF/IS (D4: sin lógica fiscal propia).
@@ -200,12 +201,16 @@ CRM con embudos, proyectos y horas, RR. HH. y nóminas, FACe (no se usa), la tie
 - Dado ventas de CVPO con stock de P.O en octubre · Cuando llega el 1 de noviembre · Entonces se cierra la liquidación de octubre, se crea el borrador de factura recapitulativa P.O → CVPO con **fecha de operación 31 de octubre** y la tarifa vigente, y se pide aprobación con aviso si quedan menos de 3 días para el día 16 (RD 1619/2012, arts. 11 y 13: se expide antes del día 16 de noviembre, con la fecha real de expedición).
 - Cuando se aprueba · Entonces se emite la factura de P.O y se crea la factura recibida espejo en CVPO.
 
-**US-FACT-10 · Enviar al cliente** (M2)
-- Cuando descargo el PDF · Entonces la factura queda "enviada (descarga)" con quién y cuándo.
-- (M2, si Q-014) Cuando pulso "Enviar por correo" · Entonces se envía desde el buzón dedicado tras mi clic y queda registrado; ningún agente puede enviarla.
+**US-FACT-10 · Envío automático al cliente vía CVBOT** (M2; decisiones de Pedro del 31-10-2026)
+- Dada una factura emitida · Entonces queda "pendiente de envío" y WineCore avisa a CVBOT (evento `billing.invoice.issued`); CVBOT obtiene el PDF, el correo de facturación del cliente y el asunto y el texto en español, la envía desde el Outlook de Pedro y marca el resultado (enviada con identificador del mensaje y hora, o fallida). WineCore no envía correos.
+- Si no se marca como enviada en el plazo configurado (ajuste `billing.invoice_delivery_alert_hours`, 24 h por defecto) o se marca como fallida · Entonces se avisa en el panel y a CVBOT, y se puede pedir un reenvío; cada intento queda en el registro de envíos.
+- Las presentaciones fiscales y de impuestos especiales siguen necesitando revisión humana (sin cambios).
 
 **US-FACT-11 · Libro de emitidas** (M2)
 - Cuando exporto el trimestre · Entonces obtengo el libro de facturas emitidas (formato de `modelos-aeat.md`) y los PDF en un ZIP.
+
+**US-FACT-12 · Exportación con EORI y documentos por país** (M2)
+- Dado un cliente de fuera de la UE · Cuando emito su factura · Entonces lleva el EORI de la entidad y el del cliente, Incoterm, código NC por línea, origen, pesos y bultos, y veo la lista de documentos que pide ese país, con los que salen de la factura ya generados.
 
 ### 4.7 Verifactu (VFT)
 
@@ -290,6 +295,9 @@ CRM con embudos, proyectos y horas, RR. HH. y nóminas, FACe (no se usa), la tie
 **US-BOD-13 · Limpiezas** (M1)
 - Cuando registro la limpieza de un depósito con ácido peracético · Entonces queda en el historial del depósito y en el informe ecológico.
 
+**US-BOD-14 · Materiales de envasado** (M1)
+- Dado un formato de 0,75 L con su lista de materiales · Cuando confirmo un envasado de 600 botellas · Entonces se descuentan del stock 600 corchos, 600 cápsulas de lacre, 100 cajas de 6 y 1 palé (uno por cada 112 cajas o fracción); si falta algún material, lo veo antes de confirmar.
+
 ### 4.10 Viñedo (VIN, M5)
 
 **US-VIN-01 · Parcelas** — Cuando doy de alta una parcela con su referencia SIGPAC completa, superficie y variedades · Entonces no se puede duplicar la misma referencia.
@@ -308,8 +316,8 @@ CRM con embudos, proyectos y horas, RR. HH. y nóminas, FACe (no se usa), la tie
 
 **US-FIN-01 · Registrar cobro** (M2) — Dado una factura de 121 € · Cuando registro un cobro de 100 € · Entonces queda "parcialmente cobrada" con 21 € pendientes; si intento imputar más del pendiente, veo `WC100`.
 **US-FIN-02 · Pendientes y vencidos** (M2) — Cuando abro "Cobros" · Entonces veo lo pendiente por cliente con antigüedad (0–30, 31–60, 61–90, > 90) y puedo preparar un recordatorio en borrador que solo se envía tras aprobación.
-**US-FIN-03 · Extractos y conciliación** (M6) — Cuando importo un Norma 43 · Entonces cada línea se deduplica y recibe sugerencias de factura; confirmar crea el cobro.
-**US-FIN-04 · Remesa SEPA** (M6) — Cuando apruebo una remesa · Entonces se genera el fichero para subirlo al banco; WineCore no guarda claves bancarias.
+**US-FIN-03 · Extractos y conciliación** (M2) — Cuando importo un Norma 43 · Entonces cada línea se deduplica y recibe sugerencias de factura; confirmar crea el cobro.
+**US-FIN-04 · Remesa SEPA** (M2) — Cuando apruebo una remesa · Entonces se genera el fichero para subirlo al banco; WineCore no guarda claves bancarias.
 
 ### 4.13 SILICIE (SIL)
 
@@ -371,7 +379,11 @@ CRM con embudos, proyectos y horas, RR. HH. y nóminas, FACe (no se usa), la tie
 **US-ASIS-02 · Resumen diario** (M3) — Cada día laborable a las 8:00 · Entonces CVBOT recibe el resumen (aprobaciones pendientes, vencimientos, cola, descuadres) en ≤ 10 líneas.
 **US-ASIS-03 · Vigilantes** (M3) — Cuando un vigilante detecta un descuadre, un cobro vencido, un plazo a 7 días, una cola atascada o el ejecutor caído · Entonces emite un evento a CVBOT y un aviso en el panel.
 
-### 4.22 Posteriores (resumen)
+### 4.22 Informes (REP)
+
+**US-REP-01 · Gráficos** (M1 stock, M2 ventas y gastos) — Cuando abro Informes · Entonces veo ventas, gastos y stock por producto, lote y año (y por entidad), con comparación con el año anterior, y puedo exportar los datos.
+
+### 4.23 Posteriores (resumen)
 **US-CONTA-01** asientos automáticos y exportación a la asesoría (M7) · **US-CONTA-02** saldos de apertura (M7) · **US-MOD-01** datos para 303/390/347/349/115 (M6) · **US-ETQ-01** ficha de etiqueta y e-etiqueta (posterior) · **US-CONO-01** notas de cata años después (posterior).
 
 ## 5. Requisitos no funcionales

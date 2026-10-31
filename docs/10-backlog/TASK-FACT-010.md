@@ -4,7 +4,7 @@
 - Depende de: TASK-FACT-004
 
 ## Objetivo
-Registrar la descarga del PDF como "enviada (descarga)" y, si Pedro lo aprueba (Q-014), enviar por correo desde el buzón dedicado solo tras el clic de una persona.
+Entrega **automática vía CVBOT** de cada factura emitida (decisión de Pedro, 31-10-2026): estado pendiente de envío en `billing.invoice_delivery`, evento `billing.invoice.issued` a CVBOT, herramientas MCP de `13-mcp.md` §4.5 (pendientes, PDF con correo de facturación y texto en español, marcar enviada o fallida), aviso si no se marca en `billing.invoice_delivery_alert_hours` y reenvío (nuevo intento) desde la web. WineCore no envía correos; sin Microsoft Graph.
 
 ## Contexto
 Reglas duras 0.4 y 0.5 · UI-13.
