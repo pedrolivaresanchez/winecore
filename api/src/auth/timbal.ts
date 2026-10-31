@@ -19,17 +19,13 @@ export function createTimbalAuth(
       const hit = cache.get(token);
       if (hit && hit.expiresAt > Date.now()) return hit.email;
 
-      const headers = { Authorization: `Bearer ${token}` };
-      const meUrl = `https://${config.timbalApiHost}/me`;
-      const projectUrl = `https://${config.timbalApiHost}/orgs/${config.timbalOrgId}/projects/${config.timbalProjectId}`;
-
-      const meResponse = await call(fetchImpl, meUrl, headers);
-      if (!meResponse.ok) return null;
-      const email = await readEmail(meResponse);
+      // App sign-in tokens are project-scoped: /me?project_id= accepts them, while the org
+      // management API (/orgs/{org}/projects/{project}) answers 403 to anyone who is not an org member.
+      const url = `https://${config.timbalApiHost}/me?project_id=${encodeURIComponent(config.timbalProjectId)}`;
+      const response = await call(fetchImpl, url, { Authorization: `Bearer ${token}` });
+      if (!response.ok) return null;
+      const email = await readProjectSession(response, config.timbalProjectId);
       if (!email) return null;
-
-      const projectResponse = await call(fetchImpl, projectUrl, headers);
-      if (!projectResponse.ok) return null;
 
       cache.set(token, { email, expiresAt: Date.now() + CACHE_TTL_MS });
       if (cache.size > CACHE_LIMIT) {
@@ -49,11 +45,14 @@ async function call(fetchImpl: FetchLike, url: string, headers: Record<string, s
   }
 }
 
-// Timbal's /me answers { session: { user_email, ... } }; the flat shape is still accepted.
-async function readEmail(response: Response): Promise<string | null> {
+// Timbal answers { session: { user_email, ... }, project: { id, ... } }; a flat session is still accepted.
+async function readProjectSession(response: Response, projectId: string): Promise<string | null> {
   try {
     const body: unknown = await response.json();
     if (!body || typeof body !== 'object') return null;
+    if ('project' in body && body.project && typeof body.project === 'object' && 'id' in body.project) {
+      if (String(body.project.id) !== String(projectId)) return null;
+    }
     const holder = 'session' in body && body.session && typeof body.session === 'object' ? body.session : body;
     if (!('user_email' in holder)) return null;
     const email = holder.user_email;

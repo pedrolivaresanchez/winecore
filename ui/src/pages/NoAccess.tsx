@@ -5,7 +5,8 @@ import { Button } from '@/ui'
 import { copy } from '@/i18n'
 
 export function NoAccess() {
-  const { logout } = useSession()
+  const { logout, user } = useSession()
+  const email = typeof user?.user_email === 'string' ? user.user_email : null
 
   useEffect(() => {
     document.title = `Sin acceso · ${copy.appName}`
@@ -22,6 +23,7 @@ export function NoAccess() {
     >
       <BrandMark word="always" />
       <h1 className="mt-8 max-w-sm text-heading font-medium text-balance text-ink-900">{copy.noAccess}</h1>
+      {email ? <p className="mt-2 text-body text-muted-foreground">Has entrado como {email}</p> : null}
       {isAuthEnabled ? (
         <Button
           type="button"

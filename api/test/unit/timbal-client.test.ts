@@ -41,48 +41,36 @@ describe('createTimbalClient', () => {
 });
 
 describe('createTimbalAuth', () => {
-  it('valida /me y el acceso al proyecto, y cachea 60 s', async () => {
+  const config = { timbalApiHost: 'api.timbal.ai', timbalOrgId: 'org-1', timbalProjectId: 'proj-1' };
+
+  it('valida la sesión de la app con /me?project_id y la cachea 60 s', async () => {
     const calls: string[] = [];
     const fetchImpl: FetchLike = async (url) => {
       calls.push(String(url));
-      if (String(url).endsWith('/me')) {
-        return new Response(JSON.stringify({ user_email: 'owner@winecore.test' }), { status: 200 });
-      }
-      return new Response('{}', { status: 200 });
+      return new Response(JSON.stringify({ session: { user_id: 1, user_email: 'owner@winecore.test' }, project: { id: 'proj-1', role: 'member' } }), { status: 200 });
     };
-    const auth = createTimbalAuth(
-      { timbalApiHost: 'api.timbal.ai', timbalOrgId: 'org-1', timbalProjectId: 'proj-1' },
-      fetchImpl,
-    );
+    const auth = createTimbalAuth(config, fetchImpl);
     expect(await auth.emailFor('token-1')).toBe('owner@winecore.test');
     expect(await auth.emailFor('token-1')).toBe('owner@winecore.test');
-    expect(calls).toEqual([
-      'https://api.timbal.ai/me',
-      'https://api.timbal.ai/orgs/org-1/projects/proj-1',
-    ]);
+    expect(calls).toEqual(['https://api.timbal.ai/me?project_id=proj-1']);
   });
 
-  it('lee el email de la sesión con la forma real de /me', async () => {
+  it('no usa la API de gestión de la organización, que da 403 a los usuarios de la app', async () => {
     const fetchImpl: FetchLike = async (url) =>
-      String(url).endsWith('/me')
-        ? new Response(JSON.stringify({ session: { user_id: 1, user_email: 'owner@winecore.test', access_level: 'admin' } }), { status: 200 })
-        : new Response('{}', { status: 200 });
-    const auth = createTimbalAuth(
-      { timbalApiHost: 'api.timbal.ai', timbalOrgId: 'org-1', timbalProjectId: 'proj-1' },
-      fetchImpl,
-    );
-    expect(await auth.emailFor('token-2')).toBe('owner@winecore.test');
+      String(url).includes('/orgs/')
+        ? new Response('{}', { status: 403 })
+        : new Response(JSON.stringify({ session: { user_email: 'owner@winecore.test' }, project: { id: 'proj-1' } }), { status: 200 });
+    expect(await createTimbalAuth(config, fetchImpl).emailFor('token-2')).toBe('owner@winecore.test');
   });
 
-  it('rechaza la sesión si no tiene acceso al proyecto', async () => {
-    const fetchImpl: FetchLike = async (url) =>
-      String(url).endsWith('/me')
-        ? new Response(JSON.stringify({ session: { user_email: 'owner@winecore.test' } }), { status: 200 })
-        : new Response('{}', { status: 403 });
-    const auth = createTimbalAuth(
-      { timbalApiHost: 'api.timbal.ai', timbalOrgId: 'org-1', timbalProjectId: 'proj-1' },
-      fetchImpl,
-    );
-    expect(await auth.emailFor('token-3')).toBeNull();
+  it('rechaza la sesión si Timbal no la acepta para el proyecto', async () => {
+    const fetchImpl: FetchLike = async () => new Response('{}', { status: 403 });
+    expect(await createTimbalAuth(config, fetchImpl).emailFor('token-3')).toBeNull();
+  });
+
+  it('rechaza la sesión de otro proyecto', async () => {
+    const fetchImpl: FetchLike = async () =>
+      new Response(JSON.stringify({ session: { user_email: 'owner@winecore.test' }, project: { id: 'otro' } }), { status: 200 });
+    expect(await createTimbalAuth(config, fetchImpl).emailFor('token-4')).toBeNull();
   });
 });
