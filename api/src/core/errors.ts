@@ -20,6 +20,8 @@ const CATALOG = {
   WC041: [409, 'La decisión de aprobación es inmutable'],
   WC042: [409, 'La aprobación no está pendiente'],
   WC043: [409, 'La aprobación ha caducado'],
+  WC_ALREADY_CONSUMED: [409, 'La aprobación ya se ha ejecutado'],
+  WC_NOT_APPROVED: [409, 'La aprobación no está aprobada'],
   WC050: [409, 'Versión de tarifa no editable'],
   WC060: [409, 'Albarán no editable'],
   WC070: [409, 'Reglas de facturación no editables'],
