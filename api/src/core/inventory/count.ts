@@ -288,7 +288,15 @@ function rememberNominal(current: number | null, incoming: number | null, starte
   return current;
 }
 
+function lineNeedsReason(line: CountLine): boolean {
+  if (line.counted_qty_units === null || line.counted_volume_ml === null) return false;
+  return line.counted_qty_units !== line.expected_qty_units
+    || line.counted_volume_ml !== line.expected_volume_ml
+    || countedMass(line) !== 0;
+}
+
 function addReason(bucket: { reasons: Set<string>; missingReason: boolean }, line: CountLine): void {
+  if (!lineNeedsReason(line)) return;
   const reason = reasonOf(line);
   if (reason === null) bucket.missingReason = true;
   else bucket.reasons.add(reason);

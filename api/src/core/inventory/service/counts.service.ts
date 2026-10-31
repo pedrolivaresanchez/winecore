@@ -398,6 +398,7 @@ async function loadProducts(reader: Reader, ids: readonly string[]): Promise<Map
 
 function productClass(state: CountProductState, vessel: VesselInfo | undefined): ProductClass | null {
   if (isPackaged(state)) return "packaged";
+  if (state === "must") return null;
   if (isBulk(state)) {
     if (vessel && (vessel.kind === "barrel" || vessel.material === "oak")) return "bulk_wood";
     return "bulk";
@@ -409,6 +410,23 @@ async function annotate(reader: Reader, lines: readonly CountLineRow[]): Promise
   const vessels = await loadVessels(reader, lines.flatMap((line) => (line.vessel_id ? [line.vessel_id] : [])));
   const products = await loadProducts(reader, lines.flatMap((line) => (line.product_id ? [line.product_id] : [])));
   const locationIds = [...new Set(lines.map((line) => line.location_id))];
+  const lotIds = lines.flatMap((line) => (line.lot_id ? [line.lot_id] : []));
+  const lotExcise = new Map<string, { product_class: string; excise: string | null; abv: string | null }[]>();
+  if (lotIds.length > 0) {
+    const fiscal = await reader.read<{ lot_id: string; product_class: string; excise_product_key: string | null; abv_pct: string | null }>(`
+      SELECT lot_id, product_class, excise_product_key, abv_pct::VARCHAR AS abv_pct
+      FROM inventory.fiscal_move
+      WHERE lot_id IN (${lotIds.map((id) => uuidSql(id)).join(", ")})
+        AND excise_product_key IS NOT NULL
+      ORDER BY fiscal_date DESC, created_at DESC
+    `);
+    for (const row of fiscal) {
+      const id = String(row.lot_id).toLowerCase();
+      const list = lotExcise.get(id) ?? [];
+      list.push({ product_class: row.product_class, excise: row.excise_product_key, abv: row.abv_pct });
+      lotExcise.set(id, list);
+    }
+  }
   const locations = new Map<string, string | null>();
   if (locationIds.length > 0) {
     const rows = await reader.read<{ id: string; tax_warehouse_id: string | null }>(`
@@ -420,8 +438,10 @@ async function annotate(reader: Reader, lines: readonly CountLineRow[]): Promise
   return lines.map((line) => {
     const vessel = line.vessel_id ? vessels.get(line.vessel_id) : undefined;
     const product = line.product_id ? products.get(line.product_id) : undefined;
-    const warehouse = locations.get(line.location_id) ?? null;
     const fiscalClass = productClass(line.product_state, vessel);
+    const history = line.lot_id ? lotExcise.get(line.lot_id) ?? [] : [];
+    const fromLot = history.find((item) => item.product_class === fiscalClass) ?? history[0];
+    const warehouse = locations.get(line.location_id) ?? null;
     const inPerimeter = warehouse !== null && fiscalClass !== null;
     return {
       id: line.id,
@@ -440,9 +460,9 @@ async function annotate(reader: Reader, lines: readonly CountLineRow[]): Promise
       photo_attachment_id: line.photo_attachment_id,
       tax_warehouse_id: inPerimeter ? warehouse : null,
       product_class: inPerimeter ? fiscalClass : null,
-      excise_product_key: product?.excise ?? null,
+      excise_product_key: product?.excise ?? fromLot?.excise ?? null,
       nominal_volume_ml: product?.nominal ?? null,
-      abv_pct: product?.abv ?? null,
+      abv_pct: product?.abv ?? fromLot?.abv ?? null,
       nc_code: product?.nc ?? null,
     };
   });
@@ -1228,4 +1248,104 @@ export async function postInventoryCount(
       fiscal_move_ids: fiscal.flatMap((move) => (move.id ? [move.id] : [])),
     };
   });
+}
+
+function differs(line: CountLineRow): boolean {
+  if (line.counted_volume_ml == null && line.counted_qty_units == null) return false;
+  return line.counted_volume_ml !== line.expected_volume_ml || line.counted_qty_units !== line.expected_qty_units;
+}
+
+async function codeMap(reader: Reader, table: string, columns: string, ids: readonly string[]): Promise<Map<string, Record<string, unknown>>> {
+  const unique = [...new Set(ids)];
+  const map = new Map<string, Record<string, unknown>>();
+  if (unique.length === 0) return map;
+  const rows = await reader.read<Record<string, unknown>>(`
+    SELECT id, ${columns}
+    FROM ${table}
+    WHERE id IN (${unique.map((id) => uuidSql(id)).join(", ")})
+  `);
+  for (const row of rows) map.set(asId(row.id), row);
+  return map;
+}
+
+async function presentLines(reader: Reader, lines: readonly CountLineRow[]) {
+  const [locations, vessels, lots, owners, products] = await Promise.all([
+    codeMap(reader, "inventory.location", "code, name", lines.map((line) => line.location_id)),
+    codeMap(reader, "cellar.vessel", "code, capacity_ml, qr_token", lines.flatMap((line) => (line.vessel_id ? [line.vessel_id] : []))),
+    codeMap(reader, "inventory.lot", "code, vintage, wine_id", lines.flatMap((line) => (line.lot_id ? [line.lot_id] : []))),
+    codeMap(reader, "core.legal_entity", "code", lines.map((line) => line.owner_entity_id)),
+    codeMap(reader, "catalog.product", "name, format_id", lines.flatMap((line) => (line.product_id ? [line.product_id] : []))),
+  ]);
+  const wines = await codeMap(reader, "catalog.wine", "name", [...lots.values()].flatMap((row) => (row.wine_id ? [asId(row.wine_id)] : [])));
+  const formats = await codeMap(reader, "catalog.format", "nominal_volume_ml", [...products.values()].flatMap((row) => (row.format_id ? [asId(row.format_id)] : [])));
+  return lines.map((line) => {
+    const location = locations.get(line.location_id);
+    const vessel = line.vessel_id ? vessels.get(line.vessel_id) : undefined;
+    const lot = line.lot_id ? lots.get(line.lot_id) : undefined;
+    const wine = lot?.wine_id ? wines.get(asId(lot.wine_id)) : undefined;
+    const product = line.product_id ? products.get(line.product_id) : undefined;
+    const format = product?.format_id ? formats.get(asId(product.format_id)) : undefined;
+    const owner = owners.get(line.owner_entity_id);
+    return {
+      ...line,
+      location_code: location?.code == null ? "" : String(location.code),
+      location_name: location?.name == null ? "" : String(location.name),
+      vessel_code: vessel?.code == null ? null : String(vessel.code),
+      vessel_capacity_ml: vessel?.capacity_ml == null ? null : asInt(vessel.capacity_ml),
+      qr_token: vessel?.qr_token == null ? null : String(vessel.qr_token),
+      owner_code: owner?.code == null ? null : String(owner.code),
+      lot_code: lot?.code == null ? null : String(lot.code),
+      vintage: lot?.vintage == null ? null : asInt(lot.vintage),
+      wine_name: wine?.name == null ? null : String(wine.name),
+      product_name: product?.name == null ? null : String(product.name),
+      nominal_volume_ml: format?.nominal_volume_ml == null ? null : asInt(format.nominal_volume_ml),
+    };
+  });
+}
+
+async function presentCount(reader: Reader, count: InventoryCountRow, lines: readonly CountLineRow[], includeLines: boolean) {
+  const [entity, locations] = await Promise.all([
+    codeMap(reader, "core.legal_entity", "code", [count.legal_entity_id]),
+    codeMap(reader, "inventory.location", "code", count.location_ids),
+  ]);
+  const presented = includeLines ? await presentLines(reader, lines) : undefined;
+  return {
+    ...count,
+    legal_entity_code: entity.get(count.legal_entity_id)?.code == null ? null : String(entity.get(count.legal_entity_id)?.code),
+    location_codes: count.location_ids.map((id) => String(locations.get(id)?.code ?? id)),
+    difference_count: lines.filter(differs).length,
+    signed_by_name: null,
+    ...(includeLines ? { lines: presented } : {}),
+  };
+}
+
+export async function listInventoryCounts(writer: Writer, legalEntityId: string | null, limit: number) {
+  const where = legalEntityId ? `WHERE legal_entity_id = ${uuidSql(legalEntityId)}` : "";
+  const [rows, totals] = await Promise.all([
+    writer.read<{ id: string }>(`
+      SELECT id FROM inventory.inventory_count
+      ${where}
+      ORDER BY counted_at DESC, id DESC
+      LIMIT ${limit + 1}
+    `),
+    writer.read<{ total: unknown }>(`SELECT count(*)::BIGINT AS total FROM inventory.inventory_count ${where}`),
+  ]);
+  const page = rows.slice(0, limit);
+  const items = [];
+  for (const row of page) {
+    const count = await readCount(writer, asId(row.id));
+    const lines = await readLines(writer, count.id);
+    items.push(await presentCount(writer, count, lines, false));
+  }
+  return {
+    items,
+    next_cursor: rows.length > limit ? page[page.length - 1]?.id ?? null : null,
+    total: Number(totals[0]?.total ?? 0),
+  };
+}
+
+export async function getInventoryCount(writer: Writer, id: string) {
+  const count = await readCount(writer, id);
+  const lines = await readLines(writer, id);
+  return presentCount(writer, count, lines, true);
 }

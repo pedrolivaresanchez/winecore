@@ -15,6 +15,7 @@ import { DepositoPage } from "@/pages/bodega/Deposito";
 import { LotePage } from "@/pages/bodega/Lote";
 import { MapaPage } from "@/pages/bodega/Mapa";
 import { OperacionPage } from "@/pages/bodega/Operacion";
+import { QrOpen } from "@/pages/bodega/QrOpen";
 import { ContactCreate } from "@/pages/contactos/ContactCreate";
 import { ContactList } from "@/pages/contactos/ContactList";
 import { ContactPage } from "@/pages/contactos/ContactPage";
@@ -68,6 +69,7 @@ export function Workspace() {
           <Route path="contactos" element={<ContactList me={me.data} />} />
           <Route path="contactos/nuevo" element={<ContactCreate me={me.data} />} />
           <Route path="contactos/:id" element={<ContactPage me={me.data} />} />
+          <Route path="q/:token" element={<QrOpen me={me.data} />} />
           <Route path="bodega" element={<MapaPage me={me.data} />} />
           <Route path="bodega/operacion/nueva" element={<OperacionPage me={me.data} />} />
           <Route path="bodega/:vesselId" element={<DepositoPage me={me.data} />} />

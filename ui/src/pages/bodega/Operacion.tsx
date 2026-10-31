@@ -17,6 +17,7 @@ import { ApiError } from "@/lib/api";
 import {
   confirmOperation,
   contentLabel,
+  holding,
   createOperation,
   describeCellarError,
   mlToEdit,
@@ -118,7 +119,7 @@ function describeLine(op: OpType, role: LineRole, line: DraftLine, vessels: Vess
     const kind = role === "loss" ? (line.loss_kind === "incident" ? " · incidencia" : " · rotura") : "";
     return `${place} · ${parseQty(line.qty_text)} botellas${kind}`;
   }
-  const wine = role === "input" ? vessel?.content?.wine_name : null;
+  const wine = role === "input" ? holding(vessel)?.wine_name : null;
   const lot = role === "output" && op === "blend" ? lotCode : line.lot_code;
   const extra = [lot, wine].filter(Boolean).join(" · ");
   const kind = role === "loss" ? (line.loss_kind === "incident" ? " · incidencia" : " · autorizada") : "";
@@ -222,8 +223,8 @@ function EffectsPanel({
     return (
       <section data-effects="server" className="grid gap-1 rounded-xl border bg-card p-3 text-compact">
         <h2 className="text-body font-semibold">Efectos</h2>
-        {preview.moves.length === 0 ? <p className="text-muted-foreground">Sin movimiento físico</p> : null}
-        {preview.moves.map((move, index) => {
+        {preview.stock_moves.length === 0 ? <p className="text-muted-foreground">Sin movimiento físico</p> : null}
+        {preview.stock_moves.map((move, index) => {
           const vessel = vessels.find((item) => item.id === move.vessel_id)?.code;
           const lot = lines.find((item) => item.lot_id && item.lot_id === move.lot_id)?.lot_code;
           const amount = move.qty_units !== 0 ? `${Math.abs(move.qty_units)} botellas` : formatLitres(Math.abs(move.volume_ml) / 1000);
@@ -240,12 +241,14 @@ function EffectsPanel({
         {preview.fiscal_moves.map((move, index) => (
           <p key={`${move.move_type}-${index}`}>
             {FISCAL_LABEL[move.move_type] ?? move.move_type}
-            {` · ${CLASS_LABEL[move.product_class] ?? move.product_class} · ${formatLitres(Math.abs(move.volume_ml) / 1000)}`}
+            {` · ${CLASS_LABEL[move.product_class] ?? move.product_class}`}
+            {move.excise_product_key ? ` · ${move.excise_product_key}` : ""}
+            {` · ${formatLitres(Math.abs(move.volume_ml) / 1000)}`}
           </p>
         ))}
         {preview.new_lots.map((lot) => (
           <p key={lot.code}>
-            Lote nuevo · {lot.code} · {formatLitres(lot.volume_ml / 1000)}
+            Lote nuevo · {lot.code}{lot.volume_ml ? ` · ${formatLitres(lot.volume_ml / 1000)}` : ""}
           </p>
         ))}
       </section>
@@ -322,7 +325,7 @@ function VesselChips({
             >
               <span className="block text-compact font-semibold">{vessel.code}</span>
               <span className={cn("block text-meta tabular-nums", on ? "text-ink-foreground/80" : "text-muted-foreground")}>
-                {vessel.status !== "in_service" ? "Fuera de servicio" : vessel.content ? formatLitres(vessel.content.volume_ml / 1000) : "Vacío"}
+                {vessel.status !== "in_service" ? "Fuera de servicio" : holding(vessel) ? formatLitres(holding(vessel)!.volume_ml / 1000) : "Vacío"}
               </span>
             </button>
           );
@@ -334,13 +337,14 @@ function VesselChips({
 
 function caption(vessel: Vessel | undefined): string {
   if (!vessel) return "Elige un depósito.";
-  if (!vessel.content) return `${vessel.name} · ${contentLabel(vessel)}`;
-  return `${vessel.name} · ${vessel.content.lot_code} · ${vessel.content.wine_name}`;
+  const inside = holding(vessel);
+  if (!inside) return `${vessel.name} · ${contentLabel(vessel)}`;
+  return `${vessel.name} · ${inside.lot_code} · ${inside.wine_name}`;
 }
 
 export function OperacionPage({ me }: { me: Me }) {
   const allowed = allows(me, "cellar.operate");
-  const data = useApi<List>(allowed ? "/v1/vessels?limit=200" : null);
+  const data = useApi<List>(allowed ? "/v1/vessels?limit=100" : null);
   if (!allowed) return <NoPermission />;
   if (data.loading && !data.data) {
     return (
@@ -403,8 +407,9 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
       const base = current.inputs[0] ?? emptyLine();
       if (base.vessel_code) return current;
       const next = withVessel(base, vessel);
-      if (vessel.content && current.op_type !== "cleaning" && current.op_type !== "addition" && current.op_type !== "labeling") {
-        next.volume_text = mlToEdit(vessel.content.volume_ml);
+      const inside = holding(vessel);
+      if (inside && current.op_type !== "cleaning" && current.op_type !== "addition" && current.op_type !== "labeling") {
+        next.volume_text = mlToEdit(inside.volume_ml);
       }
       return { ...current, inputs: [next, ...current.inputs.slice(1)] };
     });
@@ -623,8 +628,9 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
                   inputs: current.inputs.map((item, itemIndex) => {
                     if (itemIndex !== index) return item;
                     const next = withVessel(item, vessel);
-                    if (vessel.content && op !== "cleaning" && op !== "addition" && op !== "labeling") {
-                      next.volume_text = mlToEdit(vessel.content.volume_ml);
+                    const inside = holding(vessel);
+                    if (inside && op !== "cleaning" && op !== "addition" && op !== "labeling") {
+                      next.volume_text = mlToEdit(inside.volume_ml);
                     }
                     return next;
                   }),
