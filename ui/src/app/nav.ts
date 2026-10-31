@@ -40,6 +40,20 @@ export const navigation: NavEntry[] = [
     placement: "main",
   },
   {
+    id: "cellar",
+    module: "cellar",
+    label: "Bodega",
+    icon: Warehouse,
+    path: "/bodega",
+    permission: "cellar.read",
+    mobile: "tab",
+    placement: "main",
+    children: [
+      { id: "vessels", label: "Depósitos", path: "/bodega", permission: "cellar.read", end: true },
+      { id: "new-operation", label: "Nueva operación", path: "/bodega/operacion/nueva", permission: "cellar.operate" },
+    ],
+  },
+  {
     id: "stock",
     module: "inventory",
     label: copy.nav.stock,

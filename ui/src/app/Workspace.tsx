@@ -14,6 +14,10 @@ import { Panel } from "@/pages/Panel";
 import { ContactCreate } from "@/pages/contactos/ContactCreate";
 import { ContactList } from "@/pages/contactos/ContactList";
 import { ContactPage } from "@/pages/contactos/ContactPage";
+import { DepositoPage } from "@/pages/bodega/Deposito";
+import { LotePage } from "@/pages/bodega/Lote";
+import { MapaPage } from "@/pages/bodega/Mapa";
+import { OperacionPage } from "@/pages/bodega/Operacion";
 import { PriceListPage } from "@/pages/catalogo/PriceListPage";
 import { PriceListsPage } from "@/pages/catalogo/PriceListsPage";
 import { ProductList } from "@/pages/catalogo/ProductList";
@@ -69,6 +73,10 @@ export function Workspace() {
           <Route path="contactos" element={<ContactList me={me.data} />} />
           <Route path="contactos/nuevo" element={<ContactCreate me={me.data} />} />
           <Route path="contactos/:id" element={<ContactPage me={me.data} />} />
+          <Route path="bodega" element={<MapaPage me={me.data} />} />
+          <Route path="bodega/operacion/nueva" element={<OperacionPage me={me.data} />} />
+          <Route path="bodega/:vesselId" element={<DepositoPage me={me.data} />} />
+          <Route path="lotes/:lotId" element={<LotePage me={me.data} />} />
           <Route path="catalogo" element={<ProductList me={me.data} />} />
           <Route path="catalogo/vinos" element={<WinesPage me={me.data} />} />
           <Route path="catalogo/tarifas" element={<PriceListsPage me={me.data} />} />
