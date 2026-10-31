@@ -1,4 +1,4 @@
-import { LayoutDashboard, Settings, Users, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, Settings, Users, Warehouse, type LucideIcon } from "lucide-react";
 import { copy } from "@/i18n";
 import { allows } from "@/lib/permissions";
 import type { Me } from "@/lib/types";
@@ -9,6 +9,7 @@ export type NavChild = {
   path: string;
   permission?: string;
   mobile?: "tab";
+  end?: boolean;
 };
 
 export type NavEntry = {
@@ -36,6 +37,20 @@ export const navigation: NavEntry[] = [
     end: true,
     mobile: "tab",
     placement: "main",
+  },
+  {
+    id: "cellar",
+    module: "cellar",
+    label: "Bodega",
+    icon: Warehouse,
+    path: "/bodega",
+    permission: "cellar.read",
+    mobile: "tab",
+    placement: "main",
+    children: [
+      { id: "vessels", label: "Depósitos", path: "/bodega", permission: "cellar.read", end: true },
+      { id: "new-operation", label: "Nueva operación", path: "/bodega/operacion/nueva", permission: "cellar.operate" },
+    ],
   },
   {
     id: "contacts",
