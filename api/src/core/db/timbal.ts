@@ -52,7 +52,22 @@ export function createTimbalClient(options: TimbalClientOptions): KbClient {
       if ('truncated' in payload && payload.truncated === true) {
         throw new Error('Resultado truncado por la Knowledge Base (más de 10.000 filas): hay que paginar la consulta');
       }
-      return payload.rows as T[];
+      return withNullColumns(payload.rows, 'columns' in payload ? payload.columns : undefined) as T[];
     },
   };
+}
+
+// The Knowledge Base omits NULL values from each row; the local DuckDB client returns them as null.
+function withNullColumns(rows: unknown[], columns: unknown): unknown[] {
+  if (!Array.isArray(columns)) return rows;
+  const names = columns
+    .map((column) => (column && typeof column === 'object' && 'name' in column ? column.name : undefined))
+    .filter((name): name is string => typeof name === 'string');
+  if (names.length === 0) return rows;
+  return rows.map((row) => {
+    if (!row || typeof row !== 'object') return row;
+    const record = row as Record<string, unknown>;
+    for (const name of names) if (!(name in record)) record[name] = null;
+    return record;
+  });
 }

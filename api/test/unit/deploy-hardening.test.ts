@@ -27,6 +27,11 @@ describe('Knowledge Base client', () => {
     await expect(client.query('SELECT 1')).rejects.not.toThrow('secreto');
   });
 
+  it('returns NULL columns as null, as the local client does', async () => {
+    const client = createTimbalClient({ host: 'api.timbal.ai', orgId: '122', kbId: '1', token: 't', fetchImpl: fakeFetch(200, { columns: [{ name: 'role_code', type: 'VARCHAR' }, { name: 'legal_entity_id', type: 'UUID' }], rows: [{ role_code: 'owner' }], truncated: false }) });
+    expect(await client.query('SELECT 1')).toEqual([{ role_code: 'owner', legal_entity_id: null }]);
+  });
+
   it('refuses a truncated result instead of silently missing rows', async () => {
     const client = createTimbalClient({ host: 'api.timbal.ai', orgId: '122', kbId: '1', token: 't', fetchImpl: fakeFetch(200, { rows: [{ i: 1 }], truncated: true }) });
     await expect(client.query('SELECT 1')).rejects.toThrow('truncado');
