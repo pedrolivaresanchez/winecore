@@ -60,14 +60,14 @@ export class DomainError extends Error {
   readonly code: string;
   readonly httpStatus: number;
   readonly fields?: Record<string, string>;
-  readonly details?: Record<string, unknown>;
+  readonly details?: unknown;
 
   constructor(
     code: string,
     httpStatus: number,
     message: string,
     fields?: Record<string, string>,
-    details?: Record<string, unknown>,
+    details?: unknown,
   ) {
     super(message);
     this.name = 'DomainError';
@@ -98,17 +98,24 @@ export function errorBody(error: DomainError): {
   code: string;
   message: string;
   fields?: Record<string, string>;
-  details?: Record<string, unknown>;
+  details?: unknown;
 } {
   const body: {
     code: string;
     message: string;
     fields?: Record<string, string>;
-    details?: Record<string, unknown>;
+    details?: unknown;
   } = { code: error.code, message: error.message };
   if (error.fields && Object.keys(error.fields).length > 0) body.fields = error.fields;
-  if (error.details && Object.keys(error.details).length > 0) body.details = error.details;
+  if (hasDetails(error.details)) body.details = error.details;
   return body;
+}
+
+function hasDetails(details: unknown): boolean {
+  if (details === undefined) return false;
+  if (Array.isArray(details)) return details.length > 0;
+  if (details && typeof details === 'object') return Object.keys(details).length > 0;
+  return true;
 }
 
 export function asDomainError(error: unknown): DomainError | null {

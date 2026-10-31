@@ -20,6 +20,8 @@ describe('auth', () => {
         'catalog.write',
         'contacts.read',
         'contacts.write',
+        'inventory.count',
+        'inventory.read',
         'settings.manage',
         'users.manage',
       ]);
