@@ -43,7 +43,7 @@
 
 - **Modalidad** (**SUPUESTO**: recomendación de Q-002, sin respuesta de Pedro a 31-10-2026): **VERI*FACTU por servicio web** (ADR 004). WineCore se declara "solo VERI*FACTU" (`TipoUsoPosibleSoloVerifactu = S`), así que **no implementa** firma XAdES ni registro de eventos en la versión 1. *Computer use* no aplica: Verifactu no es un portal.
 - **Aprobación humana** (regla dura 0.3; **SUPUESTO**: recomendación de Q-003, sin respuesta de Pedro): la aprobación de la **emisión** (por quien emite, o en la bandeja para lotes e intercompañía) **es** la aprobación del envío del registro. El envío es automático porque la norma exige que sea inmediato. No hay segunda aprobación.
-- **Plan B** (Q-008): si el gate del 01-12-2026 falla, CVPO factura en Holded con Verifactu desde el 01-01-2027 con una serie distinta. Por el art. 16.5 del RRSIF, VERI*FACTU se mantiene al menos hasta el 31-12-2027 en el sistema que lo inicie; el paso posterior a WineCore (también VERI*FACTU) **no es una renuncia**, pero el asesor debe confirmarlo (PENDIENTE, Pedro + asesor, 01-12-2026).
+- **Hasta M4** (roadmap v2, Q-033, SUPUESTO): CVPO factura en Holded con Verifactu desde el 01-01-2027. Por el art. 16.5 del RRSIF, VERI*FACTU se mantiene al menos hasta el 31-12-2027; el paso a WineCore en M4 (también VERI*FACTU) **no es una renuncia**, pero el asesor debe confirmarlo (PENDIENTE, Pedro + asesor, 15-12-2026). Lo mismo vale para P.O si su Holded ya envía registros en 2027 (Q-033). El plan B (Q-008) es volver a Holded con otra serie si WineCore falla después de M4.
 
 ## 4. Flujo
 
@@ -52,7 +52,7 @@ sequenceDiagram
   autonumber
   actor U as Persona que emite (o aprobador del lote)
   participant API as api/ (issueInvoice)
-  participant DB as PostgreSQL
+  participant DB as Knowledge Base
   participant S as verifactu-sender (ADR 003)
   participant AEAT as AEAT · servicio VERI*FACTU
   U->>API: Emitir (passkey si es lote)
@@ -153,7 +153,7 @@ Con `OperacionExenta` no se informan tipo, cuota ni recargo. Las cuotas se redon
 
 (El NIF `89890001K` es el ficticio de los ejemplos de la AEAT.)
 
-**Encadenamiento y concurrencia**: una cadena por par (sistema, obligado) = una por `verifactu_installation` (`UNIQUE (legal_entity_id, environment)`). La emisión toma un bloqueo transaccional por instalación (`pg_advisory_xact_lock`) para calcular `chain_seq`, el registro anterior y su huella; el disparador `WC130` impide insertar fuera del final de la cadena o modificar un registro salvo su estado de envío. Si la AEAT detecta una huella que no cuadra, marca el registro "Aceptado con errores" (especificación de la huella, §7): es un fallo grave que dispara alerta y revisión (§11).
+**Encadenamiento y concurrencia**: una cadena por par (sistema, obligado) = una por `verifactu_installation` (`UNIQUE (legal_entity_id, environment)`). La emisión pasa por la cola del escritor único (ADR 002), que calcula `chain_seq`, el registro anterior y su huella sin escrituras concurrentes; la guarda `WC130` del núcleo impide insertar fuera del final de la cadena o modificar un registro salvo su estado de envío. Si la AEAT detecta una huella que no cuadra, marca el registro "Aceptado con errores" (especificación de la huella, §7): es un fallo grave que dispara alerta y revisión (§11).
 
 ## 8. Instalación y sistema informático
 
@@ -223,7 +223,7 @@ Implementación: `api/src/core/regulatory/verifactu/` (huella, XML, SOAP, QR y p
 
 ## 13. Evidencias y conservación
 
-Por cada registro: XML canónico (`record_xml`), petición y respuesta SOAP completas, CSV, fecha y hora, versión del sistema e instalación. Se guardan en el almacén de objetos con bloqueo de escritura (ADR 002 §5) durante **6 años** más el año en curso (art. 30 del Código de Comercio; cubre los 4 años de prescripción de la LGT). El registro de auditoría guarda quién emitió o aprobó y el `payload_sha256` aprobado.
+Por cada registro: XML canónico (`record_xml`), petición y respuesta SOAP completas, CSV, fecha y hora, versión del sistema e instalación. Se guardan como documentos de la Knowledge Base, sin borrado ni sustitución (ADR 002 §4), durante **6 años** más el año en curso (art. 30 del Código de Comercio; cubre los 4 años de prescripción de la LGT). El registro de auditoría guarda quién emitió o aprobó y el `payload_sha256` aprobado.
 
 ## 14. Casos límite
 

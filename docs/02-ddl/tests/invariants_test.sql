@@ -367,6 +367,18 @@ SELECT pg_temp.expect_error($q$ UPDATE billing.invoice SET notes = 'x' $q$, 'per
 SELECT pg_temp.expect_error($q$ UPDATE audit.audit_log SET action = 'x' $q$, 'permission denied');
 ROLLBACK;
 
+-- 19) Contenido de adjuntos en la Knowledge Base: inmutable y ligado a su hash
+BEGIN;
+SELECT core.set_actor('system', 'test', NULL, 'test', NULL);
+INSERT INTO core.attachment_content(sha256, content) VALUES (encode(sha256('pdf sintético'::bytea), 'hex'), 'pdf sintético'::bytea);
+INSERT INTO core.attachment(sha256, storage_backend, storage_key, filename, mime_type, size_bytes, created_by)
+VALUES (encode(sha256('pdf sintético'::bytea), 'hex'), 'knowledge_base', encode(sha256('pdf sintético'::bytea), 'hex'), 'f.pdf', 'application/pdf', 14, 'test');
+SELECT pg_temp.expect_error($q$ UPDATE core.attachment_content SET content = 'otro'::bytea $q$, 'WC001');
+SELECT pg_temp.expect_error($q$ DELETE FROM core.attachment_content $q$, 'WC001');
+SELECT pg_temp.expect_error($q$ INSERT INTO core.attachment(sha256, storage_backend, storage_key, filename, mime_type, size_bytes, created_by)
+  VALUES (repeat('a',64), 'object_store', 'x', 'f.pdf', 'application/pdf', 1, 'test') $q$, 'attachment_storage_backend_check');
+ROLLBACK;
+
 -- 15) La cadena de auditoría sigue íntegra tras todo lo anterior
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM audit.verify_chain()) THEN RAISE EXCEPTION 'cadena de auditoría rota al final'; END IF;

@@ -1,7 +1,7 @@
 # TASK-INFRA-007 · Comparación de remotos y trabajos nocturnos
 - Hito M0 · 1 día · Escalado: no
 - Historias / RNF: RNF-04, RNF-07
-- Depende de: TASK-INFRA-006
+- Depende de: TASK-INFRA-006, TASK-INFRA-010
 
 ## Objetivo
 `remotes-drift.yml` (diario) y `nightly.yml` (propiedades con 20.000 casos, restauración de la copia de `dev`, e2e completo) según ADR 007 §2.
@@ -17,7 +17,7 @@ ADR 007 · riesgo R10.
 
 ## Criterios de aceptación
 - Una diferencia provocada en `dev` hace fallar el job con el detalle.
-- `nightly` restaura la copia en una BD temporal y ejecuta `audit.verify_chain()` sin rupturas.
+- `nightly` restaura la última exportación de la KB de `dev` (solo datos sintéticos) en DuckDB local y ejecuta `verifyAuditChain()` sin rupturas.
 
 ## Tests requeridos
 Unitarios de `compare-remotes.ts` con respuestas simuladas.

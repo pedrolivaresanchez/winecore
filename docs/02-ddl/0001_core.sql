@@ -258,13 +258,14 @@ BEGIN
 END $$;
 
 -- ---------------------------------------------------------------------
--- Adjuntos (PDF, fotos, capturas, acuses). El binario vive fuera de la BD.
+-- Adjuntos (PDF, fotos, capturas, acuses). El contenido vive en core.attachment_content
+-- (misma Knowledge Base, ADR 002) y se identifica por su SHA-256; 'onedrive' solo para copias de consulta.
 -- ---------------------------------------------------------------------
 CREATE TABLE core.attachment (
   id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   sha256          char(64) NOT NULL CHECK (sha256 ~ '^[0-9a-f]{64}$'),
-  storage_backend text NOT NULL CHECK (storage_backend IN ('object_store','onedrive')),
-  storage_key     text NOT NULL,
+  storage_backend text NOT NULL CHECK (storage_backend IN ('knowledge_base','onedrive')),
+  storage_key     text NOT NULL,   -- en 'knowledge_base', el SHA-256 de core.attachment_content
   filename        text NOT NULL,
   mime_type       text NOT NULL,
   size_bytes      bigint NOT NULL CHECK (size_bytes > 0),
@@ -277,6 +278,20 @@ CREATE TABLE core.attachment (
 CREATE INDEX attachment_sha_idx ON core.attachment(sha256);
 CREATE TRIGGER attachment_no_delete BEFORE DELETE ON core.attachment
   FOR EACH ROW EXECUTE FUNCTION core.forbid_delete();
+
+CREATE TABLE core.attachment_content (
+  sha256     char(64) PRIMARY KEY CHECK (sha256 ~ '^[0-9a-f]{64}$'),
+  content    bytea NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (octet_length(content) BETWEEN 1 AND 104857600)   -- límite de 100 MB de la Knowledge Base
+);
+-- El contenido no se borra ni se sustituye (WC001)
+CREATE FUNCTION core.attachment_content_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  RAISE EXCEPTION 'WC001: el contenido de un adjunto no se borra ni se sustituye';
+END $$;
+CREATE TRIGGER attachment_content_immutable BEFORE UPDATE OR DELETE ON core.attachment_content
+  FOR EACH ROW EXECUTE FUNCTION core.attachment_content_guard();
 
 CREATE TABLE core.attachment_link (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),

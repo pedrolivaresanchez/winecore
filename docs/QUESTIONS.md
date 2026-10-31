@@ -41,7 +41,7 @@
 | Q-030 | Devoluciones de clientes y "zona fuera de fábrica" autorizada | M3 | 15-01-2027 | ABIERTA |
 | Q-031 | INFOVI: números REOVI/NIDPB y acceso al portal | M3 | 15-02-2027 | ABIERTA |
 | Q-032 | Factura electrónica B2B (RD 238/2026): recibir cargos de ECI desde 06-10-2027 y emitir desde 06-10-2028 | M8 (planificación) | 30-06-2027 | ABIERTA |
-| Q-033 | Quién emite las facturas de CVPO desde el 01-01-2027 hasta que Verifactu esté en WineCore (M4) | M2 | 15-12-2026 | ABIERTA · se aplica la recomendación como SUPUESTO |
+| Q-033 | Quién emite las facturas de CVPO desde el 01-01-2027 (y de P.O en 2027) hasta que Verifactu esté en WineCore (M4) | M2 | 15-12-2026 | ABIERTA · se aplica la recomendación como SUPUESTO |
 | Q-034 | Copia de solo lectura del proyecto SDR para seguir su estructura y su UI | M0 | 04-11-2026 | ABIERTA |
 
 ---
@@ -283,11 +283,12 @@
 - **Recomendación**: hito **M8** (antes del 2T-2028): emisión UBL con copia a la solución pública o por sus servicios web, recepción de facturas recibidas y comunicación de estados; decidir entonces con ECI el canal (ADR 006).
 - **Fecha límite**: 30-06-2027.
 
-## Q-033 · Facturas de CVPO desde el 01-01-2027 hasta Verifactu en WineCore — Bloquea M2
+## Q-033 · Facturas de CVPO (y de P.O) en 2027 hasta Verifactu en WineCore — Bloquea M2
 
 - **Contexto**: Pedro saca Verifactu de la ruta crítica (31-10-2026) y lo pasa a M4 (control el 01-06-2027). Pero la obligación legal de CVPO sigue siendo el **01-01-2027** (RD 1007/2023, DF 4.ª; el aplazamiento anunciado no está en el BOE). P.O no está obligada hasta el 01-07-2027.
 - **Opciones**: (1) CVPO factura en **Holded con Verifactu** (ya adaptado) hasta M4; WineCore lleva sus pedidos, albaranes y cobros e importa sus facturas de Holded como externas; (2) WineCore factura CVPO sin Verifactu: **no es legal** desde el 01-01-2027 salvo que se publique el aplazamiento; (3) adelantar Verifactu solo para CVPO, que vuelve a la ruta crítica.
-- **Recomendación**: (1). Se aplica como **SUPUESTO** mientras Pedro no responda. P.O sí puede facturar en WineCore desde M2 sin Verifactu hasta el 30-06-2027.
+- **Recomendación**: (1). Se aplica como **SUPUESTO** mientras Pedro no responda. P.O sí puede facturar en WineCore desde M2 sin Verifactu hasta el 30-06-2027, **con una condición**:
+- **Riesgo para P.O**: quien hace un primer envío VERI*FACTU debe mantenerlo hasta el 31 de diciembre de ese año (RD 1007/2023, art. 16.5; Orden HAC/1177/2024, art. 17.2; HECHO en `verifactu.md` §1). Si Holded de P.O envía registros VERI*FACTU en 2027 antes de pasar a WineCore, WineCore no podría facturar P.O sin Verifactu en M2 y P.O se quedaría en Holded hasta M4, como CVPO. **Pedro**: comprobar en Holded de P.O si el envío a la AEAT está activado y, si lo está, decidir con el asesor antes del 31-12-2026.
 - **Dueño**: Pedro (con el asesor) · **Fecha límite**: 15-12-2026.
 
 ## Q-034 · Copia del proyecto SDR para usarlo de referencia — Bloquea la UI de M0

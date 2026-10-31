@@ -7,10 +7,10 @@
 | Nivel | Qué prueba | Herramienta | Dónde vive | Cuándo corre |
 |---|---|---|---|---|
 | Unitario | Funciones puras del núcleo (cálculos, normalizaciones, máquinas de estado, renderizadores) | `bun test` | `api/test/unit/**/*.test.ts` | Cada PR |
-| Invariantes de BD | Triggers y restricciones (`02-modelo-dominio.md` §19) | `psql` + `docs/02-ddl/tests/invariants_test.sql` (copiado a `api/test/db/`) | `api/test/db/` | Cada PR |
-| Propiedades | Conservación, saldos, numeración, totales, genealogía, cuadres | `fast-check` + PostgreSQL de servicio | `api/test/property/**/*.prop.test.ts` | Cada PR (≥ 1.000 casos/propiedad) y nocturno (20.000) |
+| Invariantes de BD | Guardas del núcleo y restricciones del esquema DuckDB (`02-modelo-dominio.md` §19, ADR 002) | `bun test` + DuckDB local, con los casos de `docs/02-ddl/tests/invariants_test.sql` portados | `api/test/db/` | Cada PR |
+| Propiedades | Conservación, saldos, numeración, totales, genealogía, cuadres | `fast-check` + DuckDB local | `api/test/property/**/*.prop.test.ts` | Cada PR (≥ 1.000 casos/propiedad) y nocturno (20.000) |
 | Golden files | Salidas regulatorias y documentos byte a byte | `bun test` | `api/test/golden/**` | Cada PR |
-| Integración | API + BD real (sintética), permisos, idempotencia, módulos activables, MCP | `bun test` + PostgreSQL de servicio | `api/test/integration/**` | Cada PR |
+| Integración | API + BD real (sintética), permisos, idempotencia, módulos activables, MCP | `bun test` + DuckDB local | `api/test/integration/**` | Cada PR |
 | Contrato del ejecutor | Protocolo `/api/m2m/runner/*` y procedimientos contra portales simulados | `bun test` + Playwright sobre páginas HTML de prueba | `runner/test/**` | Cada PR que toque `runner/` o `m2m/` |
 | E2E | Flujos de usuario en navegador (escritorio y móvil) | Playwright (autenticador virtual WebAuthn) | `ui/e2e/**` | Cada PR (humo) y nocturno (completo) |
 | Evals | Agentes de la workforce | `python -m timbal.evals.cli` | `workforce/*/evals/*.yaml` | Cada PR que toque `workforce/` y gate de despliegue en Timbal |
@@ -35,7 +35,7 @@ Un PR **no** se puede fusionar si falla cualquiera de:
 - Prohibido "vaciar" un caso con mocks: los mocks solo se permiten para fronteras externas (AEAT, Timbal, CVBOT).
 
 ## 4. Invariantes de base de datos
-`invariants_test.sql` (16 bloques a 31-10-2026) se ejecuta en un PostgreSQL 16 de servicio tras aplicar todas las migraciones. Cada invariante nuevo del modelo debe añadir su bloque (prueba negativa con su código `WCnnn` y prueba positiva).
+Los 19 bloques de `docs/02-ddl/tests/invariants_test.sql` (referencia en PostgreSQL) se portan a `api/test/db/` y se ejecutan con DuckDB local (el mismo motor que la Knowledge Base) tras aplicar todas las migraciones: cada bloque con su prueba negativa (mismo código `WCnnn`) y su prueba positiva. Cada invariante nuevo añade su caso aquí y su bloque en la referencia. Los que en PostgreSQL dependían de roles (p. ej. el emisor de Verifactu) se prueban como permisos de la API.
 
 ## 5. Tests de propiedades (obligatorios)
 

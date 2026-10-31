@@ -57,7 +57,7 @@ bun api/db/migration/manifest.ts --input data/ --out data/migration/expected_tot
 bun api/db/migration/verify.ts --manifest data/migration/expected_totals.json                 # cuadre BD vs manifiesto
 ```
 - `--load` exige `--approved-report` con el hash del informe del último ensayo del mismo fichero (evita cargar algo distinto de lo revisado).
-- Variables: `DATABASE_URL_MIGRATION` (rol `winecore_migrator`). Actor de BD: `core.set_actor('migration', 'migrador:<operador>', NULL, <id de lote>, NULL)`.
+- Escritura: `--load` envía los lotes a la API de WineCore (escritor único, ADR 002; rol `owner` como en UI-41, token en el entorno del operador, nunca en el repo), que los aplica con actor `migration` (`migrador:<operador>`, id de lote). El script nunca escribe directamente en la Knowledge Base.
 
 ### 2.3 Claves de idempotencia
 

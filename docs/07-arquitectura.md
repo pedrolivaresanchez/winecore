@@ -29,7 +29,7 @@ flowchart LR
   CV -->|MCP /api/m2m/mcp| API
   WF -->|REST/MCP con token| API
   API -->|un único escritor| KB
-  SND -->|registros pending / estados| KB
+  SND -->|m2m: pendientes y resultados| API
   SND -->|mTLS| AEAT
   RUN -->|HTTPS saliente: reclamar trabajos, evidencias| API
   RUN --> PORT
@@ -60,7 +60,8 @@ WineCore/
 │   │   ├── core/               # NÚCLEO: dominio, cálculos, máquinas de estado, renderizadores (sin Elysia)
 │   │   │   ├── auth/ billing/ catalog/ cellar/ finance/ inventory/ party/ purchasing/
 │   │   │   ├── regulatory/{connector.ts, verifactu/, silicie/, sisv/, emcs/, edi/}
-│   │   │   ├── traceability/ ids.ts time.ts money.ts db.ts errors.ts events.ts
+│   │   │   ├── traceability/ ids.ts time.ts money.ts errors.ts events.ts
+│   │   ├── db/             # cliente de la KB (Timbal o DuckDB local), escritor único, guardas WCnnn, auditoría
 │   │   ├── routes/             # REST para la UI (/api/v1/...)
 │   │   ├── mcp/                # herramientas MCP (13-mcp.md)
 │   │   ├── m2m/                # ejecutor local, webhooks, MCP de máquina
@@ -88,7 +89,7 @@ WineCore/
 | `api/src/routes` | REST `/api/v1/*` con validación TypeBox, permisos, idempotencia | Lógica de negocio |
 | `api/src/mcp` | Catálogo MCP (ADR 010) | Lógica de negocio; aprobaciones |
 | `api/src/jobs` | Cron (`timbalCron`): cierre intercompañía, vigilantes, outbox, verificaciones de integridad | Enviar a la AEAT (lo hace el emisor del entorno `verifactu`) |
-| Entorno `verifactu` (M4, ADR 003) | El mismo `api/` arrancado con `WINECORE_ROLE=verifactu-sender`: solo el job que envía los registros ya generados; UI y workforce desactivados en ese entorno | Generar registros o huellas; emitir facturas |
+| Entorno `verifactu` (M4, ADR 003) | El mismo `api/` arrancado con `WINECORE_ROLE=verifactu-sender`: solo el job que pide a la API principal los registros ya generados (`/api/m2m/verifactu/*`), los envía y le devuelve el resultado; UI y workforce desactivados en ese entorno | Generar registros o huellas; emitir facturas; acceder a la Knowledge Base (escritor único, ADR 002) |
 | `api/src/m2m` | Protocolo del ejecutor local, webhooks (Stripe, M3), MCP de máquina | — |
 | `workforce/*` | Orquestación (workflows regulatorios con `suspend()`), extracción (OCR), interfaz conversacional (asistente, vendimia), resumen diario | Escribir en BD directamente; decidir reglas de negocio |
 | `runner/` | Ejecutar trabajos aprobados en portales con certificado; subir evidencias | Decidir qué enviar; aprobar |
@@ -149,11 +150,14 @@ sequenceDiagram
   A->>D: una petición atómica (ADR 002): número · factura congelada · desglose · vencimientos · verifactu_record · outbox · auditoría
   A-->>U: 200 factura emitida (número, QR)
   A->>A: generar PDF (QR) → documento en la KB → pdf_attachment_id
-  J->>D: registros pending y next_send_not_before ≤ now
+  J->>A: GET /api/m2m/verifactu/pending (token verifactu:send)
+  A->>D: reserva de los pending con next_send_not_before ≤ now, en orden de cadena
+  A-->>J: lote de registros (XML ya generado)
   J->>T: RegFactuSistemaFacturacion (mTLS, ≤ máx. por envío)
   T-->>J: Correcto / AceptadoConErrores / Incorrecto + tiempo de espera
-  J->>D: estado por registro · CSV · next_send_not_before
-  J-->>U: (si error) evento a CVBOT + aviso en el panel
+  J->>A: POST /api/m2m/verifactu/results (respuesta íntegra)
+  A->>D: estado por registro · CSV · next_send_not_before · evidencia
+  A-->>U: (si error) evento a CVBOT + aviso en el panel
 ```
 
 ## 8. Integraciones

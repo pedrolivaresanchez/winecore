@@ -43,7 +43,7 @@ WineCore genera los asientos **al día** y avisa a 30, 7 y 1 días de cada venci
 sequenceDiagram
   autonumber
   participant OP as Bodega / facturación (api)
-  participant DB as PostgreSQL
+  participant DB as Knowledge Base
   participant J as job silicie-prepare
   actor A as Aprobador (bandeja, passkey)
   participant R as Ejecutor local (runner)

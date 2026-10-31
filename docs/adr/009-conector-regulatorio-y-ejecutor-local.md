@@ -38,7 +38,7 @@ export interface RegulatoryConnector {
 | Paso | Llamada | Detalle |
 |---|---|---|
 | Latido | `POST /api/m2m/runner/heartbeat` `{runner_code, version, capabilities}` | Cada 60 s; actualiza `regulatory.runner.last_seen_at` |
-| Reclamar | `POST /api/m2m/runner/claim` `{capabilities}` | Devuelve un `connector_run` en cola cuyo envío está `approved` (o una lectura sin aprobación: `read_inbox`, `check_status`) o `204`. SQL: `… FOR UPDATE SKIP LOCKED LIMIT 1`; fija `lease_until = now() + 15 min`; **consume la aprobación** en la misma transacción |
+| Reclamar | `POST /api/m2m/runner/claim` `{capabilities}` | Devuelve un `connector_run` en cola cuyo envío está `approved` (o una lectura sin aprobación: `read_inbox`, `check_status`) o `204`. Dentro de la cola del escritor único (ADR 002): toma el primero, fija `lease_until = now() + 15 min`; **consume la aprobación** en la misma transacción |
 | Artefacto | `GET /api/m2m/runner/jobs/{id}/artifact` | Fichero o plan de formulario + payload canónico |
 | Progreso | `POST /api/m2m/runner/jobs/{id}/progress` `{step_id, note}` | Renueva el *lease* |
 | Evidencias | `POST /api/m2m/runner/jobs/{id}/evidence` (multipart) | Capturas en cada paso clave, acuse/PDF del portal, HTML de la respuesta |

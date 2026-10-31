@@ -1,7 +1,7 @@
 # ADR 004 · Verifactu propio en WineCore y plan B con Holded
 
-- **Estado**: propuesto · 31-10-2026. Q-002 y Q-003 siguen sin respuesta: la decisión se aplica como **SUPUESTO** (sus recomendaciones) hasta que Pedro responda. Depende además de Q-007 y Q-008.
-- **Relacionado**: `04-regulatorio/verifactu.md`, ADR 003 (certificado), `03-maquinas-estado.md` §5 y §8, `09-roadmap.md` (M1 y M5).
+- **Estado**: propuesto · 31-10-2026; versión 2 el mismo día (Pedro saca Verifactu de la ruta crítica: pasa a **M4**). Q-002 y Q-003 siguen sin respuesta: la decisión se aplica como **SUPUESTO** (sus recomendaciones) hasta que Pedro responda. Depende además de Q-007, Q-008 y Q-033.
+- **Relacionado**: `04-regulatorio/verifactu.md`, ADR 003 (certificado), `03-maquinas-estado.md` §5 y §8, `09-roadmap.md` (M2 y M4).
 
 ## Contexto
 
@@ -10,16 +10,16 @@
 - **HECHO**: si WineCore es de desarrollo propio, quien lo produce firma la declaración responsable (FAQ de la AEAT).
 - **HECHO**: Holded ya está adaptado a Verifactu.
 - La §12.1 del plan pide empezar las integraciones por *computer use*; Verifactu no es un portal sino un requisito sobre el propio software, así que no aplica.
-- Solo hay un mes entre el gate (01-12-2026) y la obligación de CVPO.
+- Decisión de Pedro (31-10-2026): primero las operaciones del núcleo (stock, bodega, ventas, SILICIE); Verifactu en M4. Hasta entonces CVPO factura en Holded con Verifactu (Q-033, SUPUESTO).
 
 ## Decisión
 
 1. WineCore implementa Verifactu **en modalidad VERI*FACTU exclusiva** ("solo VERI*FACTU"), por servicio web, para CVPO y P.O con **una cadena por entidad**.
-2. La huella, el XML, el QR y el parseo de respuestas viven en `api/src/core/regulatory/verifactu/` y se generan **dentro de la transacción de emisión**: o se emite la factura con su registro, o no se emite nada. El envío lo hace `verifactu-sender`, aislado (ADR 003).
+2. La huella, el XML, el QR y el parseo de respuestas viven en `api/src/core/regulatory/verifactu/` y se generan **dentro de la transacción de emisión**: o se emite la factura con su registro, o no se emite nada. El envío lo hace el emisor del entorno `verifactu` de Timbal, aislado (ADR 003).
 3. **Aprobación** (SUPUESTO, Q-003): la de la emisión es la del envío. El envío es automático e inmediato.
-4. **Gate del 01-12-2026**: la batería VF-01…VF-22 de `verifactu.md` §16 en el entorno de pruebas de la AEAT, sin diferencias de huella, con informe aprobado por Pedro.
-5. **Plan B**: si el gate no se supera, CVPO factura desde el 01-01-2027 en **Holded con Verifactu** y una serie propia; WineCore sigue en pruebas y el cambio se hace al empezar un mes, tras dos semanas de facturación paralela en el entorno de pruebas sin incidencias. Holded no se da de baja hasta que WineCore lleve dos semanas en producción sin incidencias (Q-008).
-6. **Si se publica el aplazamiento** a 2028: no cambia el diseño. Pedro decide si CVPO arranca igualmente en VERI*FACTU el 01-01-2027 (recomendado: sí, la operativa ya está hecha y el envío voluntario es válido) o espera.
+4. **Control del 01-06-2027 (M4)**: la batería VF-01…VF-22 de `verifactu.md` §16 en el entorno de pruebas de la AEAT, sin diferencias de huella, con informe aprobado por Pedro.
+5. **Hasta M4**: CVPO factura en **Holded con Verifactu** desde el 01-01-2027 con sus propias series; P.O factura en WineCore sin Verifactu desde M2 hasta el 30-06-2027, salvo que su Holded ya haya enviado registros en 2027 (Q-033). **Plan B** (Q-008): si el control del 01-06-2027 no se supera, las dos entidades siguen en Holded con Verifactu desde el 01-07-2027; el paso a WineCore se hace al empezar un mes, tras dos semanas de facturación paralela en el entorno de pruebas sin incidencias, y Holded no se da de baja hasta que WineCore lleve dos semanas en producción sin incidencias.
+6. **Si se publica el aplazamiento** a 2028: no cambia el diseño. Una entidad que aún no haya enviado registros VERI*FACTU en 2027 podría facturar en WineCore sin Verifactu antes de M4; la que ya los haya enviado debe mantener VERI*FACTU hasta el 31-12-2027 (art. 16.5) y espera a M4. Pedro decide con el asesor.
 7. **Versión del sistema**: `Version` = versión del módulo de facturación (`billing-x.y.z`). Cada versión nueva exige su declaración responsable firmada antes de desplegarse en producción (comprobación en la CI, TASK-REG-010).
 
 ## Alternativas consideradas
@@ -33,7 +33,7 @@
 
 ## Consecuencias
 
-- M1 tiene un único camino crítico: huella + XML + emisor + batería en preproducción (`09-roadmap.md`).
-- El plan B obliga a preparar series de Holded para 2027 distintas de las de WineCore (`CF27-`), y la migración de partidas abiertas de enero desde Holded si se activa.
+- Verifactu no está en la ruta crítica de M0–M3. M4 tiene una fecha legal inamovible: el 01-07-2027 para P.O (`09-roadmap.md`).
+- Las series de CVPO en Holded para 2027 son distintas de las que usará WineCore desde M4, y las facturas de CVPO de Holded se importan como externas para cobrarlas en WineCore (M2).
 - La declaración responsable y el productor (Q-007) bloquean producción, no el desarrollo.
 - Vigilancia del BOE para el aplazamiento (vigilante `boe-watch`).

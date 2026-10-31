@@ -1,7 +1,8 @@
 # 02 · Modelo de dominio
 
-> Versión 1 · 31-10-2026. Fuente de verdad del esquema: los ficheros SQL de [`02-ddl/`](02-ddl/) (PostgreSQL 16), **validados** contra un PostgreSQL 16 local con [`02-ddl/tests/invariants_test.sql`](02-ddl/tests/invariants_test.sql) (15 baterías, todas en verde el 31-10-2026). Este documento explica el modelo; si hay discrepancia, manda el SQL y se abre una pregunta.
-> Decisiones aplicadas: D2 (dos stocks), D3 (entidad facturadora configurable), D4 (tarifa intercompañía validada por el asesor), §12.1 (conector intercambiable), §12.5 (MCP), §12.6 (módulos activables). Base de datos: PostgreSQL gestionado (ADR 002).
+> Versión 1 · 31-10-2026; nota de la versión 2 (31-10-2026): en producción los datos viven en la **Knowledge Base de Timbal (DuckDB)**, no en PostgreSQL (ADR 002 v2). El modelo no cambia; los disparadores, funciones, bloqueos y roles que se citan aquí los implementa el núcleo con el mismo código de error (tabla de equivalencias de ADR 002).
+> Fuente de verdad del modelo lógico: los ficheros SQL de [`02-ddl/`](02-ddl/) (PostgreSQL 16), **validados** contra un PostgreSQL 16 local con [`02-ddl/tests/invariants_test.sql`](02-ddl/tests/invariants_test.sql) (15 baterías, todas en verde el 31-10-2026). Este documento explica el modelo; si hay discrepancia, manda el SQL y se abre una pregunta.
+> Decisiones aplicadas: D2 (dos stocks), D3 (entidad facturadora configurable), D4 (tarifa intercompañía validada por el asesor), §12.1 (conector intercambiable), §12.5 (MCP), §12.6 (módulos activables). Base de datos: Knowledge Base de Timbal (ADR 002 v2).
 
 ## 1. Convenciones (obligatorias para todo el código)
 
@@ -14,8 +15,8 @@
 | Cantidades de documento | `numeric(14,3)` (permite servicios fraccionados); el stock de envasado son **unidades enteras**. |
 | Textos | UTF-8. Nombres de tabla y columna en inglés; textos de usuario en español con i18n. |
 | Borrado | **Nunca** en tablas de negocio (`core.forbid_delete()` → `WC001`). Se descarta, anula o rectifica. |
-| Actor | Toda transacción de escritura empieza con `SELECT core.set_actor(tipo, id, en_nombre_de, request_id, motivo)`; sin ello, las tablas auditadas fallan con `WC002`. |
-| Errores de negocio | `RAISE EXCEPTION 'WCnnn: …'`. Catálogo en §20; la API los mapea a HTTP en `api/src/errors.ts`. |
+| Actor | Toda escritura lleva actor: `withWrite(actor, …)` en el núcleo (en el DDL de referencia, `SELECT core.set_actor(tipo, id, en_nombre_de, request_id, motivo)`); sin actor, las tablas auditadas fallan con `WC002`. |
+| Errores de negocio | `DomainError` con código `WCnnn` lanzado por las guardas del núcleo (en el DDL de referencia, `RAISE EXCEPTION 'WCnnn: …'`). Catálogo en §20; la API los mapea a HTTP. |
 
 ## 2. Mapa de módulos y esquemas
 
@@ -89,7 +90,7 @@ Dos filas: `PO` (persona física, `income_tax = 'IRPF'`) y `CVPO` (S.L., `IS`). 
 - Series por defecto propuestas (Q-015): CVPO `CF`, `CR`, `CS` (simplificadas), `CA` (albaranes), `CP` (presupuestos/proformas), `CO` (pedidos); P.O `PF`, `PR`, `PS`, `PA`, `PP`, `PO`, `PI` (intercompañía), `OB` (operaciones de bodega), `AF` (aforos).
 
 ### 3.5 Adjuntos
-`core.attachment` guarda metadatos y SHA-256; el binario va al almacén de objetos (ADR 002 §5) o a OneDrive. `core.attachment_link` lo asocia a cualquier fila con un **rol** (PDF de factura, captura de evidencia, acuse oficial…). Los adjuntos no se borran; su retención mínima es 6 años (`retention_until`), salvo datos personales sujetos a supresión (RGPD), que se marcan con `classification = 'personal_data'`.
+`core.attachment` guarda metadatos y SHA-256; el contenido va a `core.attachment_content` en la misma Knowledge Base (ADR 002 §4), una sola vez por hash, sin borrado ni sustitución; OneDrive solo para copias de consulta. `core.attachment_link` lo asocia a cualquier fila con un **rol** (PDF de factura, captura de evidencia, acuse oficial…). Los adjuntos no se borran; su retención mínima es 6 años (`retention_until`), salvo datos personales sujetos a supresión (RGPD), que se marcan con `classification = 'personal_data'`.
 
 ## 4. Auditoría inmutable (`audit`)
 
@@ -348,7 +349,7 @@ flowchart LR
 ```
 - El **qué** (payload canónico, validaciones, calendario) vive en el núcleo y es igual para cualquier conector.
 - El **cómo** lo decide `regulatory.connector` (modo `api`, `computer_use`, `file_upload` o `manual`; entorno de pruebas o producción; ejecutor).
-- **Un solo envío a la vez**: índice único parcial sobre `connector_run` (`submit` en curso) y reclamación con `SELECT … FOR UPDATE SKIP LOCKED` + `lease_until`. Si el ejecutor muere, el *lease* caduca y el intento pasa a `expired`; reintentar crea un intento nuevo **solo** tras comprobar en el portal que el anterior no llegó (acción `check_status`).
+- **Un solo envío a la vez**: índice único parcial sobre `connector_run` (`submit` en curso) y reclamación dentro de la cola del escritor único + `lease_until` (en el DDL de referencia, `SELECT … FOR UPDATE SKIP LOCKED`). Si el ejecutor muere, el *lease* caduca y el intento pasa a `expired`; reintentar crea un intento nuevo **solo** tras comprobar en el portal que el anterior no llegó (acción `check_status`).
 - **Evidencias**: XML/fichero enviado, respuesta, acuse/CSV y capturas de pantalla (computer use) como adjuntos con rol `evidence_*` / `official_receipt`, conservados ≥ 6 años.
 
 ### 18.2 Verifactu

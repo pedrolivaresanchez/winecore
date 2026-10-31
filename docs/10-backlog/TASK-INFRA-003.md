@@ -1,25 +1,28 @@
-# TASK-INFRA-003 · AWS base con OpenTofu
-- Hito M0 · 2 días · Escalado: sí (arquitectura y seguridad)
-- Historias / RNF: RNF-04, RNF-08
-- Depende de: Q-027 (cuenta de AWS)
+# TASK-INFRA-003 · Knowledge Base de Timbal: alta y prueba de atomicidad
+- Hito M0 · 2 días · Escalado: sí (arquitectura: integridad de los datos)
+- Historias / RNF: RNF-04, RNF-07, RNF-08
+- Depende de: Q-004 (credencial de Timbal de una cuenta dedicada **solo de la org 122**), Q-028 (preguntas a Timbal sobre la Knowledge Base)
 
 ## Objetivo
-Infraestructura en eu-north-1: RDS PostgreSQL 16 (PITR 35 días, cifrado, `sslmode=verify-full`), S3 con Object Lock (modo *compliance*, 6 años) para evidencias y documentos, claves KMS, rol OIDC de GitHub para despliegues, y el esqueleto de Lambda y Secrets Manager para `verifactu-sender`.
+Dar de alta las Knowledge Bases de WineCore en la org 122 (producción, vinculada al proyecto 3942, y una de pruebas) y medir lo que la documentación de Timbal no dice antes de construir nada encima: atomicidad de una petición con varias sentencias, dos escritores a la vez, latencia y límites (ADR 002 §6).
 
 ## Contexto
-ADR 002 · ADR 003 · `07-arquitectura.md` §10 y §13.
+ADR 002 (decisión, *fencing* y equivalencias) · `07-arquitectura.md` §14, pregunta 7 · riesgo R26 · Q-028.
 
 ## Ficheros
-`infra/aws/*.tf` (`rds.tf`, `s3.tf`, `kms.tf`, `iam_oidc.tf`, `sender.tf`, `variables.tf`, `outputs.tf`), `infra/aws/README.md`.
+`scripts/spike/kb-probe.ts`, `docs/runbooks/knowledge-base.md` (KB creadas y sus ids, sin secretos; resultados con fecha).
 
 ## Interfaz exacta
-Salidas: `db_endpoint`, `evidence_bucket`, `documents_bucket`, `sender_function_name`, `sender_secret_arn`, `github_deploy_role_arn`. Roles: `wc-github-deploy` (solo despliegue), `wc-sender` (solo leer su secreto y su clave KMS, red hacia RDS y AEAT).
+`bun scripts/spike/kb-probe.ts --kb <id de la KB de pruebas> | --local <fichero.duckdb> [--case atomicity|fencing|concurrency|latency|documents|constraints]` → informe Markdown con un resultado por caso (PASA / FALLA / NO CONCLUYENTE) y los datos medidos. Rechaza ejecutarse contra la KB de producción.
 
 ## Criterios de aceptación
-- `tofu plan` sin cambios tras aplicar; estado remoto cifrado.
-- Ningún secreto en el código ni en las salidas.
-- Política del bucket de evidencias impide borrar objetos (prueba con `aws s3api delete-object` → denegado).
-- Solo el rol `wc-sender` puede leer el secreto del certificado (prueba con otro rol → denegado).
+- **Atomicidad**: `BEGIN; INSERT …; INSERT … (viola un CHECK); COMMIT;` en una sola petición no deja ninguna fila; lo mismo con `SELECT error('…')` a mitad.
+- ***Fencing***: una petición que comprueba `core.writer_lease` y aborta con `error()` no deja escrituras cuando el *lease* es de otra instancia.
+- **Concurrencia**: dos clientes que escriben la misma fila a la vez → uno falla o se serializan; nunca se pierde una escritura sin error (se documenta qué ocurre).
+- **Latencia**: p95 de una emisión de factura simulada (≈ 12 sentencias) y de una consulta de existencias, con la BD sintética ×10 (RNF-03).
+- **Documentos**: un BLOB de 10 MB entra y sale con el mismo SHA-256.
+- **Restricciones** que usa el esquema: clave foránea con UPDATE de la fila referenciada, UNIQUE con UPDATE en la misma transacción, `TIMESTAMPTZ`, `DECIMAL(14,2)`; mismo resultado en DuckDB local y en la KB.
+- Si la atomicidad o el *fencing* FALLAN: **se para** y se escala a Pedro con opciones (ADR 002 §6); no se construye encima.
 
 ## Tests requeridos
-`tofu validate` y `tflint` en CI; checklist de las pruebas de denegación adjunta al PR.
+El informe, revisado por Opus; los mismos casos en DuckDB local dentro de la CI para detectar diferencias entre el motor local y la KB.

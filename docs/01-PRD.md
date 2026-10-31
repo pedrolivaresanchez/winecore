@@ -8,8 +8,8 @@
 WineCore es el sistema interno de la bodega y de su comercializadora: **una sola fuente de verdad** desde la parcela hasta la factura y el cobro, que genera solo (y con aprobación humana) lo que hoy se teclea a mano en SILICIE, SISV, EMCS, INFOVI y AecocEDI, que factura con **Verifactu** a tiempo, y que se puede operar desde la web (escritorio excelente, móvil correcto) o hablando con **CVBOT** por MCP. Sustituye a Holded y a Shopify (datos), a los Excel de stock y al trabajo de la administradora que se va.
 
 **Éxito del MVP** (medible):
-1. CVPO factura desde el **01-01-2027** con Verifactu en producción (o con el plan B si no pasa el gate del 01-12-2026), con **0 errores de numeración**.
-2. P.O deja Holded en **M2** (facturas, intercompañía, compras).
+1. El **aforo de arranque del 31-12-2026** queda cargado en M1 y desde entonces todo el stock, los lotes y las operaciones de bodega se registran en WineCore.
+2. P.O deja Holded en **M2** (facturas sin Verifactu hasta el 30-06-2027, intercompañía, compras; con la condición de Q-033) y, desde el **01-07-2027**, P.O y CVPO facturan en WineCore con Verifactu (M4), con **0 errores de numeración**. Hasta M4, CVPO factura en Holded con Verifactu (Q-033).
 3. El 100 % de los envasados, mermas y salidas del periodo se generan desde WineCore y el **cuadre SISV ↔ SILICIE** da cero diferencias sin explicar antes de cada presentación.
 4. Una inspección sin aviso obtiene **existencias a fecha por ubicación y lote** y la **trazabilidad de un lote** en menos de 1 minuto.
 5. Ningún envío a la AEAT, la Junta o AecocEDI sale sin la aprobación de una persona identificada (auditoría al 100 %).
@@ -30,24 +30,26 @@ WineCore es el sistema interno de la bodega y de su comercializadora: **una sola
 
 ## 3. Alcance
 
-### 3.1 MVP (M0–M4, hasta julio de 2027)
+### 3.1 MVP (M0–M5, hasta julio de 2027)
+
+> Hitos según `09-roadmap.md` v2 (31-10-2026): primero stock, bodega y lotes (M1), después ventas, facturación sin Verifactu y SILICIE (M2); Verifactu pasa a M4. Si un documento discrepa en un hito, manda el roadmap.
 
 | Módulo | Incluye | Hito |
 |---|---|---|
 | Núcleo | Acceso (Microsoft + lista blanca), roles por entidad, passkeys para aprobar, módulos activables, auditoría encadenada, series sin huecos, adjuntos, eventos a CVBOT | M0–M1 |
 | Contactos y catálogo | Contactos deduplicados compartidos por las dos entidades; vinos, formatos, productos; tarifas versionadas; tarifa intercompañía; coste estándar | M1–M2 |
-| Facturación + Verifactu | Facturas completas y rectificativas de CVPO (M1) y P.O (M2), IRPF y recargo, exportación/intracomunitaria/Canarias, PDF con QR ES/EN, emisión en lote con aprobación, intercompañía mensual, registros Verifactu y envío | M1–M2 |
-| Ventas | Pedidos (manual, MCP, EDI, web), reglas de entidad facturadora (D3), albaranes (venta, consigna, traspaso, devolución), incidencias de transporte, proformas | M1–M3 |
-| Stock | Dos libros (físico y fiscal), aforo de arranque, existencias a fecha, conciliación, bloqueo de periodos, trazabilidad | M2 |
-| Bodega | Depósitos, lotes y genealogía, trasiegos, ensamblajes, adiciones, envasado, etiquetado de jaulón, mermas, limpiezas (M2); recepción de uva, prensado, fermentación, analíticas, catas (M4) | M2 / M4 |
-| Viñedo y ecológico | Parcelas, tratamientos, labores, maduración, vendimia; informe para la certificadora | M4 |
+| Facturación + Verifactu | Facturas completas y rectificativas de P.O (M2, sin Verifactu hasta el 30-06-2027) y de CVPO (en Holded con Verifactu hasta M4, Q-033), IRPF y recargo, exportación/intracomunitaria/Canarias, PDF ES/EN (con QR desde M4), emisión en lote con aprobación, intercompañía mensual; registros Verifactu y envío (M4) | M2 / M4 |
+| Ventas | Pedidos (manual, MCP, EDI, web), reglas de entidad facturadora (D3), albaranes (venta, consigna, traspaso, devolución), incidencias de transporte, proformas | M2–M3 |
+| Stock | Ubicaciones y almacenes, dos libros (físico y fiscal), aforo de arranque, existencias a fecha, bloqueo de periodos, trazabilidad (M1); conciliación con las ventas (M2) | M1–M2 |
+| Bodega | Depósitos, lotes y genealogía, trasiegos, ensamblajes, adiciones, envasado, etiquetado de jaulón, mermas, limpiezas (M1); recepción de uva, prensado, fermentación, analíticas, catas (M5) | M1 / M5 |
+| Viñedo y ecológico | Parcelas, tratamientos, labores, maduración, vendimia; informe para la certificadora | M5 |
 | Compras | Gastos por foto/PDF con OCR y validación; libro de recibidas | M2 |
-| Cobros | Cobros y pagos parciales, pendientes y vencidos, partidas abiertas de Holded | M1–M2 |
-| Regulatorio | SILICIE (M2), SISV, EMCS, AecocEDI, INFOVI (M3), calendario de obligaciones, cuadres, ejecutor local | M2–M3 |
-| IA / MCP | MCP completo (por módulo según hito), asistente interno, resumen diario, vigilantes | M1–M3 |
-| Migración | Contactos y catálogo (M1), partidas abiertas (M1–M2), revisión de albaranes (M2) | M1–M2 |
+| Cobros | Cobros y pagos parciales, pendientes y vencidos, partidas abiertas de Holded | M2 |
+| Regulatorio | SILICIE (asientos y fichero en M2; presentación por el ejecutor en M3), SISV, EMCS, AecocEDI, INFOVI, calendario de obligaciones, cuadres, ejecutor local (M3) | M2–M3 |
+| IA / MCP | MCP (lectura de stock, lotes y depósitos y borradores de bodega en M1; el resto con su módulo), asistente interno, resumen diario, vigilantes (M3) | M1–M3 |
+| Migración | Contactos y catálogo (M1), partidas abiertas y revisión de albaranes (M2) | M1–M2 |
 
-### 3.2 Posterior (M5+)
+### 3.2 Posterior (M6+)
 Conciliación bancaria y remesas SEPA (M6), contabilidad PGC y exportaciones contables (M7), histórico completo de Holded con PDF y diario D7 (M7), borradores de modelos AEAT (M6–M7), etiqueta electrónica y fichas de etiqueta, conocimiento de añadas, planificador de vendimia con meteorología, costes por partida, TPV con factura simplificada, OSS, integraciones de paquetería (etiquetas y seguimiento), APPCC.
 
 ### 3.3 Fuera de alcance
@@ -138,11 +140,11 @@ CRM con embudos, proyectos y horas, RR. HH. y nóminas, FACe (no se usa), la tie
 
 ### 4.5 Ventas (VENT)
 
-**US-VENT-01 · Pedido con entidad resuelta** (M1)
+**US-VENT-01 · Pedido con entidad resuelta** (M2)
 - Dado la regla "cliente X → P.O" y la regla por defecto "CVPO" · Cuando creo un pedido para X · Entonces el pedido queda en P.O y muestra "Regla: cliente X (v3)".
 - Dado un pedido confirmado · Cuando cambian las reglas · Entonces el pedido conserva la entidad y la regla con que se confirmó.
 
-**US-VENT-02 · Reglas de entidad facturadora en Ajustes** (M1)
+**US-VENT-02 · Reglas de entidad facturadora en Ajustes** (M2)
 - Cuando creo una versión nueva de reglas (cliente > canal > defecto) y la activo con aprobación · Entonces solo hay una versión activa y la pantalla muestra con qué regla se resolvería un cliente/canal de prueba.
 
 **US-VENT-03 · Albarán desde pedido** (M2)
@@ -164,26 +166,26 @@ CRM con embudos, proyectos y horas, RR. HH. y nóminas, FACe (no se usa), la tie
 
 ### 4.6 Facturación (FACT)
 
-**US-FACT-01 · Borrador de factura** (M1)
+**US-FACT-01 · Borrador de factura** (M2)
 - Cuando creo un borrador para un cliente de CVPO · Entonces no tiene número, puedo editarlo y no tiene efectos fiscales ni de stock.
 - Cuando lo creo desde dos albaranes · Entonces trae sus líneas y lotes, y los albaranes pasan a "facturado" al emitir.
 
-**US-FACT-02 · Emitir** (M1)
+**US-FACT-02 · Emitir** (M2)
 - Dado un borrador válido · Cuando pulso "Emitir" · Entonces en una sola operación: toma el siguiente número de la serie, fija la fecha, congela los datos del cliente, calcula el desglose (redondeo por tipo) y los vencimientos, y genera el registro Verifactu; si algo falla, no se emite nada.
 - Dado un cliente sin NIF · Cuando emito una factura completa · Entonces veo "El cliente necesita NIF para una factura completa".
 - Dado una línea de vino sin lote · Cuando emito · Entonces veo "Indica el lote de la línea N".
 - Dado una factura emitida · Cuando intento cambiar un importe · Entonces no es posible (`WC080`) y se ofrece "Crear rectificativa".
 
-**US-FACT-03 · PDF con QR** (M1)
+**US-FACT-03 · PDF con QR** (M2)
 - Cuando se emite · Entonces se genera el PDF (ES o EN según el cliente) con todos los datos obligatorios, el QR de cotejo y la leyenda Verifactu, y no cambia nunca más.
 
-**US-FACT-04 · Rectificativa** (M1)
+**US-FACT-04 · Rectificativa** (M2)
 - Cuando creo una rectificativa por diferencias de una factura (incluida una de Holded por número y fecha) · Entonces sale en la serie de rectificativas, referencia la original y su registro Verifactu lleva tipo y facturas rectificadas.
 
-**US-FACT-05 · Anular una emitida por error** (M1)
+**US-FACT-05 · Anular una emitida por error** (M2)
 - Dado una factura que no debió expedirse · Cuando un aprobador la anula con motivo de la lista · Entonces queda "anulada", se genera el registro de anulación y el número no se reutiliza.
 
-**US-FACT-06 · IRPF y recargo** (M1)
+**US-FACT-06 · IRPF y recargo** (M2)
 - Cuando facturo un arrendamiento con `IVA21_ALQ` · Entonces el total a cobrar descuenta la retención del 19 % y el PDF lo muestra.
 - Cuando facturo a un cliente en recargo de equivalencia · Entonces se añade el 5,2 % y su cuota.
 
@@ -191,14 +193,14 @@ CRM con embudos, proyectos y horas, RR. HH. y nóminas, FACe (no se usa), la tie
 - Dado un cliente del Reino Unido · Cuando emito · Entonces se usa `EXP_E2` con la mención de exención por exportación.
 - Dado un cliente UE sin NIF-IVA validado · Cuando elijo entrega intracomunitaria · Entonces veo "Valida el NIF-IVA en VIES".
 
-**US-FACT-08 · Emisión en lote** (M1)
+**US-FACT-08 · Emisión en lote** (M2)
 - Cuando selecciono 10 borradores y pido emitirlos · Entonces se crea una aprobación con el resumen (nº, clientes, total); al aprobarla se emiten en orden de fecha con números consecutivos.
 
 **US-FACT-09 · Intercompañía mensual** (M2)
 - Dado ventas de CVPO con stock de P.O en octubre · Cuando llega el 1 de noviembre · Entonces se cierra la liquidación de octubre, se crea el borrador de factura recapitulativa P.O → CVPO con **fecha de operación 31 de octubre** y la tarifa vigente, y se pide aprobación con aviso si quedan menos de 3 días para el día 16 (RD 1619/2012, arts. 11 y 13: se expide antes del día 16 de noviembre, con la fecha real de expedición).
 - Cuando se aprueba · Entonces se emite la factura de P.O y se crea la factura recibida espejo en CVPO.
 
-**US-FACT-10 · Enviar al cliente** (M1 descarga / M2 correo)
+**US-FACT-10 · Enviar al cliente** (M2)
 - Cuando descargo el PDF · Entonces la factura queda "enviada (descarga)" con quién y cuándo.
 - (M2, si Q-014) Cuando pulso "Enviar por correo" · Entonces se envía desde el buzón dedicado tras mi clic y queda registrado; ningún agente puede enviarla.
 
@@ -207,88 +209,88 @@ CRM con embudos, proyectos y horas, RR. HH. y nóminas, FACe (no se usa), la tie
 
 ### 4.7 Verifactu (VFT)
 
-**US-VFT-01 · Registro encadenado** (M1)
+**US-VFT-01 · Registro encadenado** (M4)
 - Cuando se emite una factura de una entidad con instalación activa · Entonces se crea su registro de alta con la huella calculada según la especificación y encadenada al anterior; la cadena no puede modificarse (`WC130`).
 
-**US-VFT-02 · Envío a la AEAT** (M1)
+**US-VFT-02 · Envío a la AEAT** (M4)
 - Dado registros pendientes · Cuando se respeta el tiempo de espera indicado por la AEAT · Entonces se envían (como máximo el número permitido por envío) y se guarda la respuesta por registro (CSV, estado, errores).
 - Dado un fallo técnico · Cuando se reintenta · Entonces se aplica la espera exponencial y, al tercer fallo, se avisa a CVBOT y al panel.
 
-**US-VFT-03 · Estado por factura** (M1)
+**US-VFT-03 · Estado por factura** (M4)
 - Cuando abro una factura · Entonces veo "Verifactu: aceptada / aceptada con errores / rechazada / pendiente" y el detalle.
 
-**US-VFT-04 · Subsanación** (M1)
+**US-VFT-04 · Subsanación** (M4)
 - Dado un registro rechazado o aceptado con errores · Cuando corrijo los datos · Entonces se genera el registro de subsanación encadenado según la especificación.
 
-**US-VFT-05 · Declaración responsable y eventos** (M1)
+**US-VFT-05 · Declaración responsable y eventos** (M4)
 - Cuando abro "Ajustes > Verifactu" · Entonces veo la declaración responsable del productor, versión e instalación, y el registro de eventos del sistema.
 
-**US-VFT-06 · Gate de preproducción** (M1)
-- Dado el entorno de pruebas de la AEAT · Cuando se ejecuta la batería de casos de `verifactu.md` · Entonces todos dan "Correcto" (o el error esperado en los casos negativos) antes del 01-12-2026.
+**US-VFT-06 · Control de preproducción** (M4)
+- Dado el entorno de pruebas de la AEAT · Cuando se ejecuta la batería de casos de `verifactu.md` · Entonces todos dan "Correcto" (o el error esperado en los casos negativos) antes del 01-06-2027.
 
 ### 4.8 Stock (INV)
 
-**US-INV-01 · Aforo de arranque** (M2)
+**US-INV-01 · Aforo de arranque** (M1)
 - Cuando registro el aforo de la fecha de corte (volumen por depósito y lote; unidades por ubicación, producto, lote y estado) y el titular lo firma · Entonces se crean los saldos iniciales en el libro físico y en el fiscal, y no se puede repetir para la misma fecha.
 
-**US-INV-02 · Existencias a fecha** (M2)
+**US-INV-02 · Existencias a fecha** (M1)
 - Cuando pido existencias "ahora" o "a 15-03-2027 10:00" · Entonces veo por ubicación, recipiente, lote, producto y estado, con totales de granel y envasado, y puedo descargar el PDF para la inspección en ≤ 10 s.
 
-**US-INV-03 · Físico frente a fiscal** (M2)
+**US-INV-03 · Físico frente a fiscal** (M1 libros / M2 salidas por venta y conciliación)
 - Cuando abro la conciliación de un periodo · Entonces veo los albaranes sin facturar, las facturas sin salida física y las diferencias por lote, con enlaces a los documentos.
 
-**US-INV-04 · Aforo periódico** (M2)
+**US-INV-04 · Aforo periódico** (M1)
 - Dado un recuento con diferencias · Cuando se aprueba con motivo por línea · Entonces se crean regularizaciones físicas y fiscales.
 
-**US-INV-05 · Periodos cerrados** (M2)
+**US-INV-05 · Periodos cerrados** (M1)
 - Dado el periodo fiscal cerrado hasta el 31-07-2027 · Cuando intento registrar un movimiento con fecha anterior · Entonces veo "El periodo está cerrado hasta el 31-07-2027" (`WC021`).
 
-**US-INV-06 · Trazabilidad de un lote** (M2 envasado / M4 completa)
+**US-INV-06 · Trazabilidad de un lote** (M1 envasado / M5 completa)
 - Cuando busco el lote impreso en una botella · Entonces veo su diagrama hasta las parcelas o proveedores de uva, con operaciones, analíticas y adiciones, y quién la compró.
 
 ### 4.9 Bodega (BOD)
 
-**US-BOD-01 · Depósitos** (M2)
+**US-BOD-01 · Depósitos** (M1)
 - Cuando abro "Depósitos" · Entonces veo cada uno con código, tipo, capacidad, contenido (lote, estado, litros, % de llenado) y última lectura; al escanear su QR desde el móvil se abre su ficha.
 
-**US-BOD-02 · Trasiego** (M2)
+**US-BOD-02 · Trasiego** (M1)
 - Dado 1.000 L del lote L en INOX-01 · Cuando registro un trasiego de 1.000 L a INOX-03 con 20 L de lías · Entonces al confirmar INOX-01 queda vacío e INOX-03 con 980 L; si la suma no cuadra veo "El volumen no cuadra: entran 1.000 L y salen 999 L" (`WC020`).
 - Dado INOX-03 con otro lote · Cuando intento trasegar ahí · Entonces veo "El depósito contiene otro lote; usa Ensamblaje" (`WC026`).
 
-**US-BOD-03 · Ensamblaje con fórmula** (M2 sin fórmula / M4 con fórmula)
+**US-BOD-03 · Ensamblaje con fórmula** (M1 sin fórmula / M5 con fórmula)
 - Cuando introduzco la fórmula de cata en mL por muestra y el volumen objetivo · Entonces WineCore calcula % y litros por depósito; al confirmar crea un lote nuevo con su genealogía.
 
-**US-BOD-04 · Envasado** (M2)
+**US-BOD-04 · Envasado** (M1)
 - Dado 504 L del lote ENT-27A · Cuando registro 672 botellas de 0,75 L · Entonces la merma se calcula (504 − 672 × 0,75 = 0 L) o se pide si no cuadra, se crea el lote envasado, baja el granel, suben las botellas (sin etiquetar o etiquetadas) y se genera la anotación de SILICIE y SISV.
 
-**US-BOD-05 · Adición** (M2)
+**US-BOD-05 · Adición** (M1)
 - Cuando registro 2 g/L de ácido tartárico en INOX-B1 con la factura del producto · Entonces queda en el historial del lote y alimenta etiquetas e informe ecológico.
 
-**US-BOD-06 · Merma y destrucción** (M2)
+**US-BOD-06 · Merma y destrucción** (M1)
 - Cuando registro una merma por incidencia o una destrucción · Entonces exige motivo, foto opcional y aprobación antes de afectar al stock.
 
-**US-BOD-07 · Etiquetado de jaulón** (M2)
+**US-BOD-07 · Etiquetado de jaulón** (M1)
 - Cuando paso 600 botellas sin etiquetar a etiquetadas con 2 roturas · Entonces quedan 598 etiquetadas y 2 en mermas.
 
-**US-BOD-08 · Recepción de uva** (M4)
+**US-BOD-08 · Recepción de uva** (M5)
 - Cuando registro 3.100 kg de una parcela propia (o de un proveedor con su documento de acompañamiento) · Entonces se crea la partida (lote) de uva con su origen.
 
-**US-BOD-09 · Prensado/encubado y fin de fermentación** (M4)
+**US-BOD-09 · Prensado/encubado y fin de fermentación** (M5)
 - Cuando registro el prensado de 3.100 kg con 2.200 L de mosto a INOX-B1 · Entonces el lote pasa a mosto y queda el rendimiento; al registrar el fin de fermentación con grado · Entonces pasa a vino.
 
-**US-BOD-10 · Lecturas de fermentación** (M4)
+**US-BOD-10 · Lecturas de fermentación** (M5)
 - Cuando dicto "B1 densidad 1,032 temperatura 18" · Entonces se guarda la lectura y la ficha del lote dibuja la curva; si la densidad no baja en 48 h, llega una alerta.
 
-**US-BOD-11 · Analíticas y catas** (M4)
+**US-BOD-11 · Analíticas y catas** (M5)
 - Cuando subo el PDF del pack FML y sus valores · Entonces quedan asociados al lote con rangos validados.
 
-**US-BOD-12 · Rectificar una operación** (M2)
+**US-BOD-12 · Rectificar una operación** (M1)
 - Dado una operación confirmada · Cuando registro su rectificación con motivo · Entonces sus movimientos se anulan y se aplican los nuevos, y las anotaciones de SISV/SILICIE afectadas se anulan y reemplazan.
 
-**US-BOD-13 · Limpiezas** (M2)
+**US-BOD-13 · Limpiezas** (M1)
 - Cuando registro la limpieza de un depósito con ácido peracético · Entonces queda en el historial del depósito y en el informe ecológico.
 
-### 4.10 Viñedo (VIN, M4)
+### 4.10 Viñedo (VIN, M5)
 
 **US-VIN-01 · Parcelas** — Cuando doy de alta una parcela con su referencia SIGPAC completa, superficie y variedades · Entonces no se puede duplicar la misma referencia.
 **US-VIN-02 · Tratamientos** — Cuando registro un tratamiento (fecha, operario, producto, dosis, método, factura) · Entonces aparece en el cuaderno y avisa si el producto no consta como apto en ecológico.
@@ -304,8 +306,8 @@ CRM con embudos, proyectos y horas, RR. HH. y nóminas, FACe (no se usa), la tie
 
 ### 4.12 Cobros y pagos (FIN)
 
-**US-FIN-01 · Registrar cobro** (M1) — Dado una factura de 121 € · Cuando registro un cobro de 100 € · Entonces queda "parcialmente cobrada" con 21 € pendientes; si intento imputar más del pendiente, veo `WC100`.
-**US-FIN-02 · Pendientes y vencidos** (M1) — Cuando abro "Cobros" · Entonces veo lo pendiente por cliente con antigüedad (0–30, 31–60, 61–90, > 90) y puedo preparar un recordatorio en borrador que solo se envía tras aprobación.
+**US-FIN-01 · Registrar cobro** (M2) — Dado una factura de 121 € · Cuando registro un cobro de 100 € · Entonces queda "parcialmente cobrada" con 21 € pendientes; si intento imputar más del pendiente, veo `WC100`.
+**US-FIN-02 · Pendientes y vencidos** (M2) — Cuando abro "Cobros" · Entonces veo lo pendiente por cliente con antigüedad (0–30, 31–60, 61–90, > 90) y puedo preparar un recordatorio en borrador que solo se envía tras aprobación.
 **US-FIN-03 · Extractos y conciliación** (M6) — Cuando importo un Norma 43 · Entonces cada línea se deduplica y recibe sugerencias de factura; confirmar crea el cobro.
 **US-FIN-04 · Remesa SEPA** (M6) — Cuando apruebo una remesa · Entonces se genera el fichero para subirlo al banco; WineCore no guarda claves bancarias.
 
@@ -313,10 +315,10 @@ CRM con embudos, proyectos y horas, RR. HH. y nóminas, FACe (no se usa), la tie
 
 **US-SIL-01 · Asientos al día** (M2) — Cuando se confirma un envasado, una merma o se emite una factura de P.O · Entonces se crean los asientos SILICIE correspondientes (los trasiegos no generan asiento) con su justificante.
 **US-SIL-02 · Preparar la presentación** (M2) — Dado el plazo de agosto o diciembre · Cuando preparo el envío del periodo · Entonces WineCore valida (sin saldos negativos, campos obligatorios), genera el fichero, muestra el resumen por producto y pide aprobación.
-**US-SIL-03 · Presentar** (M2) — Dado el envío aprobado · Cuando el ejecutor local lo presenta · Entonces se guardan el fichero enviado, el acuse, los números de asiento y las capturas; si algo falla, se detiene y avisa.
-**US-SIL-04 · Anular o rectificar** (M2) — Cuando se rectifica un movimiento ya presentado · Entonces se prepara la anulación y el asiento nuevo para el siguiente envío.
+**US-SIL-03 · Presentar** (M3) — Dado el envío aprobado · Cuando el ejecutor local lo presenta · Entonces se guardan el fichero enviado, el acuse, los números de asiento y las capturas; si algo falla, se detiene y avisa.
+**US-SIL-04 · Anular o rectificar** (M3) — Cuando se rectifica un movimiento ya presentado · Entonces se prepara la anulación y el asiento nuevo para el siguiente envío.
 **US-SIL-05 · Cuadre SISV ↔ SILICIE** (M3) — Cuando ejecuto el cuadre de un periodo · Entonces envasados y salidas coinciden en ambos o se listan las diferencias con su causa.
-**US-SIL-06 · Cierre de ejercicio** (M2) — Cuando llega el plazo de cierre · Entonces WineCore avisa y prepara la comunicación de cierre para aprobación.
+**US-SIL-06 · Cierre de ejercicio** (M3) — Cuando llega el plazo de cierre · Entonces WineCore avisa y prepara la comunicación de cierre para aprobación.
 
 ### 4.14 SISV (M3)
 
@@ -342,7 +344,7 @@ CRM con embudos, proyectos y horas, RR. HH. y nóminas, FACe (no se usa), la tie
 
 **US-INFOVI-01 · Declaraciones** — Antes del 20 de diciembre y del 20 de agosto, y del 10 de diciembre para la cosecha · Cuando preparo la declaración · Entonces WineCore calcula los cuadros desde los libros, genera el fichero y pide aprobación para presentarla.
 
-### 4.18 Ecológico (ECO, M4)
+### 4.18 Ecológico (ECO, M5)
 
 **US-ECO-01 · Informe para la certificadora** — Cuando lo genero para un año · Entonces incluye tratamientos, adiciones, limpiezas, compras de insumos con factura y el balance de materias por lote.
 **US-ECO-02 · Límites** — Dado un vino ecológico con SO2 total por encima del límite ecológico de su tipo · Cuando se registra la analítica · Entonces aparece una alerta.
@@ -351,7 +353,7 @@ CRM con embudos, proyectos y horas, RR. HH. y nóminas, FACe (no se usa), la tie
 
 **US-MIG-01 · Contactos** (M1) — Cuando ejecuto el ensayo de contactos de CVPO · Entonces obtengo el informe (fusiones, avisos de NIF) y solo puedo cargar con ese informe aprobado; repetir la carga no duplica.
 **US-MIG-02 · Catálogo aprobado** (M1) — Cuando apruebo la propuesta de catálogo · Entonces se cargan vinos, formatos, productos y la tarifa final en borrador.
-**US-MIG-03 · Partidas abiertas** (M1–M2) — Cuando cargo las facturas pendientes al corte · Entonces se pueden cobrar desde WineCore y el total coincide al céntimo con Holded.
+**US-MIG-03 · Partidas abiertas** (M2) — Cuando cargo las facturas pendientes al corte · Entonces se pueden cobrar desde WineCore y el total coincide al céntimo con Holded.
 **US-MIG-04 · Albaranes pendientes** (M2) — Cuando reviso los albaranes pendientes de Holded · Entonces marco cada uno como vivo, cerrado o ignorado, y los vivos se recrean solo si el aforo lo confirma.
 **US-MIG-05 · Histórico con cuadre** (M7) — Cuando cargo el histórico · Entonces los totales por entidad, tipo y año coinciden al céntimo con el manifiesto.
 **US-MIG-06 · PDF** (M7) — Cuando cargo los PDF · Entonces cada uno queda vinculado o en la lista de no vinculados.
@@ -360,7 +362,7 @@ CRM con embudos, proyectos y horas, RR. HH. y nóminas, FACe (no se usa), la tie
 ### 4.20 MCP y CVBOT (MCP)
 
 **US-MCP-01 · Consultar** (M1) — Cuando CVBOT pregunta por facturas vencidas · Entonces recibe la lista que Pedro puede ver, con enlaces.
-**US-MCP-02 · Escribir con confirmación** (M1) — Cuando CVBOT prepara un pedido · Entonces recibe una vista previa y un token; solo al confirmar se crea; un token caducado o reutilizado no hace nada.
+**US-MCP-02 · Escribir con confirmación** (M1–M2) — Cuando CVBOT prepara un pedido · Entonces recibe una vista previa y un token; solo al confirmar se crea; un token caducado o reutilizado no hace nada.
 **US-MCP-03 · Nunca aprobar por chat** (M1) — Cuando CVBOT intenta aprobar · Entonces no existe herramienta; recibe el enlace a la bandeja.
 
 ### 4.21 Asistente y agentes (ASIS)

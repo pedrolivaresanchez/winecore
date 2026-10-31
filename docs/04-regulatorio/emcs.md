@@ -41,7 +41,7 @@ sequenceDiagram
   autonumber
   actor U as Administración
   participant API as api/
-  participant DB as PostgreSQL
+  participant DB as Knowledge Base
   actor A as Aprobador (passkey)
   participant R as Ejecutor local
   participant S as Sede AEAT · EMCS

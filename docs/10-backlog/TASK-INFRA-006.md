@@ -4,21 +4,21 @@
 - Depende de: TASK-INFRA-002, TASK-INFRA-004, TASK-CORE-002
 
 ## Objetivo
-Implementar tal cual el esqueleto normativo de ADR 007 §3: `db-migrate → push-timbal → deploy-timbal → smoke-remote` (Plan B) o `db-migrate` en el PR + despliegue de Timbal + `smoke-remote` (Plan A), y `deploy-sender.yml`.
+Implementar tal cual el esqueleto de ADR 007 §3: `db-migrate → push-timbal → deploy-timbal → smoke-remote` (Plan B) o `db-migrate` en el PR + despliegue de Timbal + `smoke-remote` (Plan A). Todo en el proyecto Timbal 3942; nada fuera de Timbal.
 
 ## Contexto
-ADR 007 §2–§3 · ADR 001 · ADR 003 (OIDC, sin claves de AWS permanentes).
+ADR 007 §2–§3 · ADR 001 · ADR 002 §7 (migraciones aditivas).
 
 ## Ficheros
-`.github/workflows/deploy.yml`, `.github/workflows/deploy-sender.yml`, `scripts/wait-deploy.ts`, `scripts/smoke-remote.ts`.
+`.github/workflows/deploy.yml`, `scripts/wait-deploy.ts`, `scripts/smoke-remote.ts`.
 
 ## Interfaz exacta
-*Environments* `timbal-dev`, `timbal-staging`, `timbal-main` (este con aprobación de Pedro). `smoke-remote` comprueba `/health` (SHA desplegada = SHA del commit) y un flujo de lectura autenticado con un usuario sintético.
+*Environments* `timbal-dev`, `timbal-staging`, `timbal-main` (este con aprobación de Pedro). `smoke-remote` comprueba `/api/health` (SHA desplegada = SHA del commit; versión del esquema = última migración) y un flujo de lectura autenticado con un usuario sintético.
 
 ## Criterios de aceptación
 - Nunca ambos mecanismos a la vez (Plan A o B).
 - Un fallo de migración detiene el despliegue.
-- `deploy-sender` en `main` falla si la versión `billing-x.y.z` no tiene declaración responsable (lo comprueba TASK-REG-010).
+- El entorno `verifactu` (M4) se despliega con el mismo workflow y falla si la versión `billing-x.y.z` no tiene declaración responsable (lo comprueba TASK-REG-010).
 
 ## Tests requeridos
-Ejecución en `dev` con una migración vacía; ejecución con migración fallida (debe parar).
+Ejecución en el entorno de pruebas con una migración vacía; ejecución con migración fallida (debe parar).
