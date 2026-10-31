@@ -47,6 +47,7 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
     "UQ:cellar.operation(legal_entity_id,number)",
     "UQ:cellar.vessel(qr_token)",
     "UQ:core.number_series(legal_entity_id,doc_type,year)",
+    "UQ:finance.bank_account(legal_entity_id)",
     "UQ:party.contact(tax_id)",
     "UQ:party.contact_address(contact_id,kind)",
     "UQ:purchasing.supplier_invoice(legal_entity_id,supplier_id,supplier_invoice_number)",
@@ -73,5 +74,7 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
     "WC070",
     "WC080",
     "WC090",
+    "WC100",
+    "WC101",
   ]);
 });

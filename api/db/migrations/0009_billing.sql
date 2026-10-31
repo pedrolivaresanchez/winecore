@@ -1,6 +1,8 @@
 -- WineCore · 0009_billing · dialecto DuckDB (ADR 002).
 -- Referencia: docs/02-ddl/0009_billing.sql
 -- Disparadores, funciones e índices únicos parciales: api/src/core/db/guards/registry.ts
+-- Sin FK hacia billing.invoice: DuckDB rehace el UPDATE de una fila referenciada
+-- como delete+insert y el cobro no podría actualizar amount_paid.
 
 -- =====================================================================
 -- WineCore · Migración 0009 · facturación (billing)

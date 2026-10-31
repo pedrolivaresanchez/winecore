@@ -92,6 +92,11 @@ const CATALOG = {
   WC_INV_BOOK: [422, 'El libro no cuadra; no se exporta'],
   WC_INV_ENTITY: [422, 'No hay una regla que indique la entidad facturadora'],
   WC_INV_REASON: [422, 'El motivo de anulación no es válido'],
+  // Finanzas (cobros, extractos y remesas)
+  WC_FIN_DUPLICATE_FILE: [409, 'Este extracto ya se ha importado'],
+  WC_FIN_APPROVAL_REQUIRED: [409, 'La remesa no está aprobada'],
+  WC_FIN_MANDATE: [422, 'El cliente no tiene mandato SEPA'],
+  WC_FIN_STATE: [409, 'La transición de estado no está permitida'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;

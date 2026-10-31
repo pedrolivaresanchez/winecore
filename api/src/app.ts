@@ -9,6 +9,7 @@ import type { SupplierInvoiceApprovalHook } from './core/purchasing/approval';
 import { noopApprovalHook } from './core/purchasing/approval';
 import type { OcrWorkforce } from './core/purchasing/extract';
 import { ocrFromEnv } from './core/purchasing/timbal';
+import { bindFinance } from './core/finance/runtime';
 import { asDomainError, domainError, errorBody } from './core/errors';
 import type { InvoiceDocumentStore } from './core/billing/pdf/documents';
 import { downloadInvoicePdf } from './routes/invoice-documents';
@@ -73,6 +74,23 @@ import {
   putExportDocuments,
 } from './routes/export-docs';
 import { materialRoutes } from './routes/materials';
+import { getBankAccounts, postBankAccount } from './routes/finance-accounts';
+import { getPayments, getPaymentById, postPayment, postPaymentReverse } from './routes/finance-payments';
+import { getReceivables } from './routes/finance-receivables';
+import {
+  getRemittanceById,
+  getRemittanceFile,
+  postRemittance,
+  postRemittanceApproval,
+  postRemittanceFile,
+  postRemittanceSubmitted,
+} from './routes/finance-remittances';
+import {
+  getBankStatementSuggestions,
+  postBankStatement,
+  postBankStatementConfirm,
+  postBankStatementIgnore,
+} from './routes/finance-statements';
 import { health } from './routes/health';
 import {
   getSettlement,
@@ -129,6 +147,7 @@ export interface AppDeps {
 const startedAt = new WeakMap<Request, number>();
 
 export function createApp(deps: AppDeps) {
+  bindFinance(deps.writer, { dataKey: deps.config.dataKey });
   const log = deps.log ?? ((line: string) => console.log(line));
   const timbalAuth = createTimbalAuth(deps.config, deps.fetchImpl);
   const guardDeps = {
@@ -520,6 +539,98 @@ export function createApp(deps: AppDeps) {
     })
     .post('/v1/supplier-invoices/:id/reject', ({ request, params }) => rejectExpense(deps.writer, request, params.id), {
       beforeHandle: requirePermission(guardDeps, 'purchasing.write'),
+    })
+    // Finanzas: cobros, pendientes, extractos y remesas SEPA.
+    .get('/v1/receivables', ({ request }) => getReceivables(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'finance.read'),
+    })
+    .get('/v1/payments', ({ request }) => getPayments(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'finance.read'),
+    })
+    .post('/v1/payments', async ({ request, set }) => {
+      const result = await postPayment(deps.writer, request);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'finance.write'),
+    })
+    .get('/v1/payments/:id', ({ request, params }) => getPaymentById(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'finance.read'),
+    })
+    .post('/v1/payments/:id/reverse', async ({ request, params, set }) => {
+      const result = await postPaymentReverse(deps.writer, request, params.id);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'finance.manage'),
+    })
+    .get('/v1/bank-accounts', ({ request }) => getBankAccounts(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'finance.read'),
+    })
+    .post('/v1/bank-accounts', async ({ request, set }) => {
+      const result = await postBankAccount(deps.writer, request);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'finance.manage'),
+    })
+    .post('/v1/bank-statements', async ({ request, set }) => {
+      const result = await postBankStatement(deps.writer, request);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'finance.write'),
+    })
+    .get('/v1/bank-statements/:id/suggestions', ({ request, params }) => getBankStatementSuggestions(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'finance.read'),
+    })
+    .post('/v1/bank-statements/:id/lines/:lineId/confirm', async ({ request, params, set }) => {
+      const result = await postBankStatementConfirm(deps.writer, request, params.id, params.lineId);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'finance.write'),
+    })
+    .post('/v1/bank-statements/:id/lines/:lineId/ignore', async ({ request, params, set }) => {
+      const result = await postBankStatementIgnore(deps.writer, request, params.id, params.lineId);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'finance.write'),
+    })
+    .post('/v1/remittances', async ({ request, set }) => {
+      const result = await postRemittance(deps.writer, request);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'finance.manage'),
+    })
+    .get('/v1/remittances/:id/file', ({ request, params }) => getRemittanceFile(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'finance.manage'),
+    })
+    .get('/v1/remittances/:id', ({ request, params }) => getRemittanceById(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'finance.read'),
+    })
+    .post('/v1/remittances/:id/request-approval', async ({ request, params, set }) => {
+      const result = await postRemittanceApproval(deps.writer, request, params.id);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'finance.manage'),
+    })
+    .post('/v1/remittances/:id/generate', async ({ request, params, set }) => {
+      const result = await postRemittanceFile(deps.writer, request, params.id);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'finance.manage'),
+    })
+    .post('/v1/remittances/:id/submitted', async ({ request, params, set }) => {
+      const result = await postRemittanceSubmitted(deps.writer, request, params.id);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'finance.manage'),
     });
   return app;
 }
