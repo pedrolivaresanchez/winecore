@@ -29,7 +29,6 @@ import {
   MenuItem,
   Reveal,
   Select,
-  Skeleton,
   Textarea,
   useMenuOpen,
   useToast,
@@ -38,6 +37,7 @@ import {
 import { createVersion, requestActivation, saveVersionItems } from '@/pages/catalogo/api'
 import { RecordBar, RecordTabs } from '@/pages/catalogo/frame'
 import { cmpDecimal, formatPrice, normalizeDecimal, showDecimal } from '@/pages/catalogo/money'
+import { RecordSkeleton } from '@/components/RecordSkeleton'
 import {
   VERSION_LABELS,
   pickVersion,
@@ -73,12 +73,7 @@ export function PriceListPage({ me }: { me: Me }) {
 
   if (!allows(me, 'catalog.read')) return <NoPermission />
   if ((lists.loading && !lists.data) || (versions.loading && !versions.data)) {
-    return (
-      <div data-screen="tarifa-cargando" aria-busy="true" className="grid gap-3 p-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-40 w-full" />
-      </div>
-    )
+    return <RecordSkeleton screen="tarifa-cargando" />
   }
   if (lists.error || versions.error || !lists.data || !versions.data) {
     const error = lists.error ?? versions.error

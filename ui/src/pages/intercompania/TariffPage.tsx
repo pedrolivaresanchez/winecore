@@ -29,6 +29,7 @@ import {
   type TariffDraft,
 } from '@/pages/intercompania/model'
 import { TariffDialog } from '@/pages/intercompania/TariffDialog'
+import { RecordSkeleton } from '@/components/RecordSkeleton'
 import {
   Alert,
   Badge,
@@ -40,7 +41,6 @@ import {
   GlassMenu,
   MenuItem,
   Reveal,
-  Skeleton,
   useMenuOpen,
   useToast,
 } from '@/ui'
@@ -65,12 +65,7 @@ export function TariffPage({ me }: { me: Me }) {
 
   if (!allows(me, 'billing.read')) return <NoPermission />
   if (record.loading && !tariff) {
-    return (
-      <div data-screen="intercompania-tarifa-cargando" aria-busy="true" className="grid gap-3 p-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-40 w-full" />
-      </div>
-    )
+    return <RecordSkeleton screen="intercompania-tarifa-cargando" />
   }
   if (record.error?.status === 404) {
     return (

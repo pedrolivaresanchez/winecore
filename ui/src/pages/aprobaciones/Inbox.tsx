@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useChromeTitle } from "@/app/shell/shell-context";
 import { useEntity } from "@/app/entity-context";
-import { FRAME_GUTTER } from "@/ui/frame";
+import { FRAME_GUTTER, FRAME_STRIP_SCROLL } from "@/ui/frame";
 import { Check, Search, SearchX } from "@/ui/icons";
 import { copy, fill } from "@/i18n";
 import { ApiError, isAbortError } from "@/lib/api";
@@ -139,25 +139,24 @@ export function ApprovalInbox({ me }: { me: Me }) {
 
   const filters = (
     <>
-      <div className="min-w-0 flex-1 overflow-x-auto">
-        <SegmentedControl
-          size="sm"
-          aria-label={copy.approvals.title}
-          value={tab}
-          onChange={(value) => setParam("estado", value === "pending" ? "" : value === "decided" ? "decididas" : "mias")}
-          options={[
-            { value: "pending", content: copy.approvals.pending },
-            { value: "decided", content: copy.approvals.decided },
-            { value: "mine", content: copy.approvals.mine },
-          ]}
-        />
-      </div>
+      <SegmentedControl
+        size="sm"
+        className="shrink-0"
+        aria-label={copy.approvals.title}
+        value={tab}
+        onChange={(value) => setParam("estado", value === "pending" ? "" : value === "decided" ? "decididas" : "mias")}
+        options={[
+          { value: "pending", content: copy.approvals.pending },
+          { value: "decided", content: copy.approvals.decided },
+          { value: "mine", content: copy.approvals.mine },
+        ]}
+      />
       <Select
         id="aprobaciones-tipo"
         size="sm"
         aria-label={copy.approvals.kind}
         value={kind}
-        className="w-36 shrink-0"
+        className="w-44 shrink-0"
         onChange={(event) => setParam("tipo", event.target.value)}
       >
         <option value="">{copy.approvals.allKinds}</option>
@@ -180,31 +179,24 @@ export function ApprovalInbox({ me }: { me: Me }) {
             {fill(copy.approvals.pendingCount, { n: String(total) })}
           </Badge>
         ) : null}
-        <div className="ml-auto w-56">
-          <Input
-            type="search"
-            size="sm"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder={copy.approvals.search}
-            aria-label={copy.approvals.search}
-            prefix={<Search className="size-3.5" strokeWidth={iconStroke} />}
-          />
-        </div>
       </header>
-      <div className={cn("flex flex-col gap-2 border-b border-border-subtle bg-surface-subtle py-2 md:h-10 md:flex-row md:items-center md:py-0", FRAME_GUTTER)}>
-        <div className="min-w-0 md:hidden">
+      <div className={cn("flex h-11 shrink-0 items-center gap-1.5 border-b border-border-subtle", FRAME_GUTTER)}>
+        <div className={FRAME_STRIP_SCROLL}>
           <Input
+            id="buscar-aprobaciones"
             type="search"
             size="sm"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder={copy.approvals.search}
             aria-label={copy.approvals.search}
+            className="w-56 shrink-0"
             prefix={<Search className="size-3.5" strokeWidth={iconStroke} />}
           />
         </div>
-        <div className="flex min-w-0 items-center gap-2">{filters}</div>
+      </div>
+      <div className={cn("flex h-10 shrink-0 items-center gap-1.5 border-b border-border-subtle bg-surface-subtle", FRAME_GUTTER)}>
+        <div className={cn(FRAME_STRIP_SCROLL, "[&>*]:shrink-0")}>{filters}</div>
       </div>
 
       {error ? (
@@ -218,9 +210,12 @@ export function ApprovalInbox({ me }: { me: Me }) {
         <div aria-busy="true">
           <p className="sr-only">{copy.loading}</p>
           {Array.from({ length: 6 }, (_, index) => (
-            <div key={index} className="border-b border-border-subtle px-4 py-3">
-              <Skeleton className="h-3.5 w-1/2" />
-              <Skeleton className="mt-2 h-3 w-1/3" />
+            <div key={index} className="flex h-12 items-center gap-3 border-b border-border-subtle px-3 sm:px-4">
+              <div className="min-w-0 flex-1">
+                <Skeleton className="h-3.5 w-1/2" />
+                <Skeleton className="mt-1.5 h-3 w-1/3" />
+              </div>
+              <Skeleton className="h-3 w-12 shrink-0" />
             </div>
           ))}
         </div>
@@ -273,7 +268,7 @@ function RequestRow({ item, now, href }: { item: ApprovalSummary; now: number; h
   const status = statusMeta(item.status);
   return (
     <li className="border-b border-border-subtle">
-      <Link to={href} className="flex items-start gap-3 px-3 py-3 hover:bg-fill-hover sm:px-4">
+      <Link to={href} className="flex min-h-12 items-center gap-3 px-3 py-2 hover:bg-fill-hover sm:px-4">
         <span className="min-w-0 flex-1">
           <span className="block truncate text-label font-medium text-ink-900">
             {item.title}

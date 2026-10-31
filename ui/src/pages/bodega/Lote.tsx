@@ -20,6 +20,7 @@ import { lotKindLabel, lotStatusLabel, moveLabel } from '@/pages/bodega/labels'
 import { LotAnalyses } from '@/pages/elaboracion/Analiticas'
 import { PhaseBoard } from '@/pages/elaboracion/Fases'
 import { LotCurve } from '@/pages/elaboracion/Lecturas'
+import { RecordSkeleton } from '@/components/RecordSkeleton'
 
 const TABS = [
   { id: 'resumen', label: copy.cellar.summary },
@@ -80,12 +81,7 @@ export function LotePage({ me }: { me: Me }) {
 
   if (!allows(me, 'cellar.read')) return <NoPermission />
   if (lot.loading && !lot.data) {
-    return (
-      <div aria-busy="true" className="grid gap-3 p-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-32" />
-      </div>
-    )
+    return <RecordSkeleton />
   }
   if (lot.error || !lot.data) {
     return (

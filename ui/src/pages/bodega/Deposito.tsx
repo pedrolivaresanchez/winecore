@@ -11,7 +11,7 @@ import { formatDateTime, formatLitres } from '@/lib/format'
 import { allows } from '@/lib/permissions'
 import { iconStroke } from '@/lib/motion'
 import type { Me } from '@/lib/types'
-import { Badge, Button, Dialog, DialogBody, DialogFooter, DialogHeader, EmptyState, GlassMenu, MenuItem, Skeleton, Textarea, useMenuOpen, useToast } from '@/ui'
+import { Badge, Button, Dialog, DialogBody, DialogFooter, DialogHeader, EmptyState, GlassMenu, MenuItem, Textarea, useMenuOpen, useToast } from '@/ui'
 import { MoreVertical, Printer } from '@/ui/icons'
 import { Fact, FactCard, FillMeter, ReadingColumn, RecordBar, SectionTabs } from '@/pages/bodega/chrome'
 import { materialLabel, opLabel, opStatusLabel, opStatusTone, vesselStatusLabel, vesselTone } from '@/pages/bodega/labels'
@@ -21,6 +21,7 @@ import { DemijohnPane } from '@/pages/bodega-plano/DemijohnPane'
 import { vesselTabs, type VesselTabId } from '@/pages/bodega-plano/text'
 import { LotAnalyses } from '@/pages/elaboracion/Analiticas'
 import { LotCurve } from '@/pages/elaboracion/Lecturas'
+import { RecordSkeleton } from '@/components/RecordSkeleton'
 
 type HistoryPage = { items: CellarOperation[] }
 
@@ -36,12 +37,7 @@ export function DepositoPage({ me }: { me: Me }) {
 
   if (!allows(me, 'cellar.read')) return <NoPermission />
   if (data.loading && !data.data) {
-    return (
-      <div aria-busy="true" className="grid gap-3 p-6">
-        <Skeleton className="h-8 w-40" />
-        <Skeleton className="h-36" />
-      </div>
-    )
+    return <RecordSkeleton />
   }
   if (data.error || !data.data) {
     return (

@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { useChromeTitle } from '@/app/shell/shell-context'
 import { ErrorState } from '@/components/ErrorState'
 import { NoPermission } from '@/components/NoPermission'
-import { Badge, Skeleton } from '@/ui'
+import { Badge } from '@/ui'
 import { useApi } from '@/hooks/use-api'
 import { copy } from '@/i18n'
 import { allows } from '@/lib/permissions'
@@ -12,6 +12,7 @@ import { FormatMaterials } from '@/pages/catalogo/FormatMaterials'
 import { Fact, FactCard, RecordBar, RecordTabs } from '@/pages/catalogo/frame'
 import { formatVolumeMl } from '@/pages/catalogo/money'
 import { containerLabel, type Format, type ListPage } from '@/pages/catalogo/model'
+import { RecordSkeleton } from '@/components/RecordSkeleton'
 
 const TABS = [
   { id: 'datos', label: 'Datos' },
@@ -29,12 +30,7 @@ export function FormatPage({ me }: { me: Me }) {
 
   if (!allows(me, 'catalog.read')) return <NoPermission />
   if (formats.loading && !formats.data) {
-    return (
-      <div data-screen="formato-cargando" aria-busy="true" className="grid gap-3 p-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-40 w-full" />
-      </div>
-    )
+    return <RecordSkeleton screen="formato-cargando" />
   }
   if (formats.error) {
     return (

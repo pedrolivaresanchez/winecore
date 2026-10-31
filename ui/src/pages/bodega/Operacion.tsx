@@ -28,6 +28,7 @@ import {
 import { formatLitres } from '@/lib/format'
 import { allows } from '@/lib/permissions'
 import { iconStroke } from '@/lib/motion'
+import { RecordSkeleton } from '@/components/RecordSkeleton'
 import { cn } from '@/lib/cn'
 import {
   applyKey,
@@ -232,11 +233,7 @@ function OperacionRecord({ me, id }: { me: Me; id: string }) {
 
   if (!allowed) return <NoPermission />
   if (data.loading && !data.data) {
-    return (
-      <div aria-busy="true" className="grid gap-3 p-6" data-screen="bodega-operacion">
-        <span className="text-label text-text-tertiary">{copy.loading}</span>
-      </div>
-    )
+    return <RecordSkeleton screen="bodega-operacion" />
   }
   if (data.error || !data.data) {
     return (
@@ -406,11 +403,7 @@ function Nueva({ me }: { me: Me }) {
   useChromeTitle(copy.cellar.newOperation)
   if (!allowed) return <NoPermission />
   if (data.loading && !data.data) {
-    return (
-      <div aria-busy="true" className="grid gap-3 p-6" data-screen="bodega-operacion" data-step="cargando">
-        <span className="text-label text-text-tertiary">{copy.loading}</span>
-      </div>
-    )
+    return <RecordSkeleton screen="bodega-operacion" step="cargando" />
   }
   if (data.error || !data.data) {
     return (

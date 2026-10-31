@@ -8,6 +8,7 @@ import { iconStroke } from '../lib/motion'
 import { civilDay, displayTimezone, pad, splitDateTime } from '../lib/civil-date'
 import {
   civilDayOf,
+  formatCivilDay,
   formatCivilRange,
   pickRangeDay,
   previewRange,
@@ -88,15 +89,6 @@ export function DatePicker({
 
   const [cursor, setCursor] = useState(() => monthStart(selected ?? todayIso(zone)))
 
-  const formatter = useMemo(
-    () =>
-      new Intl.DateTimeFormat(locale, {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-      }),
-    [locale],
-  )
   const shortcutDay = useMemo(
     () => new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }),
     [locale],
@@ -118,7 +110,7 @@ export function DatePicker({
   const label =
     triggerLabel ??
     (selected
-      ? `${formatter.format(parseIso(selected))}${withTime && time ? ` · ${time}` : ''}`
+      ? `${formatCivilDay(selected, locale)}${withTime && time ? ` · ${time}` : ''}`
       : (placeholder ?? ''))
 
   return (
@@ -484,7 +476,7 @@ export type DateRangePickerProps = {
 }
 
 /**
- * `DatePicker` for a span. The trigger shows one day or `28 ago - 4 sep`;
+ * `DatePicker` for a span. The trigger shows one day or `01/01/2026 - 31/10/2026`;
  * the panel is `DateRangeCalendar`, not two nested date fields.
  */
 export function DateRangePicker({

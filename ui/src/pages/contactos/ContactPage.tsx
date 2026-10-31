@@ -6,7 +6,7 @@ import { AuditTrail } from '@/components/AuditTrail'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { ErrorState } from '@/components/ErrorState'
 import { NoPermission } from '@/components/NoPermission'
-import { Badge, Button, GlassMenu, MenuItem, Skeleton, useMenuOpen, useToast } from '@/ui'
+import { Badge, Button, GlassMenu, MenuItem, useMenuOpen, useToast } from '@/ui'
 import { useApi } from '@/hooks/use-api'
 import { copy } from '@/i18n'
 import { ApiError } from '@/lib/api'
@@ -32,6 +32,7 @@ import type { Me } from '@/lib/types'
 import { validateContact } from '@/lib/contact-validate'
 import { ContactForm } from '@/pages/contactos/ContactForm'
 import { AddressBook, PersonBook } from '@/pages/contactos/Related'
+import { RecordSkeleton } from '@/components/RecordSkeleton'
 
 const TABS = [
   { id: 'resumen', label: 'Resumen' },
@@ -53,12 +54,7 @@ export function ContactPage({ me }: { me: Me }) {
 
   if (!allows(me, 'contacts.read')) return <NoPermission />
   if (contact.loading && !contact.data) {
-    return (
-      <div aria-busy="true" className="grid gap-3 p-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-40 w-full" />
-      </div>
-    )
+    return <RecordSkeleton />
   }
   if (contact.error || !contact.data) {
     return (
