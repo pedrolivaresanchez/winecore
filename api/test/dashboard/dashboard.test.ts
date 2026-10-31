@@ -237,9 +237,13 @@ describe('panel', () => {
     expect(approvals[0]?.can_act).toBe(true);
     expect(approvals[0]?.title).toBe('Regularización de aforo');
     expect(deadlines(body)).toEqual(['INFOVI sintetico', 'SILICIE sintetico'].sort());
-    const poDeadline = (body.deadlines_next_30d as { items: { title: string; days_left: number }[] }).items
+    const poDeadline = (body.deadlines_next_30d as { items: { title: string; days_left: number; href: string }[] }).items
       .find((item) => item.title === 'SILICIE sintetico');
     expect(poDeadline?.days_left).toBe(10);
+    expect(poDeadline?.href).toBe('/regulatorio');
+    expect((body.deadlines_next_30d as { items: { href: string }[] }).items.every((item) => item.href === '/regulatorio')).toBe(true);
+    expect((body.submissions_failed as { items: { href: string }[] }).items[0]?.href).toBe('/regulatorio');
+    expect((body.stock_alerts as { items: { href: string }[] }).items[0]?.href).toBe('/stock');
 
     const receivables = body.receivables_overdue as { count: number; amount: string; buckets: { key: string; amount: string; count: number }[] };
     expect(receivables.count).toBe(3);

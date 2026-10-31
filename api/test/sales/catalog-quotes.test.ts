@@ -47,6 +47,46 @@ describe('catálogo de ventas y presupuestos', () => {
     expect(forbidden.status).toBe(403);
   });
 
+  it('sin cliente precio con la tarifa del canal y, si no existe, con la general', async () => {
+    const finalList = newId();
+    const finalVersion = newId();
+    const bare = newId();
+    await ctx.writer.withWrite({ type: 'system', id: 'catalog-default', requestId: newId() }, async (tx) => {
+      tx.write(sql`
+        INSERT INTO catalog.product (id, sku, name, kind, unit)
+        VALUES (CAST(${bare} AS UUID), 'SINPRECIO', 'Sin precio sintetico', 'merchandise', 'ud')
+      `);
+      tx.write(sql`
+        INSERT INTO catalog.price_list (id, code, name)
+        VALUES (CAST(${finalList} AS UUID), 'final', 'Tarifa general')
+      `);
+      tx.write(sql`
+        INSERT INTO catalog.price_list_version (id, price_list_id, version, valid_from, status, created_by, activated_at)
+        VALUES (CAST(${finalVersion} AS UUID), CAST(${finalList} AS UUID), 1, DATE '2026-01-01', 'active', 'test', now())
+      `);
+      tx.write(sql`
+        INSERT INTO catalog.price_list_item (id, version_id, product_id, min_qty, unit_price)
+        VALUES (CAST(${newId()} AS UUID), CAST(${finalVersion} AS UUID), CAST(${fx.product} AS UUID), 1, 12)
+      `);
+    });
+
+    const general = await json(ctx, 'GET', '/v1/sales/catalog?date=2026-10-31');
+    expect(general.customer_id).toBeNull();
+    expect(general.price_list_id).toBe(finalList);
+    const priced = productsOf(general).find((item) => item.id === fx.product);
+    expect(priced?.price).toMatchObject({ currency: 'EUR', unit_price: '12.000000', price_list_id: finalList });
+    expect(productsOf(general).find((item) => item.id === bare)?.price).toBeNull();
+
+    const horeca = await json(ctx, 'GET', '/v1/sales/catalog?channel=horeca&date=2026-10-31');
+    expect(horeca.price_list_id).toBe(finalList);
+    expect(productsOf(horeca).find((item) => item.id === fx.product)?.price).toMatchObject({ unit_price: '12.000000' });
+
+    const edi = await json(ctx, 'GET', '/v1/sales/catalog?channel=eci_edi&date=2026-10-31');
+    expect(edi.price_list_id).toBe(fx.priceList);
+    expect(productsOf(edi).find((item) => item.id === fx.product)?.price).toMatchObject({ unit_price: '9.500000' });
+    expect(productsOf(edi).find((item) => item.id === bare)?.price).toBeNull();
+  });
+
   it('edita el borrador y acepta o rechaza', async () => {
     const created = await json(ctx, 'POST', '/v1/quotes', {
       customer_id: fx.customer,
@@ -101,3 +141,10 @@ describe('catálogo de ventas y presupuestos', () => {
     expect(missing.status).toBe(404);
   });
 });
+
+function productsOf(body: Record<string, unknown>) {
+  return body.products as {
+    id: string;
+    price: { unit_price: string; currency: string; price_list_id: string } | null;
+  }[];
+}

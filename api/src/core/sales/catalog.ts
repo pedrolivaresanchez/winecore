@@ -3,6 +3,7 @@ import type { Writer } from '../db/writer';
 import { domainError } from '../errors';
 import { money } from '../money';
 import { businessDate, isMadridCivilDate } from '../time';
+import { quoteListCode } from '../catalog/pricing';
 import { priceListCodeForChannel } from './pricing';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -76,7 +77,8 @@ export async function salesCatalog(writer: Writer, url: URL, now: Date): Promise
     customerId = String(row.id).toLowerCase();
     listId = row.default_price_list_id == null ? null : String(row.default_price_list_id).toLowerCase();
   }
-  if (!listId && channel) listId = await listIdForChannel(writer, channel);
+  if (!customerId) listId = await defaultListId(writer, channel);
+  else if (!listId && channel) listId = await listIdForChannel(writer, channel);
 
   const [products, lots] = await Promise.all([
     loadProducts(writer, listId, day),
@@ -88,6 +90,18 @@ export async function salesCatalog(writer: Writer, url: URL, now: Date): Promise
 async function listIdForChannel(writer: Writer, channel: string): Promise<string | null> {
   const code = priceListCodeForChannel(channel);
   if (!code) return null;
+  return listIdByCode(writer, code);
+}
+
+async function defaultListId(writer: Writer, channel: string | null): Promise<string | null> {
+  const code = quoteListCode(channel);
+  const primary = await listIdByCode(writer, code);
+  if (primary) return primary;
+  if (code === 'final') return null;
+  return listIdByCode(writer, 'final');
+}
+
+async function listIdByCode(writer: Writer, code: string): Promise<string | null> {
   const rows = await writer.read<{ id: unknown }>(sql`
     SELECT id FROM catalog.price_list WHERE code = ${code} AND is_active
   `);

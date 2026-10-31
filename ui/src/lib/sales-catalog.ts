@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { ApiError, isAbortError } from '@/lib/api'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { ApiError, api, isAbortError } from '@/lib/api'
 import { listContacts, type ContactSummary } from '@/lib/contacts'
 import { listStock, type StockItem } from '@/lib/sales'
 
@@ -138,6 +138,114 @@ function locationsOf(stock: StockItem[]): CatalogLocation[] {
     }
   }
   return [...map.values()].sort((a, b) => a.code.localeCompare(b.code, 'es'))
+}
+
+type OfferProduct = {
+  id: string
+  sku: string
+  name: string
+  price: { unit_price: string } | null
+}
+
+type OfferLot = {
+  id: string
+  code: string
+  product_id: string | null
+  location_id: string
+  location_code: string
+  qty_units: string
+  volume_ml: string
+}
+
+export type SalesOfferQuery = {
+  customerId?: string
+  channel?: string
+  date?: string
+}
+
+export function useSalesOffer(query: SalesOfferQuery | null) {
+  const customerId = query?.customerId?.trim() ?? ''
+  const channel = query?.channel?.trim() ?? ''
+  const date = query?.date?.trim() ?? ''
+  const enabled = query != null
+  const [products, setProducts] = useState<CatalogProduct[]>([])
+  const [lots, setLots] = useState<CatalogLot[]>([])
+  const [locations, setLocations] = useState<CatalogLocation[]>([])
+  const [prices, setPrices] = useState<ReadonlyMap<string, string>>(() => new Map())
+  const [loading, setLoading] = useState(enabled)
+  const [error, setError] = useState<ApiError | null>(null)
+
+  useEffect(() => {
+    if (!enabled) return
+    const controller = new AbortController()
+    let active = true
+    const params = new URLSearchParams()
+    if (customerId) params.set('customer_id', customerId)
+    if (channel) params.set('channel', channel)
+    if (date) params.set('date', date)
+    setLoading(true)
+    api<{ products: OfferProduct[]; lots: OfferLot[] }>(`/v1/sales/catalog?${params}`, { signal: controller.signal })
+      .then((body) => {
+        if (!active) return
+        const nextPrices = new Map<string, string>()
+        const nextProducts = (body.products ?? []).map((product) => {
+          if (product.price?.unit_price) nextPrices.set(product.id, product.price.unit_price)
+          const name = product.name?.trim() || product.sku
+          return {
+            id: product.id,
+            sku: product.sku,
+            label: product.sku && name !== product.sku ? `${product.sku} · ${name}` : name,
+          }
+        })
+        nextProducts.sort((a, b) => a.label.localeCompare(b.label, 'es'))
+        const nextLots: CatalogLot[] = []
+        const places = new Map<string, CatalogLocation>()
+        for (const lot of body.lots ?? []) {
+          if (!lot.product_id || !lot.location_id) continue
+          const qty = Number(lot.qty_units)
+          const volume = Number(lot.volume_ml)
+          nextLots.push({
+            id: lot.id,
+            code: lot.code || lot.id.slice(0, 8),
+            productId: lot.product_id,
+            locationId: lot.location_id,
+            qty: Number.isFinite(qty) && qty > 0 ? qty : Number.isFinite(volume) ? volume : 0,
+          })
+          if (!places.has(lot.location_id)) {
+            places.set(lot.location_id, { id: lot.location_id, code: lot.location_code || lot.location_id.slice(0, 8) })
+          }
+        }
+        nextLots.sort((a, b) => a.code.localeCompare(b.code, 'es') || b.qty - a.qty)
+        setProducts(nextProducts)
+        setLots(nextLots)
+        setLocations([...places.values()].sort((a, b) => a.code.localeCompare(b.code, 'es')))
+        setPrices(nextPrices)
+        setError(null)
+        setLoading(false)
+      })
+      .catch((err: unknown) => {
+        if (!active || isAbortError(err)) return
+        setError(err instanceof ApiError ? err : new ApiError(0, 'WC_ERROR', 'No se ha podido cargar'))
+        setLoading(false)
+      })
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [channel, customerId, date, enabled])
+
+  const priceOf = useCallback((productId: string) => prices.get(productId) ?? null, [prices])
+
+  return { products, lots, locations, priceOf, loading, error }
+}
+
+export function mergeProducts(products: CatalogProduct[], aliases?: ReadonlyMap<string, string>): CatalogProduct[] {
+  if (!aliases || aliases.size === 0) return products
+  const map = new Map(products.map((item) => [item.id, item]))
+  for (const [id, label] of aliases) {
+    if (!map.has(id) && label) map.set(id, { id, sku: '', label })
+  }
+  return [...map.values()].sort((a, b) => a.label.localeCompare(b.label, 'es'))
 }
 
 export function productAliases(lines: { product_id: string | null; description: string }[]): Map<string, string> {

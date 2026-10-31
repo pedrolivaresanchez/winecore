@@ -1,5 +1,5 @@
 import { api } from '@/lib/api'
-import type { Settlement, Tariff, TariffInput } from '@/pages/intercompania/model'
+import type { Settlement, SettlementIndexItem, Tariff, TariffInput } from '@/pages/intercompania/model'
 
 export function listTariffs(signal?: AbortSignal): Promise<{ items: Tariff[] }> {
   return api('/v1/intercompany/tariffs', { signal })
@@ -19,6 +19,14 @@ export function activateTariff(id: string): Promise<Tariff> {
 
 export function retireTariff(id: string): Promise<Tariff> {
   return api(`/v1/intercompany/tariffs/${id}/retire`, { method: 'POST', body: '{}' })
+}
+
+export function listSettlements(signal?: AbortSignal): Promise<{ items: SettlementIndexItem[] }> {
+  return api('/v1/intercompany/settlements', { signal })
+}
+
+export function getTariff(id: string, signal?: AbortSignal): Promise<Tariff> {
+  return api(`/v1/intercompany/tariffs/${id}`, { signal })
 }
 
 export function getSettlement(period: string, signal?: AbortSignal): Promise<Settlement> {

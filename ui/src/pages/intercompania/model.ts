@@ -379,6 +379,62 @@ export function discountLabel(value: string): string {
   return formatPercent(Number(value))
 }
 
+export type SettlementIndexItem = {
+  id: string
+  period: string
+  status: string
+  seller_entity_id: string
+  buyer_entity_id: string
+  totals: { units: string; liters: string | null; amount: string }
+  deadline: string
+}
+
+export type SettlementRow = {
+  id: string
+  period: string
+  status: SettlementStatus
+  totals: { units: string; liters: string | null; amount: string }
+  issue_deadline: string
+  watcher_status: WatcherStatus
+}
+
+function shiftIso(iso: string, days: number): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
+  if (!match?.[1] || !match[2] || !match[3]) return null
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + days))
+  return date.toISOString().slice(0, 10)
+}
+
+function settlementStatus(value: string): SettlementStatus {
+  if (value === 'closed' || value === 'invoiced' || value === 'cancelled' || value === 'open') return value
+  return 'open'
+}
+
+export function watcherFromIndex(item: Pick<SettlementIndexItem, 'status' | 'totals' | 'deadline'>, today: string): WatcherStatus {
+  if (item.status === 'invoiced') return 'issued'
+  if (item.status === 'cancelled') return 'no_movements'
+  const units = Number(item.totals.units)
+  const hasLines = Number.isFinite(units) && units > 0
+  const closed = item.status === 'closed'
+  if (!hasLines && closed) return 'no_movements'
+  if (hasLines && today > item.deadline) return 'overdue'
+  const warn = shiftIso(item.deadline, -3)
+  if (hasLines && warn && today >= warn) return 'pending_issue'
+  if (closed) return 'draft'
+  return 'open'
+}
+
+export function rowFromIndex(item: SettlementIndexItem, today: string): SettlementRow {
+  return {
+    id: item.id,
+    period: item.period,
+    status: settlementStatus(item.status),
+    totals: item.totals,
+    issue_deadline: item.deadline,
+    watcher_status: watcherFromIndex(item, today),
+  }
+}
+
 export function fold(value: string): string {
   return value
     .normalize('NFD')

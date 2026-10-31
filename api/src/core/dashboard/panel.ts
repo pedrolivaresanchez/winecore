@@ -487,7 +487,7 @@ async function stockGaps(writer: Writer, scope: Scope): Promise<AttentionBlock> 
       id,
       title: text(row.explanation) ?? 'Descuadre físico y fiscal',
       detail: ml ? `${ml} ml` : null,
-      href: '/stock/conciliacion',
+      href: '/stock',
       days_left: null,
     }];
   }));

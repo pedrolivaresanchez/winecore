@@ -344,6 +344,22 @@ export function sendQuote(id: string) {
   return api<Quote>(`/v1/quotes/${id}/send`, { method: 'POST', body: '{}' })
 }
 
+export function patchQuote(id: string, body: Record<string, unknown>) {
+  return api<Quote>(`/v1/quotes/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+export function acceptQuote(id: string) {
+  return api<Quote>(`/v1/quotes/${id}/accept`, { method: 'POST', body: '{}' })
+}
+
+export function rejectQuote(id: string, reason?: string) {
+  const trimmed = reason?.trim() ?? ''
+  return api<Quote>(`/v1/quotes/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify(trimmed ? { reason: trimmed } : {}),
+  })
+}
+
 export function quoteToOrder(id: string) {
   return api<SalesOrder>(`/v1/quotes/${id}/to-order`, { method: 'POST', body: '{}' })
 }
