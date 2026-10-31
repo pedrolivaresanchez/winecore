@@ -47,7 +47,7 @@ Ninguna de las dos entidades está en el SII (SUPUESTO: volumen < 6 M€ y sin o
 
 - Un ZIP por entidad y periodo: libros (CSV y XLSX), desglose del 303, listados de 347/349 cuando toque, PDF de facturas emitidas y recibidas, y un resumen firmado con el hash de cada fichero.
 - Formato de asiento contable para el histórico y la contabilidad (D7): ver `06-migracion.md` §8.
-- Envío: descarga o carpeta compartida del asesor; **nunca** por correo automático sin aprobación (regla dura 0.4).
+- Envío: descarga o carpeta compartida del asesor; **nunca** por correo automático sin aprobación (reglas duras 0.4 y 0.5).
 
 ## 4. Pendientes
 
