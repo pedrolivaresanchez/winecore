@@ -32,6 +32,7 @@ const CATALOG = {
   WC120: [409, 'Envío congelado'],
   WC121: [409, 'Envío cerrado'],
   WC122: [409, 'La identificación de un mayor de SILICIE no se modifica'],
+  WC_REG_SILICIE_UNSPECIFIED: [422, 'Caso de SILICIE no especificado en la norma'],
   WC130: [409, 'Encadenamiento Verifactu incorrecto o registro inmutable'],
   WC131: [409, 'La hora del registro Verifactu es anterior a la del registro anterior'],
   WC_MODULE_DISABLED: [404, 'Módulo desactivado'],

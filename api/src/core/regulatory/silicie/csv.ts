@@ -1,7 +1,7 @@
 // CSV «Alta de asientos» IESA1 V2 (§7). No presenta nada.
 import { formatLocalReference } from "./entries";
 import {
-  SilicieDataError,
+  silicieInvalid,
   toDmy,
   type AltaAsientosCsv,
   type AltaAsientosHeader,
@@ -62,10 +62,10 @@ const CAE = /^ES[0-9A-Z]{11}$/;
 
 export function altaAsientosFilename(header: AltaAsientosHeader): string {
   if (!Number.isInteger(header.exerciseYear) || header.exerciseYear < 2020 || header.exerciseYear > 2100) {
-    throw new SilicieDataError("el ejercicio del fichero está fuera de 2020 a 2100");
+    throw silicieInvalid("el ejercicio del fichero está fuera de 2020 a 2100");
   }
   if (!CAE.test(header.cae)) {
-    throw new SilicieDataError("el CAE del fichero no tiene la forma ES y 11 caracteres");
+    throw silicieInvalid("el CAE del fichero no tiene la forma ES y 11 caracteres");
   }
   return `IESA1V2-${header.cae}-${header.exerciseYear}.csv`;
 }
@@ -73,14 +73,14 @@ export function altaAsientosFilename(header: AltaAsientosHeader): string {
 /** Alcohol puro en mililitros, HALF_UP (§7 campo 33): cantidad × grado / 100. */
 export function pureAlcoholMl(volumeMl: number, gradoCenti: number): number {
   if (!Number.isSafeInteger(volumeMl) || volumeMl < 0) {
-    throw new SilicieDataError("el volumen del alcohol puro tiene que ser un entero de mililitros ≥ 0");
+    throw silicieInvalid("el volumen del alcohol puro tiene que ser un entero de mililitros ≥ 0");
   }
   if (!Number.isSafeInteger(gradoCenti) || gradoCenti < 0 || gradoCenti > 2500) {
-    throw new SilicieDataError("el grado alcohólico está fuera de 0 a 25");
+    throw silicieInvalid("el grado alcohólico está fuera de 0 a 25");
   }
   const numerator = volumeMl * gradoCenti;
   if (!Number.isSafeInteger(numerator)) {
-    throw new SilicieDataError("desbordamiento al calcular el alcohol puro");
+    throw silicieInvalid("desbordamiento al calcular el alcohol puro");
   }
   return Math.floor((numerator + 5000) / 10000);
 }
@@ -103,7 +103,7 @@ function row(entry: SilicieEntryDraft, header: AltaAsientosHeader): string[] {
   const fields = entry.fields;
   const reference = formatLocalReference(header.exerciseYear, entry.localSeq);
   if (fields.numeroReferenciaInterno !== reference) {
-    throw new SilicieDataError(
+    throw silicieInvalid(
       `la referencia interna ${fields.numeroReferenciaInterno} no coincide con el ejercicio ${header.exerciseYear} y el correlativo ${entry.localSeq}`,
     );
   }
@@ -158,7 +158,7 @@ function row(entry: SilicieEntryDraft, header: AltaAsientosHeader): string[] {
     fields.observaciones,
   ];
   if (cells.length !== IESA1_V2_COLUMNS.length) {
-    throw new SilicieDataError(`la fila no tiene ${IESA1_V2_COLUMNS.length} columnas`);
+    throw silicieInvalid(`la fila no tiene ${IESA1_V2_COLUMNS.length} columnas`);
   }
   assertRow(entry.entryKind, cells);
   return cells;
@@ -168,37 +168,37 @@ function assertRow(kind: SilicieMovementCode, cells: readonly string[]): void {
   const value = (index: number): string => {
     const cell = cells[index];
     if (cell === undefined) {
-      throw new SilicieDataError(`falta la columna ${index + 1}`);
+      throw silicieInvalid(`falta la columna ${index + 1}`);
     }
     if (/[;"\r\n]/.test(cell)) {
-      throw new SilicieDataError(`la columna ${index + 1} contiene un carácter que §7 no dice cómo entrecomillar`);
+      throw silicieInvalid(`la columna ${index + 1} contiene un carácter que §7 no dice cómo entrecomillar`);
     }
     return cell;
   };
   const required = [0, 3, 5, 7, 13, 14, 24, 26, 27, 28, 29];
   for (const index of required) {
     if (value(index) === "") {
-      throw new SilicieDataError(`falta el campo obligatorio ${IESA1_V2_COLUMNS[index] ?? index}`);
+      throw silicieInvalid(`falta el campo obligatorio ${IESA1_V2_COLUMNS[index] ?? index}`);
     }
   }
   for (let index = 0; index < cells.length; index += 1) {
     value(index);
   }
   if ((kind === "A30" || kind === "A32" || kind === "A31") && value(6) === "") {
-    throw new SilicieDataError("falta el tipo de pérdida del campo 7");
+    throw silicieInvalid("falta el tipo de pérdida del campo 7");
   }
   if ((kind === "A14" || kind === "A15" || kind === "A32") && (value(8) === "" || value(9) === "")) {
-    throw new SilicieDataError("A14, A15 y A32 exigen tipo y número de operación");
+    throw silicieInvalid("A14, A15 y A32 exigen tipo y número de operación");
   }
   if ((kind === "A35" || kind === "A36" || kind === "A42" || kind === "A43") && value(41) === "") {
-    throw new SilicieDataError("A35, A36, A42 y A43 exigen observaciones");
+    throw silicieInvalid("A35, A36, A42 y A43 exigen observaciones");
   }
   if (value(22) !== "" && (value(31) === "" || value(32) === "")) {
-    throw new SilicieDataError("el vino exige grado y cantidad de alcohol puro");
+    throw silicieInvalid("el vino exige grado y cantidad de alcohol puro");
   }
   const envase = value(37) !== "" || value(38) !== "" || value(39) !== "";
   if (envase && (value(37) === "" || value(38) === "" || value(39) === "")) {
-    throw new SilicieDataError("el envasado exige tipo, capacidad y número de envases");
+    throw silicieInvalid("el envasado exige tipo, capacidad y número de envases");
   }
   const limits: ReadonlyArray<readonly [number, number]> = [
     [0, 20],
@@ -222,11 +222,11 @@ function assertRow(kind: SilicieMovementCode, cells: readonly string[]): void {
     const index = pair[0];
     const max = pair[1];
     if (index === undefined || max === undefined) {
-      throw new SilicieDataError("límite de columna incompleto");
+      throw silicieInvalid("límite de columna incompleto");
     }
     const cell = value(index);
     if (cell.length > max) {
-      throw new SilicieDataError(`${IESA1_V2_COLUMNS[index] ?? index} supera AN ${max}`);
+      throw silicieInvalid(`${IESA1_V2_COLUMNS[index] ?? index} supera AN ${max}`);
     }
   }
 }
@@ -234,19 +234,19 @@ function assertRow(kind: SilicieMovementCode, cells: readonly string[]): void {
 /** Mililitros o gramos → unidad con 3 decimales y punto (§7, N(16,3) o N(7,3)). */
 export function formatMilli(value: number, maxIntegerDigits: number): string {
   if (!Number.isSafeInteger(value) || value < 0) {
-    throw new SilicieDataError("la cantidad a formatear tiene que ser un entero ≥ 0");
+    throw silicieInvalid("la cantidad a formatear tiene que ser un entero ≥ 0");
   }
   const whole = Math.floor(value / 1000);
   const frac = value % 1000;
   if (String(whole).length > maxIntegerDigits) {
-    throw new SilicieDataError("la cantidad supera el formato numérico de §7");
+    throw silicieInvalid("la cantidad supera el formato numérico de §7");
   }
   return `${whole}.${String(frac).padStart(3, "0")}`;
 }
 
 export function formatGrado(gradoCenti: number): string {
   if (!Number.isSafeInteger(gradoCenti) || gradoCenti < 0 || gradoCenti > 2500) {
-    throw new SilicieDataError("el grado alcohólico está fuera de 0 a 25");
+    throw silicieInvalid("el grado alcohólico está fuera de 0 a 25");
   }
   const whole = Math.floor(gradoCenti / 100);
   const frac = gradoCenti % 100;
@@ -255,19 +255,19 @@ export function formatGrado(gradoCenti: number): string {
 
 function formatDensity(scaled: number): string {
   if (!Number.isSafeInteger(scaled) || scaled < 0) {
-    throw new SilicieDataError("la densidad tiene que ser un entero ≥ 0 escalado por 1.000.000");
+    throw silicieInvalid("la densidad tiene que ser un entero ≥ 0 escalado por 1.000.000");
   }
   const whole = Math.floor(scaled / 1_000_000);
   const frac = scaled % 1_000_000;
   if (whole > 99) {
-    throw new SilicieDataError("la densidad supera N(8,6)");
+    throw silicieInvalid("la densidad supera N(8,6)");
   }
   return `${whole}.${String(frac).padStart(6, "0")}`;
 }
 
 function formatCount(value: number, digits: number): string {
   if (!Number.isSafeInteger(value) || value < 0 || String(value).length > digits) {
-    throw new SilicieDataError(`el número de envases supera N(${digits})`);
+    throw silicieInvalid(`el número de envases supera N(${digits})`);
   }
   return String(value);
 }
@@ -277,7 +277,7 @@ function encodeLatin1(text: string): Uint8Array {
   for (let index = 0; index < text.length; index += 1) {
     const code = text.charCodeAt(index);
     if (code > 255) {
-      throw new SilicieDataError("el CSV es ISO-8859-1 y hay un carácter que no cabe");
+      throw silicieInvalid("el CSV es ISO-8859-1 y hay un carácter que no cabe");
     }
     bytes[index] = code;
   }

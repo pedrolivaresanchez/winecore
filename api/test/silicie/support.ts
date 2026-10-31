@@ -6,7 +6,7 @@ import type {
   SilicieLedger,
   WineColor,
 } from "../../src/core/regulatory/silicie/types";
-import { SilicieUnspecifiedError } from "../../src/core/regulatory/silicie/types";
+import { DomainError } from "../../src/core/errors";
 import { expect } from "bun:test";
 
 export const WH = "wh-sint";
@@ -150,9 +150,10 @@ export function expectUnspecified(run: () => void, fragment: string): void {
   try {
     run();
   } catch (error) {
-    expect(error).toBeInstanceOf(SilicieUnspecifiedError);
-    const unspecified = error as SilicieUnspecifiedError;
+    expect(error).toBeInstanceOf(DomainError);
+    const unspecified = error as DomainError;
     expect(unspecified.code).toBe("WC_REG_SILICIE_UNSPECIFIED");
+    expect(unspecified.httpStatus).toBe(422);
     expect(unspecified.message).toContain(fragment);
     return;
   }

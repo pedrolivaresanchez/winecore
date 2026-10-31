@@ -2,35 +2,22 @@
 // regulatory.silicie_entry (docs/02-ddl/0007 y 0012). Reglas: docs/04-regulatorio/silicie.md.
 // Las cantidades se guardan en mililitros o gramos enteros; el CSV las pasa a LTR/KGM.
 
-export class SilicieUnspecifiedError extends Error {
-  readonly code = "WC_REG_SILICIE_UNSPECIFIED" as const;
-  readonly caso: string;
+import { DomainError, domainError } from "../../errors";
+import { formatMadridDmy, isMadridCivilDate, madridMonthEnd, madridMonthKey } from "../../time";
 
-  constructor(caso: string) {
-    super(`WC_REG_SILICIE_UNSPECIFIED: ${caso}`);
-    this.name = "SilicieUnspecifiedError";
-    this.caso = caso;
-  }
+/** Caso que silicie.md no cierra. HTTP 422. */
+export function silicieUnspecified(caso: string): DomainError {
+  return new DomainError("WC_REG_SILICIE_UNSPECIFIED", 422, caso);
 }
 
-export class SilicieDataError extends Error {
-  readonly code = "WC_REG_SILICIE_DATA" as const;
-
-  constructor(message: string) {
-    super(message);
-    this.name = "SilicieDataError";
-  }
+/** Dato de entrada que no cumple el formato o la conservación. HTTP 422. */
+export function silicieInvalid(message: string): DomainError {
+  return new DomainError("WC_VALIDATION", 422, message);
 }
 
-export class SilicieLedgerIdentityError extends Error {
-  readonly code = "WC122" as const;
-
-  constructor() {
-    super(
-      "WC122: la identificación de un mayor de SILICIE no se modifica; crea otro y traspasa el saldo",
-    );
-    this.name = "SilicieLedgerIdentityError";
-  }
+/** WC122: la identificación del mayor no se edita. */
+export function silicieLedgerIdentity(): DomainError {
+  return domainError("WC122");
 }
 
 export type FiscalMoveType =
@@ -376,52 +363,31 @@ export const SILICIE_OPEN_QUESTIONS = [
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export function assertIsoDate(iso: string, label: string): void {
-  const match = ISO_DATE.exec(iso);
-  if (!match) {
-    throw new SilicieDataError(`${label} no es una fecha YYYY-MM-DD: ${iso}`);
+  if (!ISO_DATE.test(iso)) {
+    throw silicieInvalid(`${label} no es una fecha YYYY-MM-DD: ${iso}`);
   }
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  if (!calendarDay(year, month, day)) {
-    throw new SilicieDataError(`${label} no existe: ${iso}`);
+  if (!isMadridCivilDate(iso)) {
+    throw silicieInvalid(`${label} no existe: ${iso}`);
   }
 }
 
 export function monthKeyOf(iso: string): string {
   assertIsoDate(iso, "fecha");
-  return iso.slice(0, 7);
+  return madridMonthKey(iso);
 }
 
 export function lastDayOfMonth(monthKey: string): string {
-  const match = /^(\d{4})-(\d{2})$/.exec(monthKey);
-  if (!match) {
-    throw new SilicieDataError(`mes no válido: ${monthKey}`);
+  try {
+    return madridMonthEnd(monthKey);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "mes no válido";
+    throw silicieInvalid(message);
   }
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  if (month < 1 || month > 12) {
-    throw new SilicieDataError(`mes no válido: ${monthKey}`);
-  }
-  const probe = new Date(Date.UTC(year, month, 0));
-  const day = probe.getUTCDate();
-  return `${match[1]}-${match[2]}-${String(day).padStart(2, "0")}`;
 }
 
 export function toDmy(iso: string): string {
   assertIsoDate(iso, "fecha");
-  const year = iso.slice(0, 4);
-  const month = iso.slice(5, 7);
-  const day = iso.slice(8, 10);
-  return `${day}-${month}-${year}`;
-}
-
-function calendarDay(year: number, month: number, day: number): boolean {
-  if (month < 1 || month > 12 || day < 1 || day > 31) {
-    return false;
-  }
-  const probe = new Date(Date.UTC(year, month - 1, day));
-  return probe.getUTCFullYear() === year && probe.getUTCMonth() === month - 1 && probe.getUTCDate() === day;
+  return formatMadridDmy(iso);
 }
 
 export function isMovementCode(value: string): value is SilicieMovementCode {

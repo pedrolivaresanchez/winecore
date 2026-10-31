@@ -1,8 +1,8 @@
 // Mayores SILICIE (§6) y WC122. La identificación no se edita: se crea otro mayor y se traspasa.
 import {
-  SilicieDataError,
-  SilicieLedgerIdentityError,
-  SilicieUnspecifiedError,
+  silicieInvalid,
+  silicieLedgerIdentity,
+  silicieUnspecified,
   type FiscalProductClass,
   type LedgerProductClass,
   type LedgerSituation,
@@ -20,7 +20,7 @@ export function ledgerClassForVessel(vessel: VesselRef): "bulk" | "bulk_wood" {
   if (vessel.kind === "barrel" && vessel.material === "oak") {
     return "bulk_wood";
   }
-  throw new SilicieUnspecifiedError(
+  throw silicieUnspecified(
     `clase de mayor para el recipiente ${vessel.kind}/${vessel.material}: §5 solo fija el depósito (granel) y la barrica de madera no revestida (crianza, kind barrel y material oak)`,
   );
 }
@@ -35,11 +35,11 @@ export function ledgerKeyFor(
   situation: LedgerSituation,
 ): string {
   if (move.productClass !== situation.productClass) {
-    throw new SilicieDataError("la clase del movimiento no coincide con la situación del producto");
+    throw silicieInvalid("la clase del movimiento no coincide con la situación del producto");
   }
   const expected = referenceFor(situation);
   if (move.exciseProductKey !== null && move.exciseProductKey !== expected) {
-    throw new SilicieLedgerIdentityError();
+    throw silicieLedgerIdentity();
   }
   return expected;
 }
@@ -62,7 +62,7 @@ export function ledgerFromSituation(args: {
   const wine = isWineClass(situation.productClass);
   const packaged = situation.productClass === "packaged";
   if (description.length < 3 || description.length > 100) {
-    throw new SilicieDataError("la descripción del mayor debe tener entre 3 y 100 caracteres");
+    throw silicieInvalid("la descripción del mayor debe tener entre 3 y 100 caracteres");
   }
   rejectSeparator(reference, "referencia del mayor");
   rejectSeparator(description, "descripción del mayor");
@@ -87,10 +87,10 @@ export function ledgerFromSituation(args: {
 /** WC122: is_active y validated_by pueden cambiar; el resto de la identificación, no. */
 export function assertCanUpdate(before: SilicieLedger, after: SilicieLedger): void {
   if (before.id !== after.id) {
-    throw new SilicieDataError("no es una actualización del mismo mayor");
+    throw silicieInvalid("no es una actualización del mismo mayor");
   }
   if (identityChanged(before, after)) {
-    throw new SilicieLedgerIdentityError();
+    throw silicieLedgerIdentity();
   }
 }
 
@@ -127,7 +127,7 @@ export function planIdentificationChange(
   },
 ): { changed: false } | LedgerTransferPlan {
   if (!Number.isSafeInteger(args.balanceMl) || args.balanceMl < 0) {
-    throw new SilicieDataError("el saldo a traspasar tiene que ser un entero de mililitros ≥ 0");
+    throw silicieInvalid("el saldo a traspasar tiene que ser un entero de mililitros ≥ 0");
   }
   const next = ledgerFromSituation({
     id: args.newId,
@@ -185,7 +185,7 @@ function referenceFor(situation: LedgerSituation): string {
     case "raw_must":
       return "MOSTO";
     case "byproduct":
-      throw new SilicieUnspecifiedError(
+      throw silicieUnspecified(
         "clave y código NC concreto de orujos y lías: §6 indica 2307 / 2308 y una tabla de claves que no reproduce",
       );
     case "bulk":
@@ -196,7 +196,7 @@ function referenceFor(situation: LedgerSituation): string {
       return packagedReference(situation);
     default: {
       const unreachable: never = situation.productClass;
-      throw new SilicieDataError(`clase de mayor desconocida: ${String(unreachable)}`);
+      throw silicieInvalid(`clase de mayor desconocida: ${String(unreachable)}`);
     }
   }
 }
@@ -208,7 +208,7 @@ function descriptionFor(situation: LedgerSituation): string {
     case "raw_must":
       return "Mosto de uva";
     case "byproduct":
-      throw new SilicieUnspecifiedError(
+      throw silicieUnspecified(
         "clave y código NC concreto de orujos y lías: §6 indica 2307 / 2308 y una tabla de claves que no reproduce",
       );
     case "bulk":
@@ -219,7 +219,7 @@ function descriptionFor(situation: LedgerSituation): string {
       return packagedDescription(situation);
     default: {
       const unreachable: never = situation.productClass;
-      throw new SilicieDataError(`clase de mayor desconocida: ${String(unreachable)}`);
+      throw silicieInvalid(`clase de mayor desconocida: ${String(unreachable)}`);
     }
   }
 }
@@ -228,33 +228,33 @@ function packagedReference(situation: LedgerSituation): string {
   if (situation.containerKind === "bottle" && situation.containerCapacityMl === 750) {
     const wine = situation.wineCode ?? "";
     if (!/^[A-Z0-9][A-Z0-9-]{0,14}$/.test(wine)) {
-      throw new SilicieDataError("el código de vino de B075-<VINO> no cabe en la referencia del mayor");
+      throw silicieInvalid("el código de vino de B075-<VINO> no cabe en la referencia del mayor");
     }
     const reference = `B075-${wine}`;
     if (!REFERENCE.test(reference)) {
-      throw new SilicieDataError("la referencia de envasado no cumple el formato del mayor");
+      throw silicieInvalid("la referencia de envasado no cumple el formato del mayor");
     }
     return reference;
   }
   if (situation.containerKind === "bib") {
-    throw new SilicieUnspecifiedError(
+    throw silicieUnspecified(
       "referencia de producto para BIB: §6 fija el NC 2204 22 pero no la referencia ni la descripción",
     );
   }
-  throw new SilicieUnspecifiedError(
+  throw silicieUnspecified(
     "referencia y descripción de vino envasado que no es botella de 0,75 L: §6 solo da el ejemplo B075-<VINO>",
   );
 }
 
 function packagedDescription(situation: LedgerSituation): string {
   if (situation.containerKind !== "bottle" || situation.containerCapacityMl !== 750) {
-    throw new SilicieUnspecifiedError(
+    throw silicieUnspecified(
       "referencia y descripción de vino envasado que no es botella de 0,75 L: §6 solo da el ejemplo B075-<VINO>",
     );
   }
   const brand = situation.brand ?? "";
   if (brand.length === 0) {
-    throw new SilicieDataError("falta la marca de la descripción del vino envasado");
+    throw silicieInvalid("falta la marca de la descripción del vino envasado");
   }
   return `Vino ${colorWord(situation)} ${brand} botella 0,75 L`;
 }
@@ -262,26 +262,26 @@ function packagedDescription(situation: LedgerSituation): string {
 function ncFor(situation: LedgerSituation, given: string | undefined): string {
   if (situation.productClass === "raw_grape") {
     if (given !== undefined && given !== "0806") {
-      throw new SilicieDataError("el NC de la uva en §6 es 0806");
+      throw silicieInvalid("el NC de la uva en §6 es 0806");
     }
     return "0806";
   }
   if (situation.productClass === "raw_must") {
-    throw new SilicieUnspecifiedError("código NC del mosto: §6 indica 2204 o 2009, pendiente de asesor");
+    throw silicieUnspecified("código NC del mosto: §6 indica 2204 o 2009, pendiente de asesor");
   }
   if (situation.productClass === "byproduct") {
-    throw new SilicieUnspecifiedError(
+    throw silicieUnspecified(
       "clave y código NC concreto de orujos y lías: §6 indica 2307 / 2308 y una tabla de claves que no reproduce",
     );
   }
   const heading = wineHeading(situation);
   if (given === undefined) {
-    throw new SilicieUnspecifiedError(
+    throw silicieUnspecified(
       `código NC a 8 dígitos del vino (encabezado ${heading}), pendiente de asesor (§6)`,
     );
   }
   if (!/^\d{6}(\d{2})?$/.test(given) || (given !== heading && !(given.length === 8 && given.startsWith(heading)))) {
-    throw new SilicieDataError(
+    throw silicieInvalid(
       `el NC ${given} no es el encabezado ${heading} de §6 ni un código de 8 dígitos que empiece por él`,
     );
   }
@@ -293,7 +293,7 @@ function wineHeading(situation: LedgerSituation): string {
     return "220429";
   }
   if (situation.productClass !== "packaged") {
-    throw new SilicieDataError("encabezado NC pedido para un producto que no es vino");
+    throw silicieInvalid("encabezado NC pedido para un producto que no es vino");
   }
   if (situation.containerKind === "bottle" && situation.containerCapacityMl !== undefined && situation.containerCapacityMl <= 2000) {
     return "220421";
@@ -306,7 +306,7 @@ function wineHeading(situation: LedgerSituation): string {
   ) {
     return "220422";
   }
-  throw new SilicieUnspecifiedError(
+  throw silicieUnspecified(
     "código NC del envasado para este formato: §6 solo fija 2204 21 hasta 2 L y 2204 22 para BIB de más de 2 L y hasta 10 L",
   );
 }
@@ -340,7 +340,7 @@ function colorOf(situation: LedgerSituation): WineColor {
     case "rosado":
       return situation.color;
     default:
-      throw new SilicieDataError("falta el color del vino (tinto, blanco o rosado) para el mayor de §6");
+      throw silicieInvalid("falta el color del vino (tinto, blanco o rosado) para el mayor de §6");
   }
 }
 
@@ -348,13 +348,13 @@ function asFiscalClass(productClass: LedgerProductClass): FiscalProductClass {
   if (productClass === "bulk" || productClass === "bulk_wood" || productClass === "packaged") {
     return productClass;
   }
-  throw new SilicieUnspecifiedError(
+  throw silicieUnspecified(
     `traspaso A17/A16 de la clase ${productClass}: el movimiento fiscal solo admite granel, crianza o envasado`,
   );
 }
 
 function rejectSeparator(value: string, label: string): void {
   if (/[;"\r\n]/.test(value)) {
-    throw new SilicieDataError(`${label} contiene un carácter que el CSV de §7 no dice cómo entrecomillar`);
+    throw silicieInvalid(`${label} contiene un carácter que el CSV de §7 no dice cómo entrecomillar`);
   }
 }

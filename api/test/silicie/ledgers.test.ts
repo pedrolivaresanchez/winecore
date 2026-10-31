@@ -8,7 +8,7 @@ import {
   planIdentificationChange,
   rackingCrossesLedger,
 } from "../../src/core/regulatory/silicie/ledgers";
-import { SilicieLedgerIdentityError } from "../../src/core/regulatory/silicie/types";
+import { DomainError } from "../../src/core/errors";
 import { entriesFor } from "../../src/core/regulatory/silicie/entries";
 import { bottled, ctx, expectUnspecified, granel, move, WH } from "./support";
 
@@ -154,7 +154,7 @@ describe("ledgers §6", () => {
         { productClass: "bulk", exciseProductKey: "GRANEL-BLANCO" },
         { productClass: "bulk", color: "tinto" },
       ),
-    ).toThrow(SilicieLedgerIdentityError);
+    ).toThrow(DomainError);
   });
 
   it("un recipiente que no es depósito ni barrica de roble no tiene mayor", () => {
@@ -181,7 +181,15 @@ describe("WC122", () => {
     const snapshot = JSON.stringify(current);
     const edited = { ...current, description: "Otro nombre" };
     expect(identityChanged(current, edited)).toBe(true);
-    expect(() => assertCanUpdate(current, edited)).toThrow(/WC122/);
+    let caught: unknown;
+    try {
+      assertCanUpdate(current, edited);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(DomainError);
+    expect((caught as DomainError).code).toBe("WC122");
+    expect((caught as DomainError).httpStatus).toBe(409);
     expect(JSON.stringify(current)).toBe(snapshot);
     assertCanUpdate(current, { ...current, isActive: false, validatedBy: "asesor" });
   });
