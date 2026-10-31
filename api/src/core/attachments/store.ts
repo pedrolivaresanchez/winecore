@@ -4,7 +4,7 @@ import type { Tx } from '../db/writer';
 import { domainError } from '../errors';
 import { newId } from '../ids';
 import { businessDate } from '../time';
-import { detectMime, MAX_ATTACHMENT_BYTES } from './mime';
+import { detectMime, MAX_ATTACHMENT_BYTES, safeAttachmentName } from './mime';
 
 type Read = <T = Record<string, unknown>>(statement: string) => Promise<T[]>;
 
@@ -96,8 +96,7 @@ function stamp(value: unknown): string {
 }
 
 function baseName(name: string): string {
-  const base = name.split(/[/\\]/).pop()?.replace(/[\r\n\0]/g, '').trim() ?? '';
-  return base.slice(0, 180);
+  return safeAttachmentName(name);
 }
 
 function retentionUntil(now: Date): string {

@@ -1402,7 +1402,7 @@ async function assertReferences(tx: Tx, draft: StoredDraft): Promise<void> {
 
 async function assertRow(tx: Tx, table: string, id: string, field: string, message: string): Promise<void> {
   if (!isUuid(id)) invalid({ [field]: 'Debe ser un UUID' });
-  const rows = await tx.read(`SELECT id FROM ${table} WHERE id = CAST('${id}' AS UUID)`);
+  const rows = await tx.read(sql`SELECT id FROM ${sql.raw(table)} WHERE id = CAST(${id} AS UUID)`);
   if (rows.length === 0) invalid({ [field]: message });
 }
 

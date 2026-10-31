@@ -38,6 +38,20 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ NODE_ENV: 'production', AUTH_MODE: 'dev' })).toThrow(/AUTH_MODE/);
   });
 
+  it('rechaza la clave de datos de las pruebas en producción', () => {
+    expect(() => loadConfig({
+      NODE_ENV: 'production',
+      AUTH_MODE: 'timbal',
+      DB_MODE: 'local',
+      TIMBAL_ORG_ID: 'org-1',
+      TIMBAL_PROJECT_ID: 'proj-1',
+      WEBAUTHN_RP_ID: 'bodega.example',
+      WEBAUTHN_ORIGIN: 'https://bodega.example',
+      APP_PUBLIC_URL: 'https://bodega.example',
+      WINECORE_DATA_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    })).toThrow(/WINECORE_DATA_KEY/);
+  });
+
   it('exige los identificadores de Timbal según el modo', () => {
     expect(() => loadConfig({ NODE_ENV: 'production', AUTH_MODE: 'timbal', DB_MODE: 'local' })).toThrow(/TIMBAL_ORG_ID/);
     expect(() =>

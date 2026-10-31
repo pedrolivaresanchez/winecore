@@ -71,8 +71,12 @@ describe('auth', () => {
         code: 'WC_NO_ACCESS',
         message: 'No tienes acceso a WineCore',
       });
-      const rows = await ctx.writer.read<{ action: string }>('SELECT action FROM audit.audit_log');
-      expect(rows.map((row) => row.action)).toContain('auth.denied');
+      const rows = await ctx.writer.read<{ action: string; row_id: string; after_data: unknown }>(
+        'SELECT action, row_id, after_data FROM audit.audit_log',
+      );
+      const denied = rows.find((row) => row.action === 'auth.denied');
+      expect(denied).toBeDefined();
+      expect(JSON.stringify(denied)).not.toContain('nadie@winecore.test');
     } finally {
       await ctx.close();
     }
@@ -90,8 +94,12 @@ describe('auth', () => {
         code: 'WC_NO_ACCESS',
         message: 'No tienes acceso a WineCore',
       });
-      const rows = await ctx.writer.read<{ action: string }>('SELECT action FROM audit.audit_log');
-      expect(rows.map((row) => row.action)).toContain('auth.denied');
+      const rows = await ctx.writer.read<{ action: string; row_id: string; after_data: unknown }>(
+        'SELECT action, row_id, after_data FROM audit.audit_log',
+      );
+      const denied = rows.find((row) => row.action === 'auth.denied');
+      expect(denied).toBeDefined();
+      expect(JSON.stringify(denied)).not.toContain('admin@winecore.test');
     } finally {
       await ctx.close();
     }

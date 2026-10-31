@@ -1,6 +1,7 @@
 import { cors } from '@elysiajs/cors';
 import { Elysia } from 'elysia';
 import { requestIdFor, requireOwner, requirePermission, requireUser, requireUserOrMachine } from './auth/guard';
+import { isAllowedOrigin, securityHeaders } from './auth/policy';
 import { createTimbalAuth } from './auth/timbal';
 import type { FetchLike } from './core/db/timbal';
 import type { Config } from './config';
@@ -12,6 +13,7 @@ import { ocrFromEnv } from './core/purchasing/timbal';
 import { bindFinance } from './core/finance/runtime';
 import { installIntegrations } from './core/wiring/integrations';
 import { asDomainError, domainError, errorBody } from './core/errors';
+import { safeLogMessage } from './core/redact';
 import type { InvoiceDocumentStore } from './core/billing/pdf/documents';
 import { downloadInvoicePdf } from './routes/invoice-documents';
 import {
@@ -189,10 +191,22 @@ export function createApp(deps: AppDeps) {
   const deliveryDeps = { writer: deps.writer, documents: deps.invoiceDocuments };
   const mcpLimiter = new RateLimiter(deps.mcpRatePerMinute);
   const app = new Elysia(deps.config.apiBasePath ? { prefix: deps.config.apiBasePath } : {})
-    .use(cors())
+    .use(cors({
+      origin: (request: Request) => {
+        const origin = request.headers.get('origin');
+        return origin !== null && isAllowedOrigin(deps.config, origin);
+      },
+      methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Authorization', 'Content-Type', 'Accept', 'Idempotency-Key', 'If-Match', 'X-Request-Id'],
+      exposeHeaders: ['x-request-id'],
+      credentials: true,
+    }))
     .onRequest(({ request, set }) => {
       startedAt.set(request, performance.now());
       set.headers['x-request-id'] = requestIdFor(request);
+      for (const [name, value] of Object.entries(securityHeaders(deps.config.nodeEnv))) {
+        set.headers[name] = value;
+      }
     })
     .onAfterResponse(({ request, set }) => {
       const start = startedAt.get(request) ?? performance.now();
@@ -223,7 +237,7 @@ export function createApp(deps: AppDeps) {
         request_id: requestIdFor(request),
         code: 'WC_INTERNAL',
         level: 'error',
-        message: error instanceof Error ? error.message : 'Error interno',
+        message: safeLogMessage(error instanceof Error ? error.message : 'Error interno'),
       }));
       set.status = 500;
       return { code: 'WC_INTERNAL', message: 'Error interno' };

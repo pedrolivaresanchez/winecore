@@ -1,3 +1,5 @@
+import { isSensitiveText } from './redact';
+
 const CATALOG = {
   WC001: [409, 'Borrado prohibido'],
   WC002: [500, 'Falta el contexto del actor'],
@@ -193,5 +195,6 @@ export function mapDatabaseError(error: unknown): Error {
   }
   if (isErrorCode(code)) return domainError(code);
   const detail = message.split(`${code}:`)[1]?.trim().split('\n')[0];
-  return new DomainError(code, 409, detail && detail.length < 180 ? detail : 'Error de dominio');
+  if (!detail || detail.length >= 180 || isSensitiveText(detail)) return new DomainError(code, 409, 'Error de dominio');
+  return new DomainError(code, 409, detail);
 }
