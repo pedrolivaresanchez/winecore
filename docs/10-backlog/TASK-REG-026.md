@@ -1,5 +1,5 @@
 # TASK-REG-026 · Límites de SO₂ y sustancias autorizadas
-- Hito M4 · 0,5 días · Escalado: sí (normativa ecológica)
+- Hito M3 · 0,5 días · Escalado: sí (normativa ecológica)
 - Historias / RNF: US-ECO-02
 - Depende de: TASK-BOD-011, TASK-REG-024
 

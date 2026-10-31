@@ -1,5 +1,5 @@
 # TASK-VIN-002 · Tratamientos y cuaderno (CUE)
-- Hito M4 · 1,5 días · Escalado: no
+- Hito M3 · 1,5 días · Escalado: no
 - Historias / RNF: US-VIN-02
 - Depende de: TASK-VIN-001
 

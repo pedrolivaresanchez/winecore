@@ -1,5 +1,5 @@
 # TASK-VIN-003 · Labores, maduración y vendimia
-- Hito M4 · 1,5 días · Escalado: no
+- Hito M3 · 1,5 días · Escalado: no
 - Historias / RNF: US-VIN-03, US-VIN-04, US-VIN-05
 - Depende de: TASK-VIN-001, TASK-BOD-009
 

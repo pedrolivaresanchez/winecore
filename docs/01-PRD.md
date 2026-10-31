@@ -41,8 +41,8 @@ WineCore es el sistema interno de la bodega y de su comercializadora: **una sola
 | Facturación + Verifactu | Facturas completas y rectificativas de P.O (M2, sin Verifactu hasta el 30-06-2027), EORI y documentos de exportación por país y de CVPO (en Holded con Verifactu hasta M4, Q-033), IRPF y recargo, exportación/intracomunitaria/Canarias, PDF ES/EN (con QR desde M4), emisión en lote con aprobación, intercompañía mensual; registros Verifactu y envío (M4) | M2 / M4 |
 | Ventas | Pedidos (manual, MCP, EDI, web), reglas de entidad facturadora (D3), albaranes (venta, consigna, traspaso, devolución), incidencias de transporte, proformas | M2–M3 |
 | Stock | Ubicaciones y almacenes, dos libros (físico y fiscal), aforo de arranque, existencias a fecha, bloqueo de periodos, trazabilidad (M1); conciliación con las ventas (M2) | M1–M2 |
-| Bodega | Depósitos, lotes y genealogía, trasiegos, ensamblajes, adiciones, envasado con consumo de materiales (corchos, cápsulas de lacre, cajas de 6, palés de 112 cajas), etiquetado de jaulón, mermas, limpiezas (M1); recepción de uva, prensado, fermentación, analíticas, catas (M5) | M1 / M5 |
-| Viñedo y ecológico | Parcelas, tratamientos, labores, maduración, vendimia; informe para la certificadora | M5 |
+| Bodega | Depósitos, lotes y genealogía, trasiegos, ensamblajes, adiciones, envasado con consumo de materiales (corchos, cápsulas de lacre, cajas de 6, palés de 112 cajas), etiquetado de jaulón, mermas, limpiezas (M1). **Elaboración completa, adelantada a M2**: zonas y plano, barricas, jaulones y nichos; recepción con sanidad; vinificación por tipo, maceraciones, délestage, sangrado y descube; FA espontánea y FML; analíticas con calculadoras (SO2 por pH, frío, alcohol probable) y reglas de la casa; mermas legales; estabilización y filtración por placas; catas y cata a ciegas; destino del lote, parcela única y recetas; higiene, equipos y control de envasado | M1 / M2 |
+| Viñedo y ecológico | Parcelas, tratamientos y cuaderno, labores, maduración con cata de uva y muestras de laboratorio, planificador de vendimia (maduración, meteorología y personal), vendimia, comparador de añadas; informe para la certificadora | M3 |
 | Compras | Gastos por foto/PDF con OCR y validación; libro de recibidas | M2 |
 | Cobros y bancos | Cobros y pagos parciales, pendientes y vencidos, partidas abiertas de Holded, conciliación de transferencias (Norma 43/CAMT) y remesas SEPA, para poder dejar Holded | M2 |
 | Informes | Gráficos de ventas, gastos y stock por producto, lote y año (stock en M1) | M1–M2 |
@@ -51,7 +51,7 @@ WineCore es el sistema interno de la bodega y de su comercializadora: **una sola
 | Migración | Contactos y catálogo (M1), partidas abiertas y revisión de albaranes (M2) | M1–M2 |
 
 ### 3.2 Posterior (M6+)
-Previsión de tesorería (M6), contabilidad PGC y exportaciones contables (M7), histórico completo de Holded con PDF y diario D7 (M7), borradores de modelos AEAT (M6–M7), etiqueta electrónica y fichas de etiqueta, conocimiento de añadas, planificador de vendimia con meteorología, costes por partida, TPV con factura simplificada, OSS, integraciones de paquetería (etiquetas y seguimiento), APPCC.
+Previsión de tesorería (M6), contabilidad PGC y exportaciones contables (M7), histórico completo de Holded con PDF y diario D7 (M7), borradores de modelos AEAT (M6–M7), etiqueta electrónica y fichas de etiqueta, previsión meteorológica automática en el planificador de vendimia, costes por partida, TPV con factura simplificada, OSS, integraciones de paquetería (etiquetas y seguimiento; el transportista y el nº de seguimiento ya van en el albarán).
 
 ### 3.3 Fuera de alcance
 CRM con embudos, proyectos y horas, RR. HH. y nóminas, FACe (no se usa), la tienda web (proyecto aparte: WineCore solo recibe sus pedidos), presentación de modelos fiscales (la hace la asesoría), cualquier envío automático a terceros sin aprobación, "escenarios" para optimizar IRPF/IS (D4: sin lógica fiscal propia).
@@ -255,14 +255,17 @@ CRM con embudos, proyectos y horas, RR. HH. y nóminas, FACe (no se usa), la tie
 
 ### 4.9 Bodega (BOD)
 
-**US-BOD-01 · Depósitos** (M1)
+**US-BOD-01 · Depósitos** (M1; plano, barricas y contenedores en M2)
 - Cuando abro "Depósitos" · Entonces veo cada uno con código, tipo, capacidad, contenido (lote, estado, litros, % de llenado) y última lectura; al escanear su QR desde el móvil se abre su ficha.
+- Cuando abro el **plano** de una zona (nave, sala de barricas, exterior, almacén de botellas) · Entonces veo cada recipiente en su posición con su llenado y su lote.
+- Cuando abro una **barrica** · Entonces veo roble, bosque, tostado, tonelero, año, usos (suben al llenarla vacía) y estado.
+- Cuando paso botellas sin etiquetar a un **jaulón** (≈600) o las cuento en un **nicho** · Entonces cuentan como stock de ese contenedor y no puedo superar su capacidad (`WC142`).
 
 **US-BOD-02 · Trasiego** (M1)
 - Dado 1.000 L del lote L en INOX-01 · Cuando registro un trasiego de 1.000 L a INOX-03 con 20 L de lías · Entonces al confirmar INOX-01 queda vacío e INOX-03 con 980 L; si la suma no cuadra veo "El volumen no cuadra: entran 1.000 L y salen 999 L" (`WC020`).
 - Dado INOX-03 con otro lote · Cuando intento trasegar ahí · Entonces veo "El depósito contiene otro lote; usa Ensamblaje" (`WC026`).
 
-**US-BOD-03 · Ensamblaje con fórmula** (M1 sin fórmula / M5 con fórmula)
+**US-BOD-03 · Ensamblaje con fórmula** (M1 sin fórmula / M2 con fórmula)
 - Cuando introduzco la fórmula de cata en mL por muestra y el volumen objetivo · Entonces WineCore calcula % y litros por depósito; al confirmar crea un lote nuevo con su genealogía.
 
 **US-BOD-04 · Envasado** (M1)
@@ -277,17 +280,25 @@ CRM con embudos, proyectos y horas, RR. HH. y nóminas, FACe (no se usa), la tie
 **US-BOD-07 · Etiquetado de jaulón** (M1)
 - Cuando paso 600 botellas sin etiquetar a etiquetadas con 2 roturas · Entonces quedan 598 etiquetadas y 2 en mermas.
 
-**US-BOD-08 · Recepción de uva** (M5)
+**US-BOD-08 · Recepción de uva** (M2)
 - Cuando registro 3.100 kg de una parcela propia (o de un proveedor con su documento de acompañamiento) · Entonces se crea la partida (lote) de uva con su origen.
+- Cuando indico 155 cajas de 20 kg "estimadas" (o una pesada en báscula) y la sanidad (sana, % de botrytis, tormenta o granizo, sobremaduración, pasificación) · Entonces quedan en la recepción y, si la marco "separar" o "rechazar", la partida no se mezcla con la sana.
 
-**US-BOD-09 · Prensado/encubado y fin de fermentación** (M5)
+**US-BOD-09 · Vinificación: prensado, encubado, maceraciones, sangrado y descube** (M2)
 - Cuando registro el prensado de 3.100 kg con 2.200 L de mosto a INOX-B1 · Entonces el lote pasa a mosto y queda el rendimiento; al registrar el fin de fermentación con grado · Entonces pasa a vino.
+- Cuando defino el lote como blanco, tinto, rosado o **blanca vinificada en tinto**, con o sin despalillado · Entonces la ficha muestra ese tipo y sus fases: encubado con hollejos, maceración en frío, **maceración acuosa** (fermentación paralizada con frío) o posfermentativa, con inicio y fin.
+- Cuando registro un **délestage** (sin volumen), un **sangrado** (parte del depósito pasa a otro como lote nuevo) o el **descube** (vino yema y de prensa) · Entonces queda la operación con su cuadre de volumen.
 
-**US-BOD-10 · Lecturas de fermentación** (M5)
+**US-BOD-10 · Fermentaciones: lecturas, temperatura, FA y FML** (M2)
 - Cuando dicto "B1 densidad 1,032 temperatura 18" · Entonces se guarda la lectura y la ficha del lote dibuja la curva; si la densidad no baja en 48 h, llega una alerta.
+- Cuando bajo la consigna de B1 de 22 a 18 °C · Entonces queda registrada la corrección con su motivo.
+- Cuando inicio la FA como **espontánea** (levaduras autóctonas) · Entonces queda así en el lote; la **FML** tiene inicio, fin y observaciones (burbujeo, aroma lácteo) y se cierra por observación o por analítica de málico.
+- Dado un solape FA/FML con la acidez volátil subiendo · Entonces llega un aviso.
 
-**US-BOD-11 · Analíticas y catas** (M5)
+**US-BOD-11 · Analíticas** (M2)
 - Cuando subo el PDF del pack FML y sus valores · Entonces quedan asociados al lote con rangos validados.
+- Cuando registro una analítica · Entonces indico si se hizo en bodega o en un laboratorio (proveedor), de qué muestra sale y las fechas de muestra y de resultado; incluye IP, IPT y extracto seco.
+- Cuando la volátil supera el umbral, los azúcares quedan por debajo del máximo de "seco" o el málico indica fin de FML · Entonces la ficha lo marca; la ficha del lote muestra la evolución de analíticas y catas.
 
 **US-BOD-12 · Rectificar una operación** (M1)
 - Dado una operación confirmada · Cuando registro su rectificación con motivo · Entonces sus movimientos se anulan y se aplican los nuevos, y las anotaciones de SISV/SILICIE afectadas se anulan y reemplazan.
@@ -298,13 +309,43 @@ CRM con embudos, proyectos y horas, RR. HH. y nóminas, FACe (no se usa), la tie
 **US-BOD-14 · Materiales de envasado** (M1)
 - Dado un formato de 0,75 L con su lista de materiales · Cuando confirmo un envasado de 600 botellas · Entonces se descuentan del stock 600 corchos, 600 cápsulas de lacre, 100 cajas de 6 y 1 palé (uno por cada 112 cajas o fracción); si falta algún material, lo veo antes de confirmar.
 
-### 4.10 Viñedo (VIN, M5)
+**US-BOD-15 · Calculadoras enológicas** (M2)
+- Dado un vino tinto con pH 3,6 y 10 mg/L de SO2 libre · Cuando abro la calculadora de SO2 · Entonces veo el SO2 libre necesario para el objetivo molecular, los mg/L y los gramos de metabisulfito para el volumen; si el lote es "sin sulfitos añadidos" o el total superaría el límite ecológico, lo veo antes.
+- Dado un vino de 13 % vol · Cuando pido la temperatura de estabilización por frío · Entonces veo −7,5 °C (−(grado/2 + 1)); y el alcohol probable de un mosto a partir de su densidad o sus azúcares.
+
+**US-BOD-16 · Reglas de la casa y mermas legales** (M2)
+- Cuando una operación supera el % de merma legal de su proceso · Entonces aviso con el % permitido y su fuente, y motivo obligatorio para confirmar.
+- Cuando, tras la FML, registro una adición que no es SO2 · Entonces aviso; cuando intento una práctica prohibida por la casa (carbón activo) · Entonces no se puede confirmar (`WC140`).
+- Cuando preparo un envasado sin analítica previa reciente y completa · Entonces aviso (o bloqueo, según ajuste); en febrero–marzo y tras la primavera llegan los recordatorios de primer trasiego y de envasado.
+
+**US-BOD-17 · Estabilización y filtración** (M2)
+- Cuando registro la estabilización tartárica natural (frío de invierno) o forzada · Entonces queda con fechas, temperatura objetivo y retirada de bitartratos; la proteica, o la decisión de no hacerla, queda en el lote.
+- Cuando registro una filtración con placas V00, V07 o V13 · Entonces quedan el grado, el nº de placas, el proveedor y el equipo, y las placas bajan del stock de consumibles.
+
+**US-BOD-18 · Catas** (M2)
+- Cuando dicto una cata a CVBOT (uva en el campo, mosto del día, vino en crianza o una botella años después en un restaurante) · Entonces se guarda en su ficha estructurada (vista, nariz, boca, puntuación, descriptores, defectos, lugar y copa en posventa) con foto o audio, y aparece en la evolución del lote o del vino.
+
+**US-BOD-19 · Cata a ciegas para ensamblaje** (M2)
+- Cuando preparo una sesión con 8 muestras numeradas para una referencia · Entonces cada catador vota sí/no por muestra durante 2–3 días sin saber el lote; al revelar veo el mapeo y el agregado, y los lotes elegidos pasan a la fórmula de ensamblaje.
+
+**US-BOD-20 · Destino, parcela única y recetas** (M2)
+- Cuando asigno un lote a una referencia o a una colección nueva · Entonces queda su destino previsto, el tipo de vinificación y las prácticas aplicadas y no aplicadas.
+- Cuando marco un lote como **parcela única** con número de etiqueta 1 · Entonces solo se acepta si su genealogía llega a una sola parcela (`WC141`).
+- Cuando guardo la elaboración de un lote como **receta** · Entonces puedo aplicarla a la añada siguiente como plan de pasos y ver las desviaciones.
+
+**US-BOD-21 · Higiene, equipos y control de envasado** (M2)
+- Cuando registro una limpieza con su procedimiento (ácido peracético, concentración, tiempo de contacto, destino del efluente) o la desinfección de botellas · Entonces queda en el registro APPCC exportable para Sanidad.
+- Cuando confirmo un envasado · Entonces exige el control (desinfección, control visual con rechazos, corcho natural o aglomerado, cápsula o lacre, equipo usado) (`WC143`).
+
+### 4.10 Viñedo (VIN, M3)
 
 **US-VIN-01 · Parcelas** — Cuando doy de alta una parcela con su referencia SIGPAC completa, superficie y variedades · Entonces no se puede duplicar la misma referencia.
-**US-VIN-02 · Tratamientos** — Cuando registro un tratamiento (fecha, operario, producto, dosis, método, factura) · Entonces aparece en el cuaderno y avisa si el producto no consta como apto en ecológico.
+**US-VIN-02 · Tratamientos** — Cuando registro un tratamiento (fecha, operario, producto, dosis, método, factura) · Entonces aparece en el cuaderno y avisa si el producto no consta como apto en ecológico. El umbral de superficie para el cuaderno simplificado (≈2 ha) es un ajuste pendiente de confirmar (Q-038).
 **US-VIN-03 · Labores** — Cuando registro una poda por voz · Entonces queda con fecha, parcela y horas.
-**US-VIN-04 · Maduración** — Cuando envío por CVBOT "parcela P-07, faltan 10 días" con foto · Entonces se guarda el control con la previsión meteorológica del día.
+**US-VIN-04 · Maduración** — Cuando envío por CVBOT "parcela P-07, faltan 10 días" con foto · Entonces se guarda el control con la previsión meteorológica del día y la cata de uva estructurada (pepita, hollejo, pulpa, madurez fenólica); las muestras que mando al laboratorio quedan como analíticas de la parcela.
 **US-VIN-05 · Vendimia** — Cuando cierro la vendimia de una parcela · Entonces queda enlazada con su recepción en bodega.
+**US-VIN-06 · Planificador de vendimia** — Dados los controles de maduración, la previsión (ola de calor, lluvia, tormenta) y el personal disponible por día · Cuando abro el planificador · Entonces veo por parcela una ventana y una fecha sugeridas con su justificación, y confirmo la fecha yo.
+**US-VIN-07 · Comparador de añadas** — Cuando comparo una parcela o un vino entre añadas · Entonces veo fecha y kg de vendimia, rendimiento, maduración, sanidad, analíticas clave, catas y meteorología de cada año, para reproducir una buena añada.
 
 ### 4.11 Compras (COMP)
 
@@ -352,7 +393,7 @@ CRM con embudos, proyectos y horas, RR. HH. y nóminas, FACe (no se usa), la tie
 
 **US-INFOVI-01 · Declaraciones** — Antes del 20 de diciembre y del 20 de agosto, y del 10 de diciembre para la cosecha · Cuando preparo la declaración · Entonces WineCore calcula los cuadros desde los libros, genera el fichero y pide aprobación para presentarla.
 
-### 4.18 Ecológico (ECO, M5)
+### 4.18 Ecológico (ECO, M3)
 
 **US-ECO-01 · Informe para la certificadora** — Cuando lo genero para un año · Entonces incluye tratamientos, adiciones, limpiezas, compras de insumos con factura y el balance de materias por lote.
 **US-ECO-02 · Límites** — Dado un vino ecológico con SO2 total por encima del límite ecológico de su tipo · Cuando se registra la analítica · Entonces aparece una alerta.
@@ -378,13 +419,14 @@ CRM con embudos, proyectos y horas, RR. HH. y nóminas, FACe (no se usa), la tie
 **US-ASIS-01 · Asistente de inspección** (M3) — Cuando pregunto "¿cuánto vino hay en cada depósito ahora?" · Entonces responde con la tabla y el enlace a la existencia a fecha.
 **US-ASIS-02 · Resumen diario** (M3) — Cada día laborable a las 8:00 · Entonces CVBOT recibe el resumen (aprobaciones pendientes, vencimientos, cola, descuadres) en ≤ 10 líneas.
 **US-ASIS-03 · Vigilantes** (M3) — Cuando un vigilante detecta un descuadre, un cobro vencido, un plazo a 7 días, una cola atascada o el ejecutor caído · Entonces emite un evento a CVBOT y un aviso en el panel.
+**US-ASIS-04 · Diagrama de trazabilidad** (M3) — Cuando pregunto por chat "¿de dónde viene esta botella?" con su lote · Entonces responde con el diagrama de la genealogía (botella → ensamblaje → partidas → parcelas o proveedores, con operaciones y analíticas) y el enlace a la ficha del lote.
 
 ### 4.22 Informes (REP)
 
 **US-REP-01 · Gráficos** (M1 stock, M2 ventas y gastos) — Cuando abro Informes · Entonces veo ventas, gastos y stock por producto, lote y año (y por entidad), con comparación con el año anterior, y puedo exportar los datos.
 
 ### 4.23 Posteriores (resumen)
-**US-CONTA-01** asientos automáticos y exportación a la asesoría (M7) · **US-CONTA-02** saldos de apertura (M7) · **US-MOD-01** datos para 303/390/347/349/115 (M6) · **US-ETQ-01** ficha de etiqueta y e-etiqueta (posterior) · **US-CONO-01** notas de cata años después (posterior).
+**US-CONTA-01** asientos automáticos y exportación a la asesoría (M7) · **US-CONTA-02** saldos de apertura (M7) · **US-MOD-01** datos para 303/390/347/349/115 (M6) · **US-ETQ-01** ficha de etiqueta y e-etiqueta (posterior). Las notas de cata años después están en US-BOD-18.
 
 ## 5. Requisitos no funcionales
 

@@ -1,5 +1,5 @@
 # TASK-REG-024 · Certificados ecológicos
-- Hito M4 · 1 día · Escalado: sí (normativa ecológica)
+- Hito M3 · 1 día · Escalado: sí (normativa ecológica)
 - Historias / RNF: US-ECO-01
 - Depende de: TASK-CONT-001
 

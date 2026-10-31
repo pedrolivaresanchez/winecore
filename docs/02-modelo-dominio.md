@@ -167,6 +167,9 @@ El **payload** lleva identificadores y un resumen sin datos personales innecesar
 | `TRANSITO` | in_transit (virtual) | — | — |
 | `CLIENTE` | customer_virtual (virtual) | — | — |
 
+- **Zonas y plano** (`inventory.location_zone`): naves y salas de una ubicación (elaboración, sala de barricas, **exterior/intemperie**, almacén de botellas) con la imagen del plano; cada recipiente tiene su posición en él (`cellar.vessel_position`, coordenadas relativas) para el mapa visual de la bodega.
+- **Contenedores de botellas** (`cellar.bottle_holder`): **jaulón** numerado (≈600 botellas sin etiquetar, con capacidad y formato) y **nicho** del botellero. Forman parte de la clave de stock (`holder_id` en líneas y movimientos) y se cuentan en los aforos; superar la capacidad es `WC142`.
+
 ### 8.2 Lotes y genealogía (DAG)
 - **Lote** = identidad de un contenido. Nace en la recepción de uva (`grape`), sigue con el mismo código al pasar a mosto y vino (la "partida" que acompaña todo el proceso, reunión [00:48:33]) y se crea uno **nuevo** en cada ensamblaje (`blend`) y en cada envasado (`bottled`, el lote que va en la etiqueta).
 - **Arista** `inventory.lot_edge(hijo ← padre, volumen o masa aportados, operación)`. Un trigger impide ciclos (`WC030`).
@@ -185,6 +188,8 @@ flowchart RL
 
 ### 9.1 Recipientes
 `cellar.vessel`: depósitos de almacenamiento (`tank_storage`), vinificadores con camisa de frío (`tank_fermenter`, obligatoria la camisa), barricas, damajuanas. Código propio (`INOX-01`… `INOX-B7`, `BAR-001`, `DAM-001`) y **código SISV** (`sisv_code`, p. ej. `D1`) como atributo (Q-020). `qr_token` para etiquetar el depósito y abrir su ficha desde el móvil.
+
+**Barricas** (`cellar.barrel`, 1:1 con el recipiente): roble y origen, bosque, tostado (y de fondos), tonelero, año, fecha de compra, **número de usos** (sube al llenar una barrica vacía) y estado (en uso, en reposo, para retirar, retirada). Las **damajuanas** de cristal están en la zona exterior (crianza a la intemperie).
 
 ### 9.2 Operaciones
 Una **operación** es un hecho de bodega con líneas de **entrada**, **salida** y **merma**. Se crea en borrador, se confirma (toma número de la serie `cellar_operation`) y, una vez confirmada, solo se corrige con otra operación que la **rectifica** (`rectifies_operation_id`, motivo obligatorio) y que anula sus movimientos con movimientos `reversal`.
@@ -205,14 +210,42 @@ Una **operación** es un hecho de bodega con líneas de **entrada**, **salida** 
 | `labeling` | N unidades sin etiquetar | N′ etiquetadas | roturas (ud) | entra = sale + roturas (unidades) | `cellar_out`/`cellar_in` + `loss` | Vinos envasados | Solo roturas |
 | `loss` | lote (mL o ud) | — | sí | solo merma | `loss` | Mermas | Sí |
 | `destruction` | lote | — | sí | solo merma; motivo y aprobación | `loss` | Mermas/destrucción | Sí ("mermas de almacenamiento") |
+| `bleeding` (sangrado) | lote en recipiente A | lote **nuevo** en B (arista DAG) | opcional | entra = sale + merma | `cellar_out`/`cellar_in` | Elaboración | Según silicie.md (Q-040) |
+| `pressing_off` (descube) | lote con hollejos | vino yema y de prensa (mismo lote o lotes nuevos) | orujos y lías | entra = sale + merma | ídem | Elaboración | Según silicie.md (Q-040) |
+| `delestage` | — | — | — | sin volumen: vaciado y retorno al mismo depósito | ninguno | Elaboración | No |
+| `temperature_control` | — | — | — | sin volumen: consigna anterior y nueva, motivo | ninguno | — | No |
 
 Las operaciones generan sus movimientos de stock **en la misma transacción** de la confirmación (`api/src/core/cellar/confirmOperation.ts`): cada línea `input` → movimiento negativo; `output` → positivo; `loss` → movimiento `loss` con `loss_kind`. Mermas `incident` y destrucciones exigen aprobación (`cellar_loss`).
 
+Detalles por tipo: la **recepción** guarda contenedor (cajas de ~20 kg, bin, cisterna) y número, si los kg son **pesados o estimados** y la **sanidad de la uva** (sana, leve, afectada o grave; % de botrytis; tormenta o granizo; sobremaduración; pasificación; infecciones; decisión de aceptar, separar o rechazar) en `cellar.grape_intake`. El **prensado** indica si hubo despalillado. La **filtración** guarda grado de placa (V00 desbaste, V07 intermedia, V13 amicróbica), formato, nº de placas, proveedor y equipo (`cellar.filtration_detail`) y descuenta las placas como consumible. La **estabilización** indica método natural (frío de invierno) o forzado, temperatura objetivo y retirada de bitartratos (con la limpieza posterior). El **envasado** exige el control de envasado (§9.6).
+
 ### 9.3 Analíticas, fermentación, catas y adiciones
-- `cellar.analysis` + `cellar.analysis_result` con parámetros de catálogo (`cellar.analysis_parameter`: densidad, grado, acidez total y volátil, pH, SO2 libre/total, glucosa+fructosa, málico, láctico…). El "pack FML" del laboratorio se registra como `kind = 'fml_pack'` con el PDF adjunto.
-- `cellar.fermentation_reading`: densidad y temperatura dos veces al día; la ficha del lote dibuja la cinética (densidad y temperatura frente al tiempo). Alerta si la densidad no baja ≥ 0,002 en 48 h antes de llegar a 0,995 o si la temperatura sale de [10, 30] °C (umbrales en ajustes `cellar.alerts.*`).
+- `cellar.analysis` + `cellar.analysis_result` con parámetros de catálogo (`cellar.analysis_parameter`: densidad, grado probable y adquirido, acidez total y volátil, pH, SO2 libre/total, glucosa+fructosa, málico, láctico, extracto seco, IPT, **índice de polimerización (IP)**, intensidad colorante, turbidez). Cada analítica indica su **origen** (bodega o laboratorio externo, que es un contacto proveedor), la **muestra** de la que sale (operación `sampling` tras homogeneizar) y las fechas de muestra y de resultado; puede ser de un lote o de una **parcela** (uva antes de vendimia). El "pack FML" del laboratorio se registra como `kind = 'fml_pack'` con el PDF adjunto. La ficha del lote muestra la **evolución** de analíticas y catas.
+- `cellar.fermentation_reading`: densidad y temperatura dos veces al día; la ficha del lote dibuja la cinética (densidad y temperatura frente al tiempo). Alerta si la densidad no baja ≥ 0,002 en 48 h antes de llegar a 0,995 o si la temperatura sale de [10, 30] °C (umbrales en ajustes `cellar.alerts.*`). Las **correcciones de temperatura** se registran como operación `temperature_control`.
+- **Fases del lote** (`cellar.lot_phase`: inicio, fin, estado y observaciones): maceración prefermentativa en frío, **maceración acuosa** (fermentación paralizada con frío), **encubado con hollejos** (tintos y blancas vinificadas en tinto), maceración posfermentativa, **fermentación alcohólica** (inoculación espontánea con levaduras autóctonas o comercial), **fermentación maloláctica** (en todos los vinos; fin por observación —burbujeo, aroma lácteo— o por málico), estabilización tartárica natural o forzada, estabilización proteica y crianza (depósito, barrica o damajuana a la intemperie).
+- **Calculadoras** (funciones puras con pruebas doradas): SO2 libre necesario = SO2 molecular objetivo × (1 + 10^(pH − 1,81)) y dosis del producto según su % de SO2 (aviso si el lote es "sin sulfitos añadidos" o si el total superaría el límite ecológico, US-ECO-02); temperatura de estabilización por frío = −(grado/2 + 1) °C; alcohol probable = azúcares/16,83 o (densidad − 1000)/factor; ensamblaje de mL a % y litros por depósito.
+- **Ajustes enológicos** (`cellar.enology_setting`, por entidad; `confirmed = false` mientras sean supuestos, Q-036): SO2 molecular objetivo por tipo, alerta de acidez volátil, azúcares máximos para "seco", málico de fin de FML, antigüedad máxima de la analítica previa al envasado, factor de densidad, mes del primer trasiego y mes desde el que se envasa.
+- **Reglas de la casa** (avisos al previsualizar una operación; para seguir hace falta motivo): solape FA/FML con volátil en aumento; volátil ≥ umbral (sugiere corregir SO2 y filtrar con V13); tras la FML, cualquier adición que no sea SO2; envasado sin analítica previa reciente y completa (configurable para bloquear); recordatorios de temporada (primer trasiego tras el frío de invierno, envasado después de la primavera). Las **prácticas prohibidas** por la casa (`cellar.practice.prohibited_by_house`, p. ej. carbón activo) bloquean (`WC140`).
+- **Mermas legales** (`cellar.loss_tolerance`): % máximo por proceso y estado del producto, con fuente y vigencia; si una operación lo supera, aviso y motivo obligatorio. Los porcentajes los aporta el asesor (Q-035): mientras falten, la tabla queda vacía y no se inventa ninguno.
 - `cellar.addition`: producto (SO2, ácido tartárico), cantidad, dosis (g/hL, mg/L) y factura de compra (prueba ecológica). Alimenta la lista de ingredientes de la etiqueta y el cuaderno ecológico.
 - **Consumo de materiales al envasar**: el envasado calcula los materiales con la lista del formato (por botella, por caja y por palé o fracción), los guarda en `cellar.material_consumption` y los descuenta del stock en la misma operación; si falta stock de algún material, avisa antes de confirmar.
+
+### 9.4 Catas
+- **Fichas estructuradas** (`cellar.tasting` con plantillas `cellar.tasting_template`): uva en el campo (pepita, hollejo, pulpa, madurez fenólica), mosto durante la elaboración (diaria), vino en crianza (periódica), candidatos de ensamblaje y **posventa** (botella años después: lugar, copa, evolución). Vista, nariz, boca, puntuación, descriptores, defectos, decisión, fotos y dictado por CVBOT (texto y audio adjunto).
+- **Cata a ciegas** de ensamblaje (`cellar.blind_session`, `blind_sample`, `blind_vote`): muestras numeradas sin revelar el lote durante 2–3 días; cada catador vota sí/no (y nota) por muestra y día para un destino (una referencia o una colección nueva). Al revelar se ven el mapeo y el agregado, y los lotes elegidos alimentan la fórmula de ensamblaje (US-BOD-03).
+
+### 9.5 Diseño del lote, prácticas y recetas
+- `cellar.lot_design` (1:1 con el lote): **destino previsto** (referencia del catálogo, colección nueva con nombre de trabajo o pendiente), **tipo de vinificación** (blanco, tinto, rosado, blanca en tinto), despalillado, inoculación, método de crianza, **parcela única** (con su parcela; solo si la genealogía llega a una sola parcela, `WC141`), **número de etiqueta** (p. ej. 1 = parcela única, 2 = ensamblaje) y "sin intervención".
+- `cellar.lot_practice`: prácticas aplicadas **y no aplicadas** por lote (p. ej. sin desfangado ni centrifugado, sin levaduras comerciales); alimentan la etiqueta y las recetas.
+- **Recetas** (`cellar.recipe`, versionadas): se capturan de un lote terminado (pasos, duraciones, temperaturas, dosis por hL, prácticas, crianza y proporciones) y se aplican a un lote nuevo como **plan** de pasos sugeridos (nunca crean ni confirman operaciones); la ficha compara lo hecho con la receta.
+- **Comparador de añadas** (informe): por parcela y por vino, fecha y kg de vendimia, rendimiento, maduración, sanidad, analíticas clave, catas y notas meteorológicas de cada añada.
+
+### 9.6 Higiene, equipos y control de envasado (registro APPCC)
+- **Procedimientos de limpieza** (`cellar.cleaning_procedure`): producto, sustancia activa (ácido peracético), concentración, tiempo de contacto, aclarado, a qué se aplica y **destino del efluente** (canal a pozo de biodegradación; requisito por confirmar, Q-039). Cada limpieza registra el procedimiento y la dosis y el tiempo reales.
+- **Equipos** (`cellar.equipment`): embotelladora manual de 4 caños, filtros, bombas, prensa, despalilladora.
+- **Consumibles de bodega** (`catalog.product` de tipo `cellar_consumable`: placas filtrantes, productos de limpieza) con stock y consumo al confirmar, igual que los materiales de envasado.
+- **Control de envasado** (`cellar.bottling_check`): desinfección de botellas (con su procedimiento), control visual con rechazos por nivel, cierre y etiqueta, **tipo de cierre** (corcho natural o aglomerado) y **sellado** (cápsula o lacre); exigible antes de confirmar el envasado (`WC143`).
+- **Registro APPCC para Sanidad**: exportación por periodo de limpiezas, desinfecciones, controles de envasado y mantenimiento de equipos.
 
 ## 10. Libros de movimientos: físico y fiscal (D2)
 
@@ -328,14 +361,17 @@ Facturas recibidas por foto, PDF o reenvío. El agente `ocr-gastos` crea un regi
 ## 14. Finanzas (`finance`)
 Cobros y pagos (`finance.payment`) con imputaciones parciales a facturas (`payment_allocation`) que actualizan automáticamente lo cobrado y el estado (`WC100` si se imputa de más). Extractos bancarios importados (Norma 43, CAMT.053 o CSV) con deduplicación por línea y sugerencias de conciliación. Remesas SEPA: WineCore genera el fichero (pain.008/pain.001) tras aprobación; **una persona** lo sube al banco (WineCore no guarda claves bancarias).
 
-## 15. Viñedo (`vineyard`, M4)
+## 15. Viñedo (`vineyard`, M3)
 Parcelas con referencia SIGPAC completa y Registro Vitícola, variedades, **tratamientos** (fecha, operario, producto, dosis, método, factura) para la certificación ecológica, labores, **controles de maduración** (voz, foto y previsión meteorológica) y vendimia, enlazada con la recepción en bodega.
+- **Cata de uva estructurada** en el control de maduración: color y crujido de la pepita, astringencia y color del hollejo, dulzor y acidez de la pulpa, **madurez fenólica** (1–5), foto del racimo y días estimados hasta vendimia. Las **muestras al laboratorio** antes de vendimia son analíticas de la parcela (§9.3).
+- **Planificador de vendimia** (`vineyard.harvest_plan`): por parcela y añada combina la madurez estimada, el **riesgo meteorológico** (ola de calor, lluvia, tormenta, granizo; previsión introducida o consultada) y la **disponibilidad de personal** (`vineyard.crew_availability` por día) para proponer una ventana y una fecha con su justificación; decide una persona.
+- **Superficie y cuaderno**: con una superficie total pequeña (≈2 ha) la norma podría eximir del cuaderno completo de Agricultura. WineCore lleva igualmente el cuaderno para la certificadora y guarda el umbral como ajuste (`vineyard.simplified_notebook_max_ha`) hasta que se confirme (Q-038).
 
 ## 16. Contabilidad (`accounting`, M7)
 Plan de cuentas por entidad, ejercicios, asientos por partida doble que deben cuadrar (`WC110`) e inmutables (`WC111`), generados desde documentos con reglas de contabilización; saldos de apertura del asesor (R6). Alcance pendiente de Q-022.
 
 ## 17. Conocimiento y etiquetas (posterior)
-`knowledge.tasting_note` (notas de cata años después, vinculadas a vino, añada o lote) y `catalog.label_spec` (denominación, grado, volumen, alérgenos, ingredientes, nutrición, e-etiqueta, código del organismo de control ecológico), versionadas y aprobadas.
+Las notas de cata de posventa son la plantilla `post_sale` de §9.4; `knowledge.tasting_note` queda para notas importadas. `catalog.label_spec` (denominación, grado, volumen, alérgenos, ingredientes, nutrición, e-etiqueta, código del organismo de control ecológico), versionadas y aprobadas.
 
 ## 18. Regulatorio (`regulatory`)
 
@@ -388,6 +424,10 @@ Instalación por entidad y entorno, registros de alta y anulación **encadenados
 | I-16 | Entidad facturadora determinista (cliente > canal > defecto) | Función SQL + app | SQL §14 |
 | I-17 | Físico − fiscal = albaranes sin facturar − facturas sin salida | Informe de conciliación | Integración |
 | I-18 | SISV y SILICIE coinciden en salidas y envasados del periodo | Cuadre `sisv_vs_silicie` | Integración + golden |
+| I-19 | Los usos de una barrica solo suben al llenarla vacía | App (confirmación) | Unit |
+| I-20 | "Parcela única" solo si la genealogía llega a una sola parcela | App (`WC141`) | Unit + integración |
+| I-21 | En una cata a ciegas el lote de cada muestra no se ve hasta revelar | App | Integración |
+| I-22 | Una práctica prohibida por la casa nunca se confirma | App (`WC140`) | Unit |
 
 ## 20. Códigos de error de negocio
 
@@ -417,6 +457,10 @@ Instalación por entidad y entorno, registros de alta y anulación **encadenados
 | WC122 | Identificación de un mayor de SILICIE modificada (se crea otro y se traspasa) | 409 |
 | WC130 | Encadenamiento Verifactu incorrecto o registro inmutable | 409 |
 | WC131 | Hora de generación del registro Verifactu anterior a la del registro anterior | 409 |
+| WC140 | Práctica prohibida por la casa (p. ej. carbón activo) | 422 |
+| WC141 | "Parcela única" no válida: la genealogía llega a varias parcelas | 422 |
+| WC142 | El jaulón o el nicho supera su capacidad | 422 |
+| WC143 | Falta el control de envasado | 422 |
 | `WC_MODULE_DISABLED` | Módulo desactivado | 404 |
 | `WC_FORBIDDEN` | Sin permiso | 403 |
 | `WC_STEP_UP_REQUIRED` | Falta verificación reforzada reciente | 401 |
@@ -445,6 +489,7 @@ Se aplican en orden con `api/db/migrate.ts` (tabla `public.schema_migrations(ver
 | `0013_vineyard.sql` | Viñedo | M1 (tablas) / uso en M4 |
 | `0014_accounting.sql` | Contabilidad | M1 (tablas) / uso en M7 |
 | `0015_knowledge_labels.sql` | Notas de cata y etiquetas | M1 (tablas) / uso posterior |
+| `0017_elaboracion.sql` | Zonas y plano, barricas, jaulones y nichos, sanidad en recepción, fases del lote, diseño y recetas, catas y cata a ciegas, ajustes enológicos y mermas legales, filtración, higiene, equipos y envasado, cata de uva y planificador de vendimia | M2 |
 
 Todas se aplican desde M0/M1 (el esquema completo existe desde el principio y los módulos se activan después): así no hay migraciones transversales a mitad de proyecto (criterio de escalado §7.3.4).
 

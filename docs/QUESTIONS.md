@@ -299,3 +299,43 @@
 - **Mientras tanto**: se usan las plantillas públicas de Timbal en GitHub (`pedrolivaresanchez/timbal-project` y `timbal-react`) y las reglas de diseño del plan (§3.3), recogidas en `08-ui/00-sistema-diseno.md`.
 - **Recomendación**: (1). Nunca se modifica nada del SDR ni de la org 1.
 - **Dueño**: Pedro · **Fecha límite**: 04-11-2026.
+
+## Q-035 · Porcentajes de merma autorizados por proceso — Bloquea el aviso de mermas legales (M2)
+
+- **Hecho** (reunión de arranque): la normativa autoriza un porcentaje de merma por cada proceso (recepción, prensado, fermentación, trasiegos, filtración, estabilización, crianza en barrica, envasado y almacenamiento).
+- **Pregunta**: ¿qué norma los fija y cuáles son los porcentajes por proceso y estado del producto?
+- **Defecto propuesto**: `cellar.loss_tolerance` queda vacía y sin aviso automático hasta tener los valores del asesor; las mermas se siguen registrando con motivo. Nunca se inventa un porcentaje.
+- **Dueño**: Pedro (con el asesor) · **Fecha límite**: 15-01-2027.
+
+## Q-036 · Umbrales y objetivos enológicos de la casa — No bloquea (supuestos)
+
+- **Supuestos** (`cellar.enology_setting`, `confirmed = false`): SO2 molecular objetivo 0,5 mg/L en tintos y 0,8 mg/L en blancos y rosados; alerta de acidez volátil 0,6 g/L; "seco" con glucosa + fructosa ≤ 2 g/L; fin de FML con málico ≤ 0,3 g/L; analítica previa al envasado de ≤ 30 días; alcohol probable = (densidad − 1000) / 7,5.
+- **Hecho**: pKa del SO2 = 1,81 a 20 °C; factor UE de alcohol potencial 16,83 g/L de azúcar por % vol; temperatura de estabilización por frío = −(grado/2 + 1) °C (regla de la bodega).
+- **Pregunta**: ¿Pedro y su padre confirman o cambian cada valor?
+- **Dueño**: Pedro · **Fecha límite**: 15-01-2027.
+
+## Q-037 · Jaulones y nichos — No bloquea
+
+- **Supuesto**: jaulón = contenedor numerado de ≈600 botellas sin etiquetar; nicho = hueco del botellero que se cuenta en los aforos.
+- **Pregunta**: ¿cuántos jaulones y nichos hay, con qué numeración y capacidad, y qué formatos admite cada uno?
+- **Dueño**: Pedro · **Fecha límite**: 31-12-2026 (aforo de arranque).
+
+## Q-038 · Cuaderno de explotación con poca superficie — No bloquea
+
+- **Hecho** (reunión): con unas 2 ha, la bodega cree estar exenta del cuaderno completo de Agricultura.
+- **Pregunta**: ¿qué norma lo dice y con qué umbral? (pendiente de leer en el BOE y en la normativa autonómica).
+- **Defecto propuesto**: WineCore lleva el cuaderno igualmente (lo pide la certificadora ecológica) y guarda el umbral como ajuste `vineyard.simplified_notebook_max_ha`.
+- **Dueño**: Pedro (con el asesor) · **Fecha límite**: 15-02-2027.
+
+## Q-039 · Efluentes de limpieza a pozo — No bloquea
+
+- **Hecho** (reunión): el agua de limpieza con ácido peracético va por un canal a un pozo donde se biodegrada.
+- **Pregunta**: ¿hace falta autorización de vertido o algún registro ambiental?
+- **Defecto propuesto**: se registra el destino del efluente en cada procedimiento y limpieza; sin bloqueo.
+- **Dueño**: Pedro · **Fecha límite**: 15-02-2027.
+
+## Q-040 · Sangrado y descube en SILICIE y SISV — Bloquea el cierre de TASK-BOD-014
+
+- **Supuesto**: el sangrado crea un lote nuevo (hijo del original) en otro depósito; el descube mantiene el lote (yema y prensa) salvo que se separen.
+- **Pregunta**: ¿qué asientos de SILICIE y qué anotaciones de SISV generan, y si el vino de prensa debe ser un lote distinto?
+- **Dueño**: Pedro (con el asesor) · **Fecha límite**: 15-01-2027.

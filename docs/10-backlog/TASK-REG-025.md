@@ -1,5 +1,5 @@
 # TASK-REG-025 · Informe para el organismo de control
-- Hito M4 · 1,5 días · Escalado: sí (normativa ecológica)
+- Hito M3 · 1,5 días · Escalado: sí (normativa ecológica)
 - Historias / RNF: US-ECO-01
 - Depende de: TASK-REG-024, TASK-VIN-002, TASK-BOD-006
 
