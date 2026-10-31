@@ -194,6 +194,23 @@ CREATE TABLE cellar.addition (
   created_at          timestamptz NOT NULL DEFAULT now()
 );
 
+-- Limpieza y desinfección de recipientes e instalaciones (Reg. (UE) 2018/848, anexo II IV 1.4 b y VI 2.3):
+-- producto, sustancia activa, lugar y comprobación de la eficacia
+CREATE TABLE cellar.cleaning_record (
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  operation_id        uuid NOT NULL REFERENCES cellar.operation(id),       -- op_type = 'cleaning'
+  vessel_id           uuid REFERENCES cellar.vessel(id),
+  location_id         uuid REFERENCES inventory.location(id),
+  product_id          uuid NOT NULL REFERENCES catalog.product(id),
+  active_substance    text NOT NULL,                                      -- p. ej. ácido peracético
+  quantity            numeric(12,3) NOT NULL CHECK (quantity > 0),
+  quantity_unit       text NOT NULL CHECK (quantity_unit IN ('g','kg','ml','l')),
+  efficacy_check      text NOT NULL,                                      -- cómo se comprobó (aclarado, tira de pH, visual…)
+  supplier_invoice_id uuid,                                               -- FK a purchasing.supplier_invoice (0010)
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  CHECK (vessel_id IS NOT NULL OR location_id IS NOT NULL)
+);
+
 -- ---------------------------------------------------------------------
 -- Analíticas, controles de fermentación y catas
 -- ---------------------------------------------------------------------
@@ -285,6 +302,7 @@ CREATE TRIGGER vessel_audit AFTER INSERT OR UPDATE ON cellar.vessel FOR EACH ROW
 CREATE TRIGGER operation_audit AFTER INSERT OR UPDATE ON cellar.operation FOR EACH ROW EXECUTE FUNCTION audit.capture();
 CREATE TRIGGER operation_line_audit AFTER INSERT OR UPDATE OR DELETE ON cellar.operation_line FOR EACH ROW EXECUTE FUNCTION audit.capture();
 CREATE TRIGGER addition_audit AFTER INSERT OR UPDATE ON cellar.addition FOR EACH ROW EXECUTE FUNCTION audit.capture();
+CREATE TRIGGER cleaning_record_audit AFTER INSERT OR UPDATE ON cellar.cleaning_record FOR EACH ROW EXECUTE FUNCTION audit.capture();
 CREATE TRIGGER analysis_audit AFTER INSERT OR UPDATE ON cellar.analysis FOR EACH ROW EXECUTE FUNCTION audit.capture();
 CREATE TRIGGER analysis_result_audit AFTER INSERT OR UPDATE ON cellar.analysis_result FOR EACH ROW EXECUTE FUNCTION audit.capture();
 CREATE TRIGGER fermentation_reading_audit AFTER INSERT OR UPDATE ON cellar.fermentation_reading FOR EACH ROW EXECUTE FUNCTION audit.capture();

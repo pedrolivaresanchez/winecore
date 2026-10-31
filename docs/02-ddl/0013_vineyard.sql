@@ -57,6 +57,10 @@ CREATE TABLE vineyard.treatment (
   treated_area_ha     numeric(8,4) NOT NULL CHECK (treated_area_ha > 0),
   method              text NOT NULL,
   target              text,                                              -- plaga/enfermedad
+  advisor_name        text,                                              -- asesor (RD 1311/2012, anexo III I B d)
+  equipment_roma      text,                                              -- equipo y nº ROMA (anexo III I B h)
+  efficacy            text,                                              -- evaluación de la eficacia (anexo III I B j)
+  cue_recorded_at     timestamptz,                                       -- anotado en el CUE (obligatorio en 1 mes desde 01-01-2027)
   supplier_invoice_id uuid REFERENCES purchasing.supplier_invoice(id),   -- factura del producto (prueba)
   notes               text,
   created_by          text NOT NULL,

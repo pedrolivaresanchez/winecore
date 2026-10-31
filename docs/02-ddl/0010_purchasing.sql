@@ -105,6 +105,8 @@ CREATE TRIGGER supplier_invoice_line_guard BEFORE INSERT OR UPDATE OR DELETE ON 
 
 ALTER TABLE cellar.addition
   ADD CONSTRAINT addition_supplier_invoice_fk FOREIGN KEY (supplier_invoice_id) REFERENCES purchasing.supplier_invoice(id);
+ALTER TABLE cellar.cleaning_record
+  ADD CONSTRAINT cleaning_record_supplier_invoice_fk FOREIGN KEY (supplier_invoice_id) REFERENCES purchasing.supplier_invoice(id);
 ALTER TABLE billing.intercompany_settlement
   ADD CONSTRAINT settlement_purchase_invoice_fk FOREIGN KEY (purchase_invoice_id) REFERENCES purchasing.supplier_invoice(id);
 

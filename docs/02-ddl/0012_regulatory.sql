@@ -400,6 +400,31 @@ ALTER TABLE sales.sales_order
 -- ---------------------------------------------------------------------
 -- Calendario de obligaciones (alimenta avisos a CVBOT y al panel)
 -- ---------------------------------------------------------------------
+-- ---------------------------------------------------------------------
+-- Producción ecológica (docs/04-regulatorio/ecologico.md): certificados propios y de proveedores
+-- Reg. (UE) 2018/848, arts. 34-35 (el operador comprueba el certificado de cada proveedor)
+-- ---------------------------------------------------------------------
+CREATE TABLE regulatory.organic_certificate (
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  holder_kind         text NOT NULL CHECK (holder_kind IN ('own','supplier')),
+  legal_entity_id     uuid REFERENCES core.legal_entity(id),
+  contact_id          uuid REFERENCES party.contact(id),
+  control_body_code   text NOT NULL CHECK (control_body_code ~ '^[A-Z]{2}-[A-Z]{3}-[0-9]{1,3}(-[A-Z]{2,3})?$'),  -- p. ej. ES-ECO-001-AN
+  product_categories  text[] NOT NULL CHECK (cardinality(product_categories) > 0),  -- art. 35.7: 'a' vegetales, 'f' vino…
+  certificate_number  text,
+  valid_from          date NOT NULL,
+  valid_to            date NOT NULL,
+  attachment_id       uuid REFERENCES core.attachment(id),
+  verified_by         uuid REFERENCES core.app_user(id),
+  verified_at         timestamptz,
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  CHECK (valid_to >= valid_from),
+  CHECK ((holder_kind = 'own') = (legal_entity_id IS NOT NULL)),
+  CHECK ((holder_kind = 'supplier') = (contact_id IS NOT NULL))
+);
+CREATE INDEX organic_certificate_contact_idx ON regulatory.organic_certificate(contact_id, valid_to);
+CREATE TRIGGER organic_certificate_no_delete BEFORE DELETE ON regulatory.organic_certificate FOR EACH ROW EXECUTE FUNCTION core.forbid_delete();
+
 CREATE TABLE regulatory.obligation (
   id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   legal_entity_id  uuid NOT NULL REFERENCES core.legal_entity(id),
@@ -461,3 +486,5 @@ CREATE TRIGGER edi_message_audit AFTER INSERT OR UPDATE ON regulatory.edi_messag
 CREATE TRIGGER obligation_audit AFTER INSERT OR UPDATE ON regulatory.obligation FOR EACH ROW EXECUTE FUNCTION audit.capture();
 CREATE TRIGGER reconciliation_run_audit AFTER INSERT ON regulatory.reconciliation_run FOR EACH ROW EXECUTE FUNCTION audit.capture();
 CREATE TRIGGER reconciliation_diff_audit AFTER INSERT OR UPDATE ON regulatory.reconciliation_diff FOR EACH ROW EXECUTE FUNCTION audit.capture();
+CREATE TRIGGER organic_certificate_audit AFTER INSERT OR UPDATE ON regulatory.organic_certificate FOR EACH ROW EXECUTE FUNCTION audit.capture();
+CREATE TRIGGER silicie_ledger_audit AFTER INSERT OR UPDATE ON regulatory.silicie_ledger FOR EACH ROW EXECUTE FUNCTION audit.capture();
