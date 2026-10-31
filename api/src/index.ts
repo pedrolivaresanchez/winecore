@@ -3,6 +3,7 @@ import { loadConfig } from './config';
 import { openClient } from './core/db/open';
 import { createWriter, installWriter } from './core/db/writer';
 import { registerOutboxDispatch } from './jobs/outbox';
+import { registerRegulatoryDeadlines } from './jobs/regulatory-deadlines';
 import { createScheduler } from './jobs/scheduler';
 import { migrate } from '../db/migrate';
 import { withoutApiPrefix } from './api-prefix';
@@ -26,6 +27,7 @@ async function main(): Promise<void> {
     : createScheduler({ isLeader: async () => (await writer.currentRole()) === 'leader' });
   if (scheduler) {
     registerOutboxDispatch(scheduler, { writer, config });
+    registerRegulatoryDeadlines(scheduler, { writer });
     scheduler.start();
   }
   const app = createApp({ config, writer });

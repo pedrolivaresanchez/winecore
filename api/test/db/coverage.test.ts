@@ -53,6 +53,7 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
     "UQ:party.contact(tax_id)",
     "UQ:party.contact_address(contact_id,kind)",
     "UQ:purchasing.supplier_invoice(legal_entity_id,supplier_id,supplier_invoice_number)",
+    "UQ:regulatory.connector_run(submission_id)",
     "WC001",
     "WC010",
     "WC011",
@@ -78,5 +79,8 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
     "WC090",
     "WC100",
     "WC101",
+    "WC120",
+    "WC121",
+    "WC122",
   ]);
 });

@@ -9,6 +9,7 @@ import { readStepUp, sessionHash } from '../core/auth/stepup/session';
 import { sql } from '../core/db/sql';
 import type { Actor } from '../core/db/writer';
 import { domainError } from '../core/errors';
+import { syncSubmissionFromApproval } from '../core/regulatory/submissions';
 
 const PAGE_SIZE = 50;
 const LIST_CAP = 2000;
@@ -149,6 +150,9 @@ export async function decideApproval(deps: HttpDeps, request: Request, id: strin
       stepUpAt: step?.at ?? null,
     },
   });
+  if (row.kind === 'regulatory_submission') {
+    await syncSubmissionFromApproval(deps.writer, userActor(request, user.id), row.id);
+  }
   const fresh = await loadRows(deps, deps.now(), { status: 'all', kind: null, entity: null, id: row.id });
   const updated = fresh[0];
   if (!updated) throw domainError('WC_NOT_FOUND');
