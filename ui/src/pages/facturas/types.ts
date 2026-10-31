@@ -20,6 +20,8 @@ export type InvoiceListItem = {
   series_id: string
   verifactu_record_id: string | null
   updated_at: string
+  imported?: boolean
+  read_only?: boolean
 }
 
 export type InvoicePageResult = {

@@ -41,6 +41,7 @@ import { FRAME_GUTTER, FRAME_STRIP_SCROLL } from '@/ui/frame'
 import { Receipt, Search } from '@/ui/icons'
 import {
   Button,
+  Badge,
   Chip,
   DataGrid,
   EmptyState,
@@ -68,6 +69,7 @@ type Row = {
   invoicing: string
   route: string
   proforma: string
+  imported: boolean
 }
 
 const GRID_LABELS = {
@@ -208,7 +210,7 @@ export function VentasList({ me, doc, creating = false }: { me: Me; doc: DocKind
       return quotes.flatMap((item) => {
         if (status && item.status !== status) return []
         if (entityId && item.legal_entity_id !== entityId) return []
-        const customer = catalog.customerName(item.customer_id)
+        const customer = item.customer_name?.trim() || catalog.customerName(item.customer_id)
         if (!match([item.number ?? '', customer, item.notes ?? ''])) return []
         return [{
           id: item.id,
@@ -224,6 +226,7 @@ export function VentasList({ me, doc, creating = false }: { me: Me; doc: DocKind
           invoicing: '',
           route: '',
           proforma: item.is_proforma ? copy.sales.proforma : '—',
+          imported: item.imported === true,
         }]
       })
     }
@@ -245,12 +248,13 @@ export function VentasList({ me, doc, creating = false }: { me: Me; doc: DocKind
           invoicing: invoicingLabel(item.invoicing_status),
           route: '',
           proforma: '',
+          imported: false,
         }]
       })
     }
     return notes.flatMap((item) => {
       if (entityId && item.legal_entity_id !== entityId) return []
-      const customer = catalog.customerName(item.customer_id)
+      const customer = item.customer_name?.trim() || catalog.customerName(item.customer_id)
       const from = catalog.locations.find((location) => location.id === item.from_location_id)?.code ?? '—'
       const to = item.to_location_id ? catalog.locations.find((location) => location.id === item.to_location_id)?.code ?? '—' : customer
       if (!match([item.number ?? '', customer, from, to])) return []
@@ -268,6 +272,7 @@ export function VentasList({ me, doc, creating = false }: { me: Me; doc: DocKind
         invoicing: invoicingLabel(item.invoicing_status),
         route: `${from} → ${to}`,
         proforma: '',
+        imported: item.imported === true,
       }]
     })
   }, [catalog, debounced, doc, entityId, notes, orders, quotes, status])
@@ -527,7 +532,11 @@ function readHidden(doc: DocKind): Set<string> {
 }
 
 function columnsFor(doc: DocKind): GridColumn<Row>[] {
-  const number: GridColumn<Row> = { id: 'number', header: copy.sales.number, cell: (row) => row.number }
+  const number: GridColumn<Row> = {
+    id: 'number',
+    header: copy.sales.number,
+    cell: (row) => row.imported ? <span className="inline-flex items-center gap-1.5">{row.number}<Badge size="sm" tone="neutral">Holded</Badge></span> : row.number,
+  }
   const customer: GridColumn<Row> = { id: 'customer', header: copy.sales.customer, cell: (row) => row.customer }
   const channel: GridColumn<Row> = { id: 'channel', header: copy.sales.channel, cell: (row) => row.channel }
   const status: GridColumn<Row> = { id: 'status', header: copy.sales.status, cell: (row) => row.status }

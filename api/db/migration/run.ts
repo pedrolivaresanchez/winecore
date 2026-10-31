@@ -12,7 +12,7 @@ import {
   TIMBAL_TARGET,
   type WriteOp,
 } from './apply';
-import { datasetForRole, roleOf, type FileRole } from './classify';
+import { acceptsDataset, datasetForRole, roleOf, type FileRole } from './classify';
 import {
   holdedProductProposals,
   knownKeys,
@@ -25,12 +25,14 @@ import {
   type ProposalRow,
 } from './datasets/catalog';
 import { parseHoldedContacts, planContacts } from './datasets/contacts';
+import { historyBatch, planHistory } from './datasets/history';
 import { assertInvoiceCuadre, planOpenItems } from './datasets/open_items';
 import { parseShopifyCustomers } from './datasets/shopify_customers';
 import { readShopifyTable } from './extract/shopifyCsv';
 import { dataKeyFromEnv } from './ibanStore';
 import { readStoredReport, reportSha256, writeReport, type MigrationDataset, type MigrationReport, type MigrationSource } from './report';
 import { readHoldedXlsx, type HoldedTable } from './xlsx';
+import { sql } from '../../src/core/db/sql';
 
 export interface RunOptions {
   source: MigrationSource;
@@ -55,10 +57,10 @@ export async function runMigration(options: RunOptions): Promise<{ report: Migra
   const fileSha256 = sha256Buffer(bytes);
   const loaded = await loadInput(options.file, bytes);
   const role = roleOf(loaded.headers);
-  const expectedDataset = datasetForRole(role);
-  if (expectedDataset !== options.dataset) throw new Error('DATASET_FILE_MISMATCH');
+  if (!acceptsDataset(role, options.dataset)) throw new Error('DATASET_FILE_MISMATCH');
   const db = await openMigrationDb(options.dbPath);
   try {
+    let reuseBatch: string | null = null;
     if (options.mode === 'load') {
       const stored = await readStoredReport(options.outDir, fileSha256);
       if (!stored || stored.sha256 !== options.approvedReport) throw new Error('APPROVED_REPORT_MISMATCH');
@@ -70,13 +72,17 @@ export async function runMigration(options: RunOptions): Promise<{ report: Migra
       ) {
         throw new Error('APPROVED_REPORT_MISMATCH');
       }
-      if (await fileAlreadyLoaded(db.client, fileSha256, options.dataset)) {
+      if (options.dataset === 'history') {
+        const existing = await historyBatch(db.client, fileSha256);
+        if (existing?.finished) return { report: stored.report, reportSha256: stored.sha256, alreadyLoaded: true };
+        reuseBatch = existing?.id ?? null;
+      } else if (await fileAlreadyLoaded(db.client, fileSha256, options.dataset)) {
         return { report: stored.report, reportSha256: stored.sha256, alreadyLoaded: true };
       }
     }
     const entityId = await entityUuid(db.client, entity);
     const now = new Date();
-    const batchId = newId();
+    const batchId = reuseBatch ?? newId();
     const actor: Actor = {
       type: 'migration',
       id: `migrador:${options.operator}`,
@@ -100,23 +106,31 @@ export async function runMigration(options: RunOptions): Promise<{ report: Migra
     if (options.mode === 'load' && hash !== options.approvedReport) throw new Error('APPROVED_REPORT_MISMATCH');
     if (planned.slice !== null) await assertProposalSlice(options.outDir, fileSha256, planned.slice, options.mode);
     const rejected = Object.values(planned.report.skipped).reduce((sum, value) => sum + value, 0);
-    const ops: WriteOp[] = [
-      batchOp({
-        id: batchId,
-        source: options.source,
-        entityId,
-        dataset: options.dataset,
-        fileName: `f-${fileSha256.slice(0, 16)}`,
-        fileSha256,
-        rowsRead: planned.report.rows_read,
-        rowsLoaded: planned.report.created,
-        rowsRejected: rejected,
-        report: planned.report,
-        actorId: actor.id,
-        now,
-      }),
-      ...planned.ops,
-    ];
+    const batch = batchOp({
+      id: batchId,
+      source: options.source,
+      entityId,
+      dataset: options.dataset,
+      fileName: `f-${fileSha256.slice(0, 16)}`,
+      fileSha256,
+      rowsRead: planned.report.rows_read,
+      rowsLoaded: planned.report.created,
+      rowsRejected: rejected,
+      report: planned.report,
+      actorId: actor.id,
+      now,
+      open: options.dataset === 'history',
+    });
+    const closing: WriteOp = {
+      sql: sql`
+        UPDATE legacy.import_batch
+        SET rows_loaded = ${planned.report.created}, finished_at = ${now}
+        WHERE id = CAST(${batchId} AS UUID)
+      `,
+    };
+    const ops: WriteOp[] = options.dataset === 'history'
+      ? [...(reuseBatch ? [] : [batch]), ...planned.ops, closing]
+      : [batch, ...planned.ops];
     await applyOps({
       client: db.client,
       writer: db.writer,
@@ -150,6 +164,7 @@ async function buildPlan(input: {
   headers: string[];
   table: HoldedTable | null;
   records: Record<string, string>[] | null;
+  file: string;
   operator: string;
   dataKey: Buffer | null;
   now: Date;
@@ -191,6 +206,22 @@ async function buildPlan(input: {
       batchId: input.batchId,
     });
     return { ops: plan.ops, report: plan.report, slice: null, expected: plan.expected };
+  }
+  if (input.dataset === 'history') {
+    if (!input.table || !input.entityId) throw new Error('DATASET_FILE_MISMATCH');
+    const plan = await planHistory({
+      client: input.client,
+      source: input.source,
+      entity: input.entity,
+      entityId: input.entityId,
+      fileSha256: input.fileSha256,
+      filePath: input.file,
+      role: input.role,
+      table: input.table,
+      batchId: input.batchId,
+      now: input.now,
+    });
+    return { ops: plan.ops, report: plan.report, slice: null, expected: null };
   }
   const proposals = await catalogProposals(input);
   const plan = await planCatalogLoad({
@@ -355,7 +386,7 @@ function parseArgs(argv: readonly string[]): RunOptions {
   const load = argv.includes('--load');
   if (!source || !entity || !dataset || !file || dryRun === load) throw new Error('USAGE');
   if (source !== 'holded' && source !== 'shopify') throw new Error('SOURCE');
-  if (dataset !== 'contacts' && dataset !== 'catalog' && dataset !== 'open_items') throw new Error('DATASET');
+  if (dataset !== 'contacts' && dataset !== 'catalog' && dataset !== 'open_items' && dataset !== 'history') throw new Error('DATASET');
   const outDir = read('--out') ?? 'data/migration';
   return {
     source,

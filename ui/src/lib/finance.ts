@@ -65,6 +65,8 @@ export type Payment = {
   allocations: Allocation[]
   unallocated: string
   warnings?: string[]
+  counterparty_name?: string | null
+  imported?: boolean
 }
 
 export type PaymentPage = {

@@ -4,7 +4,7 @@ import { canonicalJson } from '../db/audit';
 import { sha256Hex } from '../hash';
 import { sql } from '../db/sql';
 import type { Tx, Writer } from '../db/writer';
-import { domainError } from '../errors';
+import { DomainError, domainError } from '../errors';
 import { newId } from '../ids';
 import { actorOf, idempotencyKey, readJson, remember, replay, requestHash, storedResponse } from './idempotency';
 import {
@@ -29,6 +29,7 @@ import {
   type TargetTable,
 } from './support';
 import { findEntity, loadDocument, loadParty, registeredPaid, writeDocumentPaid, type PayableDocument } from './store';
+import { isImported, legacyPayment } from '../legacy/historyRead';
 
 const METHODS = new Set(['transfer', 'direct_debit', 'card', 'cash', 'stripe', 'compensation', 'other']);
 const ROUTE = 'POST /v1/payments';
@@ -100,9 +101,17 @@ export async function reversePayment(writer: Writer, user: UserCtx, request: Req
 
 export async function getPayment(writer: Writer, user: UserCtx, paymentId: string) {
   const id = pathUuid(paymentId);
-  const body = await readPayment(writer, id);
-  assertScope(user, 'finance.read', body.legal_entity_id);
-  return body;
+  try {
+    const body = await readPayment(writer, id);
+    assertScope(user, 'finance.read', body.legal_entity_id);
+    return body;
+  } catch (error) {
+    if (!(error instanceof DomainError) || error.code !== 'WC_NOT_FOUND') throw error;
+    const legacy = await legacyPayment(writer.read.bind(writer), id);
+    if (!legacy) throw error;
+    assertScope(user, 'finance.read', String(legacy.legal_entity_id));
+    return legacy;
+  }
 }
 
 export async function listPayments(writer: Writer, user: UserCtx, request: Request) {
@@ -143,21 +152,58 @@ export async function listPayments(writer: Writer, user: UserCtx, request: Reque
     ? sql` AND (p.value_date < CAST(${cursor.date} AS DATE) OR (p.value_date = CAST(${cursor.date} AS DATE) AND p.id < CAST(${cursor.id} AS UUID)))`
     : '';
   const rows = await writer.read<Record<string, unknown>>(
-    `SELECT p.*, c.legal_name AS counterparty_name
-     FROM finance.payment p
-     LEFT JOIN party.contact c ON c.id = p.counterparty_id
+    `SELECT * FROM (
+       SELECT p.id, p.legal_entity_id, p.direction, p.method, p.amount, p.currency, p.value_date,
+              p.counterparty_id, p.bank_account_id, p.reference, p.source, p.status, p.reversal_reason,
+              c.legal_name AS counterparty_name, FALSE AS imported
+       FROM finance.payment p
+       LEFT JOIN party.contact c ON c.id = p.counterparty_id
+       UNION ALL
+       SELECT h.id, h.entity_id,
+              CASE WHEN h.kind = 'purchase' THEN 'out' ELSE 'in' END,
+              CASE
+                WHEN lower(coalesce(h.payment_method, '')) LIKE '%transfer%' THEN 'transfer'
+                WHEN lower(coalesce(h.payment_method, '')) LIKE '%tarjeta%' THEN 'card'
+                WHEN lower(coalesce(h.payment_method, '')) LIKE '%contado%' OR lower(coalesce(h.payment_method, '')) LIKE '%efectivo%' THEN 'cash'
+                WHEN lower(coalesce(h.payment_method, '')) LIKE '%domicil%' OR lower(coalesce(h.payment_method, '')) LIKE '%recibo%' THEN 'direct_debit'
+                WHEN lower(coalesce(h.payment_method, '')) LIKE '%compens%' THEN 'compensation'
+                ELSE 'other'
+              END,
+              h.paid, 'EUR', COALESCE(h.paid_on, h.issue_date),
+              h.counterparty_contact_id, NULL, h.number, 'migration', 'registered', NULL,
+              COALESCE(c.legal_name, h.counterparty_name), TRUE
+       FROM legacy.holded_invoice h
+       LEFT JOIN party.contact c ON c.id = h.counterparty_contact_id
+       WHERE COALESCE(h.paid, 0) > 0
+     ) p
      WHERE ${where}${cursorSql}
      ORDER BY p.value_date DESC, p.id DESC
      LIMIT ${limit + 1}`,
   );
-  const totalRows = await writer.read<{ total: number }>(`SELECT count(*)::INTEGER AS total FROM finance.payment p WHERE ${where}`);
+  const totalRows = await writer.read<{ total: number }>(`
+    SELECT count(*)::INTEGER AS total FROM (
+      SELECT p.id, p.legal_entity_id, p.direction, p.counterparty_id, p.value_date
+      FROM finance.payment p
+      UNION ALL
+      SELECT h.id, h.entity_id,
+             CASE WHEN h.kind = 'purchase' THEN 'out' ELSE 'in' END,
+             h.counterparty_contact_id, COALESCE(h.paid_on, h.issue_date)
+      FROM legacy.holded_invoice h
+      WHERE COALESCE(h.paid, 0) > 0
+    ) p
+    WHERE ${where}
+  `);
   const hasMore = rows.length > limit;
   const page = hasMore ? rows.slice(0, limit) : rows;
   const ids = page.map((row) => String(row.id).toLowerCase());
   const allocations = await allocationsFor(writer, ids);
   const flat = ids.flatMap((id) => allocations.get(id) ?? []);
   const documents = await documentsFor(writer, flat);
-  const items = page.map((row) => paymentBody(row, allocations.get(String(row.id).toLowerCase()) ?? [], documents));
+  const items = page.map((row) => ({
+    ...paymentBody(row, allocations.get(String(row.id).toLowerCase()) ?? [], documents),
+    imported: isImported(row.imported),
+    read_only: isImported(row.imported),
+  }));
   const last = page.at(-1);
   return {
     items,

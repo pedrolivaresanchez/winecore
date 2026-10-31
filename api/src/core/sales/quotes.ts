@@ -32,6 +32,7 @@ import { parseCommercialLines, resolveLinePrice } from './pricing';
 import { buildProformaPdf } from './proforma';
 import { resolveIssuingEntity } from './rules';
 import { priceTotals, type PricedLine } from './totals';
+import { legacyQuotes } from '../legacy/historyRead';
 
 type ReadDb = Pick<Tx, 'read'>;
 
@@ -99,20 +100,55 @@ export async function listQuotes(writer: Writer, request: Request): Promise<Reco
   const url = new URL(request.url);
   const limit = clampLimit(url.searchParams.get('limit'));
   const cursor = url.searchParams.get('cursor');
-  const rows = await writer.read<Record<string, unknown>>(cursor
-    ? sql`SELECT * FROM sales.quote WHERE id < CAST(${cursor} AS UUID) ORDER BY id DESC LIMIT ${limit + 1}`
-    : sql`SELECT * FROM sales.quote ORDER BY id DESC LIMIT ${limit + 1}`);
+  const cursorOk = cursor != null && UUID_RE.test(cursor);
+  const rows = await writer.read<Record<string, unknown>>(cursorOk
+    ? sql`
+      SELECT id, origin FROM (
+        SELECT id, 'winecore' AS origin FROM sales.quote
+        UNION ALL
+        SELECT id, 'holded' AS origin FROM legacy.holded_quote
+      ) q
+      WHERE id < CAST(${cursor} AS UUID)
+      ORDER BY id DESC
+      LIMIT ${limit + 1}
+    `
+    : sql`
+      SELECT id, origin FROM (
+        SELECT id, 'winecore' AS origin FROM sales.quote
+        UNION ALL
+        SELECT id, 'holded' AS origin FROM legacy.holded_quote
+      ) q
+      ORDER BY id DESC
+      LIMIT ${limit + 1}
+    `);
   const page = rows.length > limit ? rows.slice(0, limit) : rows;
+  const holdedIds = page.filter((row) => String(row.origin) === 'holded').map((row) => idOf(row.id));
+  const holded = new Map((await legacyQuotes(writer.read.bind(writer), holdedIds)).map((item) => [String(item.id), item]));
   const items = [];
-  for (const row of page) items.push(quoteJson(row, await loadQuoteLines(writer, idOf(row.id))));
+  for (const row of page) {
+    const id = idOf(row.id);
+    if (String(row.origin) === 'holded') {
+      const legacy = holded.get(id);
+      if (legacy) items.push(legacy);
+      continue;
+    }
+    items.push(quoteJson(row.id ? await loadQuote(writer, id) : row, await loadQuoteLines(writer, id)));
+  }
   const last = page[page.length - 1];
   return { items, next_cursor: rows.length > limit && last ? idOf(last.id) : null };
 }
 
 export async function getQuote(writer: Writer, id: string): Promise<Record<string, unknown>> {
   const quoteId = pathId(id);
-  const row = await loadQuote(writer, quoteId);
-  return quoteJson(row, await loadQuoteLines(writer, quoteId));
+  try {
+    const row = await loadQuote(writer, quoteId);
+    return quoteJson(row, await loadQuoteLines(writer, quoteId));
+  } catch (error) {
+    if (!(error instanceof DomainError) || error.code !== 'WC_NOT_FOUND') throw error;
+    const legacy = (await legacyQuotes(writer.read.bind(writer), [quoteId]))[0];
+    if (!legacy) throw error;
+    return legacy;
+  }
 }
 
 export async function createQuote(writer: Writer, request: Request): Promise<{ status: number; body: Record<string, unknown> }> {

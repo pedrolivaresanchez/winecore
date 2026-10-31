@@ -45,6 +45,8 @@ export type Quote = {
   tax_total: string
   total: string
   lines: SalesLine[]
+  customer_name?: string | null
+  imported?: boolean
 }
 
 export type IssuingPreview = {
@@ -111,6 +113,8 @@ export type DeliveryNote = {
   source_delivery_note_id: string | null
   notes: string | null
   lines: SalesLine[]
+  customer_name?: string | null
+  imported?: boolean
 }
 
 export type SalesPage<T> = { items: T[]; next_cursor: string | null }

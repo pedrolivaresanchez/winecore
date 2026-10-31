@@ -234,7 +234,7 @@ export function ExpenseList({ me }: { me: Me }) {
     const all: GridColumn<Expense>[] = [
       { id: 'supplier', header: copy.gastos.supplier, cell: (row) => row.supplier_name || '—' },
       { id: 'tax_id', header: copy.gastos.taxId, cell: (row) => row.supplier_tax_id || '—' },
-      { id: 'number', header: copy.gastos.number, cell: (row) => row.supplier_invoice_number || '—' },
+      { id: 'number', header: copy.gastos.number, cell: (row) => row.imported ? <span className="inline-flex items-center gap-1.5">{row.supplier_invoice_number || '—'}<Badge tone="neutral">Holded</Badge></span> : (row.supplier_invoice_number || '—') },
       { id: 'issue_date', header: copy.gastos.issueDate, cell: (row) => (row.issue_date ? formatDate(row.issue_date) : '—') },
       { id: 'entity', header: copy.gastos.entity, cell: (row) => row.legal_entity_code },
       { id: 'category', header: copy.gastos.category, cell: (row) => nameOf(row.category_code) },

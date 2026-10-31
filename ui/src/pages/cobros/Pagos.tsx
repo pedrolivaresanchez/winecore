@@ -83,7 +83,12 @@ export function Pagos({ me }: { me: Me }) {
   const columns = useMemo<GridColumn<Payment>[]>(
     () => [
       { id: 'date', header: copy.cobros.date, cell: (row) => (row.value_date ? formatDate(row.value_date) : '—') },
-      { id: 'who', header: copy.cobros.counterparty, cell: (row) => (row.counterparty_id ? names[row.counterparty_id] ?? '…' : '—') },
+      { id: 'who', header: copy.cobros.counterparty, cell: (row) => (
+        <span className="inline-flex items-center gap-1.5">
+          <span>{row.counterparty_name || (row.counterparty_id ? names[row.counterparty_id] ?? '…' : '—')}</span>
+          {row.imported ? <Badge size="sm">Holded</Badge> : null}
+        </span>
+      ) },
       {
         id: 'direction',
         header: copy.cobros.direction,

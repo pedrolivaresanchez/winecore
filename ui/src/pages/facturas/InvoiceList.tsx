@@ -235,7 +235,7 @@ export function InvoiceList({ me }: { me: Me }) {
 
   const columns = useMemo<GridColumn<InvoiceListItem>[]>(() => {
     const all: GridColumn<InvoiceListItem>[] = [
-      { id: 'number', header: copy.facturas.number, cell: (row) => row.number || copy.facturas.draft },
+      { id: 'number', header: copy.facturas.number, cell: (row) => row.imported ? <span className="inline-flex items-center gap-1.5">{row.number || copy.facturas.draft}<Badge tone="neutral">Holded</Badge></span> : (row.number || copy.facturas.draft) },
       { id: 'date', header: copy.facturas.date, cell: (row) => day(row.issue_date) },
       { id: 'entity', header: copy.facturas.entity, cell: (row) => entityLabel(row.entity_code) },
       { id: 'customer', header: copy.facturas.customer, cell: (row) => row.customer_name || '—' },

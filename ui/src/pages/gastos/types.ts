@@ -62,6 +62,7 @@ export type Expense = {
   approved_at: string | null
   created_at: string
   updated_at: string
+  imported?: boolean
 }
 
 export type ExpensePage = {

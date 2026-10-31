@@ -111,6 +111,8 @@ export function batchOp(input: {
   report: MigrationReport;
   actorId: string;
   now: Date;
+  /** Histórico: el lote se cierra al final para poder reanudar un corte a medias. */
+  open?: boolean;
 }): WriteOp {
   return {
     sql: sql`
@@ -126,11 +128,11 @@ export function batchOp(input: {
         ${input.fileSha256},
         'load',
         ${input.rowsRead},
-        ${input.rowsLoaded},
+        ${input.open ? 0 : input.rowsLoaded},
         ${input.rowsRejected},
         ${sql.json(input.report)},
         ${input.now},
-        ${input.now},
+        ${input.open ? null : input.now},
         ${input.actorId}
       )
     `,

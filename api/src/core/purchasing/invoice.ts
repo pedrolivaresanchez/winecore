@@ -2,7 +2,7 @@ import { detectMime } from '../attachments/mime';
 import { listLinks, putAttachment } from '../attachments/store';
 import { can, type Permission, type UserCtx } from '../auth/permissions';
 import type { Actor, Tx, Writer } from '../db/writer';
-import { domainError } from '../errors';
+import { domainError, DomainError } from '../errors';
 import { newId } from '../ids';
 import { sql } from '../db/sql';
 import { payloadSha256 } from '../approvals/canonical';
@@ -16,6 +16,7 @@ import {
   type ConfidenceMap,
   type Extraction,
 } from './extraction';
+import { legacyPurchase, legacyPurchases } from '../legacy/historyRead';
 
 const CAPTURE_ROUTE = 'POST /v1/supplier-invoices/capture';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -81,6 +82,8 @@ export type InvoiceJson = {
   approved_at: string | null;
   created_at: string;
   updated_at: string;
+  imported?: boolean;
+  read_only?: boolean;
 };
 
 export type CaptureCommand = {
@@ -784,7 +787,15 @@ function searchFilter(raw: string | null): string | null {
 }
 
 export async function getInvoice(writer: Writer, user: UserCtx, id: string): Promise<InvoiceJson> {
-  return requireInvoice(writer.read.bind(writer), user, id, 'purchasing.read');
+  try {
+    return await requireInvoice(writer.read.bind(writer), user, id, 'purchasing.read');
+  } catch (error) {
+    if (!(error instanceof DomainError) || error.code !== 'WC_NOT_FOUND') throw error;
+    const legacy = await legacyPurchase(writer.read.bind(writer), id);
+    if (!legacy) throw error;
+    if (!can(user, 'purchasing.read', String(legacy.legal_entity_id))) throw domainError('WC_FORBIDDEN');
+    return legacy as InvoiceJson;
+  }
 }
 
 export async function listInvoices(writer: Writer, user: UserCtx, url: URL): Promise<{
@@ -833,6 +844,34 @@ export async function listInvoices(writer: Writer, user: UserCtx, url: URL): Pro
     )`);
   }
   const where = filters.join(' AND ');
+  const holded = ['h.kind = \'purchase\''];
+  if (status === 'approved') holded.push(`lower(trim(h.status_holded)) NOT IN ('anulado', 'anulada')`);
+  else if (status === 'rejected') holded.push(`lower(trim(h.status_holded)) IN ('anulado', 'anulada')`);
+  else if (status) holded.push('FALSE');
+  if (!scopeAll(user, 'purchasing.read')) {
+    const ids = user.roles.flatMap((role) =>
+      role.legalEntityId && can(user, 'purchasing.read', role.legalEntityId) ? [role.legalEntityId.toLowerCase()] : []);
+    if (ids.length > 0) holded.push(`h.entity_id IN (${ids.map((id) => sql`CAST(${id} AS UUID)`).join(', ')})`);
+  }
+  if (entityRef) {
+    const resolved = await writer.read<{ id: unknown }>(UUID.test(entityRef)
+      ? sql`SELECT id FROM core.legal_entity WHERE id = CAST(${entityRef.toLowerCase()} AS UUID)`
+      : sql`SELECT id FROM core.legal_entity WHERE code = ${entityRef.trim().toUpperCase().replace(/\./g, '')}`);
+    const entityId = resolved[0] ? String(resolved[0].id).toLowerCase() : null;
+    if (entityId) holded.push(sql`h.entity_id = CAST(${entityId} AS UUID)`);
+  }
+  if (month) holded.push(sql`left(CAST(COALESCE(h.accounting_date, h.issue_date) AS VARCHAR), 7) = ${month}`);
+  if (category) holded.push('FALSE');
+  if (needle) {
+    holded.push(sql`(
+      strip_accents(lower(coalesce(c.legal_name, ''))) LIKE strip_accents(lower(${needle}))
+      OR strip_accents(lower(coalesce(c.trade_name, ''))) LIKE strip_accents(lower(${needle}))
+      OR strip_accents(lower(coalesce(h.counterparty_name, ''))) LIKE strip_accents(lower(${needle}))
+      OR strip_accents(lower(coalesce(h.number, ''))) LIKE strip_accents(lower(${needle}))
+      OR strip_accents(lower(coalesce(c.tax_id, ''))) LIKE strip_accents(lower(${needle}))
+    )`);
+  }
+  const holdedWhere = holded.join(' AND ');
   const cursor = url.searchParams.get('cursor');
   let cursorSql = '';
   if (cursor) {
@@ -843,25 +882,47 @@ export async function listInvoices(writer: Writer, user: UserCtx, url: URL): Pro
       OR (i.updated_at = CAST(${decoded.at} AS TIMESTAMPTZ) AND i.id < CAST(${decoded.id} AS UUID))
     )`;
   }
-  const rows = await writer.read<{ id: unknown }>(`
-    SELECT i.id
-    FROM purchasing.supplier_invoice i
-    LEFT JOIN party.contact c ON c.id = i.supplier_id
-    WHERE ${where}${cursorSql}
+  const rows = await writer.read<{ id: unknown; origin: unknown; updated_at: unknown }>(`
+    SELECT id, origin, updated_at FROM (
+      SELECT i.id, i.updated_at, 'winecore' AS origin
+      FROM purchasing.supplier_invoice i
+      LEFT JOIN party.contact c ON c.id = i.supplier_id
+      WHERE ${where}
+      UNION ALL
+      SELECT h.id, CAST(h.issue_date AS TIMESTAMP) + INTERVAL 12 HOUR, 'holded'
+      FROM legacy.holded_invoice h
+      LEFT JOIN party.contact c ON c.id = h.counterparty_contact_id
+      WHERE ${holdedWhere}
+    ) i
+    WHERE TRUE${cursorSql}
     ORDER BY i.updated_at DESC, i.id DESC
     LIMIT ${limit + 1}
   `);
   const totalRows = await writer.read<{ total: unknown }>(`
-    SELECT count(*) AS total
-    FROM purchasing.supplier_invoice i
-    LEFT JOIN party.contact c ON c.id = i.supplier_id
-    WHERE ${where}
+    SELECT count(*) AS total FROM (
+      SELECT i.id
+      FROM purchasing.supplier_invoice i
+      LEFT JOIN party.contact c ON c.id = i.supplier_id
+      WHERE ${where}
+      UNION ALL
+      SELECT h.id
+      FROM legacy.holded_invoice h
+      LEFT JOIN party.contact c ON c.id = h.counterparty_contact_id
+      WHERE ${holdedWhere}
+    ) i
   `);
   const hasMore = rows.length > limit;
   const page = hasMore ? rows.slice(0, limit) : rows;
+  const holdedIds = page.filter((row) => String(row.origin) === 'holded').map((row) => String(row.id).toLowerCase());
+  const holdedItems = new Map((await legacyPurchases(writer.read.bind(writer), holdedIds)).map((item) => [String(item.id), item]));
   const items: InvoiceJson[] = [];
   for (const row of page) {
     const id = String(row.id).toLowerCase();
+    if (String(row.origin) === 'holded') {
+      const legacy = holdedItems.get(id);
+      if (legacy) items.push(legacy as InvoiceJson);
+      continue;
+    }
     items.push(await requireInvoice(writer.read.bind(writer), user, id, 'purchasing.read'));
   }
   const last = items[items.length - 1];

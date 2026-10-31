@@ -4,7 +4,7 @@ import { canonicalJson } from '../../src/core/db/audit';
 import { sha256Hex } from '../../src/core/hash';
 
 export type MigrationSource = 'holded' | 'shopify';
-export type MigrationDataset = 'contacts' | 'catalog' | 'open_items';
+export type MigrationDataset = 'contacts' | 'catalog' | 'open_items' | 'history';
 
 export interface MigrationReport {
   source: MigrationSource;

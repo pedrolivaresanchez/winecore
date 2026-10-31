@@ -3,7 +3,7 @@ import { requestIdFor, sessionOf } from '../auth/guard';
 import { canonicalJson } from '../core/db/audit';
 import { sql } from '../core/db/sql';
 import type { Writer } from '../core/db/writer';
-import { domainError } from '../core/errors';
+import { DomainError, domainError } from '../core/errors';
 import { sha256Hex } from '../core/hash';
 import { newId } from '../core/ids';
 import { executeBatchIssue, requestBatchIssue } from '../core/billing/batch';
@@ -14,6 +14,7 @@ import { issueInvoice } from '../core/billing/issue';
 import { loadEntity, loadEntityByCode, loadInvoice, presentInvoice } from '../core/billing/readModel';
 import { validateInvoice } from '../core/billing/validate';
 import { voidInvoice } from '../core/billing/void';
+import { legacySale, SALE_DOCUMENTS, isImported } from '../core/legacy/historyRead';
 
 const ISSUE_ROUTE = 'POST /v1/invoices/:id/issue';
 
@@ -34,7 +35,7 @@ export async function listInvoices(writer: Writer, request: Request) {
   if (query.from) filters.push(sql`i.issue_date >= CAST(${query.from} AS DATE)`);
   if (query.to) filters.push(sql`i.issue_date <= CAST(${query.to} AS DATE)`);
   if (query.paymentStatus) filters.push(sql`i.payment_status = ${query.paymentStatus}`);
-  if (query.verifactuStatus === 'pending') filters.push('i.verifactu_record_id IS NULL');
+  if (query.verifactuStatus === 'pending') filters.push('i.verifactu_record_id IS NULL AND i.imported = FALSE');
   if (query.verifactuStatus === 'accepted') filters.push('i.verifactu_record_id IS NOT NULL');
   if (query.deliveryStatus === 'none') filters.push('del.invoice_id IS NULL');
   else if (query.deliveryStatus) filters.push(sql`del.status = ${query.deliveryStatus}`);
@@ -44,11 +45,10 @@ export async function listInvoices(writer: Writer, request: Request) {
     ? `${where} AND (i.updated_at < CAST(${sql`${cursor.at}`} AS TIMESTAMPTZ) OR (i.updated_at = CAST(${sql`${cursor.at}`} AS TIMESTAMPTZ) AND i.id < CAST(${sql`${cursor.id}`} AS UUID)))`
     : where;
   const rows = await writer.read(`
-    SELECT i.*, e.code AS entity_code, c.legal_name AS customer_name,
-           (SELECT min(d.due_date) FROM billing.invoice_due d WHERE d.invoice_id = i.id) AS first_due,
+    SELECT i.*, e.code AS entity_code, COALESCE(c.legal_name, i.holded_name) AS customer_name,
            del.status AS delivery_status,
            COALESCE(del.sent_at, del.created_at) AS last_delivery_at
-    FROM billing.invoice i
+    FROM (${SALE_DOCUMENTS}) i
     JOIN core.legal_entity e ON e.id = i.legal_entity_id
     LEFT JOIN party.contact c ON c.id = i.customer_id
     ${DELIVERY_JOIN}
@@ -58,7 +58,7 @@ export async function listInvoices(writer: Writer, request: Request) {
   `);
   const totalRows = await writer.read<{ total: unknown }>(`
     SELECT count(*)::INTEGER AS total
-    FROM billing.invoice i
+    FROM (${SALE_DOCUMENTS}) i
     ${DELIVERY_JOIN}
     WHERE ${where}
   `);
@@ -99,9 +99,17 @@ export async function createInvoice(writer: Writer, request: Request) {
 
 export async function getInvoice(writer: Writer, request: Request, id: string) {
   const user = sessionOf(request);
-  const view = await loadInvoice(writer, id);
-  if (!can(user, 'billing.read', view.header.legalEntityId)) throw domainError('WC_FORBIDDEN');
-  return presentInvoice(view);
+  try {
+    const view = await loadInvoice(writer, id);
+    if (!can(user, 'billing.read', view.header.legalEntityId)) throw domainError('WC_FORBIDDEN');
+    return presentInvoice(view);
+  } catch (error) {
+    if (!(error instanceof DomainError) || error.code !== 'WC_NOT_FOUND') throw error;
+    const legacy = await legacySale(writer.read.bind(writer), id);
+    if (!legacy) throw error;
+    if (!can(user, 'billing.read', String(legacy.legal_entity_id))) throw domainError('WC_FORBIDDEN');
+    return legacy;
+  }
 }
 
 export async function patchInvoice(writer: Writer, request: Request, id: string) {
@@ -238,11 +246,12 @@ function listItem(row: Record<string, unknown>) {
     payment_status: String(row.payment_status),
     status: String(row.status),
     invoice_type: String(row.invoice_type),
-    series_id: idOf(row.series_id),
+    series_id: row.series_id == null ? '' : idOf(row.series_id),
     verifactu_record_id: row.verifactu_record_id == null ? null : idOf(row.verifactu_record_id),
     delivery_status: deliveryStatusOf(row.delivery_status),
     last_delivery_at: stamp(row.last_delivery_at),
     updated_at: String(row.updated_at),
+    imported: isImported(row.imported),
   };
 }
 

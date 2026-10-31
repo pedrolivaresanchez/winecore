@@ -2,6 +2,7 @@ import { Decimal } from 'decimal.js';
 import { sql } from '../db/sql';
 import type { Actor, Tx, Writer } from '../db/writer';
 import { DomainError, domainError } from '../errors';
+import { legacyDeliveries } from '../legacy/historyRead';
 import type { ProductState, StockMove } from '../inventory/types';
 import { toMadridOffsetString, businessDate } from '../time';
 import {
@@ -377,7 +378,15 @@ export async function markNotInvoiceable(tx: Tx, id: string, reason: string): Pr
 }
 
 export async function getDelivery(writer: Writer, id: string): Promise<Record<string, unknown>> {
-  return noteView(writer, pathId(id));
+  const noteId = pathId(id);
+  try {
+    return await noteView(writer, noteId);
+  } catch (error) {
+    if (!(error instanceof DomainError) || error.code !== 'WC_NOT_FOUND') throw error;
+    const legacy = (await legacyDeliveries(writer.read.bind(writer), [noteId]))[0];
+    if (!legacy) throw error;
+    return legacy;
+  }
 }
 
 export async function listDeliveries(writer: Writer, request: Request): Promise<Record<string, unknown>> {
@@ -397,11 +406,36 @@ export async function listDeliveries(writer: Writer, request: Request): Promise<
   if (invoiced === 'not_invoiceable') filters.push(`invoicing_status = 'not_invoiceable'`);
   if (cursor && UUID_RE.test(cursor)) filters.push(`id < CAST(${sql`${cursor}`} AS UUID)`);
   const rows = await writer.read<Record<string, unknown>>(`
-    SELECT id FROM sales.delivery_note WHERE ${filters.join(' AND ')} ORDER BY id DESC LIMIT ${limit + 1}
+    SELECT id, origin FROM (
+      SELECT id, legal_entity_id, kind, status, invoicing_status, 'winecore' AS origin
+      FROM sales.delivery_note
+      UNION ALL
+      SELECT id, entity_id, 'sale', 'issued',
+        CASE
+          WHEN lower(trim(invoiced_status)) = 'facturado' THEN 'invoiced'
+          WHEN lower(trim(invoiced_status)) LIKE 'parcial%' THEN 'partially_invoiced'
+          ELSE 'not_invoiced'
+        END,
+        'holded'
+      FROM legacy.holded_delivery_note
+    ) n
+    WHERE ${filters.join(' AND ')}
+    ORDER BY id DESC
+    LIMIT ${limit + 1}
   `);
   const page = rows.length > limit ? rows.slice(0, limit) : rows;
+  const holdedIds = page.filter((row) => String(row.origin) === 'holded').map((row) => idOf(row.id));
+  const holded = new Map((await legacyDeliveries(writer.read.bind(writer), holdedIds)).map((item) => [String(item.id), item]));
   const items = [];
-  for (const row of page) items.push(await noteView(writer, idOf(row.id)));
+  for (const row of page) {
+    const id = idOf(row.id);
+    if (String(row.origin) === 'holded') {
+      const legacy = holded.get(id);
+      if (legacy) items.push(legacy);
+      continue;
+    }
+    items.push(await noteView(writer, id));
+  }
   const last = page[page.length - 1];
   return { items, next_cursor: rows.length > limit && last ? idOf(last.id) : null };
 }
