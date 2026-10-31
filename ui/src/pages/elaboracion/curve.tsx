@@ -3,7 +3,7 @@ import { copy } from '@/i18n'
 import { SERIES_CURRENT, clientPoint, plotBox, useElementWidth, yAt } from '@/lib/chart-scale'
 import { formatDateTime } from '@/lib/format'
 import { showDecimal, type CurvePoint } from '@/pages/elaboracion/model'
-import { ChartTooltip, type TooltipRow } from '@/pages/informes/charts/tooltip'
+import { ChartTooltip, type TooltipPayload } from '@/ui/charts'
 
 const TEMPERATURE = 'var(--color-chart-4)'
 
@@ -58,10 +58,17 @@ function SeriesChart({
   const xAt = (pointIndex: number) => (count === 1 ? plot.left + plot.width / 2 : plot.left + (plot.width * pointIndex) / Math.max(1, count - 1))
   const step = count <= 6 ? 1 : Math.ceil(count / 4)
   const active = index != null ? points[index] : null
-  const rows: TooltipRow[] = active
-    ? [{ key: 'value', label, color, value: `${showDecimal(active.value, digits)} ${unit}`.trim() }]
-    : []
   const tip = pointer ?? (active && index != null ? clientPoint(svgRef.current, xAt(index), y(active.value), width, height) : null)
+  const payload: TooltipPayload | null =
+    active && tip
+      ? {
+          x: tip.x,
+          y: tip.y,
+          title: formatDateTime(active.at),
+          rows: [{ key: 'value', label, color, value: active.value }],
+          format: (value) => `${showDecimal(value, digits)} ${unit}`.trim(),
+        }
+      : null
   const path = points.map((point, pointIndex) => `${pointIndex === 0 ? 'M' : 'L'} ${xAt(pointIndex)} ${y(point.value)}`).join(' ')
 
   return (
@@ -135,7 +142,7 @@ function SeriesChart({
       ) : (
         <div style={{ height }} />
       )}
-      <ChartTooltip open={active != null && tip != null} x={tip?.x ?? 0} y={tip?.y ?? 0} title={active ? formatDateTime(active.at) : ''} rows={rows} />
+      <ChartTooltip payload={payload} />
     </div>
   )
 }

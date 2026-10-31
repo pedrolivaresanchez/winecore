@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { ChevronDown, PanelLeft, Search } from '@/ui/icons'
 import { Tooltip } from '@/ui'
 import { textureSecondary } from '@/ui/button'
-import { tagToneClass, type TagTone } from '@/ui/tag-palette'
+import { ObjectGlyph } from '@/ui/object-glyph'
 import { activeRailId, visibleGroups, type RailGroup, type RailItem } from '@/app/nav'
 import { PendingBadge } from '@/pages/aprobaciones/PendingBadge'
 import { RailRow } from '@/app/shell/rail-row'
@@ -183,15 +183,12 @@ function RailSection({
   return (
     <div className={cn('flex flex-col', railMetrics.gap, collapsed && 'items-center')}>
       {collapsed ? (
-        first ? null : <span aria-hidden className={cn(tagToneClass(group.tone), 'tag-dot my-1.5 h-px w-4 rounded-full opacity-60')} />
+        first ? null : <span aria-hidden className="my-1.5 h-px w-4 bg-border-subtle" />
       ) : (
-        <p className={cn('flex items-center gap-1.5 px-2 pb-0.5 text-caption text-text-tertiary', first ? 'pt-1' : 'pt-3')}>
-          <span aria-hidden className={cn(tagToneClass(group.tone), 'tag-dot size-1.5 shrink-0 rounded-full')} />
-          {group.label}
-        </p>
+        <p className={cn('px-2 pb-0.5 text-caption text-text-tertiary', first ? 'pt-1' : 'pt-3')}>{group.label}</p>
       )}
       {primary.map((item) => (
-        <NavButton key={item.id} item={item} tone={group.tone} active={item.id === activeId} collapsed={collapsed} onNavigate={onNavigate} />
+        <NavButton key={item.id} item={item} active={item.id === activeId} collapsed={collapsed} onNavigate={onNavigate} />
       ))}
       {collapsed || more.length === 0 ? null : (
         <>
@@ -214,7 +211,7 @@ function RailSection({
           </button>
           {expanded
             ? more.map((item) => (
-                <NavButton key={item.id} item={item} tone={group.tone} active={item.id === activeId} collapsed={false} onNavigate={onNavigate} nested />
+                <NavButton key={item.id} item={item} active={item.id === activeId} collapsed={false} onNavigate={onNavigate} nested />
               ))
             : null}
         </>
@@ -225,14 +222,12 @@ function RailSection({
 
 function NavButton({
   item,
-  tone,
   active,
   collapsed,
   nested,
   onNavigate,
 }: {
   item: RailItem
-  tone: TagTone
   active: boolean
   collapsed: boolean
   nested?: boolean
@@ -244,11 +239,14 @@ function NavButton({
       <RailRow
         active={active}
         label={item.label}
-        tone={tone}
         collapsed={collapsed}
         glyph={
-          <span className="relative inline-flex">
-            <Icon className={cn(railMetrics.icon, 'shrink-0', active ? 'text-(--tag-fg-0)' : 'text-(--tag-dot-0)')} strokeWidth={iconStroke} />
+          <span className="relative flex size-5 shrink-0 items-center justify-center">
+            {item.tint ? (
+              <ObjectGlyph icon={Icon} tint={item.tint} size="md" />
+            ) : (
+              <Icon className={cn('size-3.5 shrink-0', active ? 'text-ink-900' : 'text-icon-muted')} strokeWidth={iconStroke} />
+            )}
             {collapsed && item.id === 'approvals' ? <PendingBadge size="sm" /> : null}
           </span>
         }

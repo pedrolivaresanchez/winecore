@@ -1,22 +1,19 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { Briefcase, CreditCard, History, Receipt, TrendUp, Users, type IconComponent } from '@/ui/icons'
-import { tagToneClass, type TagTone } from '@/ui/tag-palette'
+import { Receipt, Users, type IconComponent } from '@/ui/icons'
+import { ObjectGlyph, type GlyphTint } from '@/ui/object-glyph'
+import { CHART_INK, ChartEmpty, ColumnChart, StatTile, chartModel } from '@/ui/charts'
 import { useChromeTitle } from '@/app/shell/shell-context'
 import { useEntity } from '@/app/entity-context'
 import { ErrorState } from '@/components/ErrorState'
 import { FitAmount, Skeleton } from '@/ui'
 import { copy, fill } from '@/i18n'
-import { cn } from '@/lib/cn'
-import { iconStroke } from '@/lib/motion'
-import { SERIES_TONE } from '@/lib/chart-scale'
 import { formatInteger, formatMoney } from '@/lib/format'
 import { useLegacyOverview, type LegacyInvoice, type LegacyOverview } from '@/lib/legacy'
 import { allows } from '@/lib/permissions'
 import { attentionHref, useDashboard, verifactuClock, type AttentionBlock } from '@/lib/dashboard'
 import { entityFilter } from '@/lib/reports'
 import type { Me } from '@/lib/types'
-import { ColumnChart } from '@/pages/informes/charts/column-chart'
 import { SetupCard } from '@/pages/ajustes/puesta-en-marcha/SetupPanel'
 
 const dateLabel = new Intl.DateTimeFormat('es-ES', {
@@ -93,46 +90,41 @@ export function Panel({ me }: { me: Me }) {
 function HoldedHome({ data }: { data: LegacyOverview }) {
   const sales = Number(data.kpis.sales_this_year)
   const chartEmpty = data.months.every((point) => Number(point.total) === 0)
+  const monthly = data.months.map((point) => Number(point.total) || 0)
+  const model = chartModel({
+    categoryLabel: copy.panel.chart,
+    measureType: 'currency',
+    temporal: true,
+    format: (value) => formatMoney(value),
+    series: [{ key: 'sales', label: String(data.year), color: CHART_INK, type: 'currency' }],
+    categories: data.months.map((point) => ({
+      key: String(point.month),
+      label: MONTHS[point.month - 1] ?? String(point.month),
+      values: [Number(point.total) || 0],
+      total: Number(point.total) || 0,
+    })),
+  })
   return (
     <>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-        <MoneyTile
-          label={copy.panel.salesYear}
-          icon={TrendUp}
-          tone="emerald"
-          value={data.kpis.sales_this_year}
-          href="/facturas"
-          empty={copy.panel.noneYear}
-        />
-        <MoneyTile
-          label={copy.panel.salesLast}
-          icon={History}
-          tone="sky"
-          value={data.kpis.sales_last_year}
-          href="/facturas"
-          empty={copy.panel.noneYear}
-        />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <MoneyTile label={copy.panel.salesYear} value={data.kpis.sales_this_year} href="/facturas" empty={copy.panel.noneYear} spark={monthly} />
+        <MoneyTile label={copy.panel.salesLast} value={data.kpis.sales_last_year} href="/facturas" empty={copy.panel.noneYear} />
         <MoneyTile
           label={copy.panel.receivables}
-          icon={CreditCard}
-          tone="blue"
           value={data.kpis.pending_receivables}
           href="/cobros"
           count={data.kpis.pending_receivables_count}
           empty={copy.panel.noneReceivables}
         />
-        <CountTile
+        <StatTile
           label={copy.panel.contacts}
-          icon={Users}
-          tone="violet"
           value={data.kpis.contacts}
+          formatted={formatInteger(data.kpis.contacts)}
           href="/contactos"
-          empty={copy.panel.noneContacts}
+          hint={data.kpis.contacts === 0 ? copy.panel.noneContacts : undefined}
         />
         <MoneyTile
           label={copy.panel.payables}
-          icon={Briefcase}
-          tone="amber"
           value={data.kpis.open_payables}
           href="/gastos"
           count={data.kpis.open_payables_count}
@@ -140,51 +132,37 @@ function HoldedHome({ data }: { data: LegacyOverview }) {
         />
       </div>
 
-      <section className="rounded-xl bg-surface px-4 py-3 shadow-(--shadow-surface)">
+      <section className="flex min-w-0 flex-col gap-3">
         <div className="flex items-baseline justify-between gap-3">
-          <h2 className="text-label font-medium text-ink-900">{copy.panel.chart}</h2>
-          <Link to="/informes?tab=ventas" className="text-caption text-text-tertiary outline-none hover:text-ink-900 focus-visible:shadow-(--shadow-focus)">
+          <h3 className="text-label font-medium text-ink-900">{copy.panel.chart}</h3>
+          <Link to="/informes?tab=ventas" className="shrink-0 text-caption text-text-tertiary outline-none hover:text-ink-900 focus-visible:shadow-(--shadow-focus)">
             {copy.nav.reports}
           </Link>
         </div>
         {chartEmpty ? (
-          <p className="py-3 text-label text-text-tertiary">{data.has_imported ? copy.panel.noneYear : copy.panel.noneImported}</p>
+          <ChartEmpty height={200} message={data.has_imported ? copy.panel.noneYear : copy.panel.noneImported} />
         ) : (
-          <ColumnChart
-            height={180}
-            color={SERIES_TONE.sales}
-            label={copy.panel.chart}
-            currentLabel={String(data.year)}
-            previousLabel={copy.informes.previous}
-            formatValue={(value) => formatMoney(value)}
-            points={data.months.map((point) => ({
-              key: String(point.month),
-              label: MONTHS[point.month - 1] ?? String(point.month),
-              axis: (MONTHS[point.month - 1] ?? '').slice(0, 1),
-              value: Number(point.total),
-              previous: null,
-            }))}
-          />
+          <ColumnChart model={model} height={200} subtitle={String(data.year)} />
         )}
         {sales === 0 ? null : <p className="sr-only">{copy.panel.holdedHint}</p>}
       </section>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        <RecordCard title={copy.panel.recentInvoices} icon={Receipt} tone="emerald" href="/facturas" empty={data.recent_invoices.length === 0 ? copy.panel.noneInvoices : null}>
+        <RecordCard title={copy.panel.recentInvoices} icon={Receipt} tint="info" href="/facturas" empty={data.recent_invoices.length === 0 ? copy.panel.noneInvoices : null}>
           {data.recent_invoices.map((invoice) => (
-            <li key={invoice.id} className="border-t border-border-subtle">
-              <Link to={`/facturas?q=${encodeURIComponent(invoice.number)}`} className="block px-4 py-2.5 outline-none hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)">
+            <li key={invoice.id}>
+              <Link to={`/facturas?q=${encodeURIComponent(invoice.number)}`} className="-mx-4 block px-4 py-2.5 outline-none hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)">
                 <InvoiceLine invoice={invoice} />
               </Link>
             </li>
           ))}
         </RecordCard>
-        <RecordCard title={copy.panel.topCustomers} icon={Users} tone="violet" href="/contactos" empty={data.top_customers.length === 0 ? copy.panel.noneCustomers : null}>
+        <RecordCard title={copy.panel.topCustomers} icon={Users} tint="flame" href="/contactos" empty={data.top_customers.length === 0 ? copy.panel.noneCustomers : null}>
           {data.top_customers.map((customer) => (
-            <li key={customer.name} className="border-t border-border-subtle">
+            <li key={customer.name}>
               <Link
                 to={`/contactos?q=${encodeURIComponent(customer.name)}`}
-                className="flex items-baseline justify-between gap-3 px-4 py-2.5 outline-none hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)"
+                className="-mx-4 flex items-baseline justify-between gap-3 px-4 py-2.5 outline-none hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)"
               >
                 <span className="min-w-0 truncate text-label text-ink-900">{customer.name}</span>
                 <span className="shrink-0 text-label tabular-nums text-text-secondary">{formatMoney(Number(customer.total))}</span>
@@ -213,96 +191,64 @@ function InvoiceLine({ invoice }: { invoice: LegacyInvoice }) {
   )
 }
 
-type Accent = { icon: IconComponent; tone: TagTone }
-
-function TileHead({ label, icon: Icon, tone }: { label: string } & Accent) {
-  return (
-    <span className="flex min-w-0 items-center gap-2">
-      <span aria-hidden className={cn(tagToneClass(tone), 'tag inline-flex size-6 shrink-0 items-center justify-center rounded-lg')}>
-        <Icon className="size-3.5" strokeWidth={iconStroke} />
-      </span>
-      <span className="truncate text-caption text-text-tertiary">{label}</span>
-    </span>
-  )
-}
-
 function MoneyTile({
   label,
-  icon,
-  tone,
   value,
   href,
   count,
   empty,
+  spark,
 }: {
   label: string
   value: string
   href: string
   count?: number
   empty: string
-} & Accent) {
+  spark?: number[]
+}) {
   const amount = Number(value)
-  const quiet = !Number.isFinite(amount) || amount === 0
+  const safe = Number.isFinite(amount) ? amount : 0
+  const quiet = safe === 0
   return (
-    <Link to={href} className={cn(tagToneClass(tone), tileClass)}>
-      <TileHead label={label} icon={icon} tone={tone} />
-      <FitAmount
-        full={formatMoney(Number.isFinite(amount) ? amount : 0)}
-        short={formatMoney(Number.isFinite(amount) ? amount : 0)}
-        className={cn('w-full text-heading font-medium leading-none tabular-nums', quiet ? 'text-text-tertiary' : 'text-ink-900')}
-      />
-      {quiet || (count != null && count > 0) ? (
-        <span className="truncate text-caption text-text-tertiary">{quiet ? empty : formatInteger(count ?? 0)}</span>
-      ) : null}
-    </Link>
-  )
-}
-
-function CountTile({
-  label,
-  icon,
-  tone,
-  value,
-  href,
-  empty,
-}: { label: string; value: number; href: string; empty: string } & Accent) {
-  const quiet = value === 0
-  return (
-    <Link to={href} className={cn(tagToneClass(tone), tileClass)}>
-      <TileHead label={label} icon={icon} tone={tone} />
-      <span className={cn('text-heading font-medium leading-none tabular-nums', quiet ? 'text-text-tertiary' : 'text-ink-900')}>
-        {formatInteger(value)}
-      </span>
-      {quiet ? <span className="truncate text-caption text-text-tertiary">{empty}</span> : null}
-    </Link>
+    <StatTile
+      label={label}
+      value={safe}
+      type="currency"
+      formatted={<FitAmount full={formatMoney(safe)} short={formatMoney(safe)} className="w-full" />}
+      href={href}
+      spark={quiet ? undefined : spark}
+      hint={quiet ? empty : count != null && count > 0 ? formatInteger(count) : undefined}
+    />
   )
 }
 
 function RecordCard({
   title,
-  icon: Icon,
-  tone,
+  icon,
+  tint,
   href,
   empty,
   children,
 }: {
   title: string
+  icon: IconComponent
+  tint: GlyphTint
   href: string
   empty: string | null
   children: ReactNode
-} & Accent) {
+}) {
   return (
-    <section className="rounded-xl bg-surface shadow-(--shadow-surface)">
-      <div className="flex items-center justify-between gap-2 px-4 py-3">
+    <section className="divide-y divide-border-subtle rounded-2xl border border-border-subtle bg-surface *:px-4">
+      <div className="flex min-h-11 items-center">
         <Link
           to={href}
           className="flex min-w-0 items-center gap-2 text-label font-medium text-ink-900 outline-none focus-visible:shadow-(--shadow-focus)"
         >
-          <Icon aria-hidden className={cn(tagToneClass(tone), 'size-4 shrink-0 text-(--tag-dot-0)')} strokeWidth={iconStroke} />
+          <ObjectGlyph icon={icon} tint={tint} size="md" />
           <span className="truncate">{title}</span>
         </Link>
       </div>
-      {empty ? <p className="border-t border-border-subtle px-4 py-3 text-label text-text-tertiary">{empty}</p> : <ul>{children}</ul>}
+      {empty ? <p className="py-3 text-label text-text-tertiary">{empty}</p> : <ul className="divide-y divide-border-subtle">{children}</ul>}
     </section>
   )
 }
@@ -314,7 +260,7 @@ function OpsLine({ label, href, count, empty }: { label: string; href: string | 
       <span className="shrink-0 tabular-nums text-text-tertiary">{count > 0 ? formatInteger(count) : empty}</span>
     </>
   )
-  const className = 'flex items-center justify-between gap-3 rounded-xl bg-surface px-4 py-2.5 text-label text-ink-900 shadow-(--shadow-surface) outline-none hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)'
+  const className = 'flex items-center justify-between gap-3 rounded-2xl border border-border-subtle bg-surface px-4 py-2.5 text-label text-ink-900 outline-none hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)'
   if (!href) return <div className={className}>{body}</div>
   return (
     <Link to={href} className={className}>
@@ -338,14 +284,10 @@ function PanelSkeleton() {
     <div className="grid gap-3" aria-busy="true">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
         {Array.from({ length: 5 }, (_, index) => (
-          <Skeleton key={index} className="h-20 rounded-2xl" />
+          <Skeleton key={index} className="h-20 rounded-[10px]" />
         ))}
       </div>
       <Skeleton className="h-48 rounded-xl" />
     </div>
   )
 }
-
-/** A faint wash of the tile's tone from the top-left, so five figures are five subjects at a glance. */
-const tileClass =
-  'flex min-w-0 flex-col gap-2 rounded-2xl border border-border-subtle bg-surface bg-linear-to-br from-(--tag-bg-0)/45 via-surface to-surface px-3 py-2.5 outline-none transition-colors duration-(--duration-quick) ease-(--ease-smooth-out) hover:border-(--tag-dot-0)/40 focus-visible:shadow-(--shadow-focus)'
