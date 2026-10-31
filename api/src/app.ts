@@ -42,6 +42,13 @@ import {
   patchContact,
   patchPerson,
 } from './routes/contacts';
+import {
+  getExportDocuments,
+  postExportChecklist,
+  postExportDocuments,
+  postExportReadiness,
+  putExportDocuments,
+} from './routes/export-docs';
 import { health } from './routes/health';
 import { me } from './routes/me';
 import { listNotifications, readAllNotifications, readNotification } from './routes/notifications';
@@ -295,6 +302,22 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requirePermission(guardDeps, 'inventory.count'),
     })
     // Bodega: ubicaciones, recipientes, lotes y operaciones.
-    .use(cellarRoutes({ writer: deps.writer, guard: guardDeps, publicUrl: deps.config.appPublicUrl }));
+    .use(cellarRoutes({ writer: deps.writer, guard: guardDeps, publicUrl: deps.config.appPublicUrl }))
+    // Exportación (TASK-FACT-013). El ajuste es solo del titular y queda auditado.
+    .get('/v1/export/documents-by-country', () => getExportDocuments(deps.writer), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .put('/v1/export/documents-by-country', ({ request }) => putExportDocuments(deps.writer, request), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .post('/v1/export/readiness', ({ request }) => postExportReadiness(deps.writer, request), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .post('/v1/export/checklist', ({ request }) => postExportChecklist(deps.writer, request), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .post('/v1/export/documents', ({ request }) => postExportDocuments(deps.writer, request), {
+      beforeHandle: requireOwner(guardDeps),
+    });
   return app;
 }

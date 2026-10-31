@@ -54,6 +54,9 @@ const CATALOG = {
   WC_VESSEL_NOT_IN_SERVICE: [409, 'El recipiente no está en servicio'],
   WC_ILLEGAL_TRANSITION: [409, 'La transición de estado no está permitida'],
   WC_ECO_MIX: [422, 'No se puede ensamblar un lote ecológico con uno que no lo es'],
+  // Exportación (TASK-FACT-013)
+  WC_INV_ENTITY_EORI_REQUIRED: [422, 'La factura de exportación no se emite: falta el EORI de la entidad.'],
+  WC_EXPORT_NOT_READY: [422, 'La factura de exportación no está lista'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;

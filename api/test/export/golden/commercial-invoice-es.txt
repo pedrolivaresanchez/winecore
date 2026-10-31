@@ -1,0 +1,29 @@
+FACTURA COMERCIAL
+Exportador: Productor (P.O)
+NIF: 00000000T
+EORI: ES00000000T
+Dirección: Calle Ejemplo 1, 00000, Ejemplo, Ejemplo, ES
+Cliente: Cliente Ejemplo Ltd
+EORI: GB123456789000
+Dirección: 1 Example Street, SW1A 1AA, London, GB
+País de destino: GB
+Número: EXP-2026-0001
+Fecha: 2026-03-15
+Incoterm: FCA
+Origen: ES
+Divisa: EUR
+Bultos: 2
+Línea 1: Viña Arcal 2024
+Código NC: 22042100
+Cantidad: 12 ud
+Precio unitario: 10.00
+Importe: 120.00
+Peso neto (kg): 9.000
+Peso bruto (kg): 14.400
+Base imponible: 120.00
+Tipo impositivo: no se informa
+Cuota: no se informa
+Mención: Operación exenta de IVA por exportación (art. 21 Ley 37/1992).
+Total: 120.00
+Peso neto total (kg): 9.000
+Peso bruto total (kg): 14.400
