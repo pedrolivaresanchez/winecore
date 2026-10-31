@@ -110,6 +110,9 @@ async function send(path: string, init: RequestInit | undefined, retried: boolea
   }
 
   if (response.status === 401) {
+    const error = await readError(response);
+    const sessionExpired = error.code === "WC_ERROR" || error.code === "WC_UNAUTHENTICATED";
+    if (!sessionExpired) throw error;
     if (isAuthEnabled && !retried && (await refreshAccessToken())) return send(path, init, true);
     if (isAuthEnabled) {
       clearTokens();

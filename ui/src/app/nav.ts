@@ -1,4 +1,4 @@
-import { LayoutDashboard, Settings, Users, Warehouse, Wine, type LucideIcon } from "lucide-react";
+import { BadgeCheck, LayoutDashboard, Settings, Users, Warehouse, Wine, type LucideIcon } from "lucide-react";
 import { copy } from "@/i18n";
 import { allows } from "@/lib/permissions";
 import type { Me } from "@/lib/types";
@@ -37,6 +37,15 @@ export const navigation: NavEntry[] = [
     path: "/",
     end: true,
     mobile: "tab",
+    placement: "main",
+  },
+  {
+    id: "approvals",
+    module: "core",
+    label: "Aprobaciones",
+    icon: BadgeCheck,
+    path: "/aprobaciones",
+    mobile: "more",
     placement: "main",
   },
   {

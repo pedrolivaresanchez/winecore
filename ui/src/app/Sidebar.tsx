@@ -7,6 +7,7 @@ import { copy } from "@/i18n";
 import { readStorage, writeStorage } from "@/lib/storage";
 import { cn } from "@/lib/utils";
 import { footerNav, mainNav, visibleChildren, type NavChild, type NavEntry } from "@/app/nav";
+import { PendingBadge } from "@/pages/aprobaciones/PendingBadge";
 import type { Me } from "@/lib/types";
 
 const GROUPS_KEY = "winecore.nav.groups";
@@ -154,14 +155,15 @@ export function Sidebar({
         end={entry.end}
         className={({ isActive }) =>
           cn(
-            "flex min-h-11 items-center rounded-md text-body",
+            "relative flex min-h-11 items-center rounded-md text-body",
             collapsed ? "justify-center" : "gap-3 px-3",
             isActive ? "bg-ink font-medium text-ink-foreground" : "hover:bg-accent",
           )
         }
       >
         <Icon aria-hidden className="size-5 shrink-0" />
-        <span className={cn("truncate", collapsed && "sr-only")}>{entry.label}</span>
+        <span className={cn("truncate", collapsed ? "sr-only" : "min-w-0 flex-1")}>{entry.label}</span>
+        {entry.id === "approvals" ? <PendingBadge variant={collapsed ? "corner" : "inline"} /> : null}
       </NavLink>
     );
     if (!collapsed) return <div key={entry.id}>{link}</div>;

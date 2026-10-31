@@ -11,6 +11,8 @@ import type { Me } from "@/lib/types";
 import { NoAccess } from "@/pages/NoAccess";
 import { NotFound } from "@/pages/NotFound";
 import { Panel } from "@/pages/Panel";
+import { ApprovalDetail } from "@/pages/aprobaciones/Detail";
+import { ApprovalInbox } from "@/pages/aprobaciones/Inbox";
 import { ContactCreate } from "@/pages/contactos/ContactCreate";
 import { ContactList } from "@/pages/contactos/ContactList";
 import { ContactPage } from "@/pages/contactos/ContactPage";
@@ -70,6 +72,8 @@ export function Workspace() {
       <Shell me={me.data}>
         <Routes>
           <Route index element={<Panel me={me.data} />} />
+          <Route path="aprobaciones" element={<ApprovalInbox />} />
+          <Route path="aprobaciones/:id" element={<ApprovalDetail me={me.data} />} />
           <Route path="contactos" element={<ContactList me={me.data} />} />
           <Route path="contactos/nuevo" element={<ContactCreate me={me.data} />} />
           <Route path="contactos/:id" element={<ContactPage me={me.data} />} />
