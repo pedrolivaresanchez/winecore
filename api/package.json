@@ -1,0 +1,27 @@
+{
+  "name": "@winecore/api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "migrate": "bun run db/migrate.ts",
+    "seed": "bun run db/seed.ts"
+  },
+  "dependencies": {
+    "@date-fns/tz": "1.5.0",
+    "@duckdb/node-api": "2.0.0-r.1",
+    "@elysiajs/cors": "1.4.2",
+    "date-fns": "4.4.0",
+    "decimal.js": "10.6.0",
+    "elysia": "1.4.30",
+    "uuidv7": "1.2.1"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.4",
+    "typescript": "7.0.2"
+  }
+}
