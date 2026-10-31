@@ -7,12 +7,14 @@ export function RailRow({
   active,
   label,
   glyph,
+  trailing,
   collapsed = false,
   onNavigate,
 }: {
   active: boolean
   label: string
   glyph: ReactNode
+  trailing?: ReactNode
   collapsed?: boolean
   onNavigate: () => void
 }) {
@@ -25,7 +27,7 @@ export function RailRow({
           aria-current={active ? 'page' : undefined}
           onClick={onNavigate}
           className={cn(
-            'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-label',
+            'relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-label',
             'transition-[color,background-color] duration-(--duration-quick) ease-(--ease-smooth-out)',
             active ? 'bg-sidebar-selected font-medium text-ink-900' : 'text-control hover:bg-sidebar-hover',
           )}
@@ -50,6 +52,7 @@ export function RailRow({
     >
       {glyph}
       <span className="min-w-0 flex-1 truncate">{label}</span>
+      {trailing}
     </button>
   )
 }
