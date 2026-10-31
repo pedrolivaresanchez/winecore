@@ -46,7 +46,7 @@ Opciones, por orden de preferencia (PENDIENTE de confirmar con el asesor y en pr
 
 | Momento | Acción | Quién |
 |---|---|---|
-| Alta | Pedro solicita el certificado; lo sube **él** a Secrets Manager con un procedimiento guiado (`docs/runbooks/certificado-verifactu.md`, TASK-INFRA-006); nadie más ve el fichero ni la contraseña | Pedro |
+| Alta | Pedro solicita el certificado; lo sube **él** a Secrets Manager con un procedimiento guiado (`docs/runbooks/certificado-verifactu.md`, TASK-INFRA-009); nadie más ve el fichero ni la contraseña | Pedro |
 | Uso | Solo `verifactu-sender`; cada envío queda en `connector_run` | Sistema |
 | Aviso de caducidad | Diario desde 30 días antes (vigilante) | Sistema → CVBOT |
 | Renovación | Igual que el alta; la versión anterior se desactiva tras el primer envío correcto con la nueva | Pedro |

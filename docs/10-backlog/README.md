@@ -33,7 +33,7 @@ Reglas para todas las tareas: primero los tests; PR pequeño con el TASK-ID; sin
 | TASK-INFRA-006 | Despliegue (`deploy.yml`) | RNF-04 | M0 | INFRA-002, INFRA-004, CORE-002 | 1,5 | sí (arquitectura) |
 | TASK-INFRA-007 | Comparación de remotos y trabajos nocturnos | RNF-04, RNF-07 | M0 | INFRA-006 | 1 | no |
 | TASK-INFRA-008 | Observabilidad, alertas y coste | RNF-04, RNF-06, RNF-11 | M1 | INFRA-006 | 1 | no |
-| TASK-INFRA-009 | Runbook y alta del certificado de Verifactu | US-VFT-02, RNF-05 | M1 | INFRA-003 | 0,5 | sí (custodia del certificado) |
+| TASK-INFRA-009 | Runbook y alta del certificado de Verifactu | US-VFT-02, RNF-05 | M1 | INFRA-003, Q-006 | 0,5 | sí (custodia del certificado) |
 | TASK-INFRA-010 | Copias, exportación y prueba de restauración | RNF-04, RNF-09 | M1 | INFRA-003 | 1 | no |
 | TASK-CORE-001 | Base del núcleo: BD, errores, dinero, fechas | RNF-07, RNF-12 | M0 | INFRA-001 | 1,5 | no |
 | TASK-CORE-002 | Migraciones de BD desde la especificación | RNF-07 | M0 | CORE-001 | 1 | sí (esquema transversal) |
@@ -58,7 +58,7 @@ Reglas para todas las tareas: primero los tests; PR pequeño con el TASK-ID; sin
 | TASK-CONT-001 | Contactos: NIF y alta/edición | US-CONT-01 | M1 | CORE-003 | 1,5 | no |
 | TASK-CONT-002 | Contactos: UI-04 y UI-05 | US-CONT-01, US-CONT-03 | M1 | CONT-001, UI-002 | 2 | no |
 | TASK-CONT-003 | Duplicados y fusión (UI-06) | US-CONT-02 | M1 | CONT-001 | 1,5 | sí (deduplicación) |
-| TASK-CONT-004 | Derechos RGPD | US-CONT-04 | M2 | CONT-001, APR-001 | 1 | no |
+| TASK-CONT-004 | Derechos RGPD | US-CONT-04, RNF-06 | M2 | CONT-001, APR-001 | 1 | no |
 | TASK-CAT-001 | Vinos, formatos y productos (UI-07/08) | US-CAT-01 | M1 | CORE-003, UI-002 | 2 | no |
 | TASK-CAT-002 | Tarifas versionadas (UI-09) | US-CAT-02 | M1 | CAT-001, APR-001 | 1,5 | no |
 | TASK-CAT-003 | Tarifa intercompañía | US-CAT-03 | M2 | CAT-002 | 1 | no |

@@ -70,6 +70,6 @@ export interface RegulatoryConnector {
 - **Dar el certificado "al bot"** (reunión [00:02:52]): incompatible con R7 y D8.
 
 ## Consecuencias
-- Requiere un equipo dedicado encendido en horario laboral (Q-026) y un procedimiento de instalación (`runner/README.md`, tarea `TASK-REG-010`).
+- Requiere un equipo dedicado encendido en horario laboral (Q-026) y un procedimiento de instalación (`runner/README.md`, tarea `TASK-RUN-001`).
 - Los procedimientos de *computer use* se rompen si cambian los portales (R3): se detectan por `assert_text`, se detienen y avisan; nunca envían a ciegas.
 - Cuando un flujo pase a API, se hará con su propio ADR y la aprobación de Pedro (§12.1).
