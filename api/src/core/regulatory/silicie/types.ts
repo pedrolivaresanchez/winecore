@@ -354,7 +354,7 @@ export const SILICIE_OPEN_QUESTIONS = [
   "Mayor del A32 de envasado: se anota en el mayor del granel de la operación. La cantidad es la diferencia de mililitros.",
   "Cantidad del A32 de elaboración: no se convierte uva (kg) a vino (L). Hace falta la merma informada, en mililitros, del mayor de vino.",
   "En la elaboración agregada, el número de justificante J09 es ELAB-AAAA-MM, el único número que da el ejemplo de §7.",
-  "Formato del fichero de anulación IESX4: §4 lo nombra y no da columnas. No se genera. La realta es un alta con el número de asiento previo (campo 2).",
+  "Formato del fichero de anulación IESX4: §4 nombra el número de asiento y el motivo (tabla MOAN: 1, 2 o 3) pero no la cabecera ni el orden. El envío manual escribe esas dos columnas; la realta sigue siendo un alta con el número de asiento previo (campo 2).",
   "Comunicación de cierre de ejercicio: §1 la exige y no hay tipo de movimiento en §5 ni columnas en §7.",
   "Salida de muestras y movimiento reversal: sin fila en §5.",
   "Cómo agregar un mes si el mismo mayor trae grados distintos, contrapartes distintas o, en la uva, justificantes distintos.",

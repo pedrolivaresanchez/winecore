@@ -25,6 +25,9 @@ describe('auth', () => {
         'contacts.write',
         'inventory.count',
         'inventory.read',
+        'regulatory.approve',
+        'regulatory.prepare',
+        'regulatory.read',
         'settings.manage',
         'users.manage',
       ]);

@@ -272,7 +272,7 @@ function formatCount(value: number, digits: number): string {
   return String(value);
 }
 
-function encodeLatin1(text: string): Uint8Array {
+export function encodeLatin1(text: string): Uint8Array {
   const bytes = new Uint8Array(text.length);
   for (let index = 0; index < text.length; index += 1) {
     const code = text.charCodeAt(index);
