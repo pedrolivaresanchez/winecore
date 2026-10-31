@@ -1,4 +1,4 @@
-import { Archive, Box, ChartBar, Check, FileText, Home, Layers, Receipt, Settings2, Users, type IconComponent } from '@/ui/icons'
+import { Archive, Box, ChartBar, Check, CreditCard, FileText, Home, Layers, Receipt, Settings2, Users, type IconComponent } from '@/ui/icons'
 import { copy } from '@/i18n'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
@@ -82,6 +82,17 @@ export const navigation: NavEntry[] = [
     icon: FileText,
     path: '/facturas',
     permission: 'billing.read',
+    mobile: 'tab',
+    placement: 'main',
+    group: 'facturacion',
+  },
+  {
+    id: 'collections',
+    module: 'finance',
+    label: copy.nav.collections,
+    icon: CreditCard,
+    path: '/cobros',
+    permission: 'finance.read',
     mobile: 'tab',
     placement: 'main',
     group: 'facturacion',

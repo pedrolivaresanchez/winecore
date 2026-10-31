@@ -37,6 +37,8 @@ import { CreateInvoice } from '@/pages/facturas/CreateInvoice'
 import { InvoiceList } from '@/pages/facturas/InvoiceList'
 import { InvoicePage } from '@/pages/facturas/InvoicePage'
 import { RectifyPage } from '@/pages/facturas/RectifyPage'
+import { CobrosPage } from '@/pages/cobros/CobrosPage'
+import { RemesaPage } from '@/pages/cobros/RemesaPage'
 
 /** Authenticated routes. The shell, auth and the entity switcher stay outside. */
 export function AppRoutes({ me }: { me: Me }) {
@@ -89,6 +91,8 @@ export function AppRoutes({ me }: { me: Me }) {
       <Route path="facturas/nueva" element={<CreateInvoice me={me} />} />
       <Route path="facturas/:id/rectificar" element={<RectifyPage me={me} />} />
       <Route path="facturas/:id" element={<InvoicePage me={me} />} />
+      <Route path="cobros" element={<CobrosPage me={me} />} />
+      <Route path="cobros/remesas/:id" element={<RemesaPage me={me} />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   )
