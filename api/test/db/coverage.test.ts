@@ -45,6 +45,7 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
     "UQ:core.number_series(legal_entity_id,doc_type,year)",
     "UQ:party.contact(tax_id)",
     "UQ:party.contact_address(contact_id,kind)",
+    "UQ:regulatory.connector_run(submission_id)",
     "WC001",
     "WC010",
     "WC011",
@@ -64,5 +65,8 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
     "WC042",
     "WC043",
     "WC050",
+    "WC120",
+    "WC121",
+    "WC122",
   ]);
 });

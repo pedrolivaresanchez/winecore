@@ -53,6 +53,19 @@ import {
   submitInventoryCountRoute,
 } from './routes/stock-counts';
 import { stockBalances, stockFiscalBalances, stockInspection, stockMoves } from './routes/stock';
+import { listRegulatoryObligations, postSyncObligations } from './routes/regulatory-obligations';
+import {
+  getRegulatorySubmission,
+  getSubmissionFile,
+  listRegulatorySubmissions,
+  postCorrectSubmission,
+  postMarkResult,
+  postMarkSubmitted,
+  postRegulatorySubmission,
+  postRequestApproval,
+  postValidateSubmission,
+} from './routes/regulatory-submissions';
+import { listSilicieLedgers, postSilicieLedger, postValidateLedger } from './routes/silicie-ledgers';
 
 export interface AppDeps {
   config: Config;
@@ -250,6 +263,49 @@ export function createApp(deps: AppDeps) {
     })
     .put('/v1/approval-policies/:kind', ({ request, params, body }) => putApprovalPolicy(http, request, params.kind, body), {
       beforeHandle: requireOwner(guardDeps),
+    })
+    // SILICIE y calendario regulatorio. El fichero se descarga; no se envía a la AEAT.
+    .get('/v1/regulatory/obligations', ({ request }) => listRegulatoryObligations(http, request), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
+    })
+    .post('/v1/regulatory/obligations/sync', ({ request }) => postSyncObligations(http, request), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .get('/v1/regulatory/submissions', ({ request }) => listRegulatorySubmissions(http, request), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
+    })
+    .post('/v1/regulatory/submissions', ({ request }) => postRegulatorySubmission(http, request), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .get('/v1/regulatory/submissions/:id/file', ({ request, params }) => getSubmissionFile(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
+    })
+    .post('/v1/regulatory/submissions/:id/validate', ({ request, params }) => postValidateSubmission(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .post('/v1/regulatory/submissions/:id/request-approval', ({ request, params }) => postRequestApproval(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .post('/v1/regulatory/submissions/:id/mark-submitted', ({ request, params }) => postMarkSubmitted(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .post('/v1/regulatory/submissions/:id/mark-result', ({ request, params }) => postMarkResult(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .post('/v1/regulatory/submissions/:id/correct', ({ request, params }) => postCorrectSubmission(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .get('/v1/regulatory/submissions/:id', ({ request, params }) => getRegulatorySubmission(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
+    })
+    .get('/v1/silicie-ledgers', ({ request }) => listSilicieLedgers(http, request), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
+    })
+    .post('/v1/silicie-ledgers', ({ request }) => postSilicieLedger(http, request), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .post('/v1/silicie-ledgers/:id/validate', ({ request, params }) => postValidateLedger(http, request, params.id), {
+      beforeHandle: requireUser(guardDeps),
     })
     .use(catalogRoutes(guardDeps))
     // Existencias (stock): saldos, informe, movimientos y aforos.
