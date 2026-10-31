@@ -390,7 +390,7 @@ CREATE TABLE regulatory.organic_certificate (
   legal_entity_id     uuid,
   contact_id          uuid,
   control_body_code   VARCHAR NOT NULL CHECK (control_body_code ~ '^[A-Z]{2}-[A-Z]{3}-[0-9]{1,3}(-[A-Z]{2,3})?$'),  -- p. ej. ES-ECO-001-AN
-  product_categories  VARCHAR[] NOT NULL CHECK (cardinality(product_categories) > 0),  -- art. 35.7: 'a' vegetales, 'f' vino…
+  product_categories  VARCHAR[] NOT NULL CHECK (len(product_categories) > 0),  -- art. 35.7: 'a' vegetales, 'f' vino…
   certificate_number  VARCHAR,
   valid_from          date NOT NULL,
   valid_to            date NOT NULL,
