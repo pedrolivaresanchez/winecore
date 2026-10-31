@@ -47,6 +47,7 @@ import { cellarRoutes } from './routes/cellar';
 import { vineyardRoutes } from './routes/vineyard';
 import { winemakingRoutes } from './routes/winemaking';
 import { enologyRoutes } from './routes/enology';
+import { lotDesignRoutes } from './routes/lot-design';
 import {
   archiveAddress,
   archiveContact,
@@ -730,6 +731,7 @@ export function createApp(deps: AppDeps) {
     .use(winemakingRoutes({ writer: deps.writer, guard: guardDeps }))
     .use(vineyardNotebookRoutes(guardDeps))
     .use(enologyRoutes({ writer: deps.writer, guard: guardDeps, now: deps.now }))
-    .use(cellarAssetRoutes({ writer: deps.writer, guard: guardDeps }));
+    .use(cellarAssetRoutes({ writer: deps.writer, guard: guardDeps }))
+    .use(lotDesignRoutes({ writer: deps.writer, guard: guardDeps }));
   return app;
 }

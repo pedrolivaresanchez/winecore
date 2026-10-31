@@ -329,6 +329,14 @@ const guardSpecs: readonly GuardSpec[] = [
   { id: "UQ:cellar.holder(location_id,cage_number)", kind: "core", table: "cellar.holder", description: "Un solo jaulón activo con el mismo número en la ubicación.", ownerTask: "TASK-BOD-001", implemented: false },
   { id: "UQ:cellar.plan_position(vessel_id)", kind: "core", table: "cellar.plan_position", description: "Un recipiente solo ocupa una posición del plano.", ownerTask: "TASK-BOD-001", implemented: false },
   { id: "UQ:cellar.plan_position(holder_id)", kind: "core", table: "cellar.plan_position", description: "Un nicho o jaulón solo ocupa una posición del plano.", ownerTask: "TASK-BOD-001", implemented: false },
+  { id: "FK:cellar.lot_design.lot_id", kind: "core", table: "cellar.lot_design", description: "FK cellar.lot_design.lot_id hacia inventory.lot; DuckDB no admite claves foráneas entre esquemas. La aplicación la comprueba al guardar el diseño.", ownerTask: "lot-design", implemented: true },
+  { id: "FK:cellar.lot_design.wine_id", kind: "core", table: "cellar.lot_design", description: "FK cellar.lot_design.wine_id hacia catalog.wine; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "lot-design", implemented: true },
+  { id: "FK:cellar.lot_design.product_id", kind: "core", table: "cellar.lot_design", description: "FK cellar.lot_design.product_id hacia catalog.product; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "lot-design", implemented: true },
+  { id: "FK:cellar.lot_design.parcel_id", kind: "core", table: "cellar.lot_design", description: "FK cellar.lot_design.parcel_id hacia vineyard.parcel; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "lot-design", implemented: true },
+  { id: "FK:cellar.lot_design.yeast_product_id", kind: "core", table: "cellar.lot_design", description: "FK cellar.lot_design.yeast_product_id hacia catalog.product; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "lot-design", implemented: true },
+  { id: "FK:cellar.recipe.source_lot_id", kind: "core", table: "cellar.recipe", description: "FK cellar.recipe.source_lot_id hacia inventory.lot; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "lot-design", implemented: true },
+  { id: "FK:cellar.recipe_version.source_lot_id", kind: "core", table: "cellar.recipe_version", description: "FK cellar.recipe_version.source_lot_id hacia inventory.lot; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "lot-design", implemented: true },
+  { id: "FK:cellar.elaboration_plan.lot_id", kind: "core", table: "cellar.elaboration_plan", description: "FK cellar.elaboration_plan.lot_id hacia inventory.lot; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "lot-design", implemented: true },
 ];
 
 export const guards: readonly GuardSpec[] = guardSpecs.map((guard) =>

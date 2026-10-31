@@ -105,6 +105,9 @@ const CATALOG = {
   WC_VIN_AREA: [422, 'La superficie tratada supera la de la parcela'],
   WC_ENOLOGY_PROHIBITED: [422, 'Práctica enológica prohibida en esta bodega'],
   WC_ENOLOGY_LOSS: [422, 'La merma supera la tolerancia y falta el motivo'],
+  WC_LOT_SINGLE_PLOT: [422, 'La parcela única no coincide con la genealogía del lote'],
+  WC_LOT_NOT_FINISHED: [422, 'El lote no tiene operaciones confirmadas para capturar la receta'],
+  WC_RECIPE_LOCKED: [409, 'La versión publicada de la receta no se edita'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;
