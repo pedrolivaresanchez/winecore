@@ -17,7 +17,7 @@ export function sealIban(raw: string, key: Buffer | null): { enc: Uint8Array | n
   const normalized = normalizeIban(text);
   const iv = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', key, iv);
-  const body = Buffer.concat([cipher.update(normalized, 'utf8'), cipher.final()]);
+  const body = Buffer.concat([cipher.update(Buffer.from(normalized, 'utf8')), cipher.final()]);
   const tag = cipher.getAuthTag();
   return { enc: Buffer.concat([iv, tag, body]), last4: ibanLast4(normalized), warning: null };
 }
