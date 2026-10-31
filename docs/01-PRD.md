@@ -374,17 +374,17 @@ CRM con embudos, proyectos y horas, RR. HH. y nóminas, FACe (no se usa), la tie
 
 ## 5. Requisitos no funcionales
 
-| Tema | Requisito | Verificación |
-|---|---|---|
-| Usuarios | 1–3 simultáneos, ≤ 10 cuentas | Pruebas de carga ligeras (10 usuarios virtuales) |
-| Volumen | ~400 facturas/año, ~400 albaranes, ~1.000 gastos, ~3.000 movimientos de stock; diseño holgado ×10 | Datos sintéticos ×10 en staging |
-| Rendimiento | Lecturas de API p95 < 300 ms; emisión de factura p95 < 1 s (sin el envío a la AEAT); carga de pantalla p95 < 1,5 s en escritorio; MCP p95 < 2 s | Pruebas e2e con medición |
-| Disponibilidad | Horario laboral (8–20 h, Europe/Madrid); objetivo 99,5 % mensual (Timbal no publica SLA); RPO ≤ 5 min (PITR); RTO ≤ 4 h | Prueba de restauración trimestral |
-| Seguridad | ADR 003, 008, 009; sin secretos en el repo; cabeceras seguras; aprobaciones con passkey; mínimos privilegios en BD | CI (gitleaks), tests de permisos, revisión con Opus de cambios críticos |
-| Privacidad | RGPD según `07-arquitectura.md` §11; datos personales fuera de logs y prompts innecesarios | Tests de logs; detector de datos personales en CI |
-| Integridad | Nada se borra; auditoría encadenada; libros solo de inserción; invariantes de `02-modelo-dominio.md` §19 | Tests SQL de invariantes + propiedades |
-| Conservación | Documentos y evidencias ≥ 6 años (Object Lock) | Revisión de configuración |
-| Exportabilidad | Volcado semanal y CSV mensual de todas las tablas de negocio | Job y prueba de restauración |
-| Usabilidad | Español por defecto; documentos en ES/EN; escritorio excelente, móvil correcto (§12.4); accesibilidad WCAG 2.1 AA en los flujos principales | QA visual (Playwright) y revisión manual |
-| Coste | Recurrente fuera de Timbal ≈ 30–70 €/mes; modelos de IA ≤ 30 €/mes; objetivo total (con Timbal) ≤ 200 €/mes, a confirmar con el plan de Timbal | Panel de costes en PROGRESS |
-| Zona horaria | Fechas de negocio en Europe/Madrid | Tests de cambio de hora |
+| ID | Tema | Requisito | Verificación |
+|---|---|---|---|
+| RNF-01 | Usuarios | 1–3 simultáneos, ≤ 10 cuentas | Pruebas de carga ligeras (10 usuarios virtuales) |
+| RNF-02 | Volumen | ~400 facturas/año, ~400 albaranes, ~1.000 gastos, ~3.000 movimientos de stock; diseño holgado ×10 | Datos sintéticos ×10 en staging |
+| RNF-03 | Rendimiento | Lecturas de API p95 < 300 ms; emisión de factura p95 < 1 s (sin el envío a la AEAT); carga de pantalla p95 < 1,5 s en escritorio; MCP p95 < 2 s | Pruebas e2e con medición |
+| RNF-04 | Disponibilidad | Horario laboral (8–20 h, Europe/Madrid); objetivo 99,5 % mensual (Timbal no publica SLA); RPO ≤ 5 min (PITR); RTO ≤ 4 h | Prueba de restauración trimestral |
+| RNF-05 | Seguridad | ADR 003, 008, 009; sin secretos en el repo; cabeceras seguras; aprobaciones con passkey; mínimos privilegios en BD | CI (gitleaks), tests de permisos, revisión con Opus de cambios críticos |
+| RNF-06 | Privacidad | RGPD según `07-arquitectura.md` §11; datos personales fuera de logs y prompts innecesarios | Tests de logs; detector de datos personales en CI |
+| RNF-07 | Integridad | Nada se borra; auditoría encadenada; libros solo de inserción; invariantes de `02-modelo-dominio.md` §19 | Tests SQL de invariantes + propiedades |
+| RNF-08 | Conservación | Documentos y evidencias ≥ 6 años (Object Lock) | Revisión de configuración |
+| RNF-09 | Exportabilidad | Volcado semanal y CSV mensual de todas las tablas de negocio | Job y prueba de restauración |
+| RNF-10 | Usabilidad | Español por defecto; documentos en ES/EN; escritorio excelente, móvil correcto (§12.4); accesibilidad WCAG 2.1 AA en los flujos principales | QA visual (Playwright) y revisión manual |
+| RNF-11 | Coste | Recurrente fuera de Timbal ≈ 30–70 €/mes; modelos de IA ≤ 30 €/mes; objetivo total (con Timbal) ≤ 200 €/mes, a confirmar con el plan de Timbal | Panel de costes en PROGRESS |
+| RNF-12 | Zona horaria | Fechas de negocio en Europe/Madrid | Tests de cambio de hora |

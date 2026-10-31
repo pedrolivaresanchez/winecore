@@ -77,6 +77,7 @@ WineCore/
 │   │   └── timbal.yaml, agent.py | workflow.py, pyproject.toml, evals/*.yaml
 ├── runner/                     # ejecutor local (ADR 009): procedures/, src/, README.md
 ├── sender/                     # verifactu-sender (ADR 003): función AWS Lambda, reutiliza api/src/core/regulatory/verifactu
+├── infra/aws/                  # OpenTofu: RDS, S3 con Object Lock, KMS, Secrets Manager, Lambda del emisor, OIDC de GitHub
 ├── scripts/                    # utilidades de CI (esperar despliegue, comparar remotos)
 ├── docs/  context/  .github/
 └── .gitignore  .env.example  biome.json  README.md
