@@ -15,10 +15,12 @@ import { texturePrimary } from '@/ui/button'
 import type { Me } from '@/lib/types'
 import { Alert, Badge, EmptyState, Skeleton } from '@/ui'
 import { ReadingColumn, RecordBar, SectionTabs } from '@/pages/bodega/chrome'
+import { DisenoTab } from '@/pages/lote-diseno/DisenoTab'
 import { lotKindLabel, lotStatusLabel, moveLabel } from '@/pages/bodega/labels'
 
 const TABS = [
   { id: 'resumen', label: copy.cellar.summary },
+  { id: 'diseno', label: copy.cellar.design },
   { id: 'genealogia', label: copy.cellar.genealogy },
   { id: 'analiticas', label: copy.cellar.analyses },
   { id: 'adiciones', label: copy.cellar.additions },
@@ -146,6 +148,8 @@ export function LotePage({ me }: { me: Me }) {
               {item.notes ? <p className="text-label text-text-secondary">{item.notes}</p> : null}
             </div>
           ) : null}
+
+          {tab === 'diseno' ? <DisenoTab me={me} lotCode={item.code} /> : null}
 
           {tab === 'genealogia' ? (
             trace.loading ? (

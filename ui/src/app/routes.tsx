@@ -21,6 +21,9 @@ import { HolderPage } from '@/pages/bodega-plano/HolderPage'
 import { HoldersPage } from '@/pages/bodega-plano/Holders'
 import { PlanoPage } from '@/pages/bodega-plano/Plano'
 import { CalculadorasPage } from '@/pages/enologia/Calculadoras'
+import { AnadasPage } from '@/pages/lote-diseno/AnadasPage'
+import { RecetaPage } from '@/pages/lote-diseno/RecetaPage'
+import { RecetasPage } from '@/pages/lote-diseno/RecetasPage'
 import { LotePage } from '@/pages/bodega/Lote'
 import { LotesPage } from '@/pages/bodega/Lotes'
 import { MapaPage } from '@/pages/bodega/Mapa'
@@ -78,6 +81,9 @@ export function AppRoutes({ me }: { me: Me }) {
       <Route path="bodega/contenedores/:code" element={<HolderPage me={me} />} />
       <Route path="bodega/lotes" element={<LotesPage me={me} />} />
       <Route path="bodega/lotes/:lotId" element={<LotePage me={me} />} />
+      <Route path="bodega/recetas" element={<RecetasPage me={me} />} />
+      <Route path="bodega/recetas/:id" element={<RecetaPage me={me} />} />
+      <Route path="bodega/anadas" element={<AnadasPage me={me} />} />
       <Route path="lotes/:lotId" element={<LotePage me={me} />} />
       <Route path="bodega/operaciones/nueva" element={<OperacionPage me={me} />} />
       <Route path="bodega/operacion/nueva" element={<OperacionPage me={me} />} />
