@@ -11,7 +11,7 @@ describe('GET /health', () => {
       expect(await response.json()).toEqual({
         status: 'ok',
         sha: 'testsha',
-        schema_version: '0016_legacy.sql',
+        schema_version: '0057_cellar_holders.sql',
         db: 'local',
         writer: 'leader',
       });
