@@ -1,5 +1,6 @@
 import { sql } from '../db/sql';
 import type { Tx } from '../db/writer';
+import { emitOutboxOnce } from './outbox-once';
 
 /**
  * Punto de extensión al emitir.
@@ -95,7 +96,7 @@ export async function dispatchInvoiceVoided(tx: Tx, invoice: VoidedInvoice, now:
 }
 
 function writeEvent(tx: Tx, eventType: string, invoice: IssuedInvoice, now: Date): void {
-  tx.write(sql`
+  emitOutboxOnce(tx, eventType, invoice.id, () => tx.write(sql`
     INSERT INTO ops.outbox_event (
       event_type, aggregate_table, aggregate_id, legal_entity_id, payload, occurred_at
     ) VALUES (
@@ -121,5 +122,5 @@ function writeEvent(tx: Tx, eventType: string, invoice: IssuedInvoice, now: Date
       })},
       ${now}
     )
-  `);
+  `));
 }

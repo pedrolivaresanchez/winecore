@@ -114,6 +114,13 @@ export const DEFAULT_POLICIES: { readonly [K in ApprovalKind]: KindDefault } = {
     validityMinutes: DAY_MINUTES,
     allowSelfApproval: true,
   },
+  sepa_remittance: {
+    requiredApprovals: 1,
+    allowedRoles: ownerApprover,
+    requiresStepUp: true,
+    validityMinutes: DAY_MINUTES,
+    allowSelfApproval: true,
+  },
 };
 
 export interface PolicyQuery {

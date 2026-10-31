@@ -106,7 +106,7 @@ describe('remesas SEPA', () => {
       expect(xml).toContain('MANDATO-0001');
       expect(xml).toContain(debtor);
       xsd('pain.008.001.02', xml);
-      expect(createHash('sha256').update(xml).digest('hex')).toBe(String(file.file_sha256));
+      expect(createHash('sha256').update(Buffer.from(xml)).digest('hex')).toBe(String(file.file_sha256));
 
       const audit = await ctx.writer.read<{ after_data: { file_sha256?: string } }>(sql`
         SELECT after_data FROM audit.audit_log

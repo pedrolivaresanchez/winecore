@@ -9,6 +9,7 @@ import { readStepUp, sessionHash } from '../core/auth/stepup/session';
 import { sql } from '../core/db/sql';
 import type { Actor } from '../core/db/writer';
 import { domainError } from '../core/errors';
+import { issueIntercompanyInvoice } from '../core/intercompany/settlement';
 import { syncSubmissionFromApproval } from '../core/regulatory/submissions';
 
 const PAGE_SIZE = 50;
@@ -28,6 +29,7 @@ const TITLES: Record<ApprovalKind, string> = {
   tariff_activation: 'Activación de tarifas',
   module_toggle: 'Módulos',
   third_party_message: 'Mensaje a terceros',
+  sepa_remittance: 'Remesa SEPA',
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -152,6 +154,15 @@ export async function decideApproval(deps: HttpDeps, request: Request, id: strin
   });
   if (row.kind === 'regulatory_submission') {
     await syncSubmissionFromApproval(deps.writer, userActor(request, user.id), row.id);
+  }
+  if (body.decision === 'approve' && row.kind === 'intercompany_invoice_issue') {
+    await deps.writer.withWrite(userActor(request, user.id), async (tx) => {
+      const subject = await tx.read<{ subject_id: unknown }>(sql`
+        SELECT subject_id FROM ops.approval_request WHERE id = CAST(${row.id} AS UUID)
+      `);
+      const invoiceId = subject[0] ? String(subject[0].subject_id) : '';
+      if (invoiceId) await issueIntercompanyInvoice(tx, row.id, invoiceId, user.id, now);
+    });
   }
   const fresh = await loadRows(deps, deps.now(), { status: 'all', kind: null, entity: null, id: row.id });
   const updated = fresh[0];

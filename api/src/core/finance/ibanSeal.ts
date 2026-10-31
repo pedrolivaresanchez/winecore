@@ -8,7 +8,7 @@ export function sealIban(plain: string, key: Uint8Array): Uint8Array {
   if (key.length !== 32) throw new Error('La clave de cifrado debe tener 32 bytes');
   const iv = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', key, iv);
-  const data = Buffer.concat([cipher.update(iban, 'utf8'), cipher.final()]);
+  const data = Buffer.concat([cipher.update(Buffer.from(iban, 'utf8')), cipher.final()]);
   const tag = cipher.getAuthTag();
   return new Uint8Array(Buffer.concat([iv, tag, data]));
 }

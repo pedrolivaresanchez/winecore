@@ -1,8 +1,9 @@
-import { canonicalJson } from '../db/audit';
+import { payloadSha256 } from '../approvals/canonical';
+import { approvalServiceOn } from '../approvals/sql-store';
+import type { ApproverContext } from '../approvals/types';
 import { sql } from '../db/sql';
 import type { Tx } from '../db/writer';
 import { domainError } from '../errors';
-import { sha256Hex } from '../hash';
 import { newId } from '../ids';
 import { idOf, isUuid, stamp } from './format';
 
@@ -34,7 +35,7 @@ export interface BillingApprovalHook {
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function hashPayload(payload: Record<string, unknown>): string {
-  return sha256Hex(canonicalJson(payload));
+  return payloadSha256(payload);
 }
 
 function expired(value: unknown, now: Date): boolean {
@@ -121,11 +122,15 @@ export function reviewApproval(tx: Tx, need: ApprovalNeed, now: Date): Promise<A
   return hook.review(tx, need, now);
 }
 
-/** El integrador lo cambia por la decisión real. Aquí solo marca la solicitud. */
+/**
+ * Aprueba con verificación reforzada en esta escritura.
+ * La bandeja usa el mismo servicio; aquí el paso reforzado es el instante de la concesión
+ * (pruebas y el atajo del integrador).
+ */
 export async function grantBillingApproval(tx: Tx, requestId: string, now = new Date()): Promise<void> {
   if (!isUuid(requestId)) throw domainError('WC_NOT_FOUND');
-  const rows = await tx.read<{ status: unknown; expires_at: unknown; payload_sha256: unknown }>(sql`
-    SELECT status, expires_at, payload_sha256
+  const rows = await tx.read<{ status: unknown; expires_at: unknown; payload_sha256: unknown; requested_by: unknown }>(sql`
+    SELECT status, expires_at, payload_sha256, requested_by
     FROM ops.approval_request
     WHERE id = CAST(${requestId} AS UUID)
   `);
@@ -134,49 +139,68 @@ export async function grantBillingApproval(tx: Tx, requestId: string, now = new 
   if (String(row.status) === 'approved') return;
   if (String(row.status) !== 'pending') throw domainError('WC042');
   if (expired(row.expires_at, now)) throw domainError('WC043');
-  tx.write(sql`
-    UPDATE ops.approval_request
-    SET status = 'approved', approved_at = ${now}
-    WHERE id = CAST(${requestId} AS UUID) AND status = 'pending'
-  `);
-  tx.audit({
-    table: 'ops.approval_request',
-    rowId: requestId.toLowerCase(),
-    action: 'UPDATE',
-    before: { status: 'pending' },
-    after: { status: 'approved', payload_sha256: textHash(row.payload_sha256) },
+  const actor = await approverContext(tx, String(row.requested_by), now);
+  await approvalServiceOn(tx, []).decide({
+    requestId,
+    decision: 'approve',
+    payloadSha256: String(row.payload_sha256),
+    stepUpMethod: 'totp',
+    actor,
   });
 }
 
-function textHash(value: unknown): string {
-  return String(value);
+async function approverContext(tx: Tx, requestedBy: string, now: Date): Promise<ApproverContext> {
+  const userId = isUuid(requestedBy) ? requestedBy.toLowerCase() : await ownerId(tx);
+  const roles = await tx.read<{ role_code: unknown; legal_entity_id: unknown }>(sql`
+    SELECT role_code, legal_entity_id
+    FROM core.user_role
+    WHERE user_id = CAST(${userId} AS UUID) AND revoked_at IS NULL
+  `);
+  return {
+    userId,
+    roles: roles.map((role) => ({
+      role: String(role.role_code),
+      legalEntityId: role.legal_entity_id == null ? null : String(role.legal_entity_id).toLowerCase(),
+    })),
+    kind: 'user',
+    stepUpAt: now.toISOString(),
+  };
+}
+
+async function ownerId(tx: Tx): Promise<string> {
+  const rows = await tx.read<{ id: unknown }>(sql`
+    SELECT id FROM core.app_user WHERE email = 'owner@winecore.test' LIMIT 1
+  `);
+  const id = rows[0] ? String(rows[0].id) : '';
+  if (!isUuid(id)) throw domainError('WC_NOT_FOUND');
+  return id.toLowerCase();
 }
 
 export async function consumeApproval(tx: Tx, requestId: string, now: Date): Promise<void> {
   if (!isUuid(requestId)) throw domainError('WC_NOT_FOUND');
-  const rows = await tx.read<{ status: unknown }>(sql`
-    SELECT status FROM ops.approval_request WHERE id = CAST(${requestId} AS UUID)
+  const rows = await tx.read<{ status: unknown; payload_sha256: unknown }>(sql`
+    SELECT status, payload_sha256 FROM ops.approval_request WHERE id = CAST(${requestId} AS UUID)
   `);
   const row = rows[0];
   if (!row) throw domainError('WC_NOT_FOUND');
   if (String(row.status) === 'consumed') return;
   if (String(row.status) !== 'approved') throw domainError('WC_INV_APPROVAL_REQUIRED');
-  tx.write(sql`
-    UPDATE ops.approval_request
-    SET status = 'consumed', consumed_at = ${now}
-    WHERE id = CAST(${requestId} AS UUID) AND status = 'approved'
-  `);
-  tx.audit({
-    table: 'ops.approval_request',
-    rowId: requestId.toLowerCase(),
-    action: 'UPDATE',
-    before: { status: 'approved' },
-    after: { status: 'consumed' },
-  });
+  try {
+    await approvalServiceOn(tx, [], { now: () => now }).consume({
+      requestId,
+      payloadSha256: String(row.payload_sha256),
+    });
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && (error as { code: string }).code === 'WC_NOT_APPROVED') {
+      throw domainError('WC_INV_APPROVAL_REQUIRED');
+    }
+    throw error;
+  }
 }
 
 export async function readApproval(tx: Pick<Tx, 'read'>, requestId: string): Promise<{
   id: string;
+  kind: string;
   status: string;
   payloadSha256: string;
   payload: Record<string, unknown>;
@@ -184,7 +208,7 @@ export async function readApproval(tx: Pick<Tx, 'read'>, requestId: string): Pro
 } | null> {
   if (!isUuid(requestId)) return null;
   const rows = await tx.read(sql`
-    SELECT id, status, payload_sha256, details, expires_at
+    SELECT id, kind, status, payload_sha256, details, expires_at
     FROM ops.approval_request
     WHERE id = CAST(${requestId} AS UUID)
   `);
@@ -192,6 +216,7 @@ export async function readApproval(tx: Pick<Tx, 'read'>, requestId: string): Pro
   if (!row) return null;
   return {
     id: idOf(row.id),
+    kind: String(row.kind),
     status: String(row.status),
     payloadSha256: String(row.payload_sha256),
     payload: jsonPayload(row.details),

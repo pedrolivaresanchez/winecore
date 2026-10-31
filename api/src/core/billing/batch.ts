@@ -1,9 +1,8 @@
 import { can, type UserCtx } from '../auth/permissions';
-import { canonicalJson } from '../db/audit';
+import { payloadSha256 } from '../approvals/canonical';
 import { sql } from '../db/sql';
 import type { Actor, Tx, Writer } from '../db/writer';
 import { asDomainError, domainError } from '../errors';
-import { sha256Hex } from '../hash';
 import { approvalStillValid, consumeApproval, readApproval, reviewApproval } from './approval';
 import { invoiceContentHash } from './contentHash';
 import { today } from './format';
@@ -116,7 +115,7 @@ export async function executeBatchIssue(
 ): Promise<{ issued: IssueResult[]; failed: BatchFailure[] }> {
   const approval = await readApproval(writer, requestId);
   if (!approval) throw domainError('WC_NOT_FOUND');
-  if (sha256Hex(canonicalJson(approval.payload)) !== approval.payloadSha256) throw domainError('WC040');
+  if (payloadSha256(approval.payload) !== approval.payloadSha256) throw domainError('WC040');
   if (approval.status !== 'approved') throw domainError('WC_INV_APPROVAL_REQUIRED');
   if (!approvalStillValid(approval.expiresAt, now)) throw domainError('WC043');
   const refs = batchRefs(approval.payload);

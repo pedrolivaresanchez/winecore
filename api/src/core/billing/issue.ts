@@ -10,6 +10,7 @@ import { deliveryStatusPlan, writeDeliveryStatuses } from './delivery';
 import { decimalOf, fixed, importeOf, instantOn, isUuid, seriesDocType } from './format';
 import { raiseIssue } from './issues';
 import { dispatchInvoiceIssued, type IssuedInvoice, type IssuedInvoiceLine } from './issued';
+import { openIssuedDelivery } from './issue-document';
 import {
   loadInvoice,
   type CustomerView,
@@ -54,15 +55,16 @@ export function injectAfterTakeNumber(fn: (() => void) | null): void {
 
 export async function issueInvoice(
   tx: Tx,
-  input: { invoiceId: string; actor: Actor; fromBatch?: boolean; now?: Date },
+  input: { invoiceId: string; actor: Actor; fromBatch?: boolean; fromIntercompany?: boolean; now?: Date },
 ): Promise<IssueResult> {
   const now = input.now ?? new Date();
   const view = await loadInvoice(tx, input.invoiceId);
   if (view.header.status === 'issued') return resultFromView(view);
   if (view.header.status === 'voided' || view.header.status === 'discarded') throw domainError('WC080');
   if (view.header.status === 'pending_approval') {
-    if (!input.fromBatch) throw domainError('WC_INV_APPROVAL_REQUIRED');
-    await assertBatchApproval(tx, view, now);
+    if (input.fromIntercompany) await assertIntercompanyApproval(tx, view, now);
+    else if (input.fromBatch) await assertBatchApproval(tx, view, now);
+    else throw domainError('WC_INV_APPROVAL_REQUIRED');
   } else if (view.header.status !== 'draft') {
     throw domainError('WC_INV_NOT_DRAFT');
   }
@@ -205,6 +207,7 @@ export async function issueInvoice(
   }
   const issued = issuedPayload(view, number, issueDate, totals, computed);
   await dispatchInvoiceIssued(tx, issued, now);
+  await openIssuedDelivery(tx, view, number, issueDate, totals, taxes, computed, now);
   return {
     id: view.header.id,
     number,
@@ -217,6 +220,16 @@ export async function issueInvoice(
     qr_url: null,
     customer_snapshot: snapshot,
   };
+}
+
+async function assertIntercompanyApproval(tx: Tx, view: InvoiceView, now: Date): Promise<void> {
+  const requestId = view.header.approvalRequestId;
+  if (!requestId) throw domainError('WC_INV_APPROVAL_REQUIRED');
+  const approval = await readApproval(tx, requestId);
+  if (!approval || approval.status !== 'approved' || approval.kind !== 'intercompany_invoice_issue') {
+    throw domainError('WC_INV_APPROVAL_REQUIRED');
+  }
+  if (!approvalStillValid(approval.expiresAt, now)) throw domainError('WC043');
 }
 
 async function assertBatchApproval(tx: Tx, view: InvoiceView, now: Date): Promise<void> {

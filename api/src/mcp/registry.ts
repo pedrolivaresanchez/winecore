@@ -87,7 +87,20 @@ export interface WriteTool {
   readonly commit: (ctx: McpContext, payload: unknown) => Promise<unknown> | unknown;
 }
 
-export type AnyTool = ReadTool | WriteTool;
+/** A write that records an external fact. It does not use prepare/commit. */
+export interface DirectWriteTool {
+  readonly kind: "direct";
+  readonly name: string;
+  readonly module: string;
+  readonly scope: string;
+  readonly title: string;
+  readonly description: string;
+  readonly input: ZodType;
+  readonly extraScopes?: readonly string[];
+  readonly handler: (ctx: McpContext, input: unknown) => Promise<unknown> | unknown;
+}
+
+export type AnyTool = ReadTool | WriteTool | DirectWriteTool;
 
 export interface ReadToolDefinition<T> {
   name: string;
@@ -138,6 +151,32 @@ export function defineReadTool<T>(definition: ReadToolDefinition<T>): ReadTool {
   };
 }
 
+export interface DirectWriteDefinition<T> {
+  name: string;
+  module: string;
+  scope: string;
+  title: string;
+  description: string;
+  input: ZodType<T>;
+  extraScopes?: readonly string[];
+  handler: (ctx: McpContext, input: T) => Promise<unknown> | unknown;
+}
+
+export function defineDirectWrite<T>(definition: DirectWriteDefinition<T>): DirectWriteTool {
+  assertToolName(definition.name);
+  return {
+    kind: "direct",
+    name: definition.name,
+    module: definition.module,
+    scope: definition.scope,
+    title: definition.title,
+    description: definition.description,
+    input: definition.input,
+    extraScopes: definition.extraScopes,
+    handler: (ctx, input) => definition.handler(ctx, input as T),
+  };
+}
+
 export function defineWriteTool<T, P>(definition: WriteToolDefinition<T, P>): WriteTool {
   assertToolName(definition.name);
   return {
@@ -160,8 +199,8 @@ export function untrustedText(value: string): { untrusted_text: string } {
 }
 
 export function mcpNames(tool: AnyTool): readonly string[] {
-  if (tool.kind === "read") return [tool.name];
-  return [`${tool.name}_prepare`, `${tool.name}_commit`];
+  if (tool.kind === "write") return [`${tool.name}_prepare`, `${tool.name}_commit`];
+  return [tool.name];
 }
 
 const ALWAYS_ON_MODULES = new Set(["", "system", "core"]);

@@ -8,6 +8,7 @@ import { newId } from '../ids';
 import { normalizeIban } from '../party/iban';
 import { actorOf, idempotencyKey, readJson, remember, replay, requestHash, storedResponse } from './idempotency';
 import { bytesOfBlob, openIban } from './ibanSeal';
+import { approvalServiceOn } from '../approvals/sql-store';
 import { contentKey, assertScope } from './payments';
 import { approvalFor, requireDataKey } from './runtime';
 import { buildPain001, buildPain008, isCreditorId, sepaReference, sepaTimestamp } from './sepa';
@@ -48,9 +49,22 @@ export async function requestRemittanceApproval(writer: Writer, user: UserCtx, r
     const current = await loadRemittance(tx, id, requireDataKey(writer));
     assertScope(user, 'finance.manage', current.legalEntityId);
     if (current.status !== 'draft') throw domainError('WC_FIN_STATE');
-    const contentSha256 = contentKey(hashPayload(current));
+    const payload = hashPayload(current);
+    const contentSha256 = contentKey(payload);
+    const approval = await approvalServiceOn(tx, []).requestApproval({
+      kind: 'sepa_remittance',
+      legalEntityId: current.legalEntityId,
+      subjectTable: 'finance.remittance',
+      subjectId: id,
+      payload,
+      details: { content_sha256: contentSha256 },
+      summary: `Remesa SEPA ${current.executionDate}`.slice(0, 300),
+      requestedBy: user.id,
+    });
     tx.write(sql`
-      UPDATE finance.remittance SET status = 'pending_approval' WHERE id = CAST(${id} AS UUID)
+      UPDATE finance.remittance
+      SET status = 'pending_approval', approval_request_id = CAST(${approval.id} AS UUID)
+      WHERE id = CAST(${id} AS UUID)
     `);
     tx.audit({
       table: 'finance.remittance',

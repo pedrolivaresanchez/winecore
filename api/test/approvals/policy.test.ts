@@ -47,6 +47,7 @@ const EXPECTED: {
   billing_rules_activation: { approvals: 1, roles: ['owner'], stepUp: true, minutes: WEEK, self: true },
   tariff_activation: { approvals: 1, roles: ['owner'], stepUp: true, minutes: WEEK, self: true },
   module_toggle: { approvals: 1, roles: ['owner'], stepUp: true, minutes: DAY, self: true },
+  sepa_remittance: { approvals: 1, roles: ['owner', 'approver'], stepUp: true, minutes: DAY, self: true },
 };
 
 function stored(overrides: Partial<ApprovalPolicy> & Pick<ApprovalPolicy, 'id' | 'kind'>): ApprovalPolicy {

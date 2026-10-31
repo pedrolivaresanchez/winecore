@@ -10,6 +10,7 @@ import { noopApprovalHook } from './core/purchasing/approval';
 import type { OcrWorkforce } from './core/purchasing/extract';
 import { ocrFromEnv } from './core/purchasing/timbal';
 import { bindFinance } from './core/finance/runtime';
+import { installIntegrations } from './core/wiring/integrations';
 import { asDomainError, domainError, errorBody } from './core/errors';
 import type { InvoiceDocumentStore } from './core/billing/pdf/documents';
 import { downloadInvoicePdf } from './routes/invoice-documents';
@@ -168,6 +169,7 @@ export interface AppDeps {
 const startedAt = new WeakMap<Request, number>();
 
 export function createApp(deps: AppDeps) {
+  installIntegrations();
   bindFinance(deps.writer, { dataKey: deps.config.dataKey });
   const log = deps.log ?? ((line: string) => console.log(line));
   const timbalAuth = createTimbalAuth(deps.config, deps.fetchImpl);

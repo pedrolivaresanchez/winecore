@@ -7,6 +7,7 @@ import { ensureIssuedInvoicePdf, pdfFilename } from '../pdf/issue';
 import { invoiceRecipients, type LoadedInvoice } from '../pdf/load';
 import { notifyInvoiceDelivery } from './alerts';
 import { spanishDeliveryMessage } from './template';
+import { emitOutboxOnce } from '../outbox-once';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/u;
@@ -426,7 +427,7 @@ function writeIssuedEvent(
   attempt: number,
   now: Date,
 ): void {
-  tx.write(sql`
+  emitOutboxOnce(tx, 'billing.invoice.issued', invoice.id, () => tx.write(sql`
     INSERT INTO ops.outbox_event (
       event_type, aggregate_table, aggregate_id, legal_entity_id, payload, occurred_at
     ) VALUES (
@@ -445,7 +446,7 @@ function writeIssuedEvent(
       })},
       ${now}
     )
-  `);
+  `));
 }
 
 function recipientList(recipients: readonly string[]): readonly string[] | null {

@@ -10,6 +10,7 @@ import {
   moduleActive,
   toolVisible,
   type AnyTool,
+  type DirectWriteTool,
   type McpContext,
   type ReadTool,
   type WriteTool,
@@ -120,6 +121,22 @@ function jsonObjectSchema(schema: ZodType): JsonObjectSchema {
 }
 
 function expose(tool: AnyTool): ExposedTool[] {
+  if (tool.kind === "direct") {
+    return [
+      {
+        name: tool.name,
+        title: tool.title,
+        description: tool.description,
+        input: tool.input,
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+    ];
+  }
   if (tool.kind === "read") {
     return [
       {
@@ -175,6 +192,7 @@ function visibleExposed(ctx: McpContext, tools: readonly AnyTool[]): ExposedTool
 
 type Resolved =
   | { kind: "read"; tool: ReadTool }
+  | { kind: "direct"; tool: DirectWriteTool }
   | { kind: "prepare"; tool: WriteTool }
   | { kind: "commit"; tool: WriteTool };
 
@@ -182,6 +200,10 @@ function resolve(name: string, tools: readonly AnyTool[]): Resolved | null {
   for (const tool of tools) {
     if (tool.kind === "read") {
       if (tool.name === name) return { kind: "read", tool };
+      continue;
+    }
+    if (tool.kind === "direct") {
+      if (tool.name === name) return { kind: "direct", tool };
       continue;
     }
     if (`${tool.name}_prepare` === name) return { kind: "prepare", tool };
@@ -198,7 +220,7 @@ function assertAccess(tool: AnyTool, ctx: McpContext): void {
   throw domainError("WC_FORBIDDEN");
 }
 
-async function runRead(ctx: McpContext, tool: ReadTool, args: unknown): Promise<unknown> {
+async function runRead(ctx: McpContext, tool: ReadTool | DirectWriteTool, args: unknown): Promise<unknown> {
   assertAccess(tool, ctx);
   const input = parseInput(tool.input, args);
   return tool.handler(ctx, input);
@@ -262,7 +284,7 @@ export async function callTool(
       throw domainError("WC_FORBIDDEN");
     }
     let data: unknown;
-    if (resolved.kind === "read") data = await runRead(ctx, resolved.tool, args);
+    if (resolved.kind === "read" || resolved.kind === "direct") data = await runRead(ctx, resolved.tool, args);
     else if (resolved.kind === "prepare") data = await runPrepare(ctx, resolved.tool, args);
     else data = await runCommit(ctx, resolved.tool, args);
     const result = successResult(data);

@@ -1,5 +1,8 @@
+import { consumeApproval, readApproval } from '../billing/approval';
 import { computeInvoice } from '../billing/compute';
+import { issueInvoice } from '../billing/issue';
 import type { TaxCode } from '../billing/taxCodes';
+import type { Actor } from '../db/writer';
 import { canonicalJson } from '../db/audit';
 import { sql } from '../db/sql';
 import type { Tx } from '../db/writer';
@@ -262,8 +265,9 @@ export async function requestIntercompanyInvoice(
   if (!frozen.invoice) {
     throw domainError('WC_VALIDATION', { period: frozen.watcher_message });
   }
-  if (frozen.invoice.approval_request_id || frozen.invoice.status === 'pending_approval' || frozen.invoice.status === 'issued') {
-    return frozen;
+  if (frozen.invoice.status === 'issued') return frozen;
+  if (frozen.invoice.approval_request_id && frozen.invoice.status === 'pending_approval') {
+    return issueIfApproved(tx, frozen, actorId, now);
   }
   const approvalId = newId();
   const hash = invoiceHash(frozen.invoice);
@@ -322,6 +326,42 @@ export async function requestIntercompanyInvoice(
     ...frozen,
     invoice: { ...frozen.invoice, status: 'pending_approval', approval_request_id: approvalId },
   };
+}
+
+async function issueIfApproved(
+  tx: Tx,
+  frozen: SettlementView,
+  actorId: string,
+  now: Date,
+): Promise<SettlementView> {
+  const requestId = frozen.invoice?.approval_request_id;
+  if (!requestId || !frozen.invoice) return frozen;
+  const issued = await issueIntercompanyInvoice(tx, requestId, frozen.invoice.id, actorId, now);
+  if (!issued) return frozen;
+  return { ...frozen, invoice: { ...frozen.invoice, status: 'issued' } };
+}
+
+/** Emite la factura intercompañía ya aprobada y consume la aprobación en la misma escritura. */
+export async function issueIntercompanyInvoice(
+  tx: Tx,
+  requestId: string,
+  invoiceId: string,
+  actorId: string,
+  now: Date,
+): Promise<boolean> {
+  const approval = await readApproval(tx, requestId);
+  if (!approval || approval.kind !== 'intercompany_invoice_issue') return false;
+  if (approval.status === 'consumed') return true;
+  if (approval.status !== 'approved') return false;
+  const actor: Actor = {
+    type: 'user',
+    id: actorId,
+    requestId: actorId,
+    reason: 'Factura intercompañía',
+  };
+  await issueInvoice(tx, { invoiceId, actor, fromIntercompany: true, now });
+  await consumeApproval(tx, requestId, now);
+  return true;
 }
 
 async function preview(
