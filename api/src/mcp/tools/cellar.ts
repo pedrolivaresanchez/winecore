@@ -151,8 +151,8 @@ export const cellarLotGet = defineReadTool({
         LIMIT 20
       `),
       writer.read<Record<string, unknown>>(sql`
-        SELECT tasted_at, notes, decision
-        FROM cellar.tasting
+        SELECT tasted_at, coalesce(notes, '') AS notes, decision
+        FROM tasting.note
         WHERE lot_id = CAST(${lot.id} AS UUID)
         ORDER BY tasted_at DESC
         LIMIT 20

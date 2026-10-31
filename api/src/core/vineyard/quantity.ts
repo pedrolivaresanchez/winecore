@@ -72,6 +72,19 @@ export function yieldKgPerHa(netKg: string, areaHa: string): string {
   return kg.div(hectares).toDecimalPlaces(1, Decimal.ROUND_HALF_UP).toFixed(1);
 }
 
+export function parseSigned1(value: unknown, field: string, min: number, max: number): string | null {
+  if (value === undefined || value === null || value === '') return null;
+  const text = typeof value === 'number' && Number.isFinite(value) ? String(value) : typeof value === 'string' ? value.trim() : '';
+  if (!/^-?(?:0|[1-9]\d{0,2})(?:\.\d)?$/.test(text)) {
+    throw domainError('WC_VALIDATION', { [field]: 'Un decimal como máximo' });
+  }
+  const parsed = decimalOf(text, field);
+  if (parsed.lt(min) || parsed.gt(max)) {
+    throw domainError('WC_VALIDATION', { [field]: `Tiene que estar entre ${min} y ${max}` });
+  }
+  return parsed.toDecimalPlaces(1).toFixed(1);
+}
+
 export function areaExceeds(sumHa: string, parcelHa: string): boolean {
   return decimalOf(sumHa, 'area_ha').gt(decimalOf(parcelHa, 'area_ha'));
 }

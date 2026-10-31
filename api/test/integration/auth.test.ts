@@ -44,6 +44,7 @@ describe('auth', () => {
         'sales.read',
         'sales.write',
         'settings.manage',
+        'tasting.write',
         'users.manage',
         'vineyard.read',
         'vineyard.write',

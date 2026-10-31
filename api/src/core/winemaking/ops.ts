@@ -6,6 +6,10 @@ export const WINEMAKING_OPS = [
   'fermentation_end',
   'malolactic_start',
   'malolactic_end',
+  'bleeding',
+  'pressing_off',
+  'delestage',
+  'temperature_control',
 ] as const;
 
 export type WinemakingOp = (typeof WINEMAKING_OPS)[number];
@@ -23,9 +27,17 @@ export function isWinemakingOp(value: string): value is WinemakingOp {
  * El prensado y el fin de FA usan los tipos que la especificación ya nombra.
  */
 export function dbOpType(op: string): string {
-  if (op === 'fermentation_start' || op === 'malolactic_start' || op === 'malolactic_end') {
+  if (
+    op === 'fermentation_start'
+    || op === 'malolactic_start'
+    || op === 'malolactic_end'
+    || op === 'delestage'
+    || op === 'temperature_control'
+  ) {
     return 'stabilization';
   }
+  if (op === 'bleeding') return 'blend';
+  if (op === 'pressing_off') return 'racking';
   return op;
 }
 
