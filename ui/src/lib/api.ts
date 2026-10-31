@@ -139,6 +139,13 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
 }
 
+export async function apiBlob(path: string, init?: RequestInit): Promise<{ blob: Blob; filename: string | null }> {
+  const response = await send(path, init, false);
+  const header = response.headers.get("Content-Disposition") ?? "";
+  const matched = /filename="([^"]+)"/.exec(header);
+  return { blob: await response.blob(), filename: matched?.[1] ?? null };
+}
+
 export async function apiText(path: string, init?: RequestInit): Promise<string> {
   const response = await send(path, { ...init, headers: { Accept: "text/csv", ...headersOf(init) } }, false);
   return response.text();
