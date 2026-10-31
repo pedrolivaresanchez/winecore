@@ -337,6 +337,20 @@ const guardSpecs: readonly GuardSpec[] = [
   { id: "FK:cellar.recipe.source_lot_id", kind: "core", table: "cellar.recipe", description: "FK cellar.recipe.source_lot_id hacia inventory.lot; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "lot-design", implemented: true },
   { id: "FK:cellar.recipe_version.source_lot_id", kind: "core", table: "cellar.recipe_version", description: "FK cellar.recipe_version.source_lot_id hacia inventory.lot; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "lot-design", implemented: true },
   { id: "FK:cellar.elaboration_plan.lot_id", kind: "core", table: "cellar.elaboration_plan", description: "FK cellar.elaboration_plan.lot_id hacia inventory.lot; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "lot-design", implemented: true },
+  { id: "FK:tasting.note.lot_id", kind: "core", table: "tasting.note", description: "FK tasting.note.lot_id hacia inventory.lot; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-BOD-011", implemented: true },
+  { id: "FK:tasting.note.vessel_id", kind: "core", table: "tasting.note", description: "FK tasting.note.vessel_id hacia cellar.vessel; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-BOD-011", implemented: true },
+  { id: "FK:tasting.note.parcel_id", kind: "core", table: "tasting.note", description: "FK tasting.note.parcel_id hacia vineyard.parcel; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-BOD-011", implemented: true },
+  { id: "FK:tasting.note.wine_id", kind: "core", table: "tasting.note", description: "FK tasting.note.wine_id hacia catalog.wine; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-BOD-011", implemented: true },
+  { id: "FK:tasting.note.product_id", kind: "core", table: "tasting.note", description: "FK tasting.note.product_id hacia catalog.product; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-BOD-011", implemented: true },
+  { id: "FK:tasting.note.taster_user_id", kind: "core", table: "tasting.note", description: "FK tasting.note.taster_user_id hacia core.app_user; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-BOD-011", implemented: true },
+  { id: "FK:tasting.blind_sample.lot_id", kind: "core", table: "tasting.blind_sample", description: "FK tasting.blind_sample.lot_id hacia inventory.lot; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-BOD-011", implemented: true },
+  { id: "FK:tasting.blind_sample.vessel_id", kind: "core", table: "tasting.blind_sample", description: "FK tasting.blind_sample.vessel_id hacia cellar.vessel; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-BOD-011", implemented: true },
+  { id: "WC_TASTING_TEMPLATE", kind: "core", table: "tasting.template_field", description: "La ficha de cata cumple los campos, el orden y los rangos de la plantilla vigente.", ownerTask: "TASK-BOD-011", implemented: true },
+  { id: "WC_TASTING_SUBJECT", kind: "core", table: "tasting.note", description: "El sujeto de la cata enlaza la parcela, el lote, el recipiente o el vino que exige la plantilla.", ownerTask: "TASK-BOD-011", implemented: true },
+  { id: "WC_TASTING_SCORE", kind: "core", table: "tasting.note", description: "Las puntuaciones caben en la escala de la plantilla (0-10 o 0-100).", ownerTask: "TASK-BOD-011", implemented: true },
+  { id: "WC_TASTING_HIDDEN", kind: "core", table: "tasting.blind_sample", description: "La correspondencia muestra-lote de una cata ciega no se lee hasta revelarla.", ownerTask: "TASK-BOD-011", implemented: true },
+  { id: "WC_TASTING_CLOSED", kind: "core", table: "tasting.blind_session", description: "Una sesión revelada no admite muestras ni votos nuevos.", ownerTask: "TASK-BOD-011", implemented: true },
+  { id: "WC_TASTING_DAY", kind: "core", table: "tasting.blind_vote", description: "El día del voto está dentro de los 2 o 3 días de la sesión.", ownerTask: "TASK-BOD-011", implemented: true },
 ];
 
 export const guards: readonly GuardSpec[] = guardSpecs.map((guard) =>

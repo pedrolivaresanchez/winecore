@@ -108,6 +108,12 @@ const CATALOG = {
   WC_LOT_SINGLE_PLOT: [422, 'La parcela única no coincide con la genealogía del lote'],
   WC_LOT_NOT_FINISHED: [422, 'El lote no tiene operaciones confirmadas para capturar la receta'],
   WC_RECIPE_LOCKED: [409, 'La versión publicada de la receta no se edita'],
+  WC_TASTING_TEMPLATE: [422, 'La plantilla de cata no es válida'],
+  WC_TASTING_SUBJECT: [422, 'El sujeto de la cata no cuadra con la plantilla'],
+  WC_TASTING_SCORE: [422, 'La puntuación está fuera de la escala'],
+  WC_TASTING_HIDDEN: [409, 'La correspondencia de la cata ciega sigue oculta'],
+  WC_TASTING_CLOSED: [409, 'La sesión de cata no admite más cambios'],
+  WC_TASTING_DAY: [422, 'El día no pertenece a la sesión'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;
