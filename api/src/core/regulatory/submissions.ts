@@ -329,8 +329,8 @@ export async function enqueueRun(tx: Tx, submissionId: string): Promise<void> {
 export async function syncSubmissionFromApproval(writer: Writer, actor: Actor, approvalRequestId: string): Promise<void> {
   if (!UUID.test(approvalRequestId)) return;
   await writer.withWrite(actor, async (tx) => {
-    const rows = await tx.read<{ id: string; status: string; approval_status: string }>(sql`
-      SELECT s.id::VARCHAR AS id, s.status, a.status AS approval_status
+    const rows = await tx.read<{ id: string; status: string; approval_status: string; flow: string }>(sql`
+      SELECT s.id::VARCHAR AS id, s.status, s.flow, a.status AS approval_status
       FROM regulatory.submission s
       JOIN ops.approval_request a ON a.id = s.approval_request_id
       WHERE s.approval_request_id = CAST(${approvalRequestId} AS UUID)
@@ -359,20 +359,22 @@ export async function syncSubmissionFromApproval(writer: Writer, actor: Actor, a
         SET status = 'validated', approval_request_id = NULL, updated_at = now()
         WHERE id = CAST(${row.id} AS UUID) AND status = 'pending_approval'
       `);
-      const linked = await tx.read<{ id: string }>(sql`
-        SELECT id::VARCHAR AS id FROM regulatory.silicie_entry
-        WHERE submission_id = CAST(${row.id} AS UUID) AND status = 'in_submission'
-      `);
-      const fromPayload = parsePayload(
-        (await requireRow(tx.read.bind(tx), row.id)).payload,
-      ).entries.map((entry) => entry.id);
-      for (const entryId of [...linked.map((item) => item.id), ...fromPayload]) {
-        if (!UUID.test(entryId)) continue;
-        tx.write(sql`
-          UPDATE regulatory.silicie_entry
-          SET status = 'pending'
-          WHERE id = CAST(${entryId} AS UUID) AND status = 'in_submission'
+      if (row.flow === "silicie") {
+        const linked = await tx.read<{ id: string }>(sql`
+          SELECT id::VARCHAR AS id FROM regulatory.silicie_entry
+          WHERE submission_id = CAST(${row.id} AS UUID) AND status = 'in_submission'
         `);
+        const fromPayload = parsePayload(
+          (await requireRow(tx.read.bind(tx), row.id)).payload,
+        ).entries.map((entry) => entry.id);
+        for (const entryId of [...linked.map((item) => item.id), ...fromPayload]) {
+          if (!UUID.test(entryId)) continue;
+          tx.write(sql`
+            UPDATE regulatory.silicie_entry
+            SET status = 'pending'
+            WHERE id = CAST(${entryId} AS UUID) AND status = 'in_submission'
+          `);
+        }
       }
       tx.audit({
         table: "regulatory.submission",

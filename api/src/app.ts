@@ -165,6 +165,16 @@ import {
   postValidateSubmission,
 } from './routes/regulatory-submissions';
 import { listSilicieLedgers, postOpenExercise, postSilicieLedger, postValidateLedger } from './routes/silicie-ledgers';
+import {
+  getAeatBooks,
+  getAeatDraft,
+  getAeatSubmission,
+  listAeatSubmissions,
+  postAeatSubmission,
+  postMarkAeatFiled,
+  postRequestAeatApproval,
+  postValidateAeat,
+} from './routes/aeat';
 import { getTaxWarehouses } from './routes/tax-warehouses';
 import { vineyardNotebookRoutes } from './routes/vineyard-notebook';
 
@@ -547,6 +557,34 @@ export function createApp(deps: AppDeps) {
     })
     .get('/v1/regulatory/submissions/:id', ({ request, params }) => getRegulatorySubmission(http, request, params.id), {
       beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
+    })
+    // Borradores de modelos AEAT. WineCore no llama a la AEAT: una persona anota el justificante.
+    .get('/v1/aeat/books', ({ request }) => getAeatBooks(http, request), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
+    })
+    .get('/v1/aeat/books.csv', ({ request }) => getAeatBooks(http, request), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
+    })
+    .get('/v1/aeat/drafts', ({ request }) => getAeatDraft(http, request), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
+    })
+    .get('/v1/aeat/submissions', ({ request }) => listAeatSubmissions(http, request), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
+    })
+    .post('/v1/aeat/submissions', ({ request }) => postAeatSubmission(http, request), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .get('/v1/aeat/submissions/:id', ({ request, params }) => getAeatSubmission(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
+    })
+    .post('/v1/aeat/submissions/:id/validate', ({ request, params }) => postValidateAeat(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .post('/v1/aeat/submissions/:id/request-approval', ({ request, params }) => postRequestAeatApproval(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .post('/v1/aeat/submissions/:id/mark-filed', ({ request, params }) => postMarkAeatFiled(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
     })
     .get('/v1/silicie-ledgers', ({ request }) => listSilicieLedgers(http, request), {
       beforeHandle: requirePermission(guardDeps, 'regulatory.read'),

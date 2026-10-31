@@ -12,6 +12,7 @@ export const REGULATORY_VIEWS = [
   { id: 'presentaciones', label: copy.regulatorio.presentaciones, path: '/regulatorio' },
   { id: 'calendario', label: copy.regulatorio.calendario, path: '/regulatorio/calendario' },
   { id: 'mayores', label: copy.regulatorio.mayores, path: '/regulatorio/mayores' },
+  { id: 'modelos', label: copy.regulatorio.modelos, path: '/regulatorio/modelos' },
 ] as const
 
 export type RegulatoryView = (typeof REGULATORY_VIEWS)[number]['id']

@@ -171,7 +171,7 @@ async function failed(response: Response): Promise<ApiError> {
 }
 
 export function submissionsPath(entityId?: string): string {
-  const params = new URLSearchParams()
+  const params = new URLSearchParams({ flow: 'silicie' })
   if (entityId) params.set('entity', entityId)
   const query = params.toString()
   return query ? `/v1/regulatory/submissions?${query}` : '/v1/regulatory/submissions'

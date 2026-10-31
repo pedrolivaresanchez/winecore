@@ -6,6 +6,7 @@ import { NotFound } from '@/pages/NotFound'
 import { CalendarioPage } from '@/pages/regulatorio/Calendario'
 import { EnvioPage } from '@/pages/regulatorio/Envio'
 import { MayoresPage } from '@/pages/regulatorio/Mayores'
+import { ModelosPage } from '@/pages/regulatorio/Modelos'
 import { PresentacionesPage } from '@/pages/regulatorio/Presentaciones'
 
 export function Regulatorio({ me }: { me: Me }) {
@@ -16,6 +17,7 @@ export function Regulatorio({ me }: { me: Me }) {
   if (filing?.[1]) return <EnvioPage me={me} id={decodeURIComponent(filing[1])} />
   if (rest === 'calendario') return <CalendarioPage me={me} />
   if (rest === 'mayores') return <MayoresPage me={me} />
+  if (rest === 'modelos') return <ModelosPage me={me} />
   if (rest === '') return <PresentacionesPage me={me} />
   return <NotFound />
 }

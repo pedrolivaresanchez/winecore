@@ -190,6 +190,9 @@ export const navigation: NavEntry[] = [
     icon: Calendar,
     path: '/regulatorio',
     permission: 'regulatory.read',
+    children: [
+      { id: 'aeat-models', label: copy.nav.aeatModels, path: '/regulatorio/modelos', permission: 'regulatory.read' },
+    ],
     mobile: 'more',
     placement: 'main',
     group: 'regulatorio',
