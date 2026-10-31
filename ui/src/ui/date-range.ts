@@ -67,24 +67,22 @@ export function rangeDayRole(day: string, from: string | null, to: string | null
   return 'none'
 }
 
-export function formatCivilDay(
-  day: string,
-  locale: string,
-  year: 'always' | 'auto' = 'auto',
-): string {
+/** `31/10/2026`. The year is always there: a date in a book is not a caption. */
+export function formatCivilDay(day: string, locale = 'es'): string {
   const key = civilDayOf(day)
   if (!key) return day
   const date = new Date(`${key}T12:00:00`)
   if (Number.isNaN(date.getTime())) return key
-  const includeYear = year === 'always' || date.getFullYear() !== new Date().getFullYear()
   return new Intl.DateTimeFormat(locale, {
-    day: 'numeric',
-    month: 'short',
-    ...(includeYear ? { year: 'numeric' } : {}),
-  }).format(date)
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  })
+    .format(date)
+    .replace(/[\u00a0\u202f]/g, '')
 }
 
-/** One day as itself; two days as `28 ago - 4 sep`. Null when nothing is chosen. */
+/** One day as itself; two days as `01/01/2026 - 31/10/2026`. Null when nothing is chosen. */
 export function formatCivilRange(
   from: string | null,
   to: string | null,

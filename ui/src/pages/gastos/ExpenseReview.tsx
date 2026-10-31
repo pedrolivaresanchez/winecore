@@ -13,7 +13,6 @@ import {
   GlassMenu,
   Input,
   MenuItem,
-  Skeleton,
   StatusChip,
   Textarea,
   useMenuOpen,
@@ -37,6 +36,7 @@ import { categoryLabel, statusLabel, statusTone } from '@/pages/gastos/catalog'
 import { DocumentView } from '@/pages/gastos/DocumentView'
 import { ExpenseForm } from '@/pages/gastos/ExpenseForm'
 import { draftFrom, totalsDrift, type Expense, type ExpenseDraft, type SupplierOption } from '@/pages/gastos/types'
+import { RecordSkeleton } from '@/components/RecordSkeleton'
 
 type TabId = 'datos' | 'documento'
 
@@ -45,12 +45,7 @@ export function ExpenseReview({ me, id }: { me: Me; id: string }) {
   useChromeTitle(expense.data?.supplier_name || copy.gastos.title)
   if (!allows(me, 'purchasing.read')) return <NoPermission />
   if (expense.loading && !expense.data) {
-    return (
-      <div aria-busy="true" className="grid gap-3 p-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-40 w-full" />
-      </div>
-    )
+    return <RecordSkeleton />
   }
   if (expense.error || !expense.data) {
     return (

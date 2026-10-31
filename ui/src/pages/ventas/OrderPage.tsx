@@ -33,7 +33,8 @@ import {
   type SalesPage,
 } from '@/lib/sales'
 import type { Me } from '@/lib/types'
-import { Button, DatePicker, Input, MenuItem, Select, Skeleton, Textarea, useToast } from '@/ui'
+import { Button, DatePicker, Input, MenuItem, Select, Textarea, useToast } from '@/ui'
+import { RecordSkeleton } from '@/components/RecordSkeleton'
 import {
   DocLink,
   FactList,
@@ -391,10 +392,5 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
 }
 
 function Loading() {
-  return (
-    <div aria-busy="true" className="grid gap-3 p-6">
-      <Skeleton className="h-8 w-48" />
-      <Skeleton className="h-40 w-full" />
-    </div>
-  )
+  return <RecordSkeleton />
 }

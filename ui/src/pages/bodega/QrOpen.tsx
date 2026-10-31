@@ -6,7 +6,7 @@ import { useApi } from '@/hooks/use-api'
 import { copy } from '@/i18n'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
-import { Skeleton } from '@/ui'
+import { RecordSkeleton } from '@/components/RecordSkeleton'
 
 type Resolved = { code: string }
 
@@ -29,9 +29,6 @@ export function QrOpen({ me }: { me: Me }) {
     )
   }
   return (
-    <div aria-busy="true" className="grid gap-3 p-6" data-screen="bodega-qr-abierto">
-      <Skeleton className="h-8 w-40" />
-      <Skeleton className="h-36" />
-    </div>
+    <RecordSkeleton screen="bodega-qr-abierto" />
   )
 }

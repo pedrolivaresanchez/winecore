@@ -86,11 +86,17 @@ export function ApprovalDetail({ id, backTo }: { id: string; backTo: string }) {
 
   if (approval.loading && !approval.data) {
     return (
-      <div data-screen="aprobacion-cargando" aria-busy="true" className="flex flex-col gap-3 p-4">
+      <div data-screen="aprobacion-cargando" aria-busy="true" className="flex min-h-0 flex-1 flex-col">
         <p className="sr-only">{copy.loading}</p>
-        <Skeleton className="h-5 w-48" />
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-40 w-full" />
+        <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border-subtle px-3 sm:px-4">
+          <Skeleton className="size-7 rounded-md" />
+          <Skeleton className="h-3.5 w-28" />
+        </div>
+        <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-4 py-5 sm:px-8">
+          <Skeleton className="h-5 w-48" />
+          <Skeleton className="h-24 w-full rounded-2xl" />
+          <Skeleton className="h-40 w-full rounded-2xl" />
+        </div>
       </div>
     );
   }
@@ -145,7 +151,7 @@ export function ApprovalDetail({ id, backTo }: { id: string; backTo: string }) {
 
   return (
     <div data-screen="aprobacion" data-status={record.status} className="flex min-h-0 flex-1 flex-col bg-surface">
-      <header className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border-subtle px-3 py-1.5 sm:px-4">
+      <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border-subtle px-3 sm:px-4">
         <Link
           to={backTo}
           className="flex size-7 shrink-0 items-center justify-center rounded-md text-ink-900 hover:bg-fill-hover"
@@ -153,20 +159,23 @@ export function ApprovalDetail({ id, backTo }: { id: string; backTo: string }) {
         >
           <ArrowLeft className="size-3.5" strokeWidth={iconStroke} />
         </Link>
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-label font-medium text-ink-900">{record.title}</h1>
-          <p className="truncate text-caption text-text-tertiary">
-            {kindLabel(record.kind)} · {entityLabel(record.legal_entity_code)}
-          </p>
-        </div>
-        <Badge tone={status.tone} dot size="sm">
-          {status.label}
-        </Badge>
-        {wide ? actions : null}
+        <span className="min-w-0 truncate text-label text-text-tertiary">{copy.approvals.title}</span>
+        {wide ? <div className="ml-auto flex shrink-0 items-center gap-1.5">{actions}</div> : null}
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-3xl flex-col px-4 py-6">
+        <div className="mx-auto flex w-full max-w-3xl flex-col px-4 py-5 sm:px-8">
+        <header className="mb-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="min-w-0 text-body font-medium text-ink-900">{record.title}</h1>
+            <Badge tone={status.tone} dot size="sm">
+              {status.label}
+            </Badge>
+          </div>
+          <p className="mt-0.5 text-label text-text-secondary">
+            {kindLabel(record.kind)} · {entityLabel(record.legal_entity_code)}
+          </p>
+        </header>
         {banner ? (
           <Alert tone="danger" className="mb-4">
             {banner}

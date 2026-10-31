@@ -28,6 +28,7 @@ import { IssueDialog, VoidDialog } from '@/pages/facturas/dialogs'
 import { DATE_LABELS, day, daysLabel, draftsFrom, entityLabel, invoiceTitle, isOpen, kindLabel, linePayload, methodLabel, money, paymentLabel } from '@/pages/facturas/format'
 import { LineEditor } from '@/pages/facturas/lines'
 import type { AuditItem, DeliveryStatus, Invoice, LineDraft, ValidationResult, VoidReason } from '@/pages/facturas/types'
+import { RecordSkeleton } from '@/components/RecordSkeleton'
 
 const TABS = [
   { id: 'factura', label: copy.facturas.lines },
@@ -44,12 +45,7 @@ export function InvoicePage({ me }: { me: Me }) {
   useChromeTitle(invoice.data ? invoiceTitle(invoice.data.status, invoice.data.number) : copy.facturas.title)
   if (!allows(me, 'billing.read')) return <NoPermission />
   if (invoice.loading && !invoice.data) {
-    return (
-      <div aria-busy="true" className="grid gap-3 p-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-40 w-full" />
-      </div>
-    )
+    return <RecordSkeleton />
   }
   if (invoice.error || !invoice.data) {
     return (

@@ -32,7 +32,8 @@ import { countKindLabel, countStatusLabel, countStatusTone, isPackaged, ownerLab
 import { clearPending, readPending, writePending } from '@/pages/existencias/pending'
 import { formatMl, formatSignedMl, formatSignedUnits } from '@/pages/existencias/volume'
 import { ArrowLeft } from '@/ui/icons'
-import { Alert, Badge, Button, Skeleton, useToast } from '@/ui'
+import { Alert, Badge, Button, useToast } from '@/ui'
+import { RecordSkeleton } from '@/components/RecordSkeleton'
 
 const TABS = [
   { id: 'recuento', label: 'Recuento' },
@@ -143,13 +144,7 @@ export function CountPage({ me }: { me: Me }) {
   if (!allows(me, 'inventory.read')) return <NoPermission />
 
   if (!data && remote.loading) {
-    return (
-      <div data-screen="aforo-cargando" aria-busy="true" className="grid gap-3 p-6">
-        <p className="sr-only">{copy.loading}</p>
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-40 w-full" />
-      </div>
-    )
+    return <RecordSkeleton screen="aforo-cargando" />
   }
 
   if (!data) {

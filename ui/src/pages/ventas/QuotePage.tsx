@@ -21,8 +21,9 @@ import {
   type SalesPage,
 } from '@/lib/sales'
 import type { Me } from '@/lib/types'
-import { Button, Skeleton, useToast } from '@/ui'
+import { Button, useToast } from '@/ui'
 import { DocLink, FactList, LineTable, RecordFrame, SalesHistory, StatusBadge, TotalsBox } from '@/pages/ventas/chrome'
+import { RecordSkeleton } from '@/components/RecordSkeleton'
 
 export function QuotePage({ me }: { me: Me }) {
   const { id = '' } = useParams()
@@ -155,10 +156,5 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
 }
 
 function Loading() {
-  return (
-    <div aria-busy="true" className="grid gap-3 p-6">
-      <Skeleton className="h-8 w-48" />
-      <Skeleton className="h-40 w-full" />
-    </div>
-  )
+  return <RecordSkeleton />
 }

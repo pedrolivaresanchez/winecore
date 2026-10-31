@@ -30,7 +30,8 @@ import {
   type DeliveryNote,
 } from '@/lib/sales'
 import type { Me } from '@/lib/types'
-import { Button, Input, MenuItem, Skeleton, useToast } from '@/ui'
+import { Button, Input, MenuItem, useToast } from '@/ui'
+import { RecordSkeleton } from '@/components/RecordSkeleton'
 import {
   DocLink,
   EadChip,
@@ -51,12 +52,7 @@ export function DeliveryPage({ me }: { me: Me }) {
   useChromeTitle(note.data?.number || copy.sales.deliveries)
   if (!allows(me, 'sales.read')) return <NoPermission />
   if (note.loading && !note.data) {
-    return (
-      <div aria-busy="true" className="grid gap-3 p-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-40 w-full" />
-      </div>
-    )
+    return <RecordSkeleton />
   }
   if (note.error || !note.data) {
     return (
