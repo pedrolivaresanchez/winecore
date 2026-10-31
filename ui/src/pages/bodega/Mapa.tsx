@@ -193,6 +193,9 @@ export function MapaPage({ me }: { me: Me }) {
           <Chip pressed={!table} active={!table} onClick={() => setTable(false)}>
             {copy.cellar.cards}
           </Chip>
+          <Button type="button" variant="secondary" size="sm" className="shrink-0" onClick={() => navigate('/bodega/calculadoras')}>
+            {copy.nav.calculators}
+          </Button>
           {table ? (
             <GlassMenu
               open={columnsMenu.open}

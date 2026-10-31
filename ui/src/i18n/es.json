@@ -16,6 +16,7 @@
     "cellar": "Bodega",
     "vessels": "Depósitos",
     "lots": "Lotes",
+    "calculators": "Calculadoras",
     "newOperation": "Nueva operación",
     "stock": "Existencias",
     "sales": "Ventas"
@@ -138,7 +139,9 @@
     "security": "Seguridad",
     "securityHint": "Passkeys y código para aprobar.",
     "policies": "Políticas",
-    "policiesHint": "Quién aprueba cada acción."
+    "policiesHint": "Quién aprueba cada acción.",
+    "enology": "Enología",
+    "enologyHint": "Umbrales y objetivos de la bodega."
   },
   "contacts": {
     "title": "Contactos",
@@ -972,6 +975,158 @@
       "professional": "Servicios profesionales",
       "lab": "Laboratorio",
       "other_services": "Otros servicios"
+    }
+  },
+  "enology": {
+    "title": "Calculadoras",
+    "back": "Bodega",
+    "calculate": "Calcular",
+    "clear": "Vaciar",
+    "more": "Más acciones",
+    "remove": "Quitar",
+    "addPart": "Añadir parte",
+    "part": "Parte {n}",
+    "formula": "Fórmula",
+    "pending": "pendiente de confirmar",
+    "confirmed": "confirmado",
+    "fact": "hecho",
+    "advisor": "pendiente del asesor",
+    "noFigure": "Sin cifra",
+    "source": "Fuente",
+    "confirm": "Confirmar",
+    "save": "Guardar",
+    "saved": "Guardado",
+    "saveFail": "No se ha podido guardar.",
+    "calcFail": "No se ha podido calcular.",
+    "number": "Debe ser un número",
+    "targets": "Objetivos",
+    "thresholds": "Umbrales",
+    "limits": "Límites de SO2",
+    "losses": "Mermas",
+    "lossesHint": "El máximo lo indica el asesor.",
+    "practices": "Prácticas prohibidas",
+    "analyses": "Analítica previa",
+    "organic": "Ecológico",
+    "legal": "Legal",
+    "newPractice": "Nueva práctica",
+    "sourceLength": "La referencia tiene que tener entre 5 y 400 caracteres",
+    "practiceName": "El nombre tiene que tener entre 3 y 80 caracteres",
+    "sourceNeeded": "Indica la referencia del asesor",
+    "active": "Activa",
+    "noVessels": "Sin depósitos",
+    "noVesselsHint": "No hay depósitos para el corte.",
+    "qtyFormula": "cantidad = mg/L × litros / (% × 10)",
+    "blendFormula": "parte = pipeta / suma × volumen",
+    "either": "Indica azúcares o densidad",
+    "columns": {
+      "process": "Proceso",
+      "state": "Estado",
+      "max": "Máximo"
+    },
+    "tabs": {
+      "so2": "SO2",
+      "cold": "Frío",
+      "alcohol": "Grado",
+      "blend": "Corte"
+    },
+    "wine": {
+      "tinto": "Tinto",
+      "blanco": "Blanco",
+      "rosado": "Rosado"
+    },
+    "sugar": {
+      "lt_2": "< 2 g/L",
+      "from_2_to_5": "2–5 g/L",
+      "gte_5": "> 5 g/L"
+    },
+    "product": {
+      "meta": "Metabisulfito",
+      "solution": "Solución"
+    },
+    "process": {
+      "reception": "Recepción",
+      "crushing_pressing": "Estrujado y prensado",
+      "fermentation": "Fermentación",
+      "racking": "Trasiego",
+      "filtration": "Filtración",
+      "stabilisation": "Estabilización",
+      "aging_barrel": "Crianza en barrica",
+      "bottling": "Embotellado"
+    },
+    "state": {
+      "grape": "Uva",
+      "must": "Mosto",
+      "wine": "Vino",
+      "packaged_unlabeled": "Sin etiquetar",
+      "packaged_labeled": "Etiquetado"
+    },
+    "params": {
+      "molecular_so2_tinto_mg_l": "SO2 molecular tinto",
+      "molecular_so2_blanco_mg_l": "SO2 molecular blanco",
+      "molecular_so2_rosado_mg_l": "SO2 molecular rosado",
+      "density_alcohol_factor": "Factor de densidad",
+      "volatile_acidity_alert_g_l": "Alerta de volátil",
+      "volatile_acidity_legal_max_g_l": "Máximo legal de volátil",
+      "dryness_glucose_fructose_g_l": "Sequedad",
+      "malolactic_malic_g_l": "Fin de maloláctica",
+      "pre_bottling_freshness_days": "Frescura",
+      "bottling_analysis_mode": "Sin analítica fresca",
+      "winter_racking_month_from": "Trasiego, desde",
+      "winter_racking_month_to": "Trasiego, hasta",
+      "bottling_reminder_month_from": "Embotellado, desde",
+      "bottling_reminder_month_to": "Embotellado, hasta"
+    },
+    "fields": {
+      "ph": "pH",
+      "free": "SO2 libre",
+      "volume": "Volumen",
+      "type": "Tipo de vino",
+      "product": "Producto",
+      "percent": "% de SO2",
+      "target": "Objetivo molecular",
+      "total": "SO2 total",
+      "sugar": "Azúcar residual",
+      "noSulfites": "Sin sulfitos añadidos",
+      "alcohol": "Grado",
+      "sugars": "Azúcares",
+      "density": "Densidad",
+      "targetVolume": "Volumen objetivo",
+      "vessel": "Depósito",
+      "pipette": "Pipeta",
+      "reason": "Motivo"
+    },
+    "units": {
+      "mgL": "mg/L",
+      "gL": "g/L",
+      "litre": "L",
+      "ml": "mL",
+      "vol": "% vol",
+      "temp": "°C",
+      "gram": "g",
+      "days": "días",
+      "month": "mes"
+    },
+    "result": {
+      "needed": "SO2 libre necesario",
+      "add": "Añadir",
+      "dose": "Dosis de producto",
+      "resulting": "SO2 total resultante",
+      "molecular": "Objetivo molecular",
+      "pka": "pKa",
+      "organic": "Límite ecológico",
+      "legal": "Límite legal",
+      "temperature": "Temperatura",
+      "fromSugars": "Desde azúcares",
+      "fromDensity": "Desde densidad",
+      "factor": "Factor",
+      "short": "Falta volumen",
+      "ok": "Hay stock",
+      "stock": "En depósito",
+      "withheld": "Sin dosis"
+    },
+    "mode": {
+      "warning": "Avisar",
+      "block": "Bloquear"
     }
   }
 }

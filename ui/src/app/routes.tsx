@@ -17,6 +17,7 @@ import { ProductList } from '@/pages/catalogo/ProductList'
 import { ProductPage } from '@/pages/catalogo/ProductPage'
 import { WinesPage } from '@/pages/catalogo/WinesPage'
 import { DepositoPage } from '@/pages/bodega/Deposito'
+import { CalculadorasPage } from '@/pages/enologia/Calculadoras'
 import { LotePage } from '@/pages/bodega/Lote'
 import { LotesPage } from '@/pages/bodega/Lotes'
 import { MapaPage } from '@/pages/bodega/Mapa'
@@ -54,6 +55,7 @@ export function AppRoutes({ me }: { me: Me }) {
       <Route path="catalogo/tarifas/:id" element={<PriceListPage me={me} />} />
       <Route path="catalogo/:id" element={<ProductPage me={me} />} />
       <Route path="bodega" element={<MapaPage me={me} />} />
+      <Route path="bodega/calculadoras" element={<CalculadorasPage me={me} />} />
       <Route path="bodega/depositos" element={<MapaPage me={me} />} />
       <Route path="bodega/depositos/:vesselId" element={<DepositoPage me={me} />} />
       <Route path="bodega/lotes" element={<LotesPage me={me} />} />
