@@ -11,13 +11,21 @@ import type { AuditEvent } from '@/lib/contacts'
 import { formatDateTime, formatLitres, formatPercent } from '@/lib/format'
 import { allows } from '@/lib/permissions'
 import { cn } from '@/lib/cn'
+import { texturePrimary } from '@/ui/button'
 import type { Me } from '@/lib/types'
 import { Alert, Badge, EmptyState, Skeleton } from '@/ui'
 import { ReadingColumn, RecordBar, SectionTabs } from '@/pages/bodega/chrome'
+import { DisenoTab } from '@/pages/lote-diseno/DisenoTab'
 import { lotKindLabel, lotStatusLabel, moveLabel } from '@/pages/bodega/labels'
+import { LotAnalyses } from '@/pages/elaboracion/Analiticas'
+import { PhaseBoard } from '@/pages/elaboracion/Fases'
+import { LotCurve } from '@/pages/elaboracion/Lecturas'
 
 const TABS = [
   { id: 'resumen', label: copy.cellar.summary },
+  { id: 'diseno', label: copy.cellar.design },
+  { id: 'lecturas', label: copy.cellar.readings },
+  { id: 'fases', label: copy.nav.phases },
   { id: 'genealogia', label: copy.cellar.genealogy },
   { id: 'analiticas', label: copy.cellar.analyses },
   { id: 'adiciones', label: copy.cellar.additions },
@@ -44,7 +52,10 @@ function formatAmount(volumeMl: number, massG = 0): string {
 
 function so2Over(items: Record<string, unknown>[]): boolean {
   return items.some((item) => {
-    const raw = item.so2_total ?? item.total_so2_mg_l ?? item.so2
+    const results = Array.isArray(item.results) ? item.results : []
+    const hit = results.find((result) => result && typeof result === 'object' && 'parameter' in result && result.parameter === 'total_so2')
+    const fromResult = hit && typeof hit === 'object' && 'value' in hit ? hit.value : undefined
+    const raw = fromResult ?? item.so2_total ?? item.total_so2_mg_l ?? item.so2
     const value = typeof raw === 'number' ? raw : Number(raw)
     return Number.isFinite(value) && value > 100
   })
@@ -58,7 +69,7 @@ export function LotePage({ me }: { me: Me }) {
   const trace = useApi<Traceability>(allowed ? `/v1/lots/${code}/traceability?direction=both` : null)
   const wines = useApi<{ items: Wine[] }>(allowed ? '/v1/wines?limit=100' : null)
   const [tab, setTab] = useState<TabId>('resumen')
-  const analyses = useApi<Page<Record<string, unknown>>>(allowed && tab === 'analiticas' ? `/v1/lots/${code}/analyses` : null)
+  const analyses = useApi<Page<Record<string, unknown>>>(allowed ? `/v1/lots/${code}/analyses` : null)
   const additions = useApi<Page<Record<string, unknown>>>(allowed && tab === 'adiciones' ? `/v1/lots/${code}/additions` : null)
   const moves = useApi<Page<Record<string, unknown>>>(allowed && tab === 'movimientos' ? `/v1/lots/${code}/moves?limit=20` : null)
   const sales = useApi<Page<Record<string, unknown>>>(allowed && tab === 'ventas' ? `/v1/lots/${code}/sales` : null)
@@ -146,6 +157,8 @@ export function LotePage({ me }: { me: Me }) {
             </div>
           ) : null}
 
+          {tab === 'diseno' ? <DisenoTab me={me} lotCode={item.code} /> : null}
+
           {tab === 'genealogia' ? (
             trace.loading ? (
               <Skeleton className="h-24" />
@@ -156,14 +169,9 @@ export function LotePage({ me }: { me: Me }) {
             ) : null
           ) : null}
 
-          {tab === 'analiticas' ? (
-            <RecordList
-              page={analyses}
-              emptyTitle={copy.cellar.emptyAnalyses}
-              emptyHint={copy.cellar.emptyAnalysesHint}
-              render={(row) => String(row.parameter ?? row.kind ?? row.id ?? 'Analítica')}
-            />
-          ) : null}
+          {tab === 'lecturas' ? <LotCurve lotCode={item.code} /> : null}
+          {tab === 'fases' ? <PhaseBoard me={me} lotCode={item.code} /> : null}
+          {tab === 'analiticas' ? <LotAnalyses me={me} lotCode={item.code} /> : null}
           {tab === 'adiciones' ? (
             <RecordList
               page={additions}
@@ -187,7 +195,25 @@ export function LotePage({ me }: { me: Me }) {
             />
           ) : null}
           {tab === 'ventas' ? <RecordList page={sales} emptyTitle={copy.cellar.emptySales} emptyHint="Albaranes y facturas de este lote." render={(row) => String(row.id ?? 'Venta')} /> : null}
-          {tab === 'catas' ? <EmptyState size="sm" title={copy.cellar.emptyTastings} description="Las notas de cata se anotarán aquí." /> : null}
+          {tab === 'catas' ? (
+            <EmptyState
+              size="sm"
+              title={copy.cellar.emptyTastings}
+              description={copy.catas.fromLot}
+              action={
+                <Link
+                  to={`/bodega/catas?lot_id=${encodeURIComponent(item.id)}`}
+                  className={cn(
+                    'inline-flex h-7 items-center rounded-[7px] px-2.5 text-label font-medium',
+                    'outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring',
+                    texturePrimary,
+                  )}
+                >
+                  {copy.nav.tastings}
+                </Link>
+              }
+            />
+          ) : null}
           {tab === 'historial' ? (
             <AuditTrail
               items={history.data?.items ?? []}

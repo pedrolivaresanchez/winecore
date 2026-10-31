@@ -105,6 +105,20 @@ const CATALOG = {
   WC_VIN_ORGANIC: [422, 'El producto no está autorizado en una parcela ecológica'],
   WC_VIN_DOSE: [422, 'La dosis supera la dosis máxima del producto'],
   WC_VIN_AREA: [422, 'La superficie tratada supera la de la parcela'],
+  WC_ENOLOGY_PROHIBITED: [422, 'Práctica enológica prohibida en esta bodega'],
+  WC_ENOLOGY_LOSS: [422, 'La merma supera la tolerancia y falta el motivo'],
+  WC_LOT_SINGLE_PLOT: [422, 'La parcela única no coincide con la genealogía del lote'],
+  WC_LOT_NOT_FINISHED: [422, 'El lote no tiene operaciones confirmadas para capturar la receta'],
+  WC_RECIPE_LOCKED: [409, 'La versión publicada de la receta no se edita'],
+  WC_TASTING_TEMPLATE: [422, 'La plantilla de cata no es válida'],
+  WC_TASTING_SUBJECT: [422, 'El sujeto de la cata no cuadra con la plantilla'],
+  WC_TASTING_SCORE: [422, 'La puntuación está fuera de la escala'],
+  WC_TASTING_HIDDEN: [409, 'La correspondencia de la cata ciega sigue oculta'],
+  WC_TASTING_CLOSED: [409, 'La sesión de cata no admite más cambios'],
+  WC_TASTING_DAY: [422, 'El día no pertenece a la sesión'],
+  WC_HYGIENE_DOSE: [422, 'La dosis, el tiempo de contacto o el aclarado no cumplen el procedimiento'],
+  WC_HYGIENE_SCOPE: [422, 'El procedimiento no aplica a este equipo o recipiente'],
+  WC_HYGIENE_CHECKLIST: [409, 'El envasado exige el control de calidad antes de confirmar'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;

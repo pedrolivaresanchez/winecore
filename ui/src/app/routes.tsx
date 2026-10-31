@@ -17,11 +17,22 @@ import { ProductList } from '@/pages/catalogo/ProductList'
 import { ProductPage } from '@/pages/catalogo/ProductPage'
 import { WinesPage } from '@/pages/catalogo/WinesPage'
 import { DepositoPage } from '@/pages/bodega/Deposito'
+import { HolderPage } from '@/pages/bodega-plano/HolderPage'
+import { HoldersPage } from '@/pages/bodega-plano/Holders'
+import { PlanoPage } from '@/pages/bodega-plano/Plano'
+import { CalculadorasPage } from '@/pages/enologia/Calculadoras'
+import { AnadasPage } from '@/pages/lote-diseno/AnadasPage'
+import { RecetaPage } from '@/pages/lote-diseno/RecetaPage'
+import { RecetasPage } from '@/pages/lote-diseno/RecetasPage'
 import { LotePage } from '@/pages/bodega/Lote'
 import { LotesPage } from '@/pages/bodega/Lotes'
 import { MapaPage } from '@/pages/bodega/Mapa'
 import { OperacionPage } from '@/pages/bodega/Operacion'
 import { QrOpen } from '@/pages/bodega/QrOpen'
+import { CatasPage } from '@/pages/catas/CatasPage'
+import { AnaliticasPage } from '@/pages/elaboracion/Analiticas'
+import { FasesPage } from '@/pages/elaboracion/Fases'
+import { LecturasPage } from '@/pages/elaboracion/Lecturas'
 import { CountCreate } from '@/pages/existencias/CountCreate'
 import { CountPage } from '@/pages/existencias/CountPage'
 import { CountsPage } from '@/pages/existencias/CountsPage'
@@ -43,6 +54,10 @@ import { SettlementList } from '@/pages/intercompania/SettlementList'
 import { SettlementPage } from '@/pages/intercompania/SettlementPage'
 import { TariffList } from '@/pages/intercompania/TariffList'
 import { TariffPage } from '@/pages/intercompania/TariffPage'
+import { Higiene } from '@/pages/higiene/Higiene'
+import { ParcelaPage } from '@/pages/vinedo/Parcela'
+import { Vinedo } from '@/pages/vinedo/Vinedo'
+import { Regulatorio } from '@/pages/regulatorio/Regulatorio'
 
 /** Authenticated routes. The shell, auth and the entity switcher stay outside. */
 export function AppRoutes({ me }: { me: Me }) {
@@ -64,14 +79,26 @@ export function AppRoutes({ me }: { me: Me }) {
       <Route path="catalogo/tarifas/:id" element={<PriceListPage me={me} />} />
       <Route path="catalogo/:id" element={<ProductPage me={me} />} />
       <Route path="bodega" element={<MapaPage me={me} />} />
+      <Route path="bodega/calculadoras" element={<CalculadorasPage me={me} />} />
       <Route path="bodega/depositos" element={<MapaPage me={me} />} />
       <Route path="bodega/depositos/:vesselId" element={<DepositoPage me={me} />} />
+      <Route path="bodega/plano" element={<PlanoPage me={me} />} />
+      <Route path="bodega/contenedores" element={<HoldersPage me={me} />} />
+      <Route path="bodega/contenedores/:code" element={<HolderPage me={me} />} />
       <Route path="bodega/lotes" element={<LotesPage me={me} />} />
       <Route path="bodega/lotes/:lotId" element={<LotePage me={me} />} />
+      <Route path="bodega/recetas" element={<RecetasPage me={me} />} />
+      <Route path="bodega/recetas/:id" element={<RecetaPage me={me} />} />
+      <Route path="bodega/anadas" element={<AnadasPage me={me} />} />
       <Route path="lotes/:lotId" element={<LotePage me={me} />} />
+      <Route path="bodega/lecturas" element={<LecturasPage me={me} />} />
+      <Route path="bodega/fases" element={<FasesPage me={me} />} />
+      <Route path="bodega/analiticas" element={<AnaliticasPage me={me} />} />
       <Route path="bodega/operaciones/nueva" element={<OperacionPage me={me} />} />
       <Route path="bodega/operacion/nueva" element={<OperacionPage me={me} />} />
       <Route path="bodega/operaciones/:id" element={<OperacionPage me={me} />} />
+      <Route path="bodega/catas/*" element={<CatasPage me={me} />} />
+      <Route path="bodega/higiene/*" element={<Higiene me={me} />} />
       <Route path="bodega/:vesselId" element={<DepositoPage me={me} />} />
       <Route path="q/:token" element={<QrOpen me={me} />} />
       <Route path="stock" element={<StockPage me={me} />} />
@@ -101,6 +128,9 @@ export function AppRoutes({ me }: { me: Me }) {
       <Route path="intercompania/tarifas" element={<TariffList me={me} />} />
       <Route path="intercompania/tarifas/:id" element={<TariffPage me={me} />} />
       <Route path="intercompania/:period" element={<SettlementPage me={me} />} />
+      <Route path="vinedo" element={<Vinedo me={me} />} />
+      <Route path="vinedo/:code" element={<ParcelaPage me={me} />} />
+      <Route path="regulatorio/*" element={<Regulatorio me={me} />} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   )

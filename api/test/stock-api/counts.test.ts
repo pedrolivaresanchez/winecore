@@ -24,6 +24,18 @@ describe('aforos', () => {
       })));
       expect(regular.kind).toBe('periodic');
       expect(regular.status).toBe('counting');
+      const listed = await jsonOf<{ items: { id: string }[]; total: number }>(
+        await ctx.app.handle(call('GET', `/v1/inventory-counts?legal_entity_id=${cellar.po}`)),
+      );
+      expect(listed.total).toBeGreaterThanOrEqual(1);
+      expect(listed.items.some((item) => item.id === regular.id)).toBe(true);
+      const detail = await jsonOf<{ id: string; status: string }>(
+        await ctx.app.handle(call('GET', `/v1/inventory-counts/${regular.id}`)),
+      );
+      expect(detail.id).toBe(regular.id);
+      expect(detail.status).toBe('counting');
+      const missing = await ctx.app.handle(call('GET', '/v1/inventory-counts/00000000-0000-4000-8000-000000000099'));
+      expect(missing.status).toBe(404);
       expect(regular.lines.total).toBe(0);
       expect(regular.number).toMatch(/^AF-2027-\d{4}$/);
 

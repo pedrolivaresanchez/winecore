@@ -1,18 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Building, List, Lock, Search, Sliders, type IconComponent } from '@/ui/icons'
+import { ArrowLeft, Building, FlaskConical, List, Lock, Search, ShareNetwork, Sliders, type IconComponent } from '@/ui/icons'
 import { Input } from '@/ui'
 import { EntityRoles } from '@/components/EntityRoles'
 import { SystemStatus } from '@/components/SystemStatus'
 import { copy } from '@/i18n'
 import { isOwner } from '@/pages/aprobaciones/model'
 import { PoliciesPanel } from '@/pages/aprobaciones/PoliciesPanel'
+import { ConnectorsPanel } from '@/pages/ajustes/conectores/ConnectorsPanel'
 import { SecurityPanel } from '@/pages/ajustes/seguridad/SecurityPanel'
+import { EnologySettings } from '@/pages/enologia/EnologySettings'
 import { cn } from '@/lib/cn'
 import { iconStroke, pressClass } from '@/lib/motion'
 import { useShell } from '@/app/shell/shell-context'
 import type { Me } from '@/lib/types'
 
-export type SettingsArea = 'entities' | 'security' | 'policies' | 'system'
+export type SettingsArea = 'entities' | 'security' | 'policies' | 'enology' | 'connectors' | 'system'
 
 const AREAS: { id: SettingsArea; title: string; hint: string; keywords: string; icon: IconComponent; ownerOnly?: boolean }[] = [
   {
@@ -35,6 +37,22 @@ const AREAS: { id: SettingsArea; title: string; hint: string; keywords: string; 
     hint: copy.settings.policiesHint,
     keywords: 'aprobaciones politicas quorum caducidad',
     icon: List,
+    ownerOnly: true,
+  },
+  {
+    id: 'enology',
+    title: copy.settings.enology,
+    hint: copy.settings.enologyHint,
+    keywords: 'enologia so2 merma umbral objetivo sulfuroso',
+    icon: FlaskConical,
+    ownerOnly: true,
+  },
+  {
+    id: 'connectors',
+    title: copy.settings.connectors,
+    hint: copy.settings.connectorsHint,
+    keywords: 'conectores mcp cvbot token clientes maquina máquina',
+    icon: ShareNetwork,
     ownerOnly: true,
   },
   {
@@ -156,6 +174,8 @@ export function SettingsView({ me, area }: { me: Me; area: SettingsArea }) {
         {area === 'entities' ? <EntityRoles me={me} /> : null}
         {area === 'security' ? <SecurityPanel /> : null}
         {area === 'policies' ? <PoliciesPanel me={me} /> : null}
+        {area === 'enology' ? <EnologySettings me={me} /> : null}
+        {area === 'connectors' ? <ConnectorsPanel me={me} /> : null}
         {area === 'system' ? <SystemStatus /> : null}
       </div>
     </div>

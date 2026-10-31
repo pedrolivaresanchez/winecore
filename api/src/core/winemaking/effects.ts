@@ -3,10 +3,26 @@ import { sql } from '../db/sql';
 import type { Tx } from '../db/writer';
 import type { FermentationPhaseName, PlanSuccess } from '../cellar/types';
 import { publicOpType } from './ops';
+import { mirrorFermentationPhase, loadLotPhaseName } from './phases';
+
+export interface PhaseMeta {
+  at: string;
+  actorId: string;
+  inoculation: 'spontaneous' | 'commercial' | null;
+  inoculumProductId: string | null;
+  observations: string | null;
+  endEvidence: 'sensory' | 'analysis' | 'both' | null;
+  endAnalysisId: string | null;
+}
 
 const PHASES = new Set(['alcoholic', 'alcoholic_done', 'malolactic', 'malolactic_done']);
 
-export async function applyWinemakingEffects(tx: Tx, operationId: string, plan: PlanSuccess): Promise<void> {
+export async function applyWinemakingEffects(
+  tx: Tx,
+  operationId: string,
+  plan: PlanSuccess,
+  meta: PhaseMeta | null = null,
+): Promise<void> {
   for (const update of plan.lotUpdates) {
     if (update.lot_id.trim() === '') continue;
     const rows = await tx.read<{ kind: string }>(sql`
@@ -79,7 +95,24 @@ export async function applyWinemakingEffects(tx: Tx, operationId: string, plan: 
   }
 
   const phase = plan.fermentationPhase;
-  if (phase) await upsertPhase(tx, operationId, phase.lot_id, phase.vessel_id, phase.phase, phase.previous_phase);
+  if (phase) {
+    await upsertPhase(tx, operationId, phase.lot_id, phase.vessel_id, phase.phase, phase.previous_phase);
+    if (meta && (phase.phase === 'alcoholic' || phase.phase === 'alcoholic_done' || phase.phase === 'malolactic' || phase.phase === 'malolactic_done')) {
+      await mirrorFermentationPhase(tx, {
+        operationId,
+        lotId: phase.lot_id,
+        vesselId: phase.vessel_id,
+        kind: phase.phase,
+        at: meta.at,
+        actorId: meta.actorId,
+        inoculation: meta.inoculation,
+        inoculumProductId: meta.inoculumProductId,
+        observations: meta.observations,
+        endEvidence: meta.endEvidence,
+        endAnalysisId: meta.endAnalysisId,
+      });
+    }
+  }
 }
 
 export async function recordAdditionTrace(
@@ -113,7 +146,34 @@ export async function restoreWinemaking(tx: Tx, operationId: string): Promise<vo
   `);
   const row = rows[0];
   if (!row) return;
-  const op = publicOpType(row.op_type, parseDetails(row.details));
+  const details = parseDetails(row.details);
+  const op = publicOpType(row.op_type, details);
+  const focusLot = details !== null && typeof details === 'object' && !Array.isArray(details)
+    ? (details as { focus_lot_id?: unknown }).focus_lot_id
+    : null;
+  const lotFromDetails = typeof focusLot === 'string' ? focusLot : null;
+  if (lotFromDetails && (op === 'fermentation_start' || op === 'malolactic_start')) {
+    const phaseName = op === 'fermentation_start' ? 'alcoholic_fermentation' : 'malolactic_fermentation';
+    tx.write(sql`
+      UPDATE cellar.lot_phase
+      SET status = 'stopped', ended_at = coalesce(ended_at, now())
+      WHERE lot_id = CAST(${lotFromDetails} AS UUID) AND phase = ${phaseName} AND status = 'in_progress'
+    `);
+  }
+  if (op === 'fermentation_end' || op === 'malolactic_end') {
+    const phaseName = op === 'fermentation_end' ? 'alcoholic_fermentation' : 'malolactic_fermentation';
+    const lines = await tx.read<{ lot_id: string }>(sql`
+      SELECT DISTINCT lot_id::VARCHAR AS lot_id FROM cellar.operation_line
+      WHERE operation_id = CAST(${operationId} AS UUID) AND role = 'input'
+    `);
+    for (const line of lines) {
+      tx.write(sql`
+        UPDATE cellar.lot_phase
+        SET status = 'in_progress', ended_at = NULL, end_evidence = NULL, end_analysis_id = NULL
+        WHERE lot_id = CAST(${line.lot_id} AS UUID) AND phase = ${phaseName} AND status = 'completed'
+      `);
+    }
+  }
   if (op === 'crushing_pressing') {
     await restoreKind(tx, operationId, 'grape', 'grape');
   } else if (op === 'fermentation_end') {
@@ -156,6 +216,8 @@ export async function restoreWinemaking(tx: Tx, operationId: string): Promise<vo
 }
 
 export async function loadPhase(tx: Tx, lotId: string): Promise<FermentationPhaseName | null> {
+  const named = await loadLotPhaseName(tx, lotId);
+  if (named) return named;
   const rows = await tx.read<{ phase: string }>(sql`
     SELECT phase FROM cellar.fermentation_phase
     WHERE lot_id = CAST(${lotId} AS UUID) AND active

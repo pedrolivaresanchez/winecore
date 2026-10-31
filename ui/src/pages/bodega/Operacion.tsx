@@ -75,9 +75,10 @@ import {
   useMenuOpen,
   useToast,
 } from '@/ui'
-import { ArrowLeft, ArrowRight, Box, Eraser, Filter, MergeCells, Minus, MoreVertical, Plus, Tag, Trash2, type IconComponent } from '@/ui/icons'
+import { ArrowDown, ArrowLeft, ArrowRight, Box, Eraser, Filter, MergeCells, Minus, MoreVertical, Plus, RefreshCw, Sliders, SplitBranch, Tag, Trash2, type IconComponent } from '@/ui/icons'
 import { ReadingColumn, RecordBar, SectionTabs } from '@/pages/bodega/chrome'
 import { classLabel, fiscalLabel, moveLabel, opLabel, opStatusLabel, opStatusTone, roleLabel } from '@/pages/bodega/labels'
+import { ElaborationFields, ElaborationSummary } from '@/pages/elaboracion/OpFields'
 
 const ICONS: Record<OpType, IconComponent> = {
   racking: ArrowRight,
@@ -89,6 +90,10 @@ const ICONS: Record<OpType, IconComponent> = {
   loss: Minus,
   destruction: Trash2,
   cleaning: Eraser,
+  bleeding: SplitBranch,
+  pressing_off: ArrowDown,
+  delestage: RefreshCw,
+  temperature_control: Sliders,
 }
 
 type List = { items: Vessel[]; next_cursor: string | null; total: number }
@@ -112,12 +117,18 @@ function stepHint(op: OpType | '', step: WizardStep): string {
     if (op === 'addition') return 'Dónde y qué producto echas.'
     if (op === 'labeling') return 'Botellas que vas a etiquetar.'
     if (op === 'loss' || op === 'destruction') return 'De dónde sale el vino que se pierde.'
+    if (op === 'bleeding') return 'De dónde sale el sangrado.'
+    if (op === 'pressing_off') return 'Depósito con hollejos.'
+    if (op === 'delestage') return 'Depósito, inicio y fin.'
+    if (op === 'temperature_control') return 'Consigna anterior, nueva y motivo.'
     return 'De dónde sale el vino.'
   }
   if (step === 'destinos') {
     if (!destApplies(op)) return 'Este tipo no tiene destino.'
     if (op === 'blend') return 'Depósito vacío y código del lote nuevo.'
     if (op === 'bottling') return 'Botellas y lote envasado.'
+    if (op === 'bleeding') return 'Depósito vacío y lote hijo.'
+    if (op === 'pressing_off') return 'Yema y vino de prensa.'
     return 'A qué depósito va el vino.'
   }
   if (step === 'mermas') {
@@ -142,6 +153,9 @@ function describeLine(op: OpType, role: LineRole, line: DraftLine, vessels: Vess
   if (op === 'labeling') {
     const kind = role === 'loss' ? (line.loss_kind === 'incident' ? ' · incidencia' : ' · rotura') : ''
     return `${place} · ${parseQty(line.qty_text)} botellas${kind}`
+  }
+  if (op === 'pressing_off' && role === 'output' && line.child_lot_code.trim()) {
+    return `${place} · ${formatLitres(mlOf(op, role, line) / 1000)} · ${line.child_lot_code.trim()}`
   }
   const wine = role === 'input' ? holding(vessel)?.wine_name : null
   const lot = role === 'output' && op === 'blend' ? lotCode : line.lot_code
@@ -172,7 +186,20 @@ function serverIssues(error: unknown, draft: Draft): Issue[] {
   const issues: Issue[] = [
     { step: 'revision', key: matchKey(draft, described.vessel, described.role), code: described.code, message: described.message },
   ]
-  if (error.fields?.reason) issues.push({ step: 'mermas', key: 'reason', code: described.code, message: error.fields.reason })
+  if (error.fields?.reason) {
+    issues.push({
+      step: draft.op_type === 'temperature_control' ? 'origenes' : 'mermas',
+      key: 'reason',
+      code: described.code,
+      message: error.fields.reason,
+    })
+  }
+  if (error.fields?.previous_setpoint_c || error.fields?.new_setpoint_c) {
+    issues.push({ step: 'origenes', key: 'setpoint', code: described.code, message: error.fields.previous_setpoint_c || error.fields.new_setpoint_c || described.message })
+  }
+  if (error.fields?.started_at || error.fields?.ended_at) {
+    issues.push({ step: 'origenes', key: 'window', code: described.code, message: error.fields.started_at || error.fields.ended_at || described.message })
+  }
   return issues
 }
 
@@ -449,7 +476,7 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
       if (base.vessel_code) return current
       const next = withVessel(base, vessel)
       const inside = holding(vessel)
-      if (inside && current.op_type !== 'cleaning' && current.op_type !== 'addition' && current.op_type !== 'labeling') {
+      if (inside && current.op_type !== 'cleaning' && current.op_type !== 'addition' && current.op_type !== 'labeling' && current.op_type !== 'delestage' && current.op_type !== 'temperature_control') {
         next.volume_text = mlToEdit(inside.volume_ml)
       }
       return { ...current, inputs: [next, ...current.inputs.slice(1)] }
@@ -678,7 +705,7 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
                         op_type: item.id,
                         losses: current.losses.map((line) => ({
                           ...line,
-                          loss_kind: item.id === 'destruction' ? 'incident' : line.loss_kind,
+                          loss_kind: item.id === 'destruction' ? 'incident' : item.id === 'bleeding' || item.id === 'pressing_off' ? 'authorized' : line.loss_kind,
                         })),
                       }))
                     }
@@ -713,7 +740,7 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
                   role="input"
                   vessels={vessels}
                   messages={lineMessages(issues, line.key, step)}
-                  hideAmount={op === 'cleaning' || op === 'addition'}
+                  hideAmount={op === 'cleaning' || op === 'addition' || op === 'delestage' || op === 'temperature_control'}
                   onVessel={(vessel) =>
                     change((current) => ({
                       ...current,
@@ -740,13 +767,14 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
                   }
                 />
               ))}
-              {op !== 'cleaning' && op !== 'addition' ? (
+              {op !== 'cleaning' && op !== 'addition' && op !== 'delestage' && op !== 'temperature_control' ? (
                 <Button type="button" variant="secondary" size="sm" onClick={() => change((current) => ({ ...current, inputs: [...current.inputs, emptyLine()] }))}>
                   {copy.cellar.addOrigin}
                 </Button>
               ) : null}
               {op === 'addition' ? <AdditionFields draft={draft} issues={issues} step={step} onChange={change} /> : null}
               {op === 'cleaning' ? <CleaningFields draft={draft} issues={issues} step={step} onChange={change} /> : null}
+              {op === 'delestage' || op === 'temperature_control' ? <ElaborationFields draft={draft} issues={issues} step={step} onChange={change} /> : null}
             </div>
           ) : null}
 
@@ -755,7 +783,7 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
               {!destApplies(op) ? <p className="rounded-2xl border border-border-subtle px-4 py-3 text-label">Esta operación no tiene destino.</p> : null}
               {destApplies(op) ? (
                 <>
-                  {op === 'blend' || op === 'bottling' ? (
+                  {op === 'blend' || op === 'bottling' || op === 'bleeding' ? (
                     <Field id="new_lot_code" label="Lote nuevo" error={lineMessages(issues, 'new_lot_code', step)[0]} hint="Mayúsculas, sin espacios.">
                       <Input
                         id="new_lot_code"
@@ -767,8 +795,8 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
                     </Field>
                   ) : null}
                   {draft.outputs.map((line, index) => (
+                    <div key={line.key} className="grid gap-3">
                     <LineCard
-                      key={line.key}
                       title={draft.outputs.length > 1 ? `Destino ${index + 1}` : 'Destino'}
                       line={line}
                       index={index}
@@ -795,6 +823,22 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
                           : undefined
                       }
                     />
+                    {op === 'pressing_off' ? (
+                      <Field id={`prensa-${line.key}`} label={copy.elaboracion.pressLot} hint={copy.elaboracion.pressLotHint} error={lineMessages(issues, line.key, step).find((message) => message.includes('prensa') || message.includes('código'))}>
+                        <Input
+                          id={`prensa-${line.key}`}
+                          value={line.child_lot_code}
+                          autoCapitalize="characters"
+                          onChange={(event) =>
+                            change((current) => ({
+                              ...current,
+                              outputs: current.outputs.map((item, itemIndex) => (itemIndex === index ? { ...item, child_lot_code: event.target.value.toUpperCase() } : item)),
+                            }))
+                          }
+                        />
+                      </Field>
+                    ) : null}
+                    </div>
                   ))}
                   <Button type="button" variant="secondary" size="sm" onClick={() => change((current) => ({ ...current, outputs: [...current.outputs, emptyLine()] }))}>
                     {copy.cellar.addDest}
@@ -812,7 +856,7 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
                 ? draft.losses.map((line, index) => (
                     <section key={line.key} className="grid gap-3 rounded-2xl border border-border-subtle p-3">
                       <p className="text-label font-medium">{draft.losses.length > 1 ? `Merma ${index + 1}` : 'Merma'}</p>
-                      {op === 'destruction' ? null : (
+                      {op === 'destruction' || op === 'bleeding' || op === 'pressing_off' ? null : (
                         <div className="flex flex-wrap gap-1.5">
                           <Button
                             type="button"
@@ -890,6 +934,7 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
               {balance?.text ? <BalanceBanner balance={balance} /> : null}
               {needsApproval(draft) || approvalId ? <Alert tone="warning">{copy.cellar.approvalWarn}</Alert> : null}
               {previewError ? <Alert tone="danger">{previewError}</Alert> : null}
+              <ElaborationSummary draft={draft} />
               <EffectsView preview={serverPreview} fallback={effects} vessels={vessels} draft={draft} />
               {lineMessages(issues, 'banner', step).map((message) => (
                 <p key={message} role="alert" data-server-error className="text-label text-danger-700">
@@ -961,6 +1006,7 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
             {balance?.text ? <BalanceBanner balance={balance} /> : null}
             {needsApproval(draft) ? <Alert tone="warning">{copy.cellar.pendingHint}</Alert> : null}
             {previewError ? <Alert tone="danger">{previewError}</Alert> : null}
+            <ElaborationSummary draft={draft} />
             <EffectsView preview={serverPreview} fallback={effects} vessels={vessels} draft={draft} />
           </div>
         </DialogBody>
