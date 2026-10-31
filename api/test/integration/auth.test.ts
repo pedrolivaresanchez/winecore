@@ -26,6 +26,7 @@ describe('auth', () => {
         'inventory.count',
         'inventory.read',
         'settings.manage',
+        'tasting.write',
         'users.manage',
       ]);
       await new Promise((resolve) => setTimeout(resolve, 0));

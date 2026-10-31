@@ -13,6 +13,8 @@ export const PERMISSIONS = [
   'cellar.read',
   'cellar.operate',
   'cellar.manage',
+  // Fichas de cata, cata ciega y notas. La lectura sigue siendo cellar.read.
+  'tasting.write',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -38,7 +40,7 @@ const MATRIX: Record<RoleCode, readonly Permission[]> = {
   owner: PERMISSIONS,
   approver: ['contacts.read', 'catalog.read', 'audit.read', 'inventory.read', 'cellar.read'],
   admin: ['contacts.read', 'contacts.write', 'catalog.read', 'catalog.write', 'inventory.read', 'inventory.count', 'cellar.read'],
-  cellar: ['catalog.read', 'inventory.read', 'inventory.count', 'cellar.read', 'cellar.operate'],
+  cellar: ['catalog.read', 'inventory.read', 'inventory.count', 'cellar.read', 'cellar.operate', 'tasting.write'],
   field: ['cellar.read'],
   advisor: ['contacts.read', 'catalog.read', 'audit.read', 'inventory.read', 'cellar.read'],
 };
