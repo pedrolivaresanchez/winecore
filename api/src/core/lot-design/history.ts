@@ -194,7 +194,7 @@ export async function loadHistory(reader: SqlReader, lotId: string): Promise<Rec
       a.purpose
     FROM cellar.addition a
     LEFT JOIN catalog.product pr ON pr.id = a.additive_product_id
-    WHERE a.lot_id = CAST('${lotId.toLowerCase()}' AS UUID)
+    WHERE a.lot_id = ${sql`CAST(${lotId} AS UUID)`}
       AND a.operation_id IN (${uuidList(operationIds)})
   `);
   const linesByOp = new Map<string, LineRow[]>();

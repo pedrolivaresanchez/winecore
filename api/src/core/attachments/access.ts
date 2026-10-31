@@ -20,6 +20,7 @@ const SCHEMA_ACCESS: Record<string, { read: string; write: string }> = {
   cellar: { read: 'cellar.read', write: 'cellar.operate' },
   tasting: { read: 'cellar.read', write: 'tasting.write' },
   vineyard: { read: 'vineyard.read', write: 'vineyard.write' },
+  hygiene: { read: 'cellar.read', write: 'cellar.operate' },
   regulatory: { read: 'regulatory.read', write: 'regulatory.prepare' },
   knowledge: { read: 'knowledge.read', write: 'knowledge.write' },
   accounting: { read: 'exports.fiscal', write: 'accounting.write' },

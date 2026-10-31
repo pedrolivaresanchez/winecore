@@ -479,8 +479,14 @@ function score(value: unknown, field: string): number | null {
 }
 
 async function assertAttachment(tx: Tx, id: string): Promise<void> {
-  const rows = await tx.read(sql`SELECT id FROM core.attachment WHERE id = CAST(${id} AS UUID)`);
-  if (rows.length === 0) throw domainError('WC_VALIDATION', { photo_attachment_id: 'La foto no existe' });
+  const rows = await tx.read<{ mime_type: string }>(sql`
+    SELECT mime_type FROM core.attachment WHERE id = CAST(${id} AS UUID)
+  `);
+  const mime = rows[0]?.mime_type ?? '';
+  if (!rows[0]) throw domainError('WC_VALIDATION', { photo_attachment_id: 'La foto no existe' });
+  if (!mime.startsWith('image/')) {
+    throw domainError('WC_VALIDATION', { photo_attachment_id: 'La foto debe ser JPEG, PNG o HEIC' });
+  }
 }
 
 function upper(value: unknown, field: string): string {

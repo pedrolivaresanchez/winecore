@@ -18,8 +18,8 @@ import {
   errorText,
   formatIsoDate,
   getPriceQuote,
+  openQuotePdf,
   patchQuote,
-  quotePdfPath,
   quoteStatusLabel,
   quoteToOrder,
   rejectQuote,
@@ -56,6 +56,9 @@ export function QuotePage({ me }: { me: Me }) {
 function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () => void }) {
   const navigate = useNavigate()
   const toast = useToast()
+  const showPdf = () => {
+    openQuotePdf(quote.id).catch((error: unknown) => toast(errorText(error)))
+  }
   const catalog = useSalesCatalog()
   const [tab, setTab] = useState('lines')
   const [busy, setBusy] = useState(false)
@@ -237,7 +240,7 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
               <MoreMenu>
                 {(close) => (
                   <>
-                    <MenuItem onClick={() => { close(); window.open(quotePdfPath(quote.id), '_blank', 'noopener') }}>{copy.sales.pdf}</MenuItem>
+                    <MenuItem onClick={() => { close(); showPdf() }}>{copy.sales.pdf}</MenuItem>
                     {draft ? <MenuItem onClick={() => { close(); beginEdit() }}>{copy.sales.edit}</MenuItem> : null}
                     {canOrder && open ? (
                       <MenuItem
@@ -259,7 +262,7 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
             </>
           )
         ) : (
-          <Button type="button" variant="secondary" size="sm" onClick={() => window.open(quotePdfPath(quote.id), '_blank', 'noopener')}>
+          <Button type="button" variant="secondary" size="sm" onClick={showPdf}>
             {copy.sales.pdf}
           </Button>
         )

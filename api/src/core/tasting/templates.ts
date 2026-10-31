@@ -282,7 +282,10 @@ async function loadFields(
 ): Promise<Map<string, FieldView[]>> {
   const grouped = new Map<string, FieldView[]>();
   if (templateIds.length === 0) return grouped;
-  const list = templateIds.map((id) => `CAST('${id}' AS UUID)`).join(', ');
+  const list = templateIds.map((id) => {
+    if (!/^[0-9a-f-]{36}$/i.test(id)) invalid({ template_id: 'Debe ser un UUID' });
+    return sql`CAST(${id} AS UUID)`;
+  }).join(', ');
   const rows = await read.read<Record<string, unknown>>(
     `SELECT id::VARCHAR AS id, template_id::VARCHAR AS template_id, field_key, label, kind,
             required, position, options, min_value, max_value, unit, help, is_active

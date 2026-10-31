@@ -1,4 +1,5 @@
 import { sessionOf, requestIdFor } from '../../../auth/guard';
+import { sql } from '../../db/sql';
 import type { Actor, Tx } from '../../db/writer';
 import { DomainError, domainError, isErrorCode } from '../../errors';
 import type { PlanFailure } from '../types';
@@ -187,7 +188,7 @@ export function uuidList(ids: readonly string[]): string {
   if (ids.length === 0) throw new Error('Lista de UUID vacía');
   return ids.map((id) => {
     if (!UUID_RE.test(id)) throw new Error('UUID no válido');
-    return `CAST('${id.toLowerCase()}' AS UUID)`;
+    return sql`CAST(${id.toLowerCase()} AS UUID)`;
   }).join(', ');
 }
 

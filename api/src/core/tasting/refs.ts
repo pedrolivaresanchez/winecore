@@ -95,8 +95,15 @@ export async function loadUserName(read: Read, id: string): Promise<string | nul
 }
 
 export async function requireAttachment(read: Read, id: string, field: string): Promise<void> {
-  const rows = await read.read<{ id: string }>(sql`
-    SELECT id::VARCHAR AS id FROM core.attachment WHERE id = CAST(${id} AS UUID) LIMIT 1
+  const rows = await read.read<{ mime_type: string }>(sql`
+    SELECT mime_type FROM core.attachment WHERE id = CAST(${id} AS UUID) LIMIT 1
   `);
+  const mime = rows[0]?.mime_type ?? '';
   if (!rows[0]) throw domainError('WC_VALIDATION', { [field]: 'El adjunto no existe' });
+  if (field === 'attachment_ids' && !mime.startsWith('image/')) {
+    throw domainError('WC_VALIDATION', { [field]: 'La foto debe ser JPEG, PNG o HEIC' });
+  }
+  if (field === 'voice_attachment_id' && !mime.startsWith('audio/') && mime !== 'text/plain') {
+    throw domainError('WC_VALIDATION', { [field]: 'El audio debe ser WAV, MP3, OGG, WebM o M4A' });
+  }
 }
