@@ -4,7 +4,7 @@
 - Depende de: TASK-FACT-004
 
 ## Objetivo
-Registrar la descarga del PDF como "enviada (descarga)" y, si Pedro lo aprueba (Q-014), enviar por correo desde el buzón dedicado solo tras el clic de una persona.
+Envío **automático** de cada factura emitida por correo, con el PDF, al correo de facturación del cliente (decisión de Pedro, 31-10-2026), con registro de envíos (`billing.invoice_delivery`), avisos de fallo o rebote (panel y CVBOT) y reenvío manual; descarga del PDF siempre disponible.
 
 ## Contexto
 Reglas duras 0.4 y 0.5 · UI-13.

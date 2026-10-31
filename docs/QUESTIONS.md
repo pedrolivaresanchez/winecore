@@ -22,7 +22,7 @@
 | Q-011 | Calendario legal de SILICIE (2 presentaciones/año) | — (resuelta por la norma) | — | CERRADA (31-10-2026) |
 | Q-012 | SISV: matrícula RIA, acceso y ficheros reales (plazo y formato ya verificados) | M3 | 15-02-2027 | ABIERTA |
 | Q-013 | Fecha de corte, aforo físico y quién lo firma | M2 | 01-12-2026 | ABIERTA |
-| Q-014 | Envío de facturas por correo (M365) | No bloqueante (M1 usa descarga) | 30-11-2026 | ABIERTA |
+| Q-014 | Envío de facturas por correo (M365) | Envío automático en M2 | 30-11-2026 | DECIDIDA (31-10-2026): envío automático al emitir; falta el buzón de facturación |
 | Q-015 | Series y numeración desde 2027 | No bloqueante (hay defecto) | 20-11-2026 | ABIERTA |
 | Q-016 | Periodicidad de la factura intercompañía P.O → CVPO | No bloqueante (hay defecto) | 15-12-2026 | ABIERTA |
 | Q-017 | Coste unitario por producto (control "no vender bajo coste") | M2 | 15-01-2027 | ABIERTA |
@@ -164,6 +164,7 @@
 - **Contexto**: la reunión pide envío automático de facturas; las reglas prohíben que los agentes envíen correos y exigen aprobación para enviar a terceros.
 - **Opciones**: (1) M1: descargar PDF y enviarlo a mano desde Outlook; (2) envío desde un buzón dedicado (p. ej. `facturacion@`) vía Microsoft Graph con permiso solo de envío, disparado por una persona con un clic; nunca por un agente.
 - **Recomendación**: (1) en M1 y (2) en M2.
+- **Decisión de Pedro (31-10-2026)**: las facturas se envían **automáticamente** al emitirse, al correo de facturación del cliente, con registro de envíos, avisos de fallo o rebote y reenvío. **Pendiente de Pedro**: crear el buzón de facturación y el permiso de envío de Microsoft Graph solo para ese buzón (credencial como secreto de Timbal); sin ellos, las facturas quedan "pendiente de envío" y se avisa.
 - **Fecha límite**: 30-11-2026.
 
 ## Q-015 · Series y numeración desde 2027 — No bloqueante

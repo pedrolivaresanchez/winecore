@@ -170,7 +170,7 @@ sequenceDiagram
 | Junta SISV | salida | *Computer use* | M3 | `sisv.md`, ADR 005 |
 | AecocEDI | entrada/salida | *Computer use* + ficha para teclear | M3 | `aecoc-edi.md`, ADR 006 |
 | Microsoft 365 (correo) | entrada | Graph **solo lectura** (`Mail.Read` de un buzón concreto) para detectar avisos (AecocEDI, facturas de proveedor reenviadas) | M2 | Q-014 |
-| Microsoft 365 (envío) | salida | Opcional, buzón dedicado, solo con clic de una persona | M2 (si Q-014) | Q-014 |
+| Microsoft 365 (envío) | salida | Envío automático de cada factura emitida desde el buzón de facturación (Graph, permiso de envío solo de ese buzón), con registro, avisos de fallo o rebote y reenvío (decisión de Pedro) | M2 | Q-014 |
 | OneDrive | salida | Copia de consulta de PDF (opcional) | Posterior | ADR 002 |
 | Stripe (web nueva) | entrada | Webhook firmado → pedido `source = 'web'` | M3 | Q-018 |
 | Bancos | entrada | Importación de extractos (Norma 43/CAMT/CSV) | M6 | — |
