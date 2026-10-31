@@ -86,7 +86,7 @@ END $$;
 CREATE TRIGGER billing_rule_guard BEFORE INSERT OR UPDATE OR DELETE ON billing.billing_rule
   FOR EACH ROW EXECUTE FUNCTION billing.rule_guard();
 
--- Resolución determinista (la usa core/src/billing/resolveIssuingEntity.ts y se testea en SQL)
+-- Resolución determinista (la usa api/src/core/billing/resolveIssuingEntity.ts y se testea en SQL)
 CREATE FUNCTION billing.resolve_issuing_entity(p_customer_id uuid, p_channel text)
 RETURNS TABLE(rule_set_id uuid, rule_id uuid, issuing_entity_id uuid, matched_scope text)
 LANGUAGE sql STABLE AS $$

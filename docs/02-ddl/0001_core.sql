@@ -111,7 +111,7 @@ CREATE TRIGGER app_user_touch BEFORE UPDATE ON core.app_user
 CREATE TRIGGER app_user_no_delete BEFORE DELETE ON core.app_user
   FOR EACH ROW EXECUTE FUNCTION core.forbid_delete();
 
--- Roles fijos (la matriz de permisos vive en código: core/src/auth/permissions.ts)
+-- Roles fijos (la matriz de permisos vive en código: api/src/core/auth/permissions.ts)
 CREATE TABLE core.role (
   code        text PRIMARY KEY CHECK (code IN ('owner','approver','admin','cellar','field','advisor','agent','mcp_client')),
   name_es     text NOT NULL,

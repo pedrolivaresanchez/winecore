@@ -1,6 +1,6 @@
 # 03 · Máquinas de estado
 
-> Versión 1 · 31-10-2026. Cada máquina se implementa en `core/src/<módulo>/<entidad>.state.ts` como una tabla de transiciones **declarativa** (`{ from, event, to, guard, effects, permission }`) y una única función `transition(entity, event, ctx)` que: comprueba permiso → evalúa guardas → aplica efectos en la misma transacción → escribe auditoría (`reason` cuando se exige) → inserta eventos de outbox. Cualquier transición no listada aquí es **ilegal** (`409 WC_ILLEGAL_TRANSITION`).
+> Versión 1 · 31-10-2026. Cada máquina se implementa en `api/src/core/<módulo>/<entidad>.state.ts` como una tabla de transiciones **declarativa** (`{ from, event, to, guard, effects, permission }`) y una única función `transition(entity, event, ctx)` que: comprueba permiso → evalúa guardas → aplica efectos en la misma transacción → escribe auditoría (`reason` cuando se exige) → inserta eventos de outbox. Cualquier transición no listada aquí es **ilegal** (`409 WC_ILLEGAL_TRANSITION`).
 > Convenciones de las tablas: **Guarda** = condición que debe cumplirse; **Efectos** = lo que ocurre en la misma transacción; **Permiso** = clave de la matriz de `07-arquitectura.md` §6. "Aprobación" remite a §12.
 
 ## 1. Lote (`inventory.lot`)

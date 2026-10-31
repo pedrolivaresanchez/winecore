@@ -1,6 +1,6 @@
 # DDL de WineCore (PostgreSQL 16)
 
-Esquema completo de la especificación. En Fase 2 estos ficheros se copian **tal cual** a `core/db/migrations/` (tarea `TASK-CORE-002`) y no se editan después de aplicarse en `staging`: los cambios se hacen con migraciones nuevas.
+Esquema completo de la especificación. En Fase 2 estos ficheros se copian **tal cual** a `api/db/migrations/` (tarea `TASK-CORE-002`) y no se editan después de aplicarse en `staging`: los cambios se hacen con migraciones nuevas.
 
 ## Orden de aplicación
 

@@ -7,8 +7,8 @@
 
 | Tema | Regla |
 |---|---|
-| Identificadores | `uuid`. La app genera **UUIDv7** (`core/src/ids.ts`, librería `uuidv7`). El `DEFAULT gen_random_uuid()` del SQL es solo red de seguridad. |
-| Fechas | Instantes en `timestamptz` (UTC en BD). Fechas de negocio (`issue_date`, `fiscal_date`…) en `date`, calculadas en **Europe/Madrid** (`core/src/time.ts::businessDate(instant)`). |
+| Identificadores | `uuid`. La app genera **UUIDv7** (`api/src/core/ids.ts`, librería `uuidv7`). El `DEFAULT gen_random_uuid()` del SQL es solo red de seguridad. |
+| Fechas | Instantes en `timestamptz` (UTC en BD). Fechas de negocio (`issue_date`, `fiscal_date`…) en `date`, calculadas en **Europe/Madrid** (`api/src/core/time.ts::businessDate(instant)`). |
 | Dinero | `numeric(14,2)`; precios unitarios `numeric(14,6)`; porcentajes `numeric(5,2)`. En TypeScript **nunca** `number` para dinero: `Decimal` de `decimal.js` con `ROUND_HALF_UP`. |
 | Volumen | **Mililitros enteros** (`bigint`); masa en **gramos** (`bigint`). Conversión a litros solo al presentar (3 decimales) o al generar ficheros regulatorios. |
 | Cantidades de documento | `numeric(14,3)` (permite servicios fraccionados); el stock de envasado son **unidades enteras**. |
@@ -136,7 +136,7 @@ El **payload** lleva identificadores y un resumen sin datos personales innecesar
 ## 6. Contactos (`party`)
 
 - **Un maestro único** compartido por P.O y CVPO; las condiciones y cuentas contables por entidad van en `party.contact_entity_terms`.
-- **Normalización del NIF** (`core/src/party/taxId.ts::normalizeTaxId`): mayúsculas; quitar espacios, puntos y guiones; quitar el prefijo `ES` si quedan 9 caracteres; clasificar en `nif` (8 dígitos + letra), `nie` (X/Y/Z + 7 dígitos + letra), `nif` de entidad (letra + 7 dígitos + dígito/letra), `vat_eu` (2 letras de país UE + resto) o `foreign_id`. Validar la letra de control de NIF/NIE y el dígito de control de CIF; si falla, el contacto se guarda con `tax_id_type = 'none'` y un aviso de calidad.
+- **Normalización del NIF** (`api/src/core/party/taxId.ts::normalizeTaxId`): mayúsculas; quitar espacios, puntos y guiones; quitar el prefijo `ES` si quedan 9 caracteres; clasificar en `nif` (8 dígitos + letra), `nie` (X/Y/Z + 7 dígitos + letra), `nif` de entidad (letra + 7 dígitos + dígito/letra), `vat_eu` (2 letras de país UE + resto) o `foreign_id`. Validar la letra de control de NIF/NIE y el dígito de control de CIF; si falla, el contacto se guarda con `tax_id_type = 'none'` y un aviso de calidad.
 - **Unicidad**: un NIF solo puede estar en un contacto vivo (índice `contact_tax_id_uq`).
 - **Duplicados**: reglas en orden `same_tax_id` → `same_email` → `same_name_postal_code` (nombre normalizado sin tildes, signos ni formas societarias + CP). La fusión (`party.contact_merge`) conserva el superviviente, guarda qué valor se quedó por campo y repunta los documentos.
 - Datos personales: personas físicas (`kind = 'person'`) y personas de contacto son datos personales (RGPD): acceso por rol y exportables/suprimibles bajo petición (procedimiento en `07-arquitectura.md` §11).
@@ -168,7 +168,7 @@ El **payload** lleva identificadores y un resumen sin datos personales innecesar
 ### 8.2 Lotes y genealogía (DAG)
 - **Lote** = identidad de un contenido. Nace en la recepción de uva (`grape`), sigue con el mismo código al pasar a mosto y vino (la "partida" que acompaña todo el proceso, reunión [00:48:33]) y se crea uno **nuevo** en cada ensamblaje (`blend`) y en cada envasado (`bottled`, el lote que va en la etiqueta).
 - **Arista** `inventory.lot_edge(hijo ← padre, volumen o masa aportados, operación)`. Un trigger impide ciclos (`WC030`).
-- Consultas: `inventory.lot_ancestors(lote)` (botella → parcela, para inspección) y `inventory.lot_descendants(lote)` (retirada de producto). La respuesta de trazabilidad completa la compone `core/src/traceability/traceLot.ts` uniendo ancestros con operaciones, análisis, adiciones, recepciones (parcela, proveedor y documento de acompañamiento) y documentos de salida.
+- Consultas: `inventory.lot_ancestors(lote)` (botella → parcela, para inspección) y `inventory.lot_descendants(lote)` (retirada de producto). La respuesta de trazabilidad completa la compone `api/src/core/traceability/traceLot.ts` uniendo ancestros con operaciones, análisis, adiciones, recepciones (parcela, proveedor y documento de acompañamiento) y documentos de salida.
 
 ```mermaid
 flowchart RL
@@ -204,7 +204,7 @@ Una **operación** es un hecho de bodega con líneas de **entrada**, **salida** 
 | `loss` | lote (mL o ud) | — | sí | solo merma | `loss` | Mermas | Sí |
 | `destruction` | lote | — | sí | solo merma; motivo y aprobación | `loss` | Mermas/destrucción | Sí ("mermas de almacenamiento") |
 
-Las operaciones generan sus movimientos de stock **en la misma transacción** de la confirmación (`core/src/cellar/confirmOperation.ts`): cada línea `input` → movimiento negativo; `output` → positivo; `loss` → movimiento `loss` con `loss_kind`. Mermas `incident` y destrucciones exigen aprobación (`cellar_loss`).
+Las operaciones generan sus movimientos de stock **en la misma transacción** de la confirmación (`api/src/core/cellar/confirmOperation.ts`): cada línea `input` → movimiento negativo; `output` → positivo; `loss` → movimiento `loss` con `loss_kind`. Mermas `incident` y destrucciones exigen aprobación (`cellar_loss`).
 
 ### 9.3 Analíticas, fermentación, catas y adiciones
 - `cellar.analysis` + `cellar.analysis_result` con parámetros de catálogo (`cellar.analysis_parameter`: densidad, grado, acidez total y volátil, pH, SO2 libre/total, glucosa+fructosa, málico, láctico…). El "pack FML" del laboratorio se registra como `kind = 'fml_pack'` con el PDF adjunto.
@@ -265,13 +265,13 @@ Para cada lote y recipiente, y para todo instante *t*:
 
 \[ \text{existencias}(t) = \sum \text{entradas}(\le t) - \sum \text{salidas}(\le t) - \sum \text{mermas}(\le t) \ge 0 \]
 
-y para cada operación conservativa: \( \sum \text{entradas} = \sum \text{salidas} + \sum \text{mermas} \) (exacto, en mL o unidades). La BD comprueba el estado final al confirmar; la app comprueba además que ningún movimiento **con fecha pasada** deja un saldo negativo en una fecha intermedia (`core/src/inventory/assertRunningBalance.ts`). Los tests de propiedades (`11-tests.md` §5) generan secuencias aleatorias de operaciones válidas e inválidas y comprueban que siempre se cumple.
+y para cada operación conservativa: \( \sum \text{entradas} = \sum \text{salidas} + \sum \text{mermas} \) (exacto, en mL o unidades). La BD comprueba el estado final al confirmar; la app comprueba además que ningún movimiento **con fecha pasada** deja un saldo negativo en una fecha intermedia (`api/src/core/inventory/assertRunningBalance.ts`). Los tests de propiedades (`11-tests.md` §5) generan secuencias aleatorias de operaciones válidas e inválidas y comprueban que siempre se cumple.
 
 ### 10.5 Aforo (inventario físico)
 `inventory.inventory_count` + líneas: esperado (calculado del libro a `counted_at`) frente a contado (método: varilla, caudalímetro, nivel, recuento de unidades…), con foto opcional y motivo de la diferencia. Estados: borrador → contando → revisión → aprobado (firma de una persona con verificación reforzada) → contabilizado (genera regularizaciones). El aforo de arranque (Q-013) crea los saldos iniciales (`opening`) de ambos libros.
 
 ### 10.6 Conciliación físico ↔ fiscal (informe de diferencias)
-`core/src/inventory/reconcilePhysicalFiscal.ts` (y la herramienta MCP `inventory_reconcile_physical_fiscal`) compara, para el perímetro fiscal y un rango de fechas, las salidas físicas (albaranes) con las salidas fiscales (facturas de P.O):
+`api/src/core/inventory/reconcilePhysicalFiscal.ts` (y la herramienta MCP `inventory_reconcile_physical_fiscal`) compara, para el perímetro fiscal y un rango de fechas, las salidas físicas (albaranes) con las salidas fiscales (facturas de P.O):
 - **Albaranes sin facturar**: salieron físicamente pero aún no fiscalmente (caso del operador logístico en consigna). Columna "días desde la salida".
 - **Facturas sin salida física**: facturado pero no ha salido (anticipos, mercancía retenida).
 - **Diferencias de cantidad** por lote y producto.
@@ -295,7 +295,7 @@ El resultado se guarda en `regulatory.reconciliation_run/diff` (`kind = 'physica
 - Activar un conjunto nuevo exige aprobación (`billing_rules_activation`). Los documentos ya creados conservan la regla y versión que los decidió; un cambio de reglas nunca reasigna documentos existentes.
 - Reglas iniciales propuestas: Q-025.
 
-### 12.3 Cálculo de una factura (exacto; `core/src/billing/computeInvoice.ts`)
+### 12.3 Cálculo de una factura (exacto; `api/src/core/billing/computeInvoice.ts`)
 1. Base de línea: `line_base = round_half_up(quantity × unit_price × (1 − discount_pct/100), 2)`.
 2. Agrupar líneas por `tax_code`. Para cada grupo: `base = Σ line_base`; `quota = round_half_up(base × rate/100, 2)`; `surcharge_quota = round_half_up(base × surcharge_rate/100, 2)`; `withholding = round_half_up(base × withholding_rate/100, 2)`.
 3. Totales: `subtotal = Σ base`; `tax_total = Σ quota`; `surcharge_total = Σ surcharge_quota`; `withholding_total = Σ withholding`; `total = subtotal + tax_total + surcharge_total − withholding_total` (importe a cobrar).
@@ -304,7 +304,7 @@ El resultado se guarda en `regulatory.reconciliation_run/diff` (`kind = 'physica
 6. Validaciones para emitir (fallan con código y mensaje en español): cliente con NIF si `F1` (`WC_INV_TAX_ID_REQUIRED`); NIF-IVA validado si hay `INTRA_E5`; lote informado en líneas de vino (`WC_INV_LOT_REQUIRED`); total ≠ 0; serie activa del año de `issue_date`; `issue_date` no anterior a la última factura emitida en la serie (correlatividad temporal, `WC_INV_DATE_ORDER`); al menos una línea; para rectificativas, referencia a la(s) factura(s) rectificada(s) y motivo.
 
 ### 12.4 Emisión (transacción única)
-`core/src/billing/issueInvoice.ts`: bloquea la factura → valida → `take_number` → fija `issue_date`, `issued_at`, `customer_snapshot` → calcula y guarda desglose (`invoice_tax`) y vencimientos → **genera el registro Verifactu** (alta, encadenado; `regulatory.verifactu_record`) si la entidad tiene instalación activa en esa fecha → efectos de stock y fiscales (§10.3) si los módulos están activos → evento `billing.invoice.issued` → commit. El PDF (con QR) se genera después a partir de los datos congelados y se guarda como adjunto (`pdf_attachment_id`, una sola vez).
+`api/src/core/billing/issueInvoice.ts`: bloquea la factura → valida → `take_number` → fija `issue_date`, `issued_at`, `customer_snapshot` → calcula y guarda desglose (`invoice_tax`) y vencimientos → **genera el registro Verifactu** (alta, encadenado; `regulatory.verifactu_record`) si la entidad tiene instalación activa en esa fecha → efectos de stock y fiscales (§10.3) si los módulos están activos → evento `billing.invoice.issued` → commit. El PDF (con QR) se genera después a partir de los datos congelados y se guarda como adjunto (`pdf_attachment_id`, una sola vez).
 
 ### 12.5 Rectificativas y anulaciones
 - **Rectificativa** (R1–R5, por sustitución `S` o por diferencias `I`): factura nueva en la serie de rectificativas, con `billing.invoice_rectification` apuntando a la(s) original(es) (también a facturas de Holded, por número y fecha).
@@ -418,7 +418,7 @@ Instalación por entidad y entorno, registros de alta y anulación **encadenados
 
 ## 21. Migraciones iniciales
 
-Se aplican en orden con `core/db/migrate.ts` (tabla `public.schema_migrations(version, applied_at, checksum)`; cada fichero se aplica en una transacción; un checksum distinto de uno ya aplicado detiene el despliegue). Las migraciones nunca se editan después de aplicarse en `staging`: se añade otra.
+Se aplican en orden con `api/db/migrate.ts` (tabla `public.schema_migrations(version, applied_at, checksum)`; cada fichero se aplica en una transacción; un checksum distinto de uno ya aplicado detiene el despliegue). Las migraciones nunca se editan después de aplicarse en `staging`: se añade otra.
 
 | Fichero | Contenido | Necesaria en |
 |---|---|---|
@@ -445,5 +445,5 @@ Todas se aplican desde M0/M1 (el esquema completo existe desde el principio y lo
 ## 22. Datos de referencia y semillas
 
 - Incluidos en las migraciones: roles, canales, códigos de impuesto, categorías de gasto, parámetros analíticos.
-- Semilla de arranque (`core/db/seed.ts`, idempotente, ejecutada una vez por entorno): las dos entidades (NIF desde secretos), series del año en curso, ubicaciones de §8.1, módulos (`contacts`, `catalog`, `billing`, `verifactu`, `mcp` activos en M1), política de aprobaciones por defecto (`03-maquinas-estado.md` §12), conjunto de reglas D3 inicial (Q-025) en borrador.
-- **Staging y dev usan solo datos sintéticos** generados por `core/db/synthetic.ts` (`11-tests.md` §7); nunca copias de producción.
+- Semilla de arranque (`api/db/seed.ts`, idempotente, ejecutada una vez por entorno): las dos entidades (NIF desde secretos), series del año en curso, ubicaciones de §8.1, módulos (`contacts`, `catalog`, `billing`, `verifactu`, `mcp` activos en M1), política de aprobaciones por defecto (`03-maquinas-estado.md` §12), conjunto de reglas D3 inicial (Q-025) en borrador.
+- **Staging y dev usan solo datos sintéticos** generados por `api/db/synthetic.ts` (`11-tests.md` §7); nunca copias de producción.
