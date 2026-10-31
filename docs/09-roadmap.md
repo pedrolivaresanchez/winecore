@@ -25,7 +25,7 @@ gantt
   section M5
   Bodega completa, viñedo y ecológico (antes de la vendimia) :m5, 2027-05-03, 75d
   section M6–M8
-  Tesorería y datos para modelos            :m6, 2027-07-05, 88d
+  Previsión de tesorería y datos para modelos :m6, 2027-07-05, 88d
   Contabilidad y migración histórica        :m7, 2027-10-01, 61d
   Factura electrónica B2B (antes de 06-10-2028) :m8, 2028-01-10, 140d
 ```
@@ -38,11 +38,11 @@ gantt
 - **Criterio de salida**: un commit de `main` se despliega en el entorno Main (4165) con la misma SHA; `api/health` responde con la SHA y la versión del esquema; login con un usuario de la lista blanca y 403 con otro; resultados de la prueba de atomicidad documentados.
 
 ### M1 · Stock, almacenes, bodega y lotes — 16-11-2026 → 15-01-2027
-- **Entrega**: contactos (importación de CVPO y P.O con deduplicación), catálogo aprobado y tarifas; ubicaciones y almacenes (incluidos los externos, Q-021); depósitos con QR; lotes y genealogía; operaciones de bodega (trasiego, ensamblaje, adiciones, envasado, etiquetado de jaulón, mermas, limpiezas, rectificación); libros físico y fiscal; **aforo de arranque del 31-12-2026**; existencias a fecha e informe de inspección; conciliación físico ↔ fiscal; bloqueo de periodos; bandeja de aprobaciones con passkey; MCP de lectura (existencias, lotes, depósitos) y borradores de operación con confirmación; UI móvil de bodega (operación, depósitos, aforo).
+- **Entrega**: contactos (importación de CVPO y P.O con deduplicación), catálogo aprobado y tarifas; ubicaciones y almacenes (incluidos los externos, Q-021); depósitos con QR; lotes y genealogía; operaciones de bodega (trasiego, ensamblaje, adiciones, envasado, etiquetado de jaulón, mermas, limpiezas, rectificación); libros físico y fiscal; **aforo de arranque del 31-12-2026**; existencias a fecha e informe de inspección; conciliación físico ↔ fiscal; bloqueo de periodos; bandeja de aprobaciones con passkey; MCP de lectura (existencias, lotes, depósitos) y borradores de operación con confirmación; UI móvil de bodega (operación, depósitos, aforo); materiales de envasado (corchos, cápsulas de lacre, cajas de 6, palés de 112 cajas) con stock y consumo al envasar; gráficos de stock por producto, lote y año.
 - **Depende de**: M0; Q-005 (se aplica su recomendación como supuesto); Q-013 (aforo); Q-020 (códigos de depósitos); Q-021.
 
 ### M2 · Ventas, facturación sin Verifactu y SILICIE — 11-01 → 26-03-2027
-- **Entrega**: reglas de entidad facturadora (D3); pedidos; albaranes con lote (venta, consigna, traspaso, devolución) e incidencias; **facturación de P.O** (completas y rectificativas, IRPF, recargo, exportación, intracomunitaria, Canarias, PDF ES/EN, emisión en lote con aprobación); cobros y partidas abiertas; intercompañía mensual; **SILICIE**: mayores, asientos al día (incluidos los cambios depósito ↔ barrica) y fichero CSV oficial, con la presentación aún manual hasta M3; gastos con OCR y libros de IVA; revisión de albaranes pendientes de Holded; MCP de ventas y facturación.
+- **Entrega**: reglas de entidad facturadora (D3); pedidos; albaranes con lote (venta, consigna, traspaso, devolución) e incidencias; **facturación de P.O** (completas y rectificativas, IRPF, recargo, exportación, intracomunitaria, Canarias, PDF ES/EN, emisión en lote con aprobación); cobros y partidas abiertas; intercompañía mensual; **SILICIE**: mayores, asientos al día (incluidos los cambios depósito ↔ barrica) y fichero CSV oficial, con la presentación aún manual hasta M3; gastos con OCR y libros de IVA; **conciliación de transferencias (Norma 43/CAMT) y remesas SEPA**, para poder dejar Holded; EORI y documentos de exportación por país en las facturas; gráficos de ventas y gastos por producto, lote y año; revisión de albaranes pendientes de Holded; MCP de ventas y facturación.
 - **CVPO**: hasta M4 sigue facturando en **Holded con Verifactu** (obligatorio desde el 01-01-2027); WineCore lleva sus pedidos, albaranes y cobros e importa sus facturas de Holded como externas (Q-033, supuesto).
 - **Depende de**: M1; Q-009, Q-010, Q-016, Q-017, Q-033.
 
@@ -59,7 +59,7 @@ gantt
 - **Entrega**: recepción de uva, prensado, fin de fermentación, lecturas con alertas, analíticas y catas, ensamblaje con fórmula; parcelas, tratamientos y cuaderno (CUE), labores, maduración, vendimia; certificados e informe ecológicos; trazabilidad completa botella → parcela. Va en paralelo a M4.
 
 ### M6 · Tesorería y datos para modelos — 05-07 → 30-09-2027
-- Extractos y conciliación, remesas SEPA, previsión de tesorería, exportaciones para 303/390/347/349/115/130 (`modelos-aeat.md`).
+- Previsión de tesorería y exportaciones para 303/390/347/349/115/130 (`modelos-aeat.md`). La conciliación bancaria y las remesas SEPA pasan a M2.
 
 ### M7 · Contabilidad y migración histórica — 01-10 → 30-11-2027
 - Plan de cuentas y asientos (Q-022); histórico de Holded y Shopify con cuadre; PDF vinculados; diario D7.

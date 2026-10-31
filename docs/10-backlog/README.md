@@ -157,8 +157,13 @@ Reglas para todas las tareas: primero los tests; PR pequeño con el TASK-ID; sin
 | TASK-ASIS-002 | Resumen diario a CVBOT | US-ASIS-02 | M3 | CORE-007, UI-003 | 1 | no |
 | TASK-ASIS-003 | Vigilantes | US-ASIS-03 | M3 | INV-006, REG-002, VFT-004 | 1,5 | no |
 | TASK-REP-001 | Informes y paquete para la asesoría (UI-33) | US-FACT-11, US-COMP-03 | M3 | FACT-011, COMP-003, INV-005 | 1,5 | sí (fiscal) |
+| TASK-REP-002 | Gráficos de ventas, gastos y stock por producto, lote y año | US-REP-01 | M1 (stock) / M2 | INV-005, FACT-011, COMP-003 | 1,5 | no |
+| TASK-BOD-012 | Materiales de envasado: lista por formato, stock y consumo al envasar | US-BOD-14 | M1 | BOD-005, CAT-001 | 1,5 | no |
+| TASK-FACT-013 | EORI y documentos de exportación por país | US-FACT-12, US-FACT-07 | M2 | FACT-004, FACT-007 | 1,5 | sí (aduanas) |
+| TASK-FIN-003 | Extractos y conciliación de transferencias (Norma 43/CAMT) | US-FIN-03 | M2 | FIN-001 | 2 | no |
+| TASK-FIN-004 | Remesas SEPA (adeudos pain.008 y transferencias pain.001) | US-FIN-04 | M2 | FIN-001, APR-001 | 1,5 | sí (bancos) |
 
-**Total**: 132 tareas · 180 días de agente · 71 con escalado a Opus (revisión).
+**Total**: 137 tareas · 188 días de agente · 73 con escalado a Opus (revisión).
 
 ## 3. Trazabilidad historia → tareas (MVP)
 
@@ -246,8 +251,12 @@ Reglas para todas las tareas: primero los tests; PR pequeño con el TASK-ID; sin
 | US-MIG-04 | MIG-005 |
 | US-MCP-01 / 02 / 03 | MCP-001, MCP-002, MCP-003, MCP-004 |
 | US-ASIS-01 / 02 / 03 | ASIS-001, ASIS-002, ASIS-003 |
+| US-BOD-14 | BOD-012 |
+| US-FACT-12 | FACT-013 |
+| US-FIN-03 / 04 | FIN-003, FIN-004 |
+| US-REP-01 | REP-002 |
 
-Historias posteriores al MVP (M5+): US-FIN-03/04, US-MIG-05/06/07, US-CONTA-01/02, US-MOD-01, US-ETQ-01, US-CONO-01. Se desglosarán en tareas al planificar M6–M7 (no bloquean el MVP).
+Historias posteriores al MVP (M6+): US-MIG-05/06/07, US-CONTA-01/02, US-MOD-01, US-ETQ-01, US-CONO-01. Se desglosarán en tareas al planificar M6–M7 (no bloquean el MVP).
 
 ## 4. Ruta crítica de M1 (gate del 01-12-2026)
 
