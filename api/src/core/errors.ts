@@ -59,6 +59,16 @@ const CATALOG = {
   WC_EXPORT_NOT_READY: [422, 'La factura de exportación no está lista'],
   WC_REG_EAD_REQUIRED: [409, 'Hace falta el ARC (e-DA) antes de expedir'],
   WC_IC_NO_TARIFF: [422, 'No hay tarifa intercompañía vigente'],
+  // Intercompañía (TASK-CAT-003, TASK-FACT-009)
+  WC_IC_TARIFF_MISSING: [422, 'Falta tarifa intercompañía'],
+  WC_IC_TARIFF_OVERLAP: [409, 'La vigencia se solapa con otra tarifa intercompañía activa'],
+  WC_IC_TARIFF_LOCKED: [409, 'La tarifa activa no se edita'],
+  WC_IC_ADVISOR_REQUIRED: [422, 'Falta la referencia de validación del asesor'],
+  WC_IC_BELOW_COST: [422, 'El precio queda por debajo del coste estándar'],
+  WC_IC_CUSTOMER_MISSING: [422, 'Falta el contacto de la entidad compradora'],
+  WC_IC_PERIOD: [422, 'El periodo no es un mes válido'],
+  WC_IC_PERIOD_OVERLAP: [409, 'El periodo se solapa con otra liquidación'],
+  WC_INV_LOT_REQUIRED: [422, 'Indica el lote de la línea'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;

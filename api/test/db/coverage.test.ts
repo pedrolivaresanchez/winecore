@@ -39,6 +39,8 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
     "FK:ops.approval_policy.legal_entity_id",
     "FK:ops.approval_request.legal_entity_id",
     "FN:billing.resolve_issuing_entity",
+    "UQ:billing.intercompany_settlement(seller_entity_id,buyer_entity_id,period_start,period_end)",
+    "UQ:catalog.intercompany_tariff(seller_entity_id,buyer_entity_id,valid_from,valid_to)",
     "UQ:catalog.price_list_version(price_list_id,valid_from,valid_to)",
     "UQ:catalog.product(wine_id,vintage,format_id)",
     "UQ:cellar.operation(legal_entity_id,number)",

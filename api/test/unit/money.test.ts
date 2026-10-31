@@ -4,6 +4,8 @@ import { money } from '../../src/core/money';
 
 describe('money', () => {
   it('redondea HALF_UP en el límite de 5 milésimas', () => {
+    expect(money.round6(money.fromString('1.0000005')).toFixed(6)).toBe('1.000001');
+    expect(money.round6(money.fromString('1.0000004')).toFixed(6)).toBe('1.000000');
     expect(money.toString(money.round2(money.fromString('1.005')))).toBe('1.01');
     expect(money.toString(money.round2(money.fromString('1.004')))).toBe('1.00');
     expect(money.toString(money.round2(money.fromString('2.675')))).toBe('2.68');
