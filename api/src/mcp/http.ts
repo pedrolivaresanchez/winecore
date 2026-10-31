@@ -1,5 +1,3 @@
-/// <reference lib="dom" />
-
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 
 import type { McpContext } from "./registry";

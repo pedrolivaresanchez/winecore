@@ -19,15 +19,3 @@ export const systemWhoami = defineReadTool({
     modules_enabled: ctx.activeModules,
   }),
 });
-
-export const systemModules = defineReadTool({
-  name: "system_modules",
-  module: "system",
-  scope: "",
-  title: "Módulos activos",
-  description: "Módulos activos inyectados en esta petición. No activa ni desactiva módulos.",
-  input: emptyInput,
-  handler: (ctx) => ({
-    modules: ctx.activeModules,
-  }),
-});

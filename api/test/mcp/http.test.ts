@@ -1,4 +1,3 @@
-/// <reference path="./bun-test.d.ts" />
 import { describe, expect, test } from "bun:test";
 
 import { handleMcpRequest } from "../../src/mcp/http";
@@ -39,7 +38,7 @@ describe("streamable http", () => {
     const tools = (list.body.result as { tools: { name: string }[] }).tools;
     const names = tools.map((tool) => tool.name);
     expect(names).toContain("system_whoami");
-    expect(names).toContain("system_modules");
+    expect(names).not.toContain("system_modules");
     expect(names).toContain("approvals_get_link");
     expect(names.some((name) => /approve|issue|void|send|delete|secret|decide|reject/i.test(name))).toBe(false);
 
@@ -47,7 +46,8 @@ describe("streamable http", () => {
     expect(call.status).toBe(200);
     const callResult = call.body.result as { isError?: boolean; content: { type: string; text: string }[] };
     expect(callResult.isError).toBeUndefined();
-    const text = callResult.content[0]?.text ?? "";
+    const block = callResult.content[0];
+    const text = block?.type === "text" ? block.text : "";
     const who = JSON.parse(text) as { client: string; scopes: string[] };
     expect(who.client).toBe(CLIENT_A);
     expect(who.scopes).toEqual(["read:*"]);

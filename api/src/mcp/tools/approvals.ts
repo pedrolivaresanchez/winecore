@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { McpToolError } from "../errors";
+import { domainError } from "../../core/errors";
 import { defineReadTool } from "../registry";
 
 export const approvalsGetLink = defineReadTool({
@@ -14,13 +14,11 @@ export const approvalsGetLink = defineReadTool({
   }),
   handler: async (ctx, input) => {
     if (!ctx.deps.approvals) {
-      throw new McpToolError("WC002", "Falta el origen de aprobaciones.");
+      throw domainError("WC002", undefined, "Falta el origen de aprobaciones.");
     }
     const view = await ctx.deps.approvals.get(input.approval_id);
     if (!view) {
-      throw new McpToolError("WC_VALIDATION", "No existe esa solicitud de aprobación.", {
-        approval_id: "No encontrada",
-      });
+      throw domainError("WC_VALIDATION", { approval_id: "No encontrada" }, "No existe esa solicitud de aprobación.");
     }
     const origin = (ctx.deps.webBaseUrl ?? "").replace(/\/$/, "");
     return {

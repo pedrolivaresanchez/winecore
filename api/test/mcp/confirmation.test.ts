@@ -1,4 +1,3 @@
-/// <reference path="./bun-test.d.ts" />
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 

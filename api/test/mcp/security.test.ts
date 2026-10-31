@@ -1,4 +1,3 @@
-/// <reference path="./bun-test.d.ts" />
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 
@@ -13,7 +12,7 @@ describe("catalogue safety", () => {
     const names = catalogueNames();
     expect(names).toContain("approvals_get_link");
     expect(names).toContain("system_whoami");
-    expect(names).toContain("system_modules");
+    expect(names).not.toContain("system_modules");
     for (const name of names) {
       expect(DECISION.test(name)).toBe(false);
     }

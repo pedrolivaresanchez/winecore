@@ -1,4 +1,3 @@
-/// <reference path="./bun-test.d.ts" />
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 
@@ -49,8 +48,8 @@ describe("tool listing", () => {
       catalogue,
     );
     expect(names).toContain("system_whoami");
-    expect(names).toContain("system_modules");
     expect(names).toContain("approvals_get_link");
+    expect(names).not.toContain("system_modules");
     expect(names).toContain("contacts_search");
     expect(names).not.toContain("vineyard_parcels_list");
     expect(names).not.toContain("cellar_operation_draft_prepare");

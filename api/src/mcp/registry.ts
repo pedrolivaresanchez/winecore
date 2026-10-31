@@ -1,6 +1,6 @@
 import type { ZodType } from "zod";
 
-import type { ConfirmationStore } from "./confirm.ts";
+import type { ConfirmationStore } from "./confirm";
 
 export interface McpActor {
   id: string;

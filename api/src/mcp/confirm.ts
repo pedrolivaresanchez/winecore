@@ -1,6 +1,4 @@
-/// <reference lib="dom" />
-
-import { McpToolError } from "./errors";
+import { domainError } from "../core/errors";
 
 /** Upper bound enforced by ops.mcp_confirmation (created_at + 15 minutes). */
 export const CONFIRMATION_TTL_MS = 15 * 60 * 1000;
@@ -8,6 +6,8 @@ export const CONFIRMATION_TTL_MS = 15 * 60 * 1000;
 /**
  * One prepared write. The raw token is never stored: `tokenHash` is the hex
  * SHA-256 of the base64url token. `payloadSha256` binds the canonical payload.
+ * `payload` is required to commit exactly what was previewed. ops.mcp_confirmation
+ * does not have that column yet; a SQL store needs a payload JSON column.
  */
 export interface ConfirmationRecord {
   tokenHash: string;
@@ -15,6 +15,7 @@ export interface ConfirmationRecord {
   clientId: string;
   payloadSha256: string;
   preview: unknown;
+  /** Commit input. The SQL store needs a payload JSON column; migrations are unchanged. */
   payload: unknown;
   createdAt: string;
   expiresAt: string;
@@ -100,9 +101,7 @@ function canonicalize(value: unknown): unknown {
   if (typeof value === "string" || typeof value === "boolean") return value;
   if (typeof value === "number") {
     if (!Number.isFinite(value)) {
-      throw new McpToolError("WC_VALIDATION", "Los datos preparados no son válidos.", {
-        payload: "Número no finito",
-      });
+      throw domainError("WC_VALIDATION", { payload: "Número no finito" }, "Los datos preparados no son válidos.");
     }
     return value;
   }
@@ -117,9 +116,7 @@ function canonicalize(value: unknown): unknown {
     }
     return sorted;
   }
-  throw new McpToolError("WC_VALIDATION", "Los datos preparados no son válidos.", {
-    payload: "Tipo no serializable",
-  });
+  throw domainError("WC_VALIDATION", { payload: "Tipo no serializable" }, "Los datos preparados no son válidos.");
 }
 
 /** Stable JSON used to bind a confirmation to the payload that will be committed. */
@@ -168,8 +165,8 @@ export async function issueConfirmation(input: {
 
 const inFlight = new Map<string, Promise<unknown>>();
 
-function invalid(messageEs: string): McpToolError {
-  return new McpToolError("WC_MCP_CONFIRMATION_INVALID", messageEs);
+function invalid(messageEs: string) {
+  return domainError("WC_MCP_CONFIRMATION_INVALID", undefined, messageEs);
 }
 
 async function consumeOnce(

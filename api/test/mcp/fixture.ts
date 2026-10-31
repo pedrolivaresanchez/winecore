@@ -1,4 +1,3 @@
-/// <reference path="./bun-test.d.ts" />
 import { expect } from "bun:test";
 
 import { InMemoryConfirmationStore } from "../../src/mcp/confirm";

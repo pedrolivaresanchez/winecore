@@ -1,11 +1,9 @@
-/// <reference lib="dom" />
-
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z, type ZodType } from "zod";
 
+import { DomainError, domainError } from "../core/errors";
 import { consumeConfirmation, issueConfirmation } from "./confirm";
-import { McpToolError, toolErrorBody, type ToolErrorBody } from "./errors";
 import {
   mcpNames,
   moduleActive,
@@ -16,9 +14,9 @@ import {
   type WriteTool,
 } from "./registry";
 import { approvalsGetLink } from "./tools/approvals";
-import { systemModules, systemWhoami } from "./tools/system";
+import { systemWhoami } from "./tools/system";
 
-export const baseTools: readonly AnyTool[] = [systemWhoami, systemModules, approvalsGetLink];
+export const baseTools: readonly AnyTool[] = [systemWhoami, approvalsGetLink];
 
 const INSTRUCTIONS =
   "Servidor MCP de WineCore. Las lecturas son inmediatas. Las escrituras van en dos pasos: *_prepare devuelve una vista previa y no guarda el negocio; la persona confirma; *_commit ejecuta exactamente lo previsualizado. No hay herramientas para aprobar, emitir, anular, enviar a terceros ni borrar.";
@@ -48,6 +46,18 @@ interface JsonObjectSchema {
 }
 
 export type ToolCallResult = CallToolResult;
+
+interface ToolErrorBody {
+  code: string;
+  message_es: string;
+  fields?: Record<string, string>;
+}
+
+function toolErrorBody(error: DomainError): ToolErrorBody {
+  const body: ToolErrorBody = { code: error.code, message_es: error.message };
+  if (error.fields && Object.keys(error.fields).length > 0) body.fields = error.fields;
+  return body;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -84,13 +94,13 @@ function issueMessage(code: string): string {
   }
 }
 
-function validationError(error: z.ZodError): McpToolError {
+function validationError(error: z.ZodError): DomainError {
   const fields: Record<string, string> = {};
   for (const issue of error.issues) {
     const key = issue.path.length > 0 ? issue.path.map(String).join(".") : "input";
     if (fields[key] === undefined) fields[key] = issueMessage(issue.code);
   }
-  return new McpToolError("WC_VALIDATION", "Los datos de entrada no son válidos.", fields);
+  return domainError("WC_VALIDATION", fields, "Los datos de entrada no son válidos.");
 }
 
 function parseInput<T>(schema: ZodType<T>, value: unknown): T {
@@ -183,9 +193,9 @@ function resolve(name: string, tools: readonly AnyTool[]): Resolved | null {
 function assertAccess(tool: AnyTool, ctx: McpContext): void {
   if (toolVisible(tool, ctx)) return;
   if (!moduleActive(tool.module, ctx.activeModules)) {
-    throw new McpToolError("WC_MODULE_DISABLED", "El módulo está desactivado.");
+    throw domainError("WC_MODULE_DISABLED");
   }
-  throw new McpToolError("WC_FORBIDDEN", "No tienes permiso para usar esta herramienta.");
+  throw domainError("WC_FORBIDDEN");
 }
 
 async function runRead(ctx: McpContext, tool: ReadTool, args: unknown): Promise<unknown> {
@@ -246,7 +256,7 @@ export async function callTool(
   try {
     const resolved = resolve(name, tools);
     if (!resolved) {
-      throw new McpToolError("WC_FORBIDDEN", "No tienes permiso para usar esta herramienta.");
+      throw domainError("WC_FORBIDDEN");
     }
     let data: unknown;
     if (resolved.kind === "read") data = await runRead(ctx, resolved.tool, args);
@@ -254,8 +264,8 @@ export async function callTool(
     else data = await runCommit(ctx, resolved.tool, args);
     return successResult(data);
   } catch (error) {
-    if (error instanceof McpToolError) return failureResult(toolErrorBody(error));
-    return failureResult({ code: "WC002", message_es: "Error interno al ejecutar la herramienta." });
+    if (error instanceof DomainError) return failureResult(toolErrorBody(error));
+    return failureResult(toolErrorBody(domainError("WC002", undefined, "Error interno al ejecutar la herramienta.")));
   }
 }
 
