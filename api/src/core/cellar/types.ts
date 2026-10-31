@@ -263,13 +263,128 @@ export interface CleaningRequest extends OperationHeader {
   };
 }
 
+/** Phase of a lot inside a fermenter. Null means no phase has been recorded. */
+export type FermentationPhaseName =
+  | "alcoholic"
+  | "alcoholic_done"
+  | "malolactic"
+  | "malolactic_done";
+
+export interface PressingInputLine {
+  role: "input";
+  lot: LotRef;
+  vessel_id: string | null;
+  location_id: string;
+  product_state: "grape" | "must";
+  mass_g: number;
+  volume_ml: number;
+}
+
+export interface PressingOutputLine {
+  role: "output";
+  lot: LotRef;
+  vessel_id: string;
+  volume_ml: number;
+  product_state: "must";
+}
+
+/** Solids (orujo). Mass only: it does not move the wine ledger. */
+export interface PressingPomaceLine {
+  role: "pomace";
+  lot: LotRef;
+  location_id: string;
+  mass_g: number;
+}
+
+export interface PressingVolumeLossLine {
+  role: "loss";
+  lot: LotRef;
+  vessel_id: string;
+  volume_ml: number;
+  loss_kind: LossKind;
+  product_state: "must";
+}
+
+export type PressingLine =
+  | PressingInputLine
+  | PressingOutputLine
+  | PressingPomaceLine
+  | PressingVolumeLossLine;
+
+/** Prensado (`crushing_pressing`): uva o mosto → mosto + orujo. */
+export interface PressingRequest extends OperationHeader {
+  op_type: "crushing_pressing";
+  lines: readonly PressingLine[];
+}
+
+export interface FermentationStartRequest extends OperationHeader {
+  op_type: "fermentation_start" | "malolactic_start";
+  vessel_id: string;
+  lot: LotRef;
+  current_phase: FermentationPhaseName | null;
+}
+
+export interface FermentationVolumeLine {
+  role: "input" | "output" | "loss";
+  lot: LotRef;
+  vessel_id: string;
+  volume_ml: number;
+  product_state: BulkProductState;
+  loss_kind: LossKind | null;
+}
+
+/** Fin de FA (`fermentation_end`) o fin de FML (`malolactic_end`). */
+export interface FermentationEndRequest extends OperationHeader {
+  op_type: "fermentation_end" | "malolactic_end";
+  lines: readonly FermentationVolumeLine[];
+  current_phase: FermentationPhaseName | null;
+  /** numeric(5,2). Obligatorio en el fin de la fermentación alcohólica (A15). */
+  abv_pct: string | null;
+}
+
 export type OperationRequest =
   | TransferRequest
   | BlendRequest
   | AdditionRequest
   | BottlingRequest
   | LossRequest
-  | CleaningRequest;
+  | CleaningRequest
+  | PressingRequest
+  | FermentationStartRequest
+  | FermentationEndRequest;
+
+/** Hecho de SILICIE que no es una fila de inventory.fiscal_move (A14 uva, A32 elaboración). */
+export interface SilicieFactDraft {
+  kind: "crushing" | "elaboration_loss";
+  mass_g: number | null;
+  volume_ml: number | null;
+  ledger_reference: string | null;
+  abv_pct: string | null;
+}
+
+export interface LotKindUpdate {
+  lot_id: string;
+  kind: LotKind;
+}
+
+export interface PressingYieldDraft {
+  input_state: "grape" | "must";
+  input_mass_g: number;
+  input_volume_ml: number;
+  must_volume_ml: number;
+  pomace_mass_g: number;
+  must_yield: string;
+  must_yield_unit: "l_per_100kg" | "volume_ratio";
+  pomace_yield: string;
+  pomace_yield_unit: "mass_ratio" | "g_per_l";
+}
+
+export interface FermentationPhaseDraft {
+  lot_id: string;
+  vessel_id: string;
+  phase: FermentationPhaseName;
+  previous_phase: FermentationPhaseName | null;
+}
 
 export interface CellarState {
   vessels: ReadonlyMap<string, VesselState>;
@@ -308,6 +423,7 @@ export interface FiscalMoveDraft {
   fiscal_date: string;
   physical_date: string | null;
   move_type:
+    | "production"
     | "packaging_out_bulk"
     | "packaging_in_packaged"
     | "loss"
@@ -367,6 +483,10 @@ export interface PlanSuccess {
   newLots: readonly LotDraft[];
   lotEdges: readonly LotEdgeDraft[];
   vesselsAfter: readonly VesselStateAfter[];
+  silicieFacts: readonly SilicieFactDraft[];
+  lotUpdates: readonly LotKindUpdate[];
+  pressingYield: PressingYieldDraft | null;
+  fermentationPhase: FermentationPhaseDraft | null;
 }
 
 export interface PlanFailure {

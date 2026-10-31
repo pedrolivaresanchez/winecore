@@ -9,7 +9,6 @@ const TIMESTAMP_TYPES = new Set<DuckDBTypeId>([
   DuckDBTypeId.TIMESTAMP_MS,
   DuckDBTypeId.TIMESTAMP_NS,
   DuckDBTypeId.TIMESTAMP_TZ,
-  DuckDBTypeId.TIMESTAMP_TZ_NS,
 ]);
 
 function plainValue(
