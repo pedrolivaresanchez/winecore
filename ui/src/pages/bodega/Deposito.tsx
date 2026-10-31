@@ -19,6 +19,8 @@ import { BarrelMenu, BarrelRetireHost } from '@/pages/bodega-plano/BarrelMenu'
 import { BarrelPane } from '@/pages/bodega-plano/BarrelPane'
 import { DemijohnPane } from '@/pages/bodega-plano/DemijohnPane'
 import { vesselTabs, type VesselTabId } from '@/pages/bodega-plano/text'
+import { LotAnalyses } from '@/pages/elaboracion/Analiticas'
+import { LotCurve } from '@/pages/elaboracion/Lecturas'
 
 type HistoryPage = { items: CellarOperation[] }
 
@@ -228,10 +230,10 @@ function Loaded({
           {tab === 'damajuana' ? <DemijohnPane code={vessel.code} canOperate={canOperate} /> : null}
 
           {tab === 'lecturas' ? (
-            <EmptyState size="sm" title={copy.cellar.emptyReadings} description={copy.cellar.emptyReadingsHint} />
+            inside ? <LotCurve lotCode={inside.lot_code} /> : <EmptyState size="sm" title={copy.cellar.emptyReadings} description={copy.cellar.emptyReadingsHint} />
           ) : null}
           {tab === 'analiticas' ? (
-            <EmptyState size="sm" title={copy.cellar.emptyAnalyses} description={copy.cellar.emptyAnalysesHint} />
+            inside ? <LotAnalyses me={me} lotCode={inside.lot_code} /> : <EmptyState size="sm" title={copy.cellar.emptyAnalyses} description={copy.cellar.emptyAnalysesHint} />
           ) : null}
           {tab === 'limpiezas' ? (
             cleanings.length === 0 ? (
