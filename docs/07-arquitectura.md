@@ -122,6 +122,7 @@ Permisos (claves usadas por `requirePermission`). ✔ = sí; E = solo en las ent
 | `billing.write` | ✔ | ✔ | ✔ | — | — | — | — | con confirmación (borradores) |
 | `billing.issue` (una factura) | ✔ | ✔ | ✔ | — | — | — | — | **no** |
 | `billing.void` | ✔ | E | — | — | — | — | — | no |
+| `billing.deliver` (registrar la entrega de una factura que envió CVBOT) | ✔ | — | ✔ | — | — | — | — | ✔ (CVBOT) |
 | `purchasing.write` / `purchasing.approve` | ✔ / ✔ | — / ✔ | ✔ / — | — | — | — | `ocr-gastos`: `purchasing.write` | con confirmación / no |
 | `finance.write` / `finance.manage` | ✔ / ✔ | — | ✔ / — | — | — | — | — | con confirmación / no |
 | `inventory.count` | ✔ | — | ✔ | ✔ | — | — | — | — |
@@ -170,7 +171,7 @@ sequenceDiagram
 | Junta SISV | salida | *Computer use* | M3 | `sisv.md`, ADR 005 |
 | AecocEDI | entrada/salida | *Computer use* + ficha para teclear | M3 | `aecoc-edi.md`, ADR 006 |
 | Microsoft 365 (correo) | entrada | Graph **solo lectura** (`Mail.Read` de un buzón concreto) para detectar avisos (AecocEDI, facturas de proveedor reenviadas) | M2 | Q-014 |
-| Microsoft 365 (envío) | salida | Envío automático de cada factura emitida desde el buzón de facturación (Graph, permiso de envío solo de ese buzón), con registro, avisos de fallo o rebote y reenvío (decisión de Pedro) | M2 | Q-014 |
+| Entrega de facturas | salida (vía CVBOT) | Evento `billing.invoice.issued` a CVBOT; CVBOT pide el PDF y los datos por MCP, envía desde el Outlook de Pedro y marca enviada o fallida; aviso si no se marca en X horas (decisión de Pedro). WineCore no envía correos | M2 | Q-014, `13-mcp.md` §4.5 |
 | OneDrive | salida | Copia de consulta de PDF (opcional) | Posterior | ADR 002 |
 | Stripe (web nueva) | entrada | Webhook firmado → pedido `source = 'web'` | M3 | Q-018 |
 | Bancos | entrada | Importación de extractos (Norma 43/CAMT/CSV) | M6 | — |

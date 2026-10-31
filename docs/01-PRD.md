@@ -201,9 +201,9 @@ CRM con embudos, proyectos y horas, RR. HH. y nóminas, FACe (no se usa), la tie
 - Dado ventas de CVPO con stock de P.O en octubre · Cuando llega el 1 de noviembre · Entonces se cierra la liquidación de octubre, se crea el borrador de factura recapitulativa P.O → CVPO con **fecha de operación 31 de octubre** y la tarifa vigente, y se pide aprobación con aviso si quedan menos de 3 días para el día 16 (RD 1619/2012, arts. 11 y 13: se expide antes del día 16 de noviembre, con la fecha real de expedición).
 - Cuando se aprueba · Entonces se emite la factura de P.O y se crea la factura recibida espejo en CVPO.
 
-**US-FACT-10 · Envío automático al cliente** (M2; decisión de Pedro del 31-10-2026)
-- Dada una factura emitida · Entonces se envía sola por correo, con el PDF, a las direcciones de facturación del cliente (personas que reciben facturas) desde el buzón de facturación, y queda en el registro de envíos (cuándo, a quién y resultado). Sin destinatario, queda "sin destinatario" y avisa.
-- Cuando un envío falla o rebota · Entonces la factura queda "envío fallido", se avisa en el panel y a CVBOT, y puedo reenviarla (a las mismas u otras direcciones); cada reenvío queda registrado.
+**US-FACT-10 · Envío automático al cliente vía CVBOT** (M2; decisiones de Pedro del 31-10-2026)
+- Dada una factura emitida · Entonces queda "pendiente de envío" y WineCore avisa a CVBOT (evento `billing.invoice.issued`); CVBOT obtiene el PDF, el correo de facturación del cliente y el asunto y el texto en español, la envía desde el Outlook de Pedro y marca el resultado (enviada con identificador del mensaje y hora, o fallida). WineCore no envía correos.
+- Si no se marca como enviada en el plazo configurado (ajuste `billing.invoice_delivery_alert_hours`, 24 h por defecto) o se marca como fallida · Entonces se avisa en el panel y a CVBOT, y se puede pedir un reenvío; cada intento queda en el registro de envíos.
 - Las presentaciones fiscales y de impuestos especiales siguen necesitando revisión humana (sin cambios).
 
 **US-FACT-11 · Libro de emitidas** (M2)

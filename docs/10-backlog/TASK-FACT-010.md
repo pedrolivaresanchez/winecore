@@ -4,7 +4,7 @@
 - Depende de: TASK-FACT-004
 
 ## Objetivo
-Envío **automático** de cada factura emitida por correo, con el PDF, al correo de facturación del cliente (decisión de Pedro, 31-10-2026), con registro de envíos (`billing.invoice_delivery`), avisos de fallo o rebote (panel y CVBOT) y reenvío manual; descarga del PDF siempre disponible.
+Entrega **automática vía CVBOT** de cada factura emitida (decisión de Pedro, 31-10-2026): estado pendiente de envío en `billing.invoice_delivery`, evento `billing.invoice.issued` a CVBOT, herramientas MCP de `13-mcp.md` §4.5 (pendientes, PDF con correo de facturación y texto en español, marcar enviada o fallida), aviso si no se marca en `billing.invoice_delivery_alert_hours` y reenvío (nuevo intento) desde la web. WineCore no envía correos; sin Microsoft Graph.
 
 ## Contexto
 Reglas duras 0.4 y 0.5 · UI-13.
