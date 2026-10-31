@@ -87,6 +87,7 @@ export function InvoiceList({ me }: { me: Me }) {
   const from = params.get('from') ?? ''
   const to = params.get('to') ?? ''
   const deliveryFilter = params.get('delivery') ?? ''
+  const verifactu = params.get('verifactu') ?? ''
   const [q, setQ] = useState(params.get('q') ?? '')
   const [debounced, setDebounced] = useState(q.trim().toLowerCase())
   const [items, setItems] = useState<InvoiceListItem[]>([])
@@ -136,8 +137,16 @@ export function InvoiceList({ me }: { me: Me }) {
 
   const entityId = entityCode ? entities.find((item) => item.code === entityCode)?.id ?? '' : ''
   const query = useMemo<InvoiceQuery>(
-    () => ({ status, entity: entityId, customerId, from, to, limit: 50 }),
-    [customerId, entityId, from, status, to],
+    () => ({
+      status,
+      entity: entityId,
+      customerId,
+      from,
+      to,
+      verifactuStatus: verifactu === 'pendiente' ? 'pending' : undefined,
+      limit: 50,
+    }),
+    [customerId, entityId, from, status, to, verifactu],
   )
 
   useEffect(() => {
@@ -256,10 +265,11 @@ export function InvoiceList({ me }: { me: Me }) {
       },
       { id: 'type', header: copy.facturas.type, cell: (row) => row.invoice_type },
     ]
-    return all.filter((column) => !hidden.has(column.id as ColumnId))
-  }, [deliveryOf, hidden])
+    const concealed = verifactu === 'pendiente' ? new Set([...hidden].filter((id) => id !== 'verifactu')) : hidden
+    return all.filter((column) => !concealed.has(column.id as ColumnId))
+  }, [deliveryOf, hidden, verifactu])
 
-  const filtersActive = Boolean(debounced || status || entityCode || customerId || from || to || deliveryFilter)
+  const filtersActive = Boolean(debounced || status || entityCode || customerId || from || to || deliveryFilter || verifactu)
   const screen = loading ? 'facturas-cargando' : visible.length === 0 ? 'facturas-vacio' : 'facturas'
   const labels: Record<ColumnId, string> = {
     number: copy.facturas.number,
@@ -407,6 +417,13 @@ export function InvoiceList({ me }: { me: Me }) {
           </Select>
           <DatePicker size="sm" value={from || null} placeholder={copy.facturas.from} labels={DATE_LABELS} onChange={(value) => setFilter('from', value ?? '')} />
           <DatePicker size="sm" value={to || null} placeholder={copy.facturas.to} labels={DATE_LABELS} onChange={(value) => setFilter('to', value ?? '')} />
+          <Chip
+            pressed={verifactu === 'pendiente'}
+            active={verifactu === 'pendiente'}
+            onClick={() => setFilter('verifactu', verifactu === 'pendiente' ? '' : 'pendiente')}
+          >
+            {copy.facturas.verifactu}
+          </Chip>
           <Select
             id="filtro-envio"
             size="sm"

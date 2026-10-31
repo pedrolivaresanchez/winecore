@@ -49,10 +49,10 @@ export const attentionHref = {
   approvals: '/aprobaciones',
   deadlines: '/regulatorio',
   receivables: '/cobros',
-  verifactu: '/facturas/verifactu',
+  verifactu: '/facturas?verifactu=pendiente',
   submissions: '/regulatorio',
   cellar: '/bodega/depositos',
-  stock: '/stock/conciliacion',
+  stock: '/stock',
 } as const
 
 function emptyBlock(): AttentionBlock {

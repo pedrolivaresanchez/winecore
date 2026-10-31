@@ -187,6 +187,7 @@ export type InvoiceQuery = {
   customerId?: string
   from?: string
   to?: string
+  verifactuStatus?: string
   cursor?: string | null
   limit?: number
 }
