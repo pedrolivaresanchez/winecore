@@ -54,6 +54,22 @@ const CATALOG = {
   WC_VESSEL_NOT_IN_SERVICE: [409, 'El recipiente no está en servicio'],
   WC_ILLEGAL_TRANSITION: [409, 'La transición de estado no está permitida'],
   WC_ECO_MIX: [422, 'No se puede ensamblar un lote ecológico con uno que no lo es'],
+  // Exportación (TASK-FACT-013)
+  WC_INV_ENTITY_EORI_REQUIRED: [422, 'La factura de exportación no se emite: falta el EORI de la entidad.'],
+  WC_EXPORT_NOT_READY: [422, 'La factura de exportación no está lista'],
+  WC_REG_EAD_REQUIRED: [409, 'Hace falta el ARC (e-DA) antes de expedir'],
+  WC_IC_NO_TARIFF: [422, 'No hay tarifa intercompañía vigente'],
+  // Intercompañía (TASK-CAT-003, TASK-FACT-009)
+  WC_IC_TARIFF_MISSING: [422, 'Falta tarifa intercompañía'],
+  WC_IC_TARIFF_OVERLAP: [409, 'La vigencia se solapa con otra tarifa intercompañía activa'],
+  WC_IC_TARIFF_LOCKED: [409, 'La tarifa activa no se edita'],
+  WC_IC_ADVISOR_REQUIRED: [422, 'Falta la referencia de validación del asesor'],
+  WC_IC_BELOW_COST: [422, 'El precio queda por debajo del coste estándar'],
+  WC_IC_CUSTOMER_MISSING: [422, 'Falta el contacto de la entidad compradora'],
+  WC_IC_PERIOD: [422, 'El periodo no es un mes válido'],
+  WC_IC_PERIOD_OVERLAP: [409, 'El periodo se solapa con otra liquidación'],
+  WC_INV_LOT_REQUIRED: [422, 'Indica el lote de la línea'],
+  WC_OCR_UNAVAILABLE: [503, 'La extracción de la factura no está disponible'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;
@@ -116,9 +132,9 @@ export function errorBody(error: DomainError): {
 }
 
 function hasDetails(details: unknown): boolean {
-  if (details === undefined) return false;
+  if (details === undefined || details === null) return false;
   if (Array.isArray(details)) return details.length > 0;
-  if (details && typeof details === 'object') return Object.keys(details).length > 0;
+  if (typeof details === 'object') return Object.keys(details).length > 0;
   return true;
 }
 

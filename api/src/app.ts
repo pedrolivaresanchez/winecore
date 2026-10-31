@@ -5,6 +5,10 @@ import { createTimbalAuth } from './auth/timbal';
 import type { FetchLike } from './core/db/timbal';
 import type { Config } from './config';
 import type { Writer } from './core/db/writer';
+import type { SupplierInvoiceApprovalHook } from './core/purchasing/approval';
+import { noopApprovalHook } from './core/purchasing/approval';
+import type { OcrWorkforce } from './core/purchasing/extract';
+import { ocrFromEnv } from './core/purchasing/timbal';
 import { asDomainError, domainError, errorBody } from './core/errors';
 import { listAudit, verifyAudit } from './routes/audit';
 import {
@@ -42,16 +46,50 @@ import {
   patchContact,
   patchPerson,
 } from './routes/contacts';
+import {
+  approveExpense,
+  captureExpense,
+  exportExpenses,
+  getExpense,
+  listExpenses,
+  patchExpense,
+  rejectExpense,
+  validateExpense,
+} from './routes/expenses';
+import {
+  getExportDocuments,
+  postExportChecklist,
+  postExportDocuments,
+  postExportReadiness,
+  putExportDocuments,
+} from './routes/export-docs';
+import { materialRoutes } from './routes/materials';
 import { health } from './routes/health';
+import {
+  getSettlement,
+  getTariffs,
+  patchTariff,
+  postActivateTariff,
+  postClosePeriod,
+  postCloseSettlement,
+  postInvoiceRequest,
+  postRetireTariff,
+  postSettlement,
+  postTariff,
+} from './routes/intercompany';
 import { me } from './routes/me';
 import { listNotifications, readAllNotifications, readNotification } from './routes/notifications';
+import { getReport } from './routes/reports';
 import { createNumberSeries, deactivateNumberSeries, listNumberSeries } from './routes/series';
 import {
   closeInventoryCountRoute,
+  getInventoryCountRoute,
+  listInventoryCountsRoute,
   postInventoryCountRoute,
   putInventoryCountLinesRoute,
   submitInventoryCountRoute,
 } from './routes/stock-counts';
+import { salesRoutes } from './routes/sales';
 import { stockBalances, stockFiscalBalances, stockInspection, stockMoves } from './routes/stock';
 
 export interface AppDeps {
@@ -61,6 +99,8 @@ export interface AppDeps {
   fetchImpl?: FetchLike;
   /** Reloj inyectable (tests). Por defecto el reloj del sistema. */
   now?: () => Date;
+  ocr?: OcrWorkforce;
+  approvalHook?: SupplierInvoiceApprovalHook;
 }
 
 const startedAt = new WeakMap<Request, number>();
@@ -75,6 +115,7 @@ export function createApp(deps: AppDeps) {
     now: deps.now ?? (() => new Date()),
   };
   const http = { config: deps.config, writer: deps.writer, now: deps.now ?? (() => new Date()) };
+  const expenses = { ocr: deps.ocr ?? ocrFromEnv(), approvalHook: deps.approvalHook ?? noopApprovalHook };
   const app = new Elysia(deps.config.apiBasePath ? { prefix: deps.config.apiBasePath } : {})
     .use(cors())
     .onRequest(({ request, set }) => {
@@ -110,6 +151,7 @@ export function createApp(deps: AppDeps) {
         request_id: requestIdFor(request),
         code: 'WC_INTERNAL',
         level: 'error',
+        message: error instanceof Error ? error.message : 'Error interno',
       }));
       set.status = 500;
       return { code: 'WC_INTERNAL', message: 'Error interno' };
@@ -119,6 +161,24 @@ export function createApp(deps: AppDeps) {
     .get('/healthcheck', () => ({ status: 'ok' }))
     .get('/v1/me', ({ request }) => me(deps.writer, request), {
       beforeHandle: requireUser(guardDeps),
+    })
+    .get('/v1/reports/sales.csv', ({ request }) => getReport(deps.writer, request, 'sales'), {
+      beforeHandle: requirePermission(guardDeps, 'reports.read'),
+    })
+    .get('/v1/reports/expenses.csv', ({ request }) => getReport(deps.writer, request, 'expenses'), {
+      beforeHandle: requirePermission(guardDeps, 'reports.read'),
+    })
+    .get('/v1/reports/stock.csv', ({ request }) => getReport(deps.writer, request, 'stock'), {
+      beforeHandle: requirePermission(guardDeps, 'reports.read'),
+    })
+    .get('/v1/reports/sales', ({ request }) => getReport(deps.writer, request, 'sales'), {
+      beforeHandle: requirePermission(guardDeps, 'reports.read'),
+    })
+    .get('/v1/reports/expenses', ({ request }) => getReport(deps.writer, request, 'expenses'), {
+      beforeHandle: requirePermission(guardDeps, 'reports.read'),
+    })
+    .get('/v1/reports/stock', ({ request }) => getReport(deps.writer, request, 'stock'), {
+      beforeHandle: requirePermission(guardDeps, 'reports.read'),
     })
     .get('/v1/audit', ({ request }) => listAudit(deps.writer, request), {
       beforeHandle: requirePermission(guardDeps, 'audit.read'),
@@ -265,6 +325,12 @@ export function createApp(deps: AppDeps) {
     .get('/v1/stock/moves', ({ request }) => stockMoves(deps.writer, request), {
       beforeHandle: requirePermission(guardDeps, 'inventory.read'),
     })
+    .get('/v1/inventory-counts', ({ request }) => listInventoryCountsRoute(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.read'),
+    })
+    .get('/v1/inventory-counts/:id', ({ params }) => getInventoryCountRoute(deps.writer, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.read'),
+    })
     .post('/v1/inventory-counts', ({ request }) => postInventoryCountRoute(deps.writer, request), {
       beforeHandle: requirePermission(guardDeps, 'inventory.count'),
     })
@@ -278,6 +344,89 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requirePermission(guardDeps, 'inventory.count'),
     })
     // Bodega: ubicaciones, recipientes, lotes y operaciones.
-    .use(cellarRoutes({ writer: deps.writer, guard: guardDeps, publicUrl: deps.config.appPublicUrl }));
+    .use(cellarRoutes({ writer: deps.writer, guard: guardDeps, publicUrl: deps.config.appPublicUrl }))
+    // Exportación (TASK-FACT-013). El ajuste es solo del titular y queda auditado.
+    .get('/v1/export/documents-by-country', () => getExportDocuments(deps.writer), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .put('/v1/export/documents-by-country', ({ request }) => putExportDocuments(deps.writer, request), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .post('/v1/export/readiness', ({ request }) => postExportReadiness(deps.writer, request), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .post('/v1/export/checklist', ({ request }) => postExportChecklist(deps.writer, request), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .post('/v1/export/documents', ({ request }) => postExportDocuments(deps.writer, request), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .use(materialRoutes(guardDeps))
+    // Ventas: reglas D3, presupuestos, pedidos y albaranes.
+    .use(salesRoutes(deps.writer, guardDeps))
+    // Intercompañía (TASK-CAT-003, TASK-FACT-009). La tarifa la cambia solo dirección.
+    .get('/v1/intercompany/tariffs', () => getTariffs(deps.writer), {
+      beforeHandle: requirePermission(guardDeps, 'billing.read'),
+    })
+    .post('/v1/intercompany/tariffs', async ({ request, set }) => {
+      const result = await postTariff(deps.writer, request);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .patch('/v1/intercompany/tariffs/:id', ({ request, params }) => patchTariff(deps.writer, request, params.id), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .post('/v1/intercompany/tariffs/:id/activate', ({ request, params }) => postActivateTariff(deps.writer, request, params.id), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .post('/v1/intercompany/tariffs/:id/retire', ({ request, params }) => postRetireTariff(deps.writer, request, params.id), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .get('/v1/intercompany/settlements', ({ request }) => getSettlement(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'billing.read'),
+    })
+    .post('/v1/intercompany/settlements/close', ({ request }) => postClosePeriod(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'billing.write'),
+    })
+    .post('/v1/intercompany/settlements', ({ request }) => postSettlement(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'billing.write'),
+    })
+    .post('/v1/intercompany/settlements/:id/close', ({ request, params }) => postCloseSettlement(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.write'),
+    })
+    .post('/v1/intercompany/settlements/:id/invoice-request', ({ request, params }) => postInvoiceRequest(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.write'),
+    })
+    // Gastos (TASK-COMP-001..003). export y capture van antes de /:id.
+    .get('/v1/supplier-invoices/export', ({ request }) => exportExpenses(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'purchasing.read'),
+    })
+    .get('/v1/supplier-invoices', ({ request }) => listExpenses(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'purchasing.read'),
+    })
+    .post('/v1/supplier-invoices/capture', async ({ request, set }) => {
+      const result = await captureExpense(deps.writer, request, expenses);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'purchasing.write'),
+    })
+    .get('/v1/supplier-invoices/:id', ({ request, params }) => getExpense(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'purchasing.read'),
+    })
+    .patch('/v1/supplier-invoices/:id', ({ request, params }) => patchExpense(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'purchasing.write'),
+    })
+    .post('/v1/supplier-invoices/:id/validate', ({ request, params }) => validateExpense(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'purchasing.write'),
+    })
+    .post('/v1/supplier-invoices/:id/approve', ({ request, params }) => approveExpense(deps.writer, request, params.id, expenses), {
+      beforeHandle: requirePermission(guardDeps, 'purchasing.approve'),
+    })
+    .post('/v1/supplier-invoices/:id/reject', ({ request, params }) => rejectExpense(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'purchasing.write'),
+    });
   return app;
 }

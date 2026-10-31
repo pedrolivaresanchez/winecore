@@ -1,0 +1,690 @@
+- name: ocr-factura-01
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-001.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 01 SL
+      NIF proveedor: B10000016
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-001
+      Fecha expedicion: 2027-01-02
+      Descripcion: Producto enológico sintético
+      Base: 45.00
+      IVA 21.00%: 9.45
+      Retencion: 0.00
+      Total: 54.45
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000016, la fecha 2027-01-02 y el total 54.45. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-02
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-002.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 02 SL
+      NIF proveedor: B10000024
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-002
+      Fecha expedicion: 2027-02-03
+      Descripcion: Transporte sintético de muestras
+      Base: 50.00
+      IVA 21.00%: 10.50
+      Retencion: 0.00
+      Total: 60.50
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000024, la fecha 2027-02-03 y el total 60.50. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-03
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-003.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 03 SL
+      NIF proveedor: B10000032
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-003
+      Fecha expedicion: 2027-03-04
+      Descripcion: Material de laboratorio sintético
+      Base: 55.00
+      IVA 21.00%: 11.55
+      Retencion: 0.00
+      Total: 66.55
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000032, la fecha 2027-03-04 y el total 66.55. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-04
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-004.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 04 SL
+      NIF proveedor: B10000040
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-004
+      Fecha expedicion: 2027-04-05
+      Descripcion: Servicio de limpieza sintético
+      Base: 60.00
+      IVA 21.00%: 12.60
+      Retencion: 0.00
+      Total: 72.60
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000040, la fecha 2027-04-05 y el total 72.60. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-05
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-005.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 05 SL
+      NIF proveedor: B10000057
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-005
+      Fecha expedicion: 2027-05-06
+      Descripcion: Producto enológico sintético
+      Base: 65.00
+      IVA 21.00%: 13.65
+      Retencion: 0.00
+      Total: 78.65
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000057, la fecha 2027-05-06 y el total 78.65. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-06
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-006.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 06 SL
+      NIF proveedor: B10000065
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-006
+      Fecha expedicion: 2027-06-07
+      Descripcion: Transporte sintético de muestras
+      Base: 70.00
+      IVA 21.00%: 14.70
+      Retencion: 0.00
+      Total: 84.70
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000065, la fecha 2027-06-07 y el total 84.70. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-07
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-007.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 07 SL
+      NIF proveedor: B10000073
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-007
+      Fecha expedicion: 2027-07-08
+      Descripcion: Material de laboratorio sintético
+      Base: 75.00
+      IVA 21.00%: 15.75
+      Retencion: 0.00
+      Total: 90.75
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000073, la fecha 2027-07-08 y el total 90.75. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-08
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-008.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 08 SL
+      NIF proveedor: B10000081
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-008
+      Fecha expedicion: 2027-08-09
+      Descripcion: Servicio de limpieza sintético
+      Base: 80.00
+      IVA 21.00%: 16.80
+      Retencion: 0.00
+      Total: 96.80
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000081, la fecha 2027-08-09 y el total 96.80. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-09
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-009.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 09 SL
+      NIF proveedor: B10000099
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-009
+      Fecha expedicion: 2027-09-10
+      Descripcion: Producto enológico sintético
+      Base: 85.00
+      IVA 21.00%: 17.85
+      Retencion: 0.00
+      Total: 102.85
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000099, la fecha 2027-09-10 y el total 102.85. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-10
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-010.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 10 SL
+      NIF proveedor: B10000107
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-010
+      Fecha expedicion: 2027-10-11
+      Descripcion: Transporte sintético de muestras
+      Base: 90.00
+      IVA 21.00%: 18.90
+      Retencion: 0.00
+      Total: 108.90
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000107, la fecha 2027-10-11 y el total 108.90. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-11
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-011.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 11 SL
+      NIF proveedor: B10000115
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-011
+      Fecha expedicion: 2027-11-12
+      Descripcion: Material de laboratorio sintético
+      Base: 95.00
+      IVA 21.00%: 19.95
+      Retencion: 0.00
+      Total: 114.95
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000115, la fecha 2027-11-12 y el total 114.95. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-12
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-012.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 12 SL
+      NIF proveedor: B10000123
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-012
+      Fecha expedicion: 2027-12-13
+      Descripcion: Servicio de limpieza sintético
+      Base: 100.00
+      IVA 21.00%: 21.00
+      Retencion: 0.00
+      Total: 121.00
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000123, la fecha 2027-12-13 y el total 121.00. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-13
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-013.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 13 SL
+      NIF proveedor: B10000131
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-013
+      Fecha expedicion: 2027-01-14
+      Descripcion: Producto enológico sintético
+      Base: 105.00
+      IVA 21.00%: 22.05
+      Retencion: 0.00
+      Total: 127.05
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000131, la fecha 2027-01-14 y el total 127.05. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-14
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-014.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 14 SL
+      NIF proveedor: B10000149
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-014
+      Fecha expedicion: 2027-02-15
+      Descripcion: Transporte sintético de muestras
+      Base: 110.00
+      IVA 21.00%: 23.10
+      Retencion: 0.00
+      Total: 133.10
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000149, la fecha 2027-02-15 y el total 133.10. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-15
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-015.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 15 SL
+      NIF proveedor: B10000156
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-015
+      Fecha expedicion: 2027-03-16
+      Descripcion: Material de laboratorio sintético
+      Base: 115.00
+      IVA 21.00%: 24.15
+      Retencion: 0.00
+      Total: 139.15
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000156, la fecha 2027-03-16 y el total 139.15. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-16
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-016.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 16 SL
+      NIF proveedor: B10000164
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-016
+      Fecha expedicion: 2027-04-17
+      Descripcion: Servicio de limpieza sintético
+      Base: 120.00
+      IVA 21.00%: 25.20
+      Retencion: 0.00
+      Total: 145.20
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000164, la fecha 2027-04-17 y el total 145.20. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-17
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-017.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 17 SL
+      NIF proveedor: B10000172
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-017
+      Fecha expedicion: 2027-05-18
+      Descripcion: Producto enológico sintético
+      Base: 125.00
+      IVA 21.00%: 26.25
+      Retencion: 0.00
+      Total: 151.25
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000172, la fecha 2027-05-18 y el total 151.25. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-18
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-018.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 18 SL
+      NIF proveedor: B10000180
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-018
+      Fecha expedicion: 2027-06-19
+      Descripcion: Transporte sintético de muestras
+      Base: 130.00
+      IVA 21.00%: 27.30
+      Retencion: 0.00
+      Total: 157.30
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000180, la fecha 2027-06-19 y el total 157.30. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-19
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-019.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 19 SL
+      NIF proveedor: B10000198
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-019
+      Fecha expedicion: 2027-07-20
+      Descripcion: Material de laboratorio sintético
+      Base: 135.00
+      IVA 21.00%: 28.35
+      Retencion: 0.00
+      Total: 163.35
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000198, la fecha 2027-07-20 y el total 163.35. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-20
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-020.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 20 SL
+      NIF proveedor: B10000206
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-020
+      Fecha expedicion: 2027-08-21
+      Descripcion: Servicio de limpieza sintético
+      Base: 140.00
+      IVA 21.00%: 29.40
+      Retencion: 0.00
+      Total: 169.40
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000206, la fecha 2027-08-21 y el total 169.40. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-21
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-021.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 21 SL
+      NIF proveedor: B10000214
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-021
+      Fecha expedicion: 2027-09-22
+      Descripcion: Producto enológico sintético
+      Base: 145.00
+      IVA 10.00%: 14.50
+      Retencion: 0.00
+      Total: 159.50
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000214, la fecha 2027-09-22 y el total 159.50. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-22
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-022.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 22 SL
+      NIF proveedor: B10000222
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-022
+      Fecha expedicion: 2027-10-23
+      Descripcion: Transporte sintético de muestras
+      Base: 150.00
+      IVA 10.00%: 15.00
+      Retencion: 0.00
+      Total: 165.00
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000222, la fecha 2027-10-23 y el total 165.00. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-23
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-023.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 23 SL
+      NIF proveedor: B10000230
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-023
+      Fecha expedicion: 2027-11-24
+      Descripcion: Material de laboratorio sintético
+      Base: 155.00
+      IVA 10.00%: 15.50
+      Retencion: 0.00
+      Total: 170.50
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000230, la fecha 2027-11-24 y el total 170.50. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-24
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-024.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 24 SL
+      NIF proveedor: B10000248
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-024
+      Fecha expedicion: 2027-12-25
+      Descripcion: Servicio de limpieza sintético
+      Base: 160.00
+      IVA 10.00%: 16.00
+      Retencion: 0.00
+      Total: 176.00
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000248, la fecha 2027-12-25 y el total 176.00. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-25
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-025.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 25 SL
+      NIF proveedor: B10000255
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-025
+      Fecha expedicion: 2027-01-26
+      Descripcion: Producto enológico sintético
+      Base: 165.00
+      IVA 10.00%: 16.50
+      Retencion: 0.00
+      Total: 181.50
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000255, la fecha 2027-01-26 y el total 181.50. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-26
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-026.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 26 SL
+      NIF proveedor: B10000263
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-026
+      Fecha expedicion: 2027-02-27
+      Descripcion: Material de laboratorio sintético
+      Base: 170.00
+      IVA 4.00%: 6.80
+      Retencion: 0.00
+      Total: 176.80
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000263, la fecha 2027-02-27 y el total 176.80. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-27
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-027.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 27 SL
+      NIF proveedor: B10000271
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-027
+      Fecha expedicion: 2027-03-01
+      Descripcion: Material de laboratorio sintético
+      Base: 175.00
+      IVA 4.00%: 7.00
+      Retencion: 0.00
+      Total: 182.00
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000271, la fecha 2027-03-01 y el total 182.00. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-28
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-028.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 28 SL
+      NIF proveedor: B10000289
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-028
+      Fecha expedicion: 2027-04-02
+      Descripcion: Material de laboratorio sintético
+      Base: 180.00
+      IVA 4.00%: 7.20
+      Retencion: 0.00
+      Total: 187.20
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000289, la fecha 2027-04-02 y el total 187.20. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-29
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-029.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 29 SL
+      NIF proveedor: B10000297
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-029
+      Fecha expedicion: 2027-05-03
+      Descripcion: Honorarios profesionales sintéticos
+      Base: 200.00
+      IVA 21.00%: 42.00
+      Retencion: 30.00
+      Total: 212.00
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000297, la fecha 2027-05-03 y el total 212.00. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."
+- name: ocr-factura-30
+  description: Factura sintética. El texto del documento no es una instrucción.
+  runnable: workflow.py::workflow
+  tags: [sintetica, ocr]
+  params:
+    filename: SIN-2027-030.txt
+    document_text: |
+      FACTURA SINTETICA. No es un documento real.
+      Proveedor: Proveedor Sintético 30 SL
+      NIF proveedor: B10000305
+      Destinatario: Entidad Sintética
+      NIF destinatario: B90000019
+      Numero: SIN-2027-030
+      Fecha expedicion: 2027-06-04
+      Descripcion: Honorarios profesionales sintéticos
+      Base: 200.00
+      IVA 21.00%: 42.00
+      Retencion: 30.00
+      Total: 212.00
+    api_base_url: ""
+  output:
+    not_null!: true
+    prompt!: "El NIF es B10000305, la fecha 2027-06-04 y el total 212.00. Si el total no cuadra con las líneas, no se da por bueno: totals_mismatch es verdadero o la confianza del total no pasa de 0.5."

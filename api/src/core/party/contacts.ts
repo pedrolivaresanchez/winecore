@@ -607,8 +607,6 @@ function contactAudit(input: ContactInput, tax: StoredTax) {
     payment_method: input.payment_method ?? null,
     payment_terms_days: input.payment_terms_days,
     notes: input.notes ?? null,
-    email: input.email ?? null,
-    phone: input.phone ?? null,
   };
 }
 

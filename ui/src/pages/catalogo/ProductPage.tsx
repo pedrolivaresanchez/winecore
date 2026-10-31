@@ -20,16 +20,18 @@ import { useApi } from "@/hooks/use-api";
 import { useMinWidth } from "@/hooks/use-media";
 import { copy } from "@/i18n";
 import { ApiError } from "@/lib/api";
+import { formatDecimalMoney } from "@/lib/format";
 import { allows } from "@/lib/permissions";
 import type { Me } from "@/lib/types";
 import { duplicateProduct, isStale, markGtinCurrent, moduleDisabled, setProductActive, updateProduct } from "@/pages/catalogo/api";
 import { CatalogAudit } from "@/pages/catalogo/components/CatalogAudit";
 import { SectionTabs } from "@/pages/catalogo/components/SectionTabs";
 import { StockPanel } from "@/pages/catalogo/components/StockPanel";
-import { formatAlcohol, formatPrice, formatQty } from "@/pages/catalogo/money";
+import { cmpDecimal, formatAlcohol, formatQty } from "@/pages/catalogo/money";
 import {
   formatCode,
   formatName,
+  gtinCurrent,
   inputFromProduct,
   kindLabel,
   productOrganic,
@@ -256,7 +258,7 @@ function Loaded({
         <StatusPill tone={product.is_active ? "success" : "neutral"}>{product.is_active ? "Activo" : "Inactivo"}</StatusPill>
         <StatusPill>{kindLabel(product.kind)}</StatusPill>
         {productOrganic(product, wines) ? <StatusPill tone="success">Ecológico</StatusPill> : null}
-        {product.gtin_is_current ? <StatusPill tone="info">GTIN vigente</StatusPill> : null}
+        {gtinCurrent(product) ? <StatusPill tone="info">GTIN vigente</StatusPill> : null}
         {warnings.map((warning) => (
           <StatusPill key={warning} tone="warning">
             {warning}
@@ -279,7 +281,7 @@ function Loaded({
       </div>
       {stale ? (
         <div role="alert" className="rounded-xl border border-destructive/40 bg-card p-3">
-          <p className="text-compact">Otra persona ha cambiado este producto. Recarga para ver los cambios.</p>
+          <p className="text-compact">WC_STALE_VERSION. El registro ha cambiado; vuelve a cargarlo.</p>
           <Button type="button" className="mt-3" onClick={onReload}>
             Recargar
           </Button>
@@ -361,7 +363,7 @@ function Loaded({
             <dl>
               <Line label="GTIN unidad" value={product.gtin || "—"} />
               <Line label="GTIN-14 caja" value={product.gtin_case || "—"} />
-              <Line label="GTIN vigente" value={product.gtin_is_current ? "Este producto" : "No"} />
+              <Line label="GTIN vigente" value={gtinCurrent(product) ? "Este producto" : "No"} />
             </dl>
           )}
           {canWrite && desktop ? (
@@ -465,15 +467,15 @@ function PricePanel({
             <li key={`${price.price_list_id}-${price.min_qty}`} className="flex items-baseline justify-between gap-3 border-t px-3 py-2">
               <div className="min-w-0">
                 <Link to={`/catalogo/tarifas/${price.price_list_id}`} className="text-compact font-medium">
-                  {price.price_list_name}
+                  {price.price_list_name || price.name || "Tarifa"}
                 </Link>
                 <p className="text-meta text-muted-foreground">
                   {price.tax_included ? "IVA incluido" : "IVA aparte"}
-                  {price.min_qty && price.min_qty !== "1" ? ` · desde ${formatQty(price.min_qty)}` : ""}
+                  {price.min_qty && cmpDecimal(price.min_qty, "1") === 1 ? ` · desde ${formatQty(price.min_qty)}` : ""}
                   {price.version ? ` · v${price.version}` : ""}
                 </p>
               </div>
-              <span className="shrink-0 text-compact font-medium tabular-nums">{formatPrice(price.unit_price)}</span>
+              <span className="shrink-0 text-compact font-medium tabular-nums">{formatDecimalMoney(price.unit_price)}</span>
             </li>
           ))}
         </ul>

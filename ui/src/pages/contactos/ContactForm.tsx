@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { Field } from "@/components/Field";
 import { fieldAria } from "@/lib/field";
+import { taxIdWarning } from "@/lib/tax-id";
 import { Input } from "@/components/ui/input";
 import { NativeSelect, TextArea } from "@/components/ui/native-field";
 import { copy, fill } from "@/i18n";
@@ -57,6 +58,8 @@ export function ContactForm({
     onChange({ ...value, [key]: next });
   }
 
+  const taxWarning = errors.tax_id ? null : taxIdWarning(value.tax_id ?? "", value.country_code);
+
   return (
     <div className={split ? "grid items-start gap-6 lg:grid-cols-2" : "grid gap-4"}>
       <div className="grid gap-4">
@@ -83,7 +86,7 @@ export function ContactForm({
         </div>
       </fieldset>
 
-      <Field id="legal_name" label="Nombre fiscal" error={errors.legal_name}>
+      <Field id="legal_name" label="Nombre fiscal" error={errors.legal_name} hint="Entre 2 y 120 caracteres.">
         <Input
           {...fieldAria("legal_name", errors.legal_name)}
           value={value.legal_name}
@@ -100,9 +103,15 @@ export function ContactForm({
           value={value.tax_id ?? ""}
           disabled={disabled}
           autoCapitalize="characters"
+          aria-describedby={errors.tax_id ? "tax_id-error" : taxWarning ? "tax_id-warning" : undefined}
           onChange={(event) => set("tax_id", event.target.value)}
         />
       </Field>
+      {taxWarning ? (
+        <p id="tax_id-warning" role="status" className="-mt-2 rounded-lg bg-status-warning px-3 py-2 text-compact text-status-warning-fg">
+          {taxWarning}
+        </p>
+      ) : null}
       {duplicate ? (
         <p id="duplicate-tax" role="alert" className="text-compact text-destructive">
           <Link className="underline" to={`/contactos/${duplicate.id}`}>
@@ -186,7 +195,7 @@ export function ContactForm({
             ))}
           </NativeSelect>
         </Field>
-        <Field id="payment_terms_days" label="Días de pago" error={errors.payment_terms_days}>
+        <Field id="payment_terms_days" label="Días de pago" error={errors.payment_terms_days} hint="Entre 0 y 180 días.">
           <Input
             {...fieldAria("payment_terms_days", errors.payment_terms_days)}
             inputMode="numeric"

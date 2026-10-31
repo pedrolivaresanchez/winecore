@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useApi } from "@/hooks/use-api";
 import { copy, fill } from "@/i18n";
-import { contactQuery, type AuditEvent, type AuditPage, type ContactPage } from "@/lib/contacts";
+import { contactQuery, presentAuditAction, type AuditEvent, type AuditPage, type ContactPage } from "@/lib/contacts";
 import { formatDateTime, formatInteger } from "@/lib/format";
 import { allows } from "@/lib/permissions";
 import type { Me } from "@/lib/types";
@@ -16,7 +16,13 @@ const ACTIONS: Record<string, string> = {
   update: "cambió",
   archive: "archivó",
   unarchive: "reactivó",
+  event: "registró",
 };
+
+function actorName(event: AuditEvent): string {
+  if (event.actor.type === "migration" || event.actor.type === "system") return "Sistema";
+  return event.actor.display_name;
+}
 
 function subjectOf(event: AuditEvent): string {
   const named = event.changes.find((change) => change.field === "legal_name" || change.field === "trade_name");
@@ -36,7 +42,7 @@ export function Panel({ me }: { me: Me }) {
   const ready = !canRead || (!all.loading && !customers.loading && !suppliers.loading && !recent.loading);
 
   return (
-    <div data-screen={ready ? "panel" : "panel-cargando"} className="flex flex-col gap-6">
+    <div data-screen={ready ? "panel" : "panel-cargando"} className="flex min-w-0 flex-col gap-6">
       <PageHeader title={copy.panel.title} description={fill(copy.panel.hello, { name })} />
       <p className="text-body text-muted-foreground">{copy.panel.lead}</p>
 
@@ -91,9 +97,9 @@ export function Panel({ me }: { me: Me }) {
               {recent.data?.items.map((event) => {
                 const body = (
                   <>
-                    <p className="text-body">
-                      <span className="font-medium">{event.actor.display_name}</span>{" "}
-                      {ACTIONS[event.action] ?? event.action} {subjectOf(event)}
+                    <p className="text-body break-words">
+                      <span className="font-medium">{actorName(event)}</span>{" "}
+                      {ACTIONS[presentAuditAction(event).toLowerCase()] ?? event.action} {subjectOf(event)}
                     </p>
                     <p className="text-meta text-muted-foreground">{formatDateTime(event.occurred_at)}</p>
                   </>

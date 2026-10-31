@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useApi } from "@/hooks/use-api";
-import { contentLabel, fillPercent, kindLabel, type Vessel } from "@/lib/cellar";
+import { contentLabel, fillPercent, holding, kindLabel, type Vessel } from "@/lib/cellar";
 import { formatLitres } from "@/lib/format";
 import { allows } from "@/lib/permissions";
 import { cn } from "@/lib/utils";
@@ -18,22 +18,27 @@ import type { Me } from "@/lib/types";
 
 type List = { items: Vessel[]; next_cursor: string | null; total: number };
 
-function vesselCodeFromScan(raw: string): string {
+function vesselTargetFromScan(raw: string): string | null {
   const text = raw.trim();
-  const match = text.match(/\/bodega\/([^/?#]+)/);
-  return decodeURIComponent(match?.[1] ?? text);
+  if (!text) return null;
+  const qr = text.match(/\/q\/([^/?#]+)/);
+  if (qr?.[1]) return `/q/${decodeURIComponent(qr[1])}`;
+  const bodega = text.match(/\/bodega\/([^/?#]+)/);
+  if (bodega?.[1]) return `/bodega/${decodeURIComponent(bodega[1])}`;
+  if (/^[A-Za-z0-9_-]{16,64}$/.test(text) && text.startsWith("wcqr_")) return `/q/${text}`;
+  if (/^[A-Z0-9-]{2,20}$/.test(text)) return `/bodega/${text}`;
+  return null;
 }
 
 export function MapaPage({ me }: { me: Me }) {
   const navigate = useNavigate();
-  const data = useApi<List>(allows(me, "cellar.read") ? "/v1/vessels?limit=200" : null);
+  const data = useApi<List>(allows(me, "cellar.read") ? "/v1/vessels?limit=100" : null);
   const [zone, setZone] = useState("");
   const [kind, setKind] = useState("");
   const [query, setQuery] = useState("");
   const [onlyFull, setOnlyFull] = useState(false);
   const [table, setTable] = useState(false);
   const [scan, setScan] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [code, setCode] = useState("");
 
   const zones = useMemo(() => {
@@ -44,9 +49,9 @@ export function MapaPage({ me }: { me: Me }) {
   const items = (data.data?.items ?? []).filter((item) => {
     if (zone && (item.zone || "Sin zona") !== zone) return false;
     if (kind && item.kind !== kind) return false;
-    if (onlyFull && (item.content?.volume_ml ?? 0) <= 0) return false;
+    if (onlyFull && (holding(item)?.volume_ml ?? 0) <= 0) return false;
     if (query.trim()) {
-      const haystack = `${item.code} ${item.name} ${item.content?.lot_code ?? ""} ${item.content?.wine_name ?? ""}`.toLowerCase();
+      const haystack = `${item.code} ${item.name} ${item.lot_code ?? ""} ${item.wine_name ?? ""}`.toLowerCase();
       if (!haystack.includes(query.trim().toLowerCase())) return false;
     }
     return true;
@@ -65,8 +70,8 @@ export function MapaPage({ me }: { me: Me }) {
 
   const source = data.data?.items ?? [];
   const empty = !data.loading && source.length === 0;
-  const litres = items.reduce((sum, item) => sum + (item.content?.volume_ml ?? 0), 0);
-  const full = items.filter((item) => (item.content?.volume_ml ?? 0) > 0).length;
+  const litres = items.reduce((sum, item) => sum + (holding(item)?.volume_ml ?? 0), 0);
+  const full = items.filter((item) => (holding(item)?.volume_ml ?? 0) > 0).length;
 
   return (
     <div data-screen={empty ? "bodega-vacio" : "bodega-mapa"} data-view={table ? "tabla" : "tarjetas"} className="flex min-w-0 flex-col gap-4">
@@ -99,26 +104,13 @@ export function MapaPage({ me }: { me: Me }) {
           <Filter active={onlyFull} onClick={() => setOnlyFull((value) => !value)}>
             Ocupados
           </Filter>
-          <span className="hidden md:contents">
-            <Filter active={kind === "barrel"} onClick={() => setKind(kind === "barrel" ? "" : "barrel")}>
-              Barricas
-            </Filter>
-            <Filter active={kind === "tank_fermenter"} onClick={() => setKind(kind === "tank_fermenter" ? "" : "tank_fermenter")}>
-              Fermentadores
-            </Filter>
-          </span>
+          <Filter active={kind === "barrel"} onClick={() => setKind(kind === "barrel" ? "" : "barrel")}>
+            Barricas
+          </Filter>
+          <Filter active={kind === "tank_fermenter"} onClick={() => setKind(kind === "tank_fermenter" ? "" : "tank_fermenter")}>
+            Fermentadores
+          </Filter>
         </div>
-        <button
-          type="button"
-          className={cn(
-            "h-11 shrink-0 rounded-full px-3 text-compact md:hidden",
-            kind ? "bg-ink font-medium text-ink-foreground" : "bg-muted",
-          )}
-          aria-pressed={Boolean(kind)}
-          onClick={() => setFiltersOpen(true)}
-        >
-          Filtros
-        </button>
       </div>
 
       <Input
@@ -168,25 +160,6 @@ export function MapaPage({ me }: { me: Me }) {
         </>
       )}
 
-      <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
-        <SheetContent side="bottom" data-screen="bodega-filtros">
-          <SheetHeader>
-            <SheetTitle>Filtros</SheetTitle>
-          </SheetHeader>
-          <div className="flex flex-wrap gap-2 px-4 pb-6">
-            <Filter active={kind === "barrel"} onClick={() => setKind(kind === "barrel" ? "" : "barrel")}>
-              Barricas
-            </Filter>
-            <Filter active={kind === "tank_fermenter"} onClick={() => setKind(kind === "tank_fermenter" ? "" : "tank_fermenter")}>
-              Fermentadores
-            </Filter>
-            <Filter active={kind === ""} onClick={() => setKind("")}>
-              Todos los tipos
-            </Filter>
-          </div>
-        </SheetContent>
-      </Sheet>
-
       <Sheet open={scan} onOpenChange={setScan}>
         <SheetContent side="bottom" data-screen="bodega-qr">
           <SheetHeader>
@@ -196,16 +169,16 @@ export function MapaPage({ me }: { me: Me }) {
             className="grid gap-3 px-4 pb-6"
             onSubmit={(event) => {
               event.preventDefault();
-              const next = vesselCodeFromScan(code);
+              const next = vesselTargetFromScan(code);
               if (!next) return;
               setScan(false);
-              navigate(`/bodega/${encodeURIComponent(next)}`);
+              navigate(next);
             }}
           >
             <label className="text-compact text-muted-foreground" htmlFor="qr-url">
               El lector escribe el enlace del depósito.
             </label>
-            <Input id="qr-url" autoFocus value={code} placeholder="https://…/bodega/D-01" onChange={(event) => setCode(event.target.value)} />
+            <Input id="qr-url" autoFocus value={code} placeholder="https://…/q/wcqr_…" onChange={(event) => setCode(event.target.value)} />
             <Button type="submit">Abrir depósito</Button>
           </form>
         </SheetContent>
@@ -232,7 +205,7 @@ function Filter({ active, children, onClick }: { active: boolean; children: stri
 
 function VesselCard({ vessel }: { vessel: Vessel }) {
   const pct = fillPercent(vessel);
-  const litres = vessel.content?.volume_ml ?? 0;
+  const litres = holding(vessel)?.volume_ml ?? 0;
   return (
     <Link
       to={`/bodega/${encodeURIComponent(vessel.code)}`}
@@ -250,7 +223,7 @@ function VesselCard({ vessel }: { vessel: Vessel }) {
         <p className="shrink-0 text-meta text-muted-foreground">{kindLabel(vessel.kind)}</p>
       </div>
       <p className="truncate text-compact">
-        {vessel.content ? `${vessel.content.lot_code} · ${vessel.content.wine_name}` : contentLabel(vessel)}
+        {holding(vessel) ? `${holding(vessel)?.lot_code} · ${holding(vessel)?.wine_name}` : contentLabel(vessel)}
       </p>
       <div
         className="h-2.5 overflow-hidden rounded-full bg-muted"
@@ -294,8 +267,8 @@ function VesselTable({ items }: { items: Vessel[] }) {
                 <Link to={`/bodega/${encodeURIComponent(vessel.code)}`}>{vessel.code}</Link>
               </td>
               <td className="border border-border px-3 py-2">{vessel.zone || "—"}</td>
-              <td className="border border-border px-3 py-2">{vessel.content?.wine_name ?? "—"}</td>
-              <td className="border border-border px-3 py-2 text-right tabular-nums whitespace-nowrap">{formatLitres((vessel.content?.volume_ml ?? 0) / 1000)}</td>
+              <td className="border border-border px-3 py-2">{vessel.wine_name ?? "—"}</td>
+              <td className="border border-border px-3 py-2 text-right tabular-nums whitespace-nowrap">{formatLitres((holding(vessel)?.volume_ml ?? 0) / 1000)}</td>
               <td className="border border-border px-3 py-2 text-right tabular-nums whitespace-nowrap">{formatLitres(vessel.capacity_ml / 1000)}</td>
               <td className="border border-border px-3 py-2 whitespace-nowrap">{contentLabel(vessel)}</td>
             </tr>

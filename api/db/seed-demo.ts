@@ -5,7 +5,7 @@ import { createWriter } from '../src/core/db/writer';
 import { openClient } from '../src/core/db/open';
 import { migrate } from './migrate';
 import { cellarOperationSeriesStatements } from './seed';
-import { generateSynthetic, type SyntheticDataset } from './synthetic';
+import { generateSynthetic, type SyntheticDataset, type SyntheticScale } from './synthetic';
 
 const UUID_COLUMNS = new Set([
   'id', 'user_id', 'legal_entity_id', 'granted_by', 'contact_id', 'wine_id', 'format_id',
@@ -24,10 +24,11 @@ const DECIMAL_COLUMNS = new Set(['min_qty', 'unit_price', 'alcohol_pct', 'discou
 export async function seedDemo(
   writer: Writer,
   config: { nodeEnv: string; dbMode: string },
+  scale: SyntheticScale = 'demo',
 ): Promise<{ contacts: number }> {
   if (config.nodeEnv === 'production') throw new Error('seed:demo no está permitido cuando NODE_ENV=production');
   if (config.dbMode === 'timbal') throw new Error('seed:demo no está permitido cuando DB_MODE=timbal');
-  const data = generateSynthetic({ seed: 2026, scale: 'demo' });
+  const data = generateSynthetic({ seed: 2026, scale });
   await writeRows(writer, 'core.legal_entity', data.legal_entity.map(entityRow), 'code');
   const entities = await writer.read<{ id: string; code: string }>('SELECT id, code FROM core.legal_entity');
   const byCode = new Map(entities.map((row) => [row.code, row.id]));
@@ -89,6 +90,70 @@ export async function seedDemo(
   await writer.withWrite(
     { type: 'migration', id: 'seed-demo', requestId: 'seed-demo' },
     async (tx) => {
+      tx.write(`
+        DELETE FROM inventory.stock_move
+        WHERE vessel_id = (SELECT id FROM cellar.vessel WHERE code = 'BAR-008')
+      `);
+      tx.write(`
+        UPDATE cellar.vessel
+        SET qr_token = 'wcqr_' || qr_token
+        WHERE qr_token IS NOT NULL
+          AND qr_token NOT LIKE 'wcqr_%'
+          AND length('wcqr_' || qr_token) BETWEEN 16 AND 64
+      `);
+      tx.write(`
+        INSERT INTO inventory.fiscal_move (
+          id, tax_warehouse_id, fiscal_date, physical_date, move_type, product_class, lot_id,
+          volume_ml, units, abv_pct, excise_product_key, justification_type, justification_ref,
+          fiscal_trigger, source_table, source_id, created_by
+        )
+        SELECT
+          gen_random_uuid(),
+          loc.tax_warehouse_id,
+          CAST(m.occurred_at AS DATE),
+          CAST(m.occurred_at AS DATE),
+          'opening',
+          CASE
+            WHEN v.kind = 'barrel' OR v.material = 'oak' THEN 'bulk_wood'
+            ELSE 'bulk'
+          END,
+          m.lot_id,
+          m.volume_ml,
+          0,
+          CAST(13.50 AS DECIMAL(5,2)),
+          CASE w.color
+            WHEN 'white' THEN 'GRANEL-BLANCO'
+            WHEN 'rose' THEN 'GRANEL-ROSADO'
+            ELSE 'GRANEL-TINTO'
+          END,
+          'count_record',
+          'AFORO-DEMO',
+          'count',
+          'inventory.lot',
+          m.lot_id,
+          'seed-demo'
+        FROM inventory.stock_move m
+        JOIN inventory.location loc ON loc.id = m.location_id
+        JOIN inventory.lot l ON l.id = m.lot_id
+        LEFT JOIN cellar.vessel v ON v.id = m.vessel_id
+        JOIN catalog.wine w ON w.id = l.wine_id
+        WHERE m.move_type = 'opening'
+          AND l.kind = 'wine'
+          AND loc.tax_warehouse_id IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM inventory.fiscal_move f
+            WHERE f.lot_id = m.lot_id AND f.move_type = 'opening'
+          )
+      `);
+      tx.write(`
+        INSERT INTO catalog.product (
+          id, sku, name, kind, unit, is_stock_tracked, requires_lot, is_active, legacy_refs
+        )
+        SELECT
+          gen_random_uuid(), 'METABI', 'Metabisulfito potásico', 'oenological_product', 'kg',
+          TRUE, FALSE, TRUE, '{}'::JSON
+        WHERE NOT EXISTS (SELECT 1 FROM catalog.product WHERE sku = 'METABI')
+      `);
       for (const statement of cellarOperationSeriesStatements()) tx.write(statement);
     },
   );

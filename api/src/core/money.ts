@@ -31,6 +31,10 @@ export const money = {
   round2(value: Decimal): Decimal {
     return decimal(value, 'value').toDecimalPlaces(2, MoneyDecimal.ROUND_HALF_UP);
   },
+  /** Tarifa intercompañía: seis decimales, HALF_UP (D4). */
+  round6(value: Decimal): Decimal {
+    return decimal(value, 'value').toDecimalPlaces(6, MoneyDecimal.ROUND_HALF_UP);
+  },
   fromString(value: string): Decimal {
     if (typeof value !== 'string' || value.trim() === '') {
       throw new TypeError('El importe debe ser una cadena');

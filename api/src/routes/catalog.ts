@@ -2,6 +2,12 @@ import { Elysia } from 'elysia';
 import { requestIdFor, requirePermission, sessionOf, type GuardDeps } from '../auth/guard';
 import { createFormat, listFormats, updateFormat } from '../core/catalog/formats';
 import {
+  createFormatMaterial,
+  deleteFormatMaterial,
+  listFormatMaterials,
+  updateFormatMaterial,
+} from '../core/catalog/format-materials';
+import {
   createPriceList,
   createVersion,
   listPriceLists,
@@ -13,6 +19,7 @@ import {
 } from '../core/catalog/pricing';
 import {
   createProduct,
+  exportProducts,
   getProduct,
   listProductPrices,
   listProducts,
@@ -69,7 +76,31 @@ export function catalogRoutes(deps: GuardDeps) {
     .patch('/v1/formats/:id', async ({ request, params }) => (
       updateFormat(writer, actor(request, 'editar formato'), params.id, await jsonBody(request))
     ), { beforeHandle: write })
+    .get('/v1/formats/:id/materials', ({ params }) => listFormatMaterials(writer, params.id), { beforeHandle: read })
+    .post('/v1/formats/:id/materials', async ({ request, params, set }) => {
+      const created = await createFormatMaterial(
+        writer,
+        actor(request, 'alta de material de formato'),
+        params.id,
+        await jsonBody(request),
+      );
+      set.status = 201;
+      return created;
+    }, { beforeHandle: write })
+    .patch('/v1/formats/:id/materials/:materialId', async ({ request, params }) => (
+      updateFormatMaterial(
+        writer,
+        actor(request, 'editar material de formato'),
+        params.id,
+        params.materialId,
+        await jsonBody(request),
+      )
+    ), { beforeHandle: write })
+    .delete('/v1/formats/:id/materials/:materialId', ({ request, params }) => (
+      deleteFormatMaterial(writer, actor(request, 'quitar material de formato'), params.id, params.materialId)
+    ), { beforeHandle: write })
     .get('/v1/products', ({ request }) => listProducts(writer, request), { beforeHandle: read })
+    .get('/v1/products/export.csv', ({ request }) => exportProducts(writer, request), { beforeHandle: read })
     .post('/v1/products', async ({ request, set }) => {
       const created = await createProduct(writer, actor(request, 'alta de producto'), await jsonBody(request));
       set.status = 201;

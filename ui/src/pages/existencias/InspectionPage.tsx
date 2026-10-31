@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { toast } from "sonner";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { NoPermission } from "@/components/NoPermission";
@@ -8,7 +7,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { StatTile } from "@/components/StatTile";
 import { Button } from "@/components/ui/button";
 import { copy } from "@/i18n";
-import { ApiError } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { entityName } from "@/lib/labels";
 import { allows } from "@/lib/permissions";
 import { formatDateTime } from "@/lib/format";
@@ -18,10 +17,8 @@ import { Notice } from "@/pages/existencias/components/Notice";
 import { groupBalances } from "@/pages/existencias/groups";
 import {
   balancesPath,
-  fetchInspectionPdf,
   fiscalBalancesPath,
   ownerEntityId,
-  saveBlob,
   type FiscalBalance,
   type StockBalance,
 } from "@/pages/existencias/api";
@@ -37,52 +34,49 @@ export function InspectionPage({ me }: { me: Me }) {
   const { filter, entities } = useEntity();
   const ownerId = ownerEntityId(filter, entities);
   const [params] = useSearchParams();
-  const at = params.get("at") || new Date().toISOString();
-  const before = isBeforeStockEpoch(at);
-  const physical = useList<StockBalance>(before ? null : balancesPath({ at, ownerEntityId: ownerId }));
-  const fiscal = useList<FiscalBalance>(before ? null : fiscalBalancesPath({ at: madridDate(at), legalEntityId: ownerId }));
+  const [now] = useState(() => new Date().toISOString());
+  const at = params.get("at") || now;
+  const physical = useList<StockBalance>(balancesPath({ at, ownerEntityId: ownerId }));
+  const fiscal = useList<FiscalBalance>(fiscalBalancesPath({ at: madridDate(at), legalEntityId: ownerId }));
   const rows = useMemo(() => filterBalances(physical.items, { ownerEntityId: ownerId }), [ownerId, physical.items]);
   const fiscalRows = useMemo(() => filterFiscal(fiscal.items, { legalEntityId: ownerId }), [fiscal.items, ownerId]);
   const groups = useMemo(() => groupBalances(rows), [rows]);
   const stats = useMemo(() => summarizePhysical(rows), [rows]);
   const fiscalStats = useMemo(() => summarizeFiscal(fiscalRows), [fiscalRows]);
   const [sha256, setSha256] = useState<string | null>(null);
-  const [pdf, setPdf] = useState<Blob | null>(null);
-  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [hashError, setHashError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (before) return;
     const controller = new AbortController();
     let active = true;
     setSha256(null);
-    setPdf(null);
-    setPdfError(null);
-    fetchInspectionPdf(at)
+    setHashError(null);
+    api<{ hash?: string }>(`/v1/stock/inspection-report?at=${encodeURIComponent(at)}`, { signal: controller.signal })
       .then((result) => {
         if (!active) return;
-        setPdf(result.blob);
-        setSha256(result.sha256);
+        setSha256(result.hash ?? null);
       })
       .catch((error: unknown) => {
         if (!active || controller.signal.aborted) return;
         const apiError = error instanceof ApiError ? error : new ApiError(0, "WC_ERROR", copy.error.load);
-        setPdfError(explainStockError(apiError));
+        setHashError(explainStockError(apiError));
       });
     return () => {
       active = false;
       controller.abort();
     };
-  }, [at, before]);
+  }, [at]);
 
   if (!allows(me, "inventory.read")) return <NoPermission />;
 
-  const loading = !before && (physical.loading || fiscal.loading);
+  const before = isBeforeStockEpoch(at) && !physical.loading && !fiscal.loading && rows.length === 0 && fiscalRows.length === 0;
+  const loading = physical.loading || fiscal.loading;
   const error = physical.error ?? fiscal.error;
   const screen = loading ? "informe-cargando" : before ? "informe-antes" : "informe";
   const entity = filter === "all" ? "Todas las entidades" : entityName(filter);
 
   return (
-    <div data-screen={screen} className="flex min-w-0 flex-col gap-4">
+    <div data-screen={screen} aria-busy={loading ? true : undefined} className="flex min-w-0 flex-col gap-4">
       <style>{`@media print { aside, header, nav, [data-print-hide] { display: none !important; } main, #contenido { padding: 0 !important; background: white !important; } }`}</style>
       <div data-print-hide>
         <PageHeader
@@ -90,19 +84,8 @@ export function InspectionPage({ me }: { me: Me }) {
           description="Existencias por recipiente y por mayor, con lote y añada, listas para imprimir."
           actions={
             <>
-              <Button
-                type="button"
-                disabled={!pdf}
-                onClick={() => {
-                  if (!pdf) return;
-                  saveBlob(pdf, `existencias-${madridDate(at)}.pdf`);
-                  toast("PDF descargado");
-                }}
-              >
-                Descargar PDF
-              </Button>
-              <Button type="button" variant="secondary" onClick={() => window.print()}>
-                Imprimir
+              <Button type="button" onClick={() => window.print()}>
+                Imprimir / Guardar PDF
               </Button>
               <Button asChild variant="secondary">
                 <Link to={`/stock?at=${encodeURIComponent(at)}`}>Volver</Link>
@@ -116,7 +99,7 @@ export function InspectionPage({ me }: { me: Me }) {
         <h2 className="text-title font-semibold">A {formatDateTime(at)}</h2>
         <p className="text-compact">{entity}</p>
         {sha256 ? <p className="text-meta break-all">Huella SHA-256 {sha256}</p> : null}
-        {pdfError ? <p className="text-compact text-destructive">{pdfError}</p> : null}
+        {hashError ? <p className="text-compact text-destructive">{hashError}</p> : null}
       </header>
       {before ? (
         <EmptyState title="WineCore no tiene datos antes del aforo de arranque" description="Elige una fecha a partir del 01/01/2027." />

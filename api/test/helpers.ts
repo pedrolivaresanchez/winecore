@@ -9,6 +9,8 @@ export async function createTestApp(options?: {
   log?: (line: string) => void;
   env?: Env;
   now?: () => Date;
+  ocr?: AppDeps['ocr'];
+  approvalHook?: AppDeps['approvalHook'];
 }) {
   const client = await createLocalClient(':memory:');
   await migrate(client);
@@ -32,6 +34,8 @@ export async function createTestApp(options?: {
     writer,
     log: options?.log ?? (() => undefined),
     now: options?.now,
+    ocr: options?.ocr,
+    approvalHook: options?.approvalHook,
   };
   const app = createApp(deps);
   return {
