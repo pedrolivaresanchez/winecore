@@ -38,7 +38,7 @@ import type {
   VesselStateAfter,
 } from "./types";
 
-type PlanExtra = "silicieFacts" | "lotUpdates" | "pressingYield" | "fermentationPhase";
+type PlanExtra = "silicieFacts" | "lotUpdates" | "pressingYield" | "fermentationPhase" | "notes";
 
 export function fail(code: string, message: string, details?: unknown): PlanFailure {
   if (details === undefined) return { ok: false, code, message };
@@ -55,6 +55,7 @@ export function succeed(
     lotUpdates: [] as readonly LotKindUpdate[],
     pressingYield: null as PressingYieldDraft | null,
     fermentationPhase: null as FermentationPhaseDraft | null,
+    notes: [] as readonly string[],
     ...parts,
   };
 }

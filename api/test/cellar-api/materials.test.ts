@@ -218,6 +218,8 @@ describe('materiales de envasado', () => {
       ]);
       expect(previewLines.every((row) => row.warning === null)).toBe(true);
 
+      const policy = await call(ctx, 'PUT', '/v1/hygiene/policy', { bottling_checklist_required: false });
+      expect(policy.status).toBe(200);
       const confirmed = await call(ctx, 'POST', `/v1/cellar-operations/${draft.body.id}/confirm`, undefined, 'bodega@winecore.test');
       expect(confirmed.status).toBe(200);
       expect(confirmed.body.status).toBe('confirmed');

@@ -163,6 +163,9 @@ export function MapaPage({ me }: { me: Me }) {
         <Layers className="size-4 shrink-0 text-icon" strokeWidth={iconStroke} />
         <h1 className="min-w-0 truncate text-label font-medium text-ink-900">{copy.cellar.vessels}</h1>
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          <Button type="button" variant="secondary" size="sm" onClick={() => navigate('/bodega/higiene')}>
+            {copy.nav.hygiene}
+          </Button>
           <Button type="button" variant="secondary" size="sm" onClick={() => setScan(true)}>
             {copy.cellar.scan}
           </Button>
@@ -193,6 +196,9 @@ export function MapaPage({ me }: { me: Me }) {
           <Chip pressed={!table} active={!table} onClick={() => setTable(false)}>
             {copy.cellar.cards}
           </Chip>
+          <Button type="button" variant="secondary" size="sm" className="shrink-0" onClick={() => navigate('/bodega/calculadoras')}>
+            {copy.nav.calculators}
+          </Button>
           {table ? (
             <GlassMenu
               open={columnsMenu.open}
@@ -226,6 +232,9 @@ export function MapaPage({ me }: { me: Me }) {
           ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-1.5 md:hidden">
+          <Button type="button" variant="secondary" size="sm" onClick={() => navigate('/bodega/higiene')}>
+            {copy.nav.hygiene}
+          </Button>
           <Button type="button" variant="secondary" size="sm" iconOnly aria-label={copy.cellar.scan} onClick={() => setScan(true)}>
             <ScanSearch strokeWidth={iconStroke} />
           </Button>

@@ -78,7 +78,7 @@ export async function createReception(writer: Writer, request: Request): Promise
   await writer.withWrite(actor, async (tx) => {
     await assertEntity(tx, header.legal_entity_id);
     const resolved = await resolveTicket(tx, draft, header.legal_entity_id, false);
-    await assertLotFree(tx, header.legal_entity_id, draft.lot_code);
+    if (draft.intake.decision !== 'rejected') await assertLotFree(tx, header.legal_entity_id, draft.lot_code);
     const ticket = { ...resolved.ticket, lot_id: null, silicie_entry_id: null };
     auditInsert(tx, 'cellar.operation', id, { id, status: 'draft', op_type: 'reception' }, sql`
       INSERT INTO cellar.operation (
@@ -151,35 +151,42 @@ export async function confirmReception(writer: Writer, request: Request, id: str
       throw new DomainError('WC032', 409, 'Solo se confirma un borrador de entrada de uva');
     }
     const prepared = await prepare(tx, current, actor.id, true);
+    const rejected = prepared.resolved.ticket.intake.decision === 'rejected';
     const lot = prepared.plan.newLots[0];
     const move = prepared.plan.stockMoves[0];
-    if (!lot || !move || prepared.silicie.id === null) {
+    if (!rejected && (!lot || !move || prepared.silicie?.id == null)) {
       throw new DomainError('WC_VALIDATION', 422, 'La entrada de uva no ha generado el movimiento de uva');
     }
-    const ticket: StoredTicket = { ...prepared.resolved.ticket, lot_id: lot.id, silicie_entry_id: prepared.silicie.id };
+    const ticket: StoredTicket = {
+      ...prepared.resolved.ticket,
+      lot_id: lot?.id ?? null,
+      silicie_entry_id: prepared.silicie?.id ?? null,
+    };
     const confirmedAt = new Date().toISOString();
     auditUpdate(tx, 'cellar.operation', id, { status: 'draft', number: null }, {
       status: 'confirmed',
       number: prepared.number,
-      silicie_relevant: true,
+      silicie_relevant: !rejected,
     }, sql`
       UPDATE cellar.operation SET
         number = ${prepared.number},
         status = 'confirmed',
         confirmed_by = CAST(${actor.id} AS UUID),
         confirmed_at = CAST(${confirmedAt} AS TIMESTAMPTZ),
-        silicie_relevant = TRUE,
+        silicie_relevant = ${!rejected},
         details = ${sql.json(detailsOf(ticket))}
       WHERE id = CAST(${id} AS UUID) AND status = 'draft'
     `);
+    insertIntake(tx, id, ticket.intake);
+    if (rejected || !lot || !move) return;
     auditInsert(tx, 'inventory.lot', lot.id, lot, sql`
       INSERT INTO inventory.lot (
         id, producer_entity_id, code, kind, wine_id, vintage, is_organic, status, origin,
-        created_by_operation_id, notes
+        created_by_operation_id, notes, segregated
       ) VALUES (
         CAST(${lot.id} AS UUID), CAST(${lot.producer_entity_id} AS UUID), ${lot.code}, ${lot.kind},
         NULL, ${lot.vintage}, ${lot.is_organic}, ${lot.status}, ${lot.origin},
-        CAST(${lot.created_by_operation_id} AS UUID), ${lot.notes}
+        CAST(${lot.created_by_operation_id} AS UUID), ${lot.notes}, ${ticket.intake.decision === 'segregated'}
       )
     `);
     const lineId = newId();
@@ -216,7 +223,7 @@ export async function rectifyReception(writer: Writer, request: Request, id: str
   const rectifyId = newId();
   await writer.withWrite(actor, async (tx) => {
     const current = await loadOperation(tx, id);
-    if (current.status !== 'confirmed' || current.ticket === null || current.ticket.silicie_entry_id === null) {
+    if (current.status !== 'confirmed' || current.ticket === null) {
       throw new DomainError('WC032', 409, 'Solo se rectifica una entrada de uva confirmada');
     }
     const locks = await loadLocks(tx);
@@ -224,7 +231,6 @@ export async function rectifyReception(writer: Writer, request: Request, id: str
     const fiscalDate = businessDate(new Date());
     assertPeriodOpen(fiscalDate, locks.filter((lock) => lock.ledger === 'fiscal'));
     const moves = await loadStock(tx, id);
-    if (moves.length === 0) throw new DomainError('WC_VALIDATION', 422, 'La entrada no tiene movimiento de stock');
     const occurredAt = new Date().toISOString();
     const reversals: StockMove[] = moves.map((move) => ({
       ...move,
@@ -244,7 +250,7 @@ export async function rectifyReception(writer: Writer, request: Request, id: str
     const existing = await loadLotStock(tx, lotIds);
     const hit = findNegativeBalances([...existing, ...reversals]).find((finding) => finding.code === 'WC024');
     if (hit) throw new DomainError('WC024', 422, 'La rectificación dejaría el saldo de uva en negativo');
-    await annulPendingEntry(tx, current.ticket.silicie_entry_id);
+    if (current.ticket.silicie_entry_id) await annulPendingEntry(tx, current.ticket.silicie_entry_id);
     const number = await takeCellarOperationNumber(tx, current.legal_entity_id, fiscalDate);
     const confirmedAt = new Date().toISOString();
     auditInsert(tx, 'cellar.operation', rectifyId, { id: rectifyId, status: 'confirmed', rectifies_operation_id: id }, sql`
@@ -286,11 +292,23 @@ async function prepare(tx: Tx, current: Loaded, actorId: string, persist: boolea
   if (current.ticket === null) throw domainError('WC_VALIDATION', { details: 'El borrador no es una entrada de uva' });
   const draft = draftFromStored(current.ticket);
   await assertEntity(tx, current.legal_entity_id);
-  const resolved = await resolveTicket(tx, draft, current.legal_entity_id, true);
-  await assertLotFree(tx, current.legal_entity_id, draft.lot_code);
+  const rejected = draft.intake.decision === 'rejected';
+  const resolved = await resolveTicket(tx, draft, current.legal_entity_id, !rejected);
+  if (!rejected) await assertLotFree(tx, current.legal_entity_id, draft.lot_code);
   const locks = await loadLocks(tx);
   assertPeriodOpen(resolved.ticket.weighed_at, locks.filter((lock) => lock.ledger === 'physical'));
   assertPeriodOpen(resolved.ticket.fiscal_date, locks.filter((lock) => lock.ledger === 'fiscal'));
+  if (rejected) {
+    const number = persist
+      ? await takeCellarOperationNumber(tx, current.legal_entity_id, resolved.ticket.fiscal_date)
+      : null;
+    return {
+      plan: { ok: true as const, stockMoves: [], fiscalMoves: [], newLots: [], lotEdges: [], vesselsAfter: [] },
+      silicie: null,
+      number,
+      resolved,
+    };
+  }
   const notes = lotNotes(resolved.ticket);
   const plan = planOperation({
     id: current.id,
@@ -356,6 +374,7 @@ function draftFromStored(ticket: StoredTicket): TicketDraft {
       ? ticket.source.lines.map((line) => ({ code: line.parcel_code, kg: line.kg, grams: line.grams }))
       : null,
     grower_contact_id: ticket.source.kind === 'grower' ? ticket.source.contact_id : null,
+    intake: ticket.intake,
   };
 }
 
@@ -451,6 +470,7 @@ async function resolveTicket(
       source,
       lot_id: null,
       silicie_entry_id: null,
+      intake: draft.intake,
     },
     warehouseId: vessel.warehouseId,
     warehouseName: vessel.warehouseName,
@@ -709,7 +729,23 @@ function lotNotes(ticket: StoredTicket): string {
   const place = ticket.source.kind === 'parcels'
     ? `parcelas ${ticket.source.lines.map((line) => line.parcel_code).join(', ')}`
     : 'viticultor externo';
-  return `Variedad ${ticket.variety_code}; ${place}`.slice(0, 240);
+  const segregated = ticket.intake.decision === 'segregated' ? '. Lote segregado: no se ensambla con uno sano' : '';
+  return `Variedad ${ticket.variety_code}; ${place}${segregated}`.slice(0, 240);
+}
+
+function insertIntake(tx: Tx, operationId: string, intake: StoredTicket['intake']): void {
+  auditInsert(tx, 'cellar.grape_intake', operationId, intake, sql`
+    INSERT INTO cellar.grape_intake (
+      operation_id, container, container_count, container_nominal_kg, weighing, sanitary_state,
+      botrytis_pct, storm_damage, overripe, raisined, microbial_notes, decision, grape_temperature_c
+    ) VALUES (
+      CAST(${operationId} AS UUID), ${intake.container}, ${intake.container_count},
+      CAST(${intake.container_nominal_kg} AS DECIMAL(7,2)), ${intake.weighing}, ${intake.sanitary_state},
+      CAST(${intake.botrytis_pct} AS DECIMAL(5,2)), ${intake.storm_damage}, ${intake.overripe},
+      ${intake.raisined}, ${intake.microbial_notes}, ${intake.decision},
+      CAST(${intake.grape_temperature_c} AS DECIMAL(4,1))
+    )
+  `);
 }
 
 async function viewOf(writer: Writer, row: Record<string, unknown>): Promise<ReceptionView> {

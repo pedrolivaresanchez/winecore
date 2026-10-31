@@ -5,7 +5,7 @@ import { domainError } from '../errors';
 import { newId } from '../ids';
 import { isMadridCivilDate } from '../time';
 import { addAreas, areaExceeds, formatArea, parseArea } from './quantity';
-import { dayOf, flag, idOf, instantOf, integerOrNull, text, textOrNull } from './rows';
+import { dayOf, flag, idOf, instantOf, integerOrNull, objectOf, text, textOrNull } from './rows';
 import { formatSigpac, parseSigpac, type SigpacRef } from './sigpac';
 import { activeVariety } from './varieties';
 
@@ -102,6 +102,27 @@ export async function listParcelOptions(writer: Writer): Promise<{ items: Parcel
         organic_status: organic,
       };
     }),
+  };
+}
+
+export async function parcelSummary(writer: Writer) {
+  const rows = await writer.read<Record<string, unknown>>(`
+    SELECT COALESCE(sum(area_ha), 0)::VARCHAR AS area_ha, count(*)::VARCHAR AS parcels
+    FROM vineyard.parcel
+  `);
+  const settings = await writer.read<Record<string, unknown>>(sql`
+    SELECT value FROM core.setting WHERE key = 'vineyard.simplified_notebook_max_ha'
+  `);
+  const value = objectOf(settings[0]?.value) ?? {};
+  const maxHa = typeof value.max_ha === 'number' ? value.max_ha : Number(value.max_ha ?? 2);
+  const total = formatArea(text(rows[0]?.area_ha ?? '0'));
+  return {
+    total_area_ha: total,
+    parcel_count: integerOrNull(rows[0]?.parcels) ?? 0,
+    simplified_notebook_max_ha: Number.isFinite(maxHa) ? maxHa : 2,
+    simplified_notebook_confirmed: value.confirmed === true,
+    question: typeof value.question === 'string' ? value.question : 'Q-038',
+    within_threshold: Number(total) <= (Number.isFinite(maxHa) ? maxHa : 2),
   };
 }
 

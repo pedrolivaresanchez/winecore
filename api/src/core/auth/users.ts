@@ -28,6 +28,32 @@ export interface RoleInput {
   legalEntityId: string | null;
 }
 
+const PRIVILEGED_ROLES = new Set<RoleCode>(['owner', 'admin']);
+
+/** Alta de dirección o administración: UI-37 exige la passkey del propietario. */
+export function inviteNeedsStepUp(roles: readonly RoleInput[]): boolean {
+  return roles.some((role) => PRIVILEGED_ROLES.has(role.role));
+}
+
+/** Cambiar roles o dar de baja (suspended/revoked). Un parche que no altera eso no. */
+export function patchNeedsStepUp(current: UserView, input: {
+  status?: string;
+  roles?: readonly RoleInput[];
+}): boolean {
+  if ((input.status === 'suspended' || input.status === 'revoked') && input.status !== current.status) return true;
+  if (!input.roles) return false;
+  const next = new Set(input.roles.map((role) => roleKey(role.role, role.legalEntityId)));
+  const have = new Set(current.roles.map((role) => roleKey(role.role, role.legal_entity_id)));
+  if (next.size !== have.size) return true;
+  for (const key of next) if (!have.has(key)) return true;
+  return false;
+}
+
+export async function findDirectoryUser(writer: Writer, id: string): Promise<UserView | null> {
+  if (!UUID.test(id)) return null;
+  return userById(writer, id);
+}
+
 export async function listUsers(writer: Writer): Promise<UserView[]> {
   const people = await writer.read<Record<string, unknown>>(`
     SELECT id::VARCHAR AS id, email, display_name, status

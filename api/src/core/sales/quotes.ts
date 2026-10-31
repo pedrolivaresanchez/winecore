@@ -1,7 +1,7 @@
 import { sessionOf } from '../../auth/guard';
 import { sql } from '../db/sql';
 import type { Tx, Writer } from '../db/writer';
-import { domainError } from '../errors';
+import { DomainError, domainError } from '../errors';
 import { businessDate } from '../time';
 import {
   actorOf,
@@ -25,6 +25,7 @@ import {
   taxRateOf,
   textOf,
   throwIf,
+  UUID_RE,
 } from './db';
 import { createSalesOrder } from './orders';
 import { parseCommercialLines, resolveLinePrice } from './pricing';
@@ -346,6 +347,281 @@ export async function quotePdf(writer: Writer, request: Request, id: string): Pr
   return new Response(bytes, {
     headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline; filename="proforma.pdf"' },
   });
+}
+
+export async function acceptQuote(writer: Writer, request: Request, id: string): Promise<Record<string, unknown>> {
+  return transitQuote(writer, request, id, 'accepted');
+}
+
+export async function rejectQuote(writer: Writer, request: Request, id: string): Promise<Record<string, unknown>> {
+  const body = await readOptionalJson(request);
+  const reason = reasonOf(body);
+  return transitQuote(writer, request, id, 'rejected', reason);
+}
+
+async function transitQuote(
+  writer: Writer,
+  request: Request,
+  id: string,
+  target: 'accepted' | 'rejected',
+  reason: string | null = null,
+): Promise<Record<string, unknown>> {
+  const user = sessionOf(request);
+  const quoteId = pathId(id);
+  const actor = actorOf(user, request);
+  return writer.withWrite(actor, async (tx) => {
+    const row = await loadQuote(tx, quoteId);
+    const status = String(row.status);
+    if (status === target) return quoteJson(row, await loadQuoteLines(tx, quoteId));
+    if (status === 'converted') fail('El presupuesto ya se convirtió en pedido');
+    if (status !== 'draft' && status !== 'sent') {
+      fail(target === 'accepted'
+        ? 'Solo se puede aceptar un presupuesto en borrador o enviado'
+        : 'Solo se puede rechazar un presupuesto en borrador o enviado');
+    }
+    const lines = await loadQuoteLines(tx, quoteId);
+    const numbered = await ensureNumber(tx, row, target);
+    if (reason) {
+      tx.audit({
+        table: 'sales.quote',
+        rowId: quoteId,
+        action: 'UPDATE',
+        before: { status },
+        after: { status: target, reason },
+      });
+    }
+    return quoteJson({ ...row, ...numbered, status: target }, lines);
+  });
+}
+
+export async function patchQuote(writer: Writer, request: Request, id: string): Promise<Record<string, unknown>> {
+  const user = sessionOf(request);
+  const quoteId = pathId(id);
+  const raw = asRecord(await readJson(request));
+  const actor = actorOf(user, request);
+  const reading: Tx = {
+    read: (statement) => writer.read(statement),
+    write() {
+      throw domainError('WC_VALIDATION');
+    },
+    audit() {
+      throw domainError('WC_VALIDATION');
+    },
+  };
+  const plan = await prepareQuotePatch(reading, quoteId, raw);
+  if (!plan) {
+    const row = await loadQuote(writer, quoteId);
+    return quoteJson(row, await loadQuoteLines(writer, quoteId));
+  }
+  // DuckDB no puede cambiar la clave foránea channel mientras el presupuesto tiene líneas.
+  if (plan.channelChanged) {
+    await writer.withWrite(actor, async (tx) => {
+      dropQuoteLines(tx, quoteId, plan.previousLines);
+    });
+  }
+  return writer.withWrite(actor, async (tx) => {
+    const now = new Date();
+    if (plan.channelChanged) {
+      tx.write(sql`
+        UPDATE sales.quote SET
+          legal_entity_id = CAST(${plan.entityId} AS UUID),
+          customer_id = CAST(${plan.customerId} AS UUID),
+          channel = ${plan.channel},
+          language = ${plan.language},
+          is_proforma = ${plan.isProforma},
+          incoterm = ${plan.incoterm},
+          notes = ${plan.notes},
+          valid_until = CASE WHEN ${plan.validUntil} IS NULL THEN NULL ELSE CAST(${plan.validUntil} AS DATE) END,
+          subtotal = CAST(${plan.subtotal} AS DECIMAL(14,2)),
+          tax_total = CAST(${plan.taxTotal} AS DECIMAL(14,2)),
+          total = CAST(${plan.total} AS DECIMAL(14,2)),
+          updated_at = ${now}
+        WHERE id = CAST(${quoteId} AS UUID) AND status = 'draft'
+      `);
+    } else {
+      tx.write(sql`
+        UPDATE sales.quote SET
+          legal_entity_id = CAST(${plan.entityId} AS UUID),
+          customer_id = CAST(${plan.customerId} AS UUID),
+          language = ${plan.language},
+          is_proforma = ${plan.isProforma},
+          incoterm = ${plan.incoterm},
+          notes = ${plan.notes},
+          valid_until = CASE WHEN ${plan.validUntil} IS NULL THEN NULL ELSE CAST(${plan.validUntil} AS DATE) END,
+          subtotal = CAST(${plan.subtotal} AS DECIMAL(14,2)),
+          tax_total = CAST(${plan.taxTotal} AS DECIMAL(14,2)),
+          total = CAST(${plan.total} AS DECIMAL(14,2)),
+          updated_at = ${now}
+        WHERE id = CAST(${quoteId} AS UUID) AND status = 'draft'
+      `);
+    }
+    if (plan.priced && !plan.channelChanged) dropQuoteLines(tx, quoteId, plan.previousLines);
+    const lines = plan.priced
+      ? insertQuoteLines(tx, quoteId, plan.priced.rows)
+      : plan.previousLines;
+    tx.audit({
+      table: 'sales.quote',
+      rowId: quoteId,
+      action: 'UPDATE',
+      before: { status: 'draft', customer_id: plan.beforeCustomerId, channel: plan.beforeChannel, total: plan.beforeTotal },
+      after: { status: 'draft', customer_id: plan.customerId, channel: plan.channel, total: plan.total },
+    });
+    return quoteJson({
+      ...plan.row,
+      legal_entity_id: plan.entityId,
+      customer_id: plan.customerId,
+      channel: plan.channel,
+      language: plan.language,
+      is_proforma: plan.isProforma,
+      incoterm: plan.incoterm,
+      notes: plan.notes,
+      valid_until: plan.validUntil,
+      subtotal: plan.subtotal,
+      tax_total: plan.taxTotal,
+      total: plan.total,
+    }, lines);
+  });
+}
+
+type PricedRows = Awaited<ReturnType<typeof priceQuoteLines>>;
+
+async function prepareQuotePatch(tx: Tx, quoteId: string, raw: Record<string, unknown>) {
+  const row = await loadQuote(tx, quoteId);
+  if (String(row.status) !== 'draft') fail('Solo se puede editar un presupuesto en borrador');
+  const currentLines = await loadQuoteLines(tx, quoteId);
+  const has = (key: string) => Object.prototype.hasOwnProperty.call(raw, key);
+  const fields: Record<string, string> = {};
+  let customerId = idOf(row.customer_id);
+  if (has('customer_id')) {
+    const next = typeof raw.customer_id === 'string' ? raw.customer_id.trim().toLowerCase() : '';
+    if (!UUID_RE.test(next)) fields.customer_id = 'Identificador no válido';
+    else customerId = next;
+  }
+  let channel = String(row.channel);
+  if (has('channel')) {
+    channel = typeof raw.channel === 'string' ? raw.channel.trim() : '';
+    if (!channel) fields.channel = 'El canal es obligatorio';
+  }
+  let language = String(row.language);
+  if (has('language')) {
+    language = raw.language == null || raw.language === '' ? 'es' : String(raw.language);
+    if (language !== 'es' && language !== 'en') fields.language = 'El idioma debe ser es o en';
+  }
+  let isProforma = boolOf(row.is_proforma);
+  if (has('is_proforma')) {
+    if (typeof raw.is_proforma !== 'boolean') fields.is_proforma = 'Debe ser verdadero o falso';
+    else isProforma = raw.is_proforma;
+  }
+  let incoterm = textOf(row.incoterm);
+  if (has('incoterm')) incoterm = parseIncoterm(raw.incoterm, 'incoterm', fields);
+  let notes = textOf(row.notes);
+  if (has('notes')) notes = optionalText(raw.notes, 'notes', fields, 2000);
+  let validUntil = row.valid_until == null ? null : dateOf(row.valid_until);
+  if (has('valid_until')) validUntil = parseDate(raw.valid_until, 'valid_until', fields, false);
+  if (has('lines') && !Array.isArray(raw.lines)) fields.lines = 'Hace falta al menos una línea';
+  throwIf(fields);
+
+  const customerChanged = customerId !== idOf(row.customer_id);
+  const channelChanged = channel !== String(row.channel);
+  const replaceLines = has('lines');
+  const reprice = replaceLines || customerChanged || channelChanged;
+  if (!reprice && !has('language') && !has('is_proforma') && !has('incoterm') && !has('notes') && !has('valid_until')) {
+    return null;
+  }
+
+  let entityId = idOf(row.legal_entity_id);
+  let priceListId: string | null = null;
+  if (reprice) {
+    if (channelChanged || replaceLines) await assertChannel(tx, channel);
+    const customer = await loadCustomer(tx, customerId);
+    if (!customer.is_customer) fail('El contacto no es cliente', { customer_id: customerId });
+    priceListId = customer.default_price_list_id;
+    if (customerChanged || channelChanged) {
+      const resolved = await resolveIssuingEntity(tx, { customerId, channel });
+      entityId = resolved.entityId;
+    }
+  }
+
+  let subtotal = decOf(row.subtotal).toFixed(2);
+  let taxTotal = decOf(row.tax_total).toFixed(2);
+  let total = decOf(row.total).toFixed(2);
+  let priced: PricedRows | null = null;
+  if (reprice) {
+    const commercial = replaceLines
+      ? parseCommercialLines(raw.lines)
+      : currentLines.map((line) => {
+          if (!line.product_id) fail('La línea no tiene producto', { lines: 'Producto obligatorio' });
+          return {
+            productId: line.product_id,
+            quantity: decOf(line.quantity),
+            discountPct: decOf(line.discount_pct),
+            unitPrice: null,
+            priceReason: null,
+            taxCode: line.tax_code,
+            description: line.description,
+          };
+        });
+    priced = await priceQuoteLines(tx, commercial, businessDate(new Date()), priceListId, channel);
+    const totals = priceTotals(priced.totals);
+    subtotal = totals.subtotal;
+    taxTotal = totals.tax_total;
+    total = totals.total;
+  }
+
+  return {
+    row,
+    previousLines: currentLines,
+    priced,
+    channelChanged,
+    entityId,
+    customerId,
+    channel,
+    language,
+    isProforma,
+    incoterm,
+    notes,
+    validUntil,
+    subtotal,
+    taxTotal,
+    total,
+    beforeCustomerId: idOf(row.customer_id),
+    beforeChannel: String(row.channel),
+    beforeTotal: decOf(row.total).toFixed(2),
+  };
+}
+
+function dropQuoteLines(tx: Tx, quoteId: string, lines: QuoteLine[]): void {
+  for (const line of lines) {
+    tx.write(sql`DELETE FROM sales.quote_line WHERE id = CAST(${line.id} AS UUID)`);
+    tx.audit({
+      table: 'sales.quote_line',
+      rowId: line.id,
+      action: 'DELETE',
+      before: { quote_id: quoteId, line_no: line.line_no, product_id: line.product_id },
+      after: null,
+    });
+  }
+}
+
+function reasonOf(body: Record<string, unknown>): string | null {
+  if (!Object.prototype.hasOwnProperty.call(body, 'reason') || body.reason == null || body.reason === '') return null;
+  if (typeof body.reason !== 'string') fail('El motivo debe tener entre 3 y 500 caracteres', { reason: 'No válido' });
+  const reason = body.reason.trim();
+  if (reason.length < 3 || reason.length > 500) {
+    fail('El motivo debe tener entre 3 y 500 caracteres', { reason: 'No válido' });
+  }
+  return reason;
+}
+
+async function readOptionalJson(request: Request): Promise<Record<string, unknown>> {
+  const text = await request.text();
+  if (text.trim() === '') return {};
+  try {
+    return asRecord(JSON.parse(text) as unknown);
+  } catch (error) {
+    if (error instanceof DomainError) throw error;
+    throw domainError('WC_VALIDATION', { body: 'JSON no válido' });
+  }
 }
 
 function clampLimit(value: string | null): number {
