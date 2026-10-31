@@ -1,0 +1,102 @@
+{
+  "appName": "WineCore",
+  "skip": "Saltar al contenido",
+  "loading": "Cargando",
+  "noAccess": "No tienes acceso a WineCore",
+  "nav": {
+    "primary": "Principal",
+    "panel": "Panel",
+    "contacts": "Contactos",
+    "more": "Más",
+    "collapse": "Plegar menú",
+    "expand": "Desplegar menú"
+  },
+  "entity": {
+    "label": "Entidad",
+    "all": "Todas",
+    "po": "P.O",
+    "cvpo": "CVPO"
+  },
+  "roles": {
+    "owner": "Propietario",
+    "approver": "Aprobador",
+    "admin": "Administración",
+    "cellar": "Bodega",
+    "field": "Viñedo",
+    "advisor": "Asesor"
+  },
+  "user": {
+    "account": "Cuenta de {email}",
+    "logout": "Cerrar sesión",
+    "themeDark": "Usar tema oscuro",
+    "themeLight": "Usar tema claro",
+    "theme": "Tema",
+    "authOff": "La autenticación está desactivada"
+  },
+  "panel": {
+    "title": "Panel",
+    "hello": "Hola, {name}",
+    "system": "Estado del sistema",
+    "version": "Versión",
+    "schema": "Esquema",
+    "database": "Base de datos",
+    "writer": "Escritor",
+    "dbLocal": "Local",
+    "dbTimbal": "Timbal",
+    "writerLeader": "Principal",
+    "writerStandby": "En espera",
+    "incident": "Incidencia",
+    "entities": "Entidades",
+    "noEntities": "No tienes entidades asignadas",
+    "noRole": "Sin rol en esta entidad",
+    "group": "Todas las entidades"
+  },
+  "contacts": {
+    "title": "Contactos",
+    "description": "Clientes y proveedores.",
+    "empty": "Aún no hay contactos",
+    "emptyHint": "Esta pantalla se completará en la siguiente fase."
+  },
+  "more": {
+    "title": "Más",
+    "description": "Otros accesos.",
+    "empty": "Nada más por ahora",
+    "emptyHint": "El resto de módulos aparecerá aquí."
+  },
+  "notFound": {
+    "title": "No encontrada",
+    "body": "Esa página no existe.",
+    "back": "Volver al panel"
+  },
+  "error": {
+    "load": "No se ha podido cargar",
+    "retry": "Reintentar"
+  },
+  "table": {
+    "search": "Buscar",
+    "loadMore": "Cargar más",
+    "loading": "Cargando…"
+  },
+  "login": {
+    "title": "Entrar",
+    "lead": "Usa tu cuenta de la bodega.",
+    "microsoft": "Entrar con Microsoft",
+    "email": "Entrar con correo",
+    "emailLabel": "Correo",
+    "send": "Enviar enlace",
+    "sending": "Enviando…",
+    "sent": "Te hemos enviado un enlace. Revisa tu correo.",
+    "placeholder": "nombre@winecore.test",
+    "providerError": "No se pudo entrar. Prueba de nuevo.",
+    "notAllowed": "Tu cuenta no tiene acceso. Pide a Pedro que te dé de alta.",
+    "callback": "Entrando…",
+    "callbackFail": "No se pudo entrar. Volviendo a la pantalla de acceso."
+  },
+  "api": {
+    "offline": "No hay conexión. Comprueba la red e inténtalo de nuevo.",
+    "invalid": "La respuesta del servidor no es válida.",
+    "expired": "Tu sesión ha caducado. Vuelve a entrar.",
+    "authOff": "No se ha podido comprobar la sesión. La autenticación está desactivada en este entorno.",
+    "generic": "No se ha podido completar la operación."
+  }
+}
