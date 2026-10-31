@@ -103,6 +103,8 @@ const CATALOG = {
   WC_VIN_ORGANIC: [422, 'El producto no está autorizado en una parcela ecológica'],
   WC_VIN_DOSE: [422, 'La dosis supera la dosis máxima del producto'],
   WC_VIN_AREA: [422, 'La superficie tratada supera la de la parcela'],
+  WC_ENOLOGY_PROHIBITED: [422, 'Práctica enológica prohibida en esta bodega'],
+  WC_ENOLOGY_LOSS: [422, 'La merma supera la tolerancia y falta el motivo'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;

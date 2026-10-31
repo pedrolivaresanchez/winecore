@@ -88,6 +88,8 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
     "WC122",
     "WC_ANALYSIS_RANGE",
     "WC_ECO_CERT_MISSING",
+    "WC_ENOLOGY_LOSS",
+    "WC_ENOLOGY_PROHIBITED",
     "WC_VIN_AREA",
     "WC_VIN_CUE",
     "WC_VIN_DOSE",

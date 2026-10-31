@@ -307,6 +307,8 @@ const guardSpecs: readonly GuardSpec[] = [
   { id: "FK:legacy.accounting_journal_line.entity_id", kind: "core", table: "legacy.accounting_journal_line", description: "FK legacy.accounting_journal_line.entity_id hacia core.legal_entity; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-MIG-001", implemented: false },
   { id: "FK:legacy.document_file.entity_id", kind: "core", table: "legacy.document_file", description: "FK legacy.document_file.entity_id hacia core.legal_entity; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-MIG-001", implemented: false },
   { id: "FK:legacy.document_file.attachment_id", kind: "core", table: "legacy.document_file", description: "FK legacy.document_file.attachment_id hacia core.attachment; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-MIG-001", implemented: false },
+  { id: "WC_ENOLOGY_LOSS", kind: "core", table: "enology.loss_tolerance", description: "Una merma por encima de la tolerancia configurada exige un motivo. Si el máximo es NULL, no se inventa un porcentaje.", ownerTask: "TASK-BOD-011", implemented: true },
+  { id: "WC_ENOLOGY_PROHIBITED", kind: "core", table: "enology.prohibited_practice", description: "Una práctica de la lista prohibida de casa (semilla: carbones activos) bloquea la operación.", ownerTask: "TASK-BOD-006", implemented: true },
 ];
 
 export const guards: readonly GuardSpec[] = guardSpecs.map((guard) =>
