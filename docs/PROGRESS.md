@@ -52,6 +52,6 @@ Fase: 1 · Hito: especificación (antes de M0) · Estado: en revisión de Pedro
 - Grok: no usado (Fase 2). Escalados: ninguno (aún no hay Fase 2).
 
 ## Enlaces (PRs, despliegue de staging)
-- Rama: `spec/fase-1` · PR de la especificación: se abre a continuación contra `main`.
+- Rama: `spec/fase-1` · PR de la especificación: https://github.com/pedrolivaresanchez/winecore/pull/1 (contra `main`, pendiente de la aprobación de Pedro).
 - Proyecto Timbal: org 122, proyecto 3942, entorno Main 4165 (sin despliegue de WineCore todavía).
 - Staging: no existe todavía.
