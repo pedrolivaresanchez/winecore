@@ -17,6 +17,7 @@ import { downloadInvoicePdf } from './routes/invoice-documents';
 import {
   getInvoiceDelivery,
   listInvoiceDeliveries,
+  listInvoiceDeliveryHistory,
   markInvoiceDeliveryFailed,
   markInvoiceDeliverySent,
   resendInvoiceDelivery,
@@ -62,6 +63,7 @@ import {
 import {
   approveExpense,
   captureExpense,
+  requestExpenseApproval,
   exportExpenses,
   getExpense,
   listExpenses,
@@ -83,6 +85,7 @@ import { getReceivables } from './routes/finance-receivables';
 import {
   getRemittanceById,
   getRemittanceFile,
+  getRemittances,
   postRemittance,
   postRemittanceApproval,
   postRemittanceFile,
@@ -90,6 +93,7 @@ import {
 } from './routes/finance-remittances';
 import {
   getBankStatementSuggestions,
+  getBankStatements,
   postBankStatement,
   postBankStatementConfirm,
   postBankStatementIgnore,
@@ -331,6 +335,9 @@ export function createApp(deps: AppDeps) {
     .get('/v1/invoices/:id/pdf', ({ request, params }) => downloadInvoicePdf(invoiceDeps, request, params.id), {
       beforeHandle: requirePermission(guardDeps, 'billing.read'),
     })
+    .get('/v1/invoices/:id/deliveries', ({ request, params }) => listInvoiceDeliveryHistory(deliveryDeps, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.read'),
+    })
     .get('/v1/invoices/:id/delivery', ({ request, params }) => getInvoiceDelivery(deliveryDeps, request, params.id), {
       beforeHandle: requirePermission(guardDeps, 'billing.deliver'),
     })
@@ -438,7 +445,7 @@ export function createApp(deps: AppDeps) {
     .get('/v1/approvals/:id', ({ request, params }) => getApproval(http, request, params.id), {
       beforeHandle: requireUserOrMachine(guardDeps),
     })
-    .post('/v1/approvals/:id/decide', ({ request, params, body }) => decideApproval(http, request, params.id, body), {
+    .post('/v1/approvals/:id/decide', ({ request, params, body }) => decideApproval(http, request, params.id, body, expenses.approvalHook), {
       beforeHandle: requireUserOrMachine(guardDeps),
     })
     .get('/v1/approval-policies', ({ request }) => getApprovalPolicy(http, request), {
@@ -601,6 +608,9 @@ export function createApp(deps: AppDeps) {
     .post('/v1/supplier-invoices/:id/validate', ({ request, params }) => validateExpense(deps.writer, request, params.id), {
       beforeHandle: requirePermission(guardDeps, 'purchasing.write'),
     })
+    .post('/v1/supplier-invoices/:id/request-approval', ({ request, params }) => requestExpenseApproval(deps.writer, request, params.id, expenses), {
+      beforeHandle: requirePermission(guardDeps, 'purchasing.write'),
+    })
     .post('/v1/supplier-invoices/:id/approve', ({ request, params }) => approveExpense(deps.writer, request, params.id, expenses), {
       beforeHandle: requirePermission(guardDeps, 'purchasing.approve'),
     })
@@ -641,6 +651,9 @@ export function createApp(deps: AppDeps) {
     }, {
       beforeHandle: requirePermission(guardDeps, 'finance.manage'),
     })
+    .get('/v1/bank-statements', ({ request }) => getBankStatements(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'finance.read'),
+    })
     .post('/v1/bank-statements', async ({ request, set }) => {
       const result = await postBankStatement(deps.writer, request);
       set.status = result.status;
@@ -664,6 +677,9 @@ export function createApp(deps: AppDeps) {
       return result.body;
     }, {
       beforeHandle: requirePermission(guardDeps, 'finance.write'),
+    })
+    .get('/v1/remittances', ({ request }) => getRemittances(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'finance.read'),
     })
     .post('/v1/remittances', async ({ request, set }) => {
       const result = await postRemittance(deps.writer, request);

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { sql } from '../../src/core/db/sql';
+import { pdfLines } from '../export/pdfText';
 import { createTestApp } from '../helpers';
 import { approveSet, buildSalesFixture, call, companyCif, json, req, type SalesFixture } from './fixture';
 
@@ -418,6 +419,52 @@ describe('ventas', () => {
     const kept = await json(ctx, 'GET', `/v1/sales-orders/${order.id}`);
     expect(kept.legal_entity_id).toBe(fx.po);
     expect(kept.billing_rule_id).toBe(ruleId);
+  });
+
+  it('filtra albaranes por entidad, lista incidencias y descarga el PDF con el lote', async () => {
+    const note = await json(ctx, 'POST', '/v1/delivery-notes', {
+      kind: 'sale',
+      customer_id: fx.customer,
+      legal_entity_id: fx.po,
+      from_location_id: fx.bod,
+      lines: [{ product_id: fx.product, quantity: '1', lot_id: fx.lot, unit_price: '9.5', tax_code: 'IVA21' }],
+    });
+    const id = String(note.id);
+    const other = await call(ctx, 'GET', `/v1/delivery-notes?entity=${fx.cvpo}&limit=100`);
+    expect(other.status).toBe(200);
+    const otherIds = ((other.body?.items ?? []) as { id: string }[]).map((item) => item.id);
+    expect(otherIds).not.toContain(id);
+    const same = await json(ctx, 'GET', `/v1/delivery-notes?entity=${fx.po}&limit=100`);
+    expect((same.items as { id: string }[]).some((item) => item.id === id)).toBe(true);
+    const byCode = await json(ctx, 'GET', '/v1/delivery-notes?entity=PO&limit=100');
+    expect((byCode.items as { id: string }[]).some((item) => item.id === id)).toBe(true);
+    const bad = await call(ctx, 'GET', '/v1/delivery-notes?entity=no-es-uuid');
+    expect(bad.status).toBe(422);
+
+    await json(ctx, 'POST', `/v1/delivery-notes/${id}/issue`);
+    const pdf = await ctx.app.handle(req('GET', `/v1/delivery-notes/${id}/pdf`));
+    expect(pdf.status).toBe(200);
+    expect(pdf.headers.get('content-type')).toContain('application/pdf');
+    const text = pdfLines(new Uint8Array(await pdf.arrayBuffer())).join('\n');
+    expect(text).toContain('Albarán');
+    expect(text).toContain('L25T01B1');
+    expect(text).toContain('Cliente Ejemplo');
+
+    const empty = await json(ctx, 'GET', `/v1/delivery-notes/${id}/incidents`);
+    expect(empty.items).toEqual([]);
+    const incident = await json(ctx, 'POST', `/v1/delivery-notes/${id}/incidents`, {
+      kind: 'delay',
+      description: 'Retraso del transporte de prueba',
+    });
+    const listed = await json(ctx, 'GET', `/v1/delivery-notes/${id}/incidents`);
+    const rows = listed.items as { id: string; kind: string; description: string; status: string }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id: incident.id,
+      kind: 'delay',
+      description: 'Retraso del transporte de prueba',
+      status: 'open',
+    });
   });
 });
 

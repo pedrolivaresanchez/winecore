@@ -387,7 +387,9 @@ export async function listDeliveries(writer: Writer, request: Request): Promise<
   const status = url.searchParams.get('status');
   const invoiced = url.searchParams.get('invoiced');
   const cursor = url.searchParams.get('cursor');
+  const entity = await entityFilter(writer, url.searchParams.get('entity'));
   const filters = ['TRUE'];
+  if (entity) filters.push(`legal_entity_id = CAST(${sql`${entity}`} AS UUID)`);
   if (kind) filters.push(`kind = ${sql`${kind}`}`);
   if (status) filters.push(`status = ${sql`${status}`}`);
   if (invoiced === 'true') filters.push(`invoicing_status = 'invoiced'`);
@@ -1091,6 +1093,21 @@ function jsonRecord(value: unknown): Record<string, unknown> {
   }
   if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
   return {};
+}
+
+async function entityFilter(writer: Writer, raw: string | null): Promise<string | null> {
+  const value = raw?.trim() ?? '';
+  if (value === '') return null;
+  if (UUID_RE.test(value)) return value.toLowerCase();
+  if (!/^[A-Za-z][A-Za-z0-9_]{1,15}$/.test(value)) {
+    throw domainError('WC_VALIDATION', { entity: 'Entidad no válida' });
+  }
+  const rows = await writer.read<{ id: unknown }>(sql`
+    SELECT id FROM core.legal_entity WHERE code = ${value.toUpperCase()}
+  `);
+  const id = rows[0]?.id;
+  if (!id) throw domainError('WC_VALIDATION', { entity: 'La entidad no existe' });
+  return idOf(id);
 }
 
 function clamp(value: string | null): number {

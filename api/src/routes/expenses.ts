@@ -10,6 +10,7 @@ import type { OcrWorkforce } from '../core/purchasing/extract';
 import {
   approveInvoice,
   captureInvoice,
+  requestPurchaseApproval,
   findEntity,
   getInvoice,
   listInvoices,
@@ -61,6 +62,18 @@ export async function patchExpense(writer: Writer, request: Request, id: string)
 export async function validateExpense(writer: Writer, request: Request, id: string) {
   const user = sessionOf(request);
   return validateInvoice(writer, actor(user.id, request), user, id, request.headers.get('if-match'));
+}
+
+export async function requestExpenseApproval(writer: Writer, request: Request, id: string, deps: ExpenseDeps) {
+  const user = sessionOf(request);
+  return requestPurchaseApproval(
+    writer,
+    actor(user.id, request),
+    user,
+    id,
+    request.headers.get('if-match'),
+    deps.approvalHook,
+  );
 }
 
 export async function approveExpense(writer: Writer, request: Request, id: string, deps: ExpenseDeps) {

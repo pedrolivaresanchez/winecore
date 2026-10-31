@@ -23,7 +23,9 @@ import {
   postOrderDelivery,
 } from './sales-orders';
 import {
+  getIncidents,
   getNote,
+  getNotePdf,
   getNotes,
   getUninvoiced,
   patchNote,
@@ -93,6 +95,8 @@ export function salesRoutes(writer: Writer, guardDeps: GuardDeps) {
       set.status = result.status;
       return result.body;
     }, { beforeHandle: write })
+    .get('/v1/delivery-notes/:id/pdf', ({ request, params }) => getNotePdf(writer, request, params.id), { beforeHandle: read })
+    .get('/v1/delivery-notes/:id/incidents', ({ request, params }) => getIncidents(writer, request, params.id), { beforeHandle: read })
     .get('/v1/delivery-notes/:id', ({ request, params }) => getNote(writer, request, params.id), { beforeHandle: read })
     .patch('/v1/delivery-notes/:id', ({ request, params }) => patchNote(writer, request, params.id), { beforeHandle: write })
     .post('/v1/delivery-notes/:id/issue', ({ request, params }) => postIssue(writer, request, params.id), { beforeHandle: write })
