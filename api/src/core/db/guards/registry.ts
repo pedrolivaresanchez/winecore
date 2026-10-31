@@ -29,8 +29,18 @@ const CELLAR_GUARDS = new Set<string>([
   "FK:cellar.operation_line.location_id",
   "FK:cellar.operation_line.lot_id",
   "FK:cellar.operation_line.product_id",
+  "FK:cellar.holder.location_id",
+  "FK:cellar.holder_count_line.count_id",
+  "FK:cellar.holder_move.lot_id",
+  "FK:cellar.holder_move.owner_entity_id",
+  "FK:cellar.holder_move.product_id",
   "FK:cellar.vessel.location_id",
+  "FK:cellar.zone.location_id",
+  "FK:cellar.zone.plan_attachment_id",
   "FK:inventory.lot.wine_id",
+  "UQ:cellar.holder(location_id,cage_number)",
+  "UQ:cellar.plan_position(holder_id)",
+  "UQ:cellar.plan_position(vessel_id)",
   "FK:inventory.stock_move.vessel_id",
 ]);
 
@@ -299,6 +309,16 @@ const guardSpecs: readonly GuardSpec[] = [
   { id: "FK:legacy.accounting_journal_line.entity_id", kind: "core", table: "legacy.accounting_journal_line", description: "FK legacy.accounting_journal_line.entity_id hacia core.legal_entity; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-MIG-001", implemented: false },
   { id: "FK:legacy.document_file.entity_id", kind: "core", table: "legacy.document_file", description: "FK legacy.document_file.entity_id hacia core.legal_entity; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-MIG-001", implemented: false },
   { id: "FK:legacy.document_file.attachment_id", kind: "core", table: "legacy.document_file", description: "FK legacy.document_file.attachment_id hacia core.attachment; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-MIG-001", implemented: false },
+  { id: "FK:cellar.zone.location_id", kind: "core", table: "cellar.zone", description: "FK cellar.zone.location_id hacia inventory.location; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-BOD-001", implemented: false },
+  { id: "FK:cellar.zone.plan_attachment_id", kind: "core", table: "cellar.zone", description: "FK cellar.zone.plan_attachment_id hacia core.attachment; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-BOD-001", implemented: false },
+  { id: "FK:cellar.holder.location_id", kind: "core", table: "cellar.holder", description: "FK cellar.holder.location_id hacia inventory.location; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-BOD-001", implemented: false },
+  { id: "FK:cellar.holder_move.owner_entity_id", kind: "core", table: "cellar.holder_move", description: "FK cellar.holder_move.owner_entity_id hacia core.legal_entity; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-BOD-001", implemented: false },
+  { id: "FK:cellar.holder_move.lot_id", kind: "core", table: "cellar.holder_move", description: "FK cellar.holder_move.lot_id hacia inventory.lot; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-BOD-001", implemented: false },
+  { id: "FK:cellar.holder_move.product_id", kind: "core", table: "cellar.holder_move", description: "FK cellar.holder_move.product_id hacia catalog.product; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-BOD-001", implemented: false },
+  { id: "FK:cellar.holder_count_line.count_id", kind: "core", table: "cellar.holder_count_line", description: "FK cellar.holder_count_line.count_id hacia inventory.inventory_count; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-BOD-001", implemented: false },
+  { id: "UQ:cellar.holder(location_id,cage_number)", kind: "core", table: "cellar.holder", description: "Un solo jaulón activo con el mismo número en la ubicación.", ownerTask: "TASK-BOD-001", implemented: false },
+  { id: "UQ:cellar.plan_position(vessel_id)", kind: "core", table: "cellar.plan_position", description: "Un recipiente solo ocupa una posición del plano.", ownerTask: "TASK-BOD-001", implemented: false },
+  { id: "UQ:cellar.plan_position(holder_id)", kind: "core", table: "cellar.plan_position", description: "Un nicho o jaulón solo ocupa una posición del plano.", ownerTask: "TASK-BOD-001", implemented: false },
 ];
 
 export const guards: readonly GuardSpec[] = guardSpecs.map((guard) =>
