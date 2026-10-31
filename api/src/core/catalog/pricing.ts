@@ -36,6 +36,11 @@ const LIST_PATCH = ['name', 'currency', 'tax_included', 'is_active'] as const;
 const VERSION_FIELDS = ['valid_from', 'valid_to', 'notes'] as const;
 const ITEM_FIELDS = ['product_id', 'min_qty', 'unit_price'] as const;
 
+export function quoteListCode(channel: string | null | undefined): string {
+  if (!channel) return 'final';
+  return CHANNEL_LIST[channel] ?? 'final';
+}
+
 const CHANNEL_LIST: Record<string, string> = {
   direct: 'final',
   distributor: 'distributor',

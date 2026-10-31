@@ -96,6 +96,11 @@ export const EVENT_CATALOGUE: Readonly<Record<string, EventSpec>> = {
     body: 'Una fermentación requiere atención.',
     roles: ['owner', 'cellar'],
   },
+  'cellar.seasonal.reminder': {
+    title: 'Recordatorio de bodega',
+    body: 'Hay un recordatorio estacional para un lote.',
+    roles: ['owner', 'cellar'],
+  },
   'ops.audit.chain_broken': {
     title: 'Cadena de auditoría rota',
     body: 'La verificación de la auditoría ha fallado.',

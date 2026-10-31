@@ -13,15 +13,47 @@ describe('seedDemo', () => {
       expect(await writer.tryAcquireLease()).toBe(true);
       const config = { nodeEnv: 'test', dbMode: 'local' };
       const first = await seedDemo(writer, config);
+      const placedOnce = await writer.read<{ total: number }>('SELECT count(*)::INTEGER AS total FROM cellar.plan_position');
       const second = await seedDemo(writer, config);
       expect(first.contacts).toBe(150);
       expect(second.contacts).toBe(first.contacts);
+      const placedTwice = await writer.read<{ total: number }>('SELECT count(*)::INTEGER AS total FROM cellar.plan_position');
+      expect(Number(placedTwice[0]?.total)).toBe(Number(placedOnce[0]?.total));
       const wines = await writer.read<{ total: number }>('SELECT count(*)::INTEGER AS total FROM catalog.wine');
       const vessels = await writer.read<{ total: number }>('SELECT count(*)::INTEGER AS total FROM cellar.vessel');
       const lots = await writer.read<{ total: number }>('SELECT count(*)::INTEGER AS total FROM inventory.lot');
       expect(wines[0]?.total).toBe(8);
       expect(vessels[0]?.total).toBe(30);
       expect(lots[0]?.total).toBe(24);
+      const zones = await writer.read<{ code: string }>('SELECT code FROM cellar.zone ORDER BY code');
+      expect(zones.map((row) => row.code)).toEqual(['BOT', 'ELAB', 'EXT', 'SALA']);
+      expect(Number(placedOnce[0]?.total)).toBeGreaterThan(10);
+      const unplaced = await writer.read<{ total: number }>(`
+        SELECT count(*)::INTEGER AS total
+        FROM cellar.vessel v
+        WHERE v.code IN ('INOX-002', 'INOX-012', 'FERM-006', 'BAR-002', 'DAM-002')
+          AND NOT EXISTS (SELECT 1 FROM cellar.plan_position p WHERE p.vessel_id = v.id)
+      `);
+      expect(Number(unplaced[0]?.total)).toBe(5);
+      const rooms = await writer.read<{ zone: string; kind: string; total: number }>(`
+        SELECT z.code AS zone, v.kind, count(*)::INTEGER AS total
+        FROM cellar.plan_position p
+        JOIN cellar.zone z ON z.id = p.zone_id
+        JOIN cellar.vessel v ON v.id = p.vessel_id
+        GROUP BY z.code, v.kind
+      `);
+      const count = (zone: string, kind: string) => rooms.find((row) => row.zone === zone && row.kind === kind)?.total ?? 0;
+      expect(count('ELAB', 'tank_storage')).toBeGreaterThan(0);
+      expect(count('ELAB', 'tank_fermenter')).toBeGreaterThan(0);
+      expect(count('SALA', 'barrel')).toBeGreaterThan(0);
+      expect(count('EXT', 'demijohn')).toBeGreaterThan(0);
+      const niche = await writer.read<{ total: number }>(`
+        SELECT count(*)::INTEGER AS total
+        FROM cellar.holder h
+        WHERE h.code = 'NICH-01'
+          AND NOT EXISTS (SELECT 1 FROM cellar.plan_position p WHERE p.holder_id = h.id)
+      `);
+      expect(Number(niche[0]?.total)).toBe(1);
     } finally {
       await client.close?.();
     }

@@ -117,29 +117,9 @@ export async function decideApproval(
   const row = visible[0];
   if (!row || row.id !== id.toLowerCase()) throw domainError('WC_NOT_FOUND');
 
-  const machine = machineOf(request);
-  const clock = { now: deps.now };
-  if (machine) {
-    const service = await openApprovalService(deps.writer, {
-      type: 'agent',
-      id: machine.id,
-      requestId: requestIdFor(request),
-    }, clock);
-    await service.decide({
-      requestId: row.id,
-      decision: body.decision === 'reject' ? 'reject' : 'approve',
-      payloadSha256: typeof body.payload_sha256 === 'string' ? body.payload_sha256 : '',
-      note: optionalNote(body.note),
-      actor: {
-        userId: machine.id,
-        roles: [{ role: machine.roleCode, legalEntityId: null }],
-        kind: machine.kind,
-        stepUpAt: null,
-      },
-    });
-    throw domainError('WC_FORBIDDEN');
-  }
+  if (machineOf(request)) throw domainError('WC_FORBIDDEN');
 
+  const clock = { now: deps.now };
   const user = sessionOf(request);
   if (body.decision !== 'approve' && body.decision !== 'reject') {
     throw domainError('WC_VALIDATION', { decision: 'La decisión no es válida' });

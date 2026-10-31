@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { motion, useReducedMotion } from 'motion/react'
 import { PanelLeft } from '@/ui/icons'
 import { Tooltip } from '@/ui'
@@ -14,6 +15,11 @@ import type { Me } from '@/lib/types'
 
 const OPEN_W = 272
 const SHUT_W = 56
+const SETUP_PATH = '/ajustes/puesta-en-marcha'
+
+function openedOnSetup() {
+  return typeof window !== 'undefined' && window.location.pathname === SETUP_PATH
+}
 
 function readOpen(wide: boolean) {
   const raw = readStorage(SIDEBAR_KEY)
@@ -26,8 +32,10 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
   const mobile = !useMinWidth(768)
   const wide = useMinWidth(1280)
   const [open, setOpen] = useState(() => readOpen(typeof window !== 'undefined' && window.innerWidth >= 1280))
-  const [settings, setSettings] = useState(false)
-  const [area, setArea] = useState<SettingsArea>('entities')
+  const [settings, setSettings] = useState(openedOnSetup)
+  const [area, setArea] = useState<SettingsArea>(openedOnSetup() ? 'setup' : 'entities')
+  const location = useLocation()
+  const navigate = useNavigate()
   const before = useRef<boolean | null>(null)
   const openRef = useRef(open)
   const settingsRef = useRef(settings)
@@ -39,10 +47,10 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
   useEffect(() => {
     function onFocus(event: Event) {
       const detail = (event as CustomEvent<string>).detail
-      if (detail !== 'security' && detail !== 'approvals') return
+      if (detail !== 'security' && detail !== 'approvals' && detail !== 'setup') return
       if (!settingsRef.current) before.current = openRef.current
       setSettings(true)
-      setArea(detail === 'approvals' ? 'policies' : 'security')
+      setArea(detail === 'approvals' ? 'policies' : detail === 'setup' ? 'setup' : 'security')
       setOpen(!mobileRef.current)
     }
     window.addEventListener('winecore-settings', onFocus)
@@ -65,9 +73,23 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
     setOpen(!mobile)
   }
 
+  useLayoutEffect(() => {
+    if (location.pathname !== SETUP_PATH) return
+    if (!settingsRef.current) before.current = openRef.current
+    setSettings(true)
+    setArea('setup')
+    setOpen(!mobileRef.current)
+  }, [location.pathname])
+
+  function chooseArea(next: SettingsArea) {
+    setArea(next)
+    if (location.pathname === SETUP_PATH && next !== 'setup') navigate('/', { replace: true })
+  }
+
   function closeSettings() {
     setSettings(false)
     if (before.current != null) setSidebarOpen(before.current)
+    if (location.pathname === SETUP_PATH) navigate('/')
   }
 
   return (
@@ -79,7 +101,7 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
       openSettings={openSettings}
       closeSettings={closeSettings}
     >
-      <Frame me={me} area={area} onArea={setArea}>
+      <Frame me={me} area={area} onArea={chooseArea}>
         {children}
       </Frame>
     </ShellProvider>

@@ -556,7 +556,11 @@ function accentOf(value: readonly [number, number, number] | null): readonly [nu
 }
 
 function clean(value: string): string {
-  return value.replace(/[\r\n\t]+/gu, ' ').replace(/ {2,}/gu, ' ').trim();
+  return value
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+    .replace(/[\r\n\t]+/gu, ' ')
+    .replace(/ {2,}/gu, ' ')
+    .trim();
 }
 
 function wrap(font: PDFFont, text: string, size: number, maxWidth: number): string[] {

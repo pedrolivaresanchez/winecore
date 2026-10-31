@@ -1,12 +1,31 @@
 import { domainError } from '../errors';
 import { isInstant } from '../inventory/periods';
 import { businessDate, isMadridCivilDate } from '../time';
-import { parseKg, parseMeasure } from './quantity';
+import { parseKg, parseMeasure, parseSigned1 } from './quantity';
 
 const CODE = /^[A-Z0-9-]{2,20}$/;
 const LOT = /^[A-Z0-9][A-Z0-9./-]{1,29}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SANITARY = ['good', 'fair', 'poor'] as const;
+const CONTAINERS = ['box', 'bin', 'tank_trailer', 'bulk', 'other'] as const;
+const WEIGHING = ['weighed', 'estimated'] as const;
+const GRAPE_STATE = ['healthy', 'minor', 'affected', 'severe'] as const;
+const DECISIONS = ['accepted', 'segregated', 'rejected'] as const;
+
+export interface GrapeIntake {
+  container: (typeof CONTAINERS)[number];
+  container_count: number | null;
+  container_nominal_kg: string | null;
+  weighing: (typeof WEIGHING)[number];
+  sanitary_state: (typeof GRAPE_STATE)[number];
+  botrytis_pct: string | null;
+  storm_damage: boolean;
+  overripe: boolean;
+  raisined: boolean;
+  microbial_notes: string | null;
+  decision: (typeof DECISIONS)[number];
+  grape_temperature_c: string | null;
+}
 
 export interface ParcelAllocation {
   parcel_id: string;
@@ -38,6 +57,7 @@ export interface StoredTicket {
     | { kind: 'grower'; contact_id: string };
   lot_id: string | null;
   silicie_entry_id: string | null;
+  intake: GrapeIntake;
 }
 
 export interface TicketDraft {
@@ -60,6 +80,7 @@ export interface TicketDraft {
   vintage: number;
   parcels: { code: string; kg: string; grams: number }[] | null;
   grower_contact_id: string | null;
+  intake: GrapeIntake;
 }
 
 export function parseTicket(body: Record<string, unknown>): TicketDraft {
@@ -83,8 +104,8 @@ export function parseTicket(body: Record<string, unknown>): TicketDraft {
     throw domainError('WC_VALIDATION', { net_kg: 'El neto tiene que ser el bruto menos la tara' });
   }
   const variety = upper(body.variety_code ?? body.variety, 'variety_code');
+  const intake = parseIntake(body.intake);
   const lot = upper(body.lot_code, 'lot_code');
-  if (!LOT.test(lot)) throw domainError('WC_VALIDATION', { lot_code: 'Código de lote no válido' });
   const vintage = yearOf(body.vintage, 'vintage');
   const sanitary = oneOf(body.sanitary_status, 'sanitary_status', SANITARY);
   const isOrganic = boolOf(body.is_organic, 'is_organic');
@@ -153,6 +174,7 @@ export function parseTicket(body: Record<string, unknown>): TicketDraft {
     vintage,
     parcels: parcelLines,
     grower_contact_id: growerId,
+    intake,
   };
 }
 
@@ -178,7 +200,49 @@ export function ticketView(ticket: StoredTicket) {
     source: ticket.source,
     lot_id: ticket.lot_id,
     silicie_entry_id: ticket.silicie_entry_id,
+    intake: ticket.intake,
   };
+}
+
+function parseIntake(value: unknown): GrapeIntake {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw domainError('WC_VALIDATION', { intake: 'Faltan los datos de contenedor y sanidad' });
+  }
+  const body = value as Record<string, unknown>;
+  const container = oneOf(body.container, 'intake.container', CONTAINERS);
+  const count = optionalCount(body.container_count, 'intake.container_count');
+  if (container === 'box' && count === null) {
+    throw domainError('WC_VALIDATION', { 'intake.container_count': 'Las cajas necesitan un número' });
+  }
+  const nominal = body.container_nominal_kg === undefined || body.container_nominal_kg === null || body.container_nominal_kg === ''
+    ? null
+    : parseMeasure(body.container_nominal_kg, 'intake.container_nominal_kg', 99999.99);
+  const botrytis = body.botrytis_pct === undefined || body.botrytis_pct === null || body.botrytis_pct === ''
+    ? null
+    : parseMeasure(body.botrytis_pct, 'intake.botrytis_pct', 100);
+  return {
+    container,
+    container_count: count,
+    container_nominal_kg: nominal,
+    weighing: oneOf(body.weighing, 'intake.weighing', WEIGHING),
+    sanitary_state: oneOf(body.sanitary_state, 'intake.sanitary_state', GRAPE_STATE),
+    botrytis_pct: botrytis,
+    storm_damage: body.storm_damage === undefined ? false : boolOf(body.storm_damage, 'intake.storm_damage'),
+    overripe: body.overripe === undefined ? false : boolOf(body.overripe, 'intake.overripe'),
+    raisined: body.raisined === undefined ? false : boolOf(body.raisined, 'intake.raisined'),
+    microbial_notes: optionalText(body.microbial_notes, 'intake.microbial_notes', 500),
+    decision: body.decision === undefined ? 'accepted' : oneOf(body.decision, 'intake.decision', DECISIONS),
+    grape_temperature_c: parseSigned1(body.grape_temperature_c, 'intake.grape_temperature_c', -5, 50),
+  };
+}
+
+function optionalCount(value: unknown, field: string): number | null {
+  if (value === undefined || value === null || value === '') return null;
+  const count = typeof value === 'number' ? value : Number(value);
+  if (!Number.isInteger(count) || count <= 0 || count > 100000) {
+    throw domainError('WC_VALIDATION', { [field]: 'Entero mayor que cero' });
+  }
+  return count;
 }
 
 function upper(value: unknown, field: string): string {

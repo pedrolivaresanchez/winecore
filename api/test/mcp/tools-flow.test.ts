@@ -123,7 +123,7 @@ describe('MCP tools on this branch', () => {
     }
   });
 
-  test('reads catalog and stock, creates an approval link, and drafts a cellar operation', async () => {
+  test('reads catalog and stock and drafts a cellar operation', async () => {
     const ctx = await createTestApp();
     try {
       await enable(ctx, ['catalog', 'inventory', 'cellar']);
@@ -153,31 +153,16 @@ describe('MCP tools on this branch', () => {
       expect(reconcile.error).toBe(false);
       expect(reconcile.data?.balanced).toBe(true);
 
-      const subject = newId();
-      const prepared = await tool(ctx.app, 'approvals_request_create_prepare', {
+      const missing = await tool(ctx.app, 'approvals_request_create_prepare', {
         kind: 'cellar_loss',
         subject_table: 'cellar.operation',
-        subject_id: subject,
+        subject_id: '00000000-0000-4000-8000-000000000001',
         summary: 'Merma sintetica de prueba',
-        legal_entity: 'PO',
       });
-      expect(prepared.error).toBe(false);
-      const confirmation = String(prepared.data?.confirmation_token);
-      const committed = await tool(ctx.app, 'approvals_request_create_commit', {
-        confirmation_token: confirmation,
-        idempotency_key: 'solicitud-sintetica',
-      });
-      expect(committed.error).toBe(false);
-      expect(committed.data?.status).toBe('pending');
-      expect(String(committed.data?.link)).toContain('/aprobaciones/');
-      const decisions = await ctx.writer.read<{ n: string }>(sql`
-        SELECT count(*)::VARCHAR AS n FROM ops.approval_decision
-      `);
-      expect(decisions[0]?.n).toBe('0');
+      expect(missing.error).toBe(true);
       const pending = await tool(ctx.app, 'approvals_list_pending', { entity: 'PO', kind: 'cellar_loss' });
       expect(pending.error).toBe(false);
-      const items = pending.data?.items as { id: string; link: string }[];
-      expect(items.some((item) => item.id === committed.data?.approval_id)).toBe(true);
+      expect(pending.data?.items).toEqual([]);
 
       const po = await entityId(ctx);
       const warehouse = await seedWarehouse(ctx, po);

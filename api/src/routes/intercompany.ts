@@ -7,8 +7,10 @@ import {
   closeSettlement,
   closeSettlementById,
   ensureOpenSettlement,
+  listSettlementIndex,
   readSettlement,
   requestIntercompanyInvoice,
+  type SettlementIndexItem,
   type SettlementView,
 } from '../core/intercompany/settlement';
 import {
@@ -71,10 +73,19 @@ export async function postRetireTariff(writer: Writer, request: Request, id: str
   return tariffJson(record);
 }
 
-export async function getSettlement(writer: Writer, request: Request): Promise<SettlementView> {
-  const period = new URL(request.url).searchParams.get('period') ?? '';
+export async function getTariff(writer: Writer, id: string): Promise<ReturnType<typeof tariffJson>> {
+  requireUuid(id);
+  return tariffJson(await tariffById(readOnly(writer), id));
+}
+
+export async function getSettlement(
+  writer: Writer,
+  request: Request,
+): Promise<SettlementView | { items: SettlementIndexItem[] }> {
+  const period = new URL(request.url).searchParams.get('period');
   const today = businessDate(new Date());
-  return readSettlement(readOnly(writer), period, today);
+  if (period == null || period.trim() === '') return listSettlementIndex(readOnly(writer));
+  return readSettlement(readOnly(writer), period.trim(), today);
 }
 
 export async function postSettlement(writer: Writer, request: Request): Promise<SettlementView> {

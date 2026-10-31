@@ -22,7 +22,7 @@ export const PERMISSIONS = [
   // Existencias (stock): lectura del libro y aforos.
   'inventory.read',
   'inventory.count',
-  // Bodega (07-arquitectura.md §6).
+  // Bodega (07-arquitectura.md §6). Higiene y APPCC usan estos tres: lectura, operación y owner para procedimientos.
   'cellar.read',
   'cellar.operate',
   'cellar.manage',
@@ -36,6 +36,8 @@ export const PERMISSIONS = [
   // Viñedo y cuaderno de explotación (07-arquitectura.md §6, UI-26).
   'vineyard.read',
   'vineyard.write',
+  // Fichas de cata, cata ciega y notas. La lectura sigue siendo cellar.read.
+  'tasting.write',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -61,7 +63,7 @@ const MATRIX: Record<RoleCode, readonly Permission[]> = {
   owner: PERMISSIONS,
   approver: ['contacts.read', 'catalog.read', 'reports.read', 'audit.read', 'billing.read', 'billing.write', 'billing.issue', 'billing.void', 'purchasing.read', 'purchasing.approve', 'finance.read', 'inventory.read', 'cellar.read', 'sales.read', 'regulatory.read', 'regulatory.approve', 'vineyard.read'],
   admin: ['contacts.read', 'contacts.write', 'catalog.read', 'catalog.write', 'reports.read', 'billing.read', 'billing.write', 'billing.issue', 'billing.deliver', 'purchasing.read', 'purchasing.write', 'finance.read', 'finance.write', 'inventory.read', 'inventory.count', 'cellar.read', 'sales.read', 'sales.write', 'regulatory.read', 'regulatory.prepare', 'vineyard.read'],
-  cellar: ['catalog.read', 'inventory.read', 'inventory.count', 'cellar.read', 'cellar.operate', 'vineyard.read', 'vineyard.write'],
+  cellar: ['catalog.read', 'inventory.read', 'inventory.count', 'cellar.read', 'cellar.operate', 'tasting.write', 'vineyard.read', 'vineyard.write'],
   field: ['cellar.read', 'vineyard.read', 'vineyard.write'],
   advisor: ['contacts.read', 'catalog.read', 'reports.read', 'audit.read', 'billing.read', 'purchasing.read', 'finance.read', 'inventory.read', 'cellar.read', 'sales.read', 'regulatory.read', 'vineyard.read'],
 };
@@ -111,4 +113,8 @@ export function seesPersonalContactData(user: UserCtx): boolean {
 
 export function isOwner(user: UserCtx): boolean {
   return user.roles.some((assignment) => assignment.role === 'owner');
+}
+
+export function isOwnerOrAdmin(user: UserCtx): boolean {
+  return user.roles.some((assignment) => assignment.role === 'owner' || assignment.role === 'admin');
 }

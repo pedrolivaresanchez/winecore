@@ -36,12 +36,12 @@ import {
   type Settlement,
   type SettlementLine,
 } from '@/pages/intercompania/model'
+import { RecordSkeleton } from '@/components/RecordSkeleton'
 import {
   Alert,
   Badge,
   Button,
   DataGrid,
-  Skeleton,
   Dialog,
   DialogBody,
   DialogFooter,
@@ -95,12 +95,7 @@ export function SettlementPage({ me }: { me: Me }) {
     )
   }
   if (query.loading && !query.data && !override) {
-    return (
-      <div data-screen="intercompania-ficha-cargando" aria-busy="true" className="grid gap-3 p-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-40 w-full" />
-      </div>
-    )
+    return <RecordSkeleton screen="intercompania-ficha-cargando" />
   }
   const view = override ?? query.data
   if (query.error || !view) {

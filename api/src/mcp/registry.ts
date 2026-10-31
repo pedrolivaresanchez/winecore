@@ -129,9 +129,10 @@ export interface WriteToolDefinition<T, P> {
 }
 
 const TOOL_NAME = /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/;
+const FORBIDDEN_TOOL = /approve|issue|void|send|delete|secret/;
 
 function assertToolName(name: string): void {
-  if (!TOOL_NAME.test(name)) {
+  if (!TOOL_NAME.test(name) || FORBIDDEN_TOOL.test(name)) {
     throw new Error(`Invalid MCP tool name: ${name}`);
   }
 }

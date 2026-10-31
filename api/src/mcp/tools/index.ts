@@ -1,13 +1,15 @@
-import { approvalsGetLink, approvalsListPending, approvalsRequestCreate } from "./approvals";
+import { approvalsGetLink, approvalsListPending } from "./approvals";
 import {
   billingInvoiceDeliveryMarkFailedTool,
   billingInvoiceDeliveryMarkSentTool,
   billingInvoicePdfGetTool,
   billingInvoicesPendingDeliveryListTool,
 } from "./billing-delivery";
-import { purchasingExpenseApprove, purchasingExpenseUpload, purchasingExpensesList } from "./expenses";
+import { purchasingExpenseUpload, purchasingExpensesList } from "./expenses";
 import { catalogFormatsList, catalogPriceListsList, catalogPriceQuote, catalogProductGet, catalogProductsSearch } from "./catalog";
 import { cellarLotGet, cellarOperationDraft, cellarOperationGet, cellarOperationsList, cellarVesselsList } from "./cellar";
+import { lotDesignGet, lotPlanFromRecipe, recipesList } from "./lot-design";
+import { tastingNoteFromDictation, tastingSessionSamplesList, tastingVoteCast } from "./tasting";
 import { contactsCreate, contactsGet, contactsSearch } from "./contacts";
 import { inventoryMovementsList, inventoryReconcile, inventoryStockAt } from "./inventory";
 import { systemSearch, systemWhoami } from "./system";
@@ -18,7 +20,6 @@ export const mcpTools: readonly AnyTool[] = [
   systemSearch,
   approvalsListPending,
   approvalsGetLink,
-  approvalsRequestCreate,
   contactsSearch,
   contactsGet,
   contactsCreate,
@@ -35,11 +36,16 @@ export const mcpTools: readonly AnyTool[] = [
   cellarOperationsList,
   cellarOperationGet,
   cellarOperationDraft,
+  lotDesignGet,
+  recipesList,
+  lotPlanFromRecipe,
+  tastingSessionSamplesList,
+  tastingNoteFromDictation,
+  tastingVoteCast,
   billingInvoicesPendingDeliveryListTool,
   billingInvoicePdfGetTool,
   billingInvoiceDeliveryMarkSentTool,
   billingInvoiceDeliveryMarkFailedTool,
   purchasingExpensesList,
   purchasingExpenseUpload,
-  purchasingExpenseApprove,
 ];

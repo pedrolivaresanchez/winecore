@@ -1,4 +1,4 @@
-import { ApiError, api } from '@/lib/api'
+import { ApiError, api, apiBlob } from '@/lib/api'
 import { copy } from '@/i18n'
 import { formatMoney } from '@/lib/format'
 
@@ -344,12 +344,41 @@ export function sendQuote(id: string) {
   return api<Quote>(`/v1/quotes/${id}/send`, { method: 'POST', body: '{}' })
 }
 
+export function patchQuote(id: string, body: Record<string, unknown>) {
+  return api<Quote>(`/v1/quotes/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+export function acceptQuote(id: string) {
+  return api<Quote>(`/v1/quotes/${id}/accept`, { method: 'POST', body: '{}' })
+}
+
+export function rejectQuote(id: string, reason?: string) {
+  const trimmed = reason?.trim() ?? ''
+  return api<Quote>(`/v1/quotes/${id}/reject`, {
+    method: 'POST',
+    body: JSON.stringify(trimmed ? { reason: trimmed } : {}),
+  })
+}
+
 export function quoteToOrder(id: string) {
   return api<SalesOrder>(`/v1/quotes/${id}/to-order`, { method: 'POST', body: '{}' })
 }
 
-export function quotePdfPath(id: string): string {
-  return `/api/v1/quotes/${id}/pdf`
+// The API sends X-Frame-Options DENY and CSP default-src 'none', and a new tab carries no bearer token,
+// so the PDF is fetched with the session and shown from a blob URL. The tab opens inside the click to avoid popup blockers.
+export async function openQuotePdf(id: string): Promise<void> {
+  const tab = window.open('', '_blank')
+  if (tab) tab.opener = null
+  try {
+    const { blob } = await apiBlob(`/v1/quotes/${id}/pdf`)
+    const url = URL.createObjectURL(blob)
+    if (tab) tab.location.href = url
+    else window.open(url, '_blank', 'noopener')
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  } catch (error) {
+    tab?.close()
+    throw error
+  }
 }
 
 export function listOrders(query: { status?: string; entity?: string; channel?: string; cursor?: string | null }, signal?: AbortSignal) {

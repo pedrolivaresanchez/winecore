@@ -477,7 +477,6 @@ export function VentasList({ me, doc, creating = false }: { me: Me; doc: DocKind
           key={formKey}
           doc={doc}
           customers={catalog.customers}
-          products={catalog.products}
           onClose={closeCreate}
           onCreated={created}
         />
@@ -486,9 +485,6 @@ export function VentasList({ me, doc, creating = false }: { me: Me; doc: DocKind
         <CreateDelivery
           key={formKey}
           customers={catalog.customers}
-          products={catalog.products}
-          lots={catalog.lots}
-          locations={catalog.locations}
           onClose={closeCreate}
           onCreated={created}
         />

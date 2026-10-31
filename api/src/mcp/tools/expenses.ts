@@ -3,9 +3,8 @@ import { z } from "zod";
 import { can } from "../../core/auth/permissions";
 import { domainError } from "../../core/errors";
 import { createHash } from "node:crypto";
-import { noopApprovalHook } from "../../core/purchasing/approval";
-import { detectMime } from "../../core/attachments/mime";
-import { approveInvoice, captureInvoice, getInvoice, listInvoices } from "../../core/purchasing/invoice";
+import { detectMime, MAX_MCP_UPLOAD_BYTES, safeAttachmentName } from "../../core/attachments/mime";
+import { captureInvoice, listInvoices } from "../../core/purchasing/invoice";
 import { ocrFromEnv } from "../../core/purchasing/timbal";
 import { defineReadTool, defineWriteTool } from "../registry";
 import { actorOf, requireWriter, viewerOf } from "../runtime";
@@ -98,52 +97,6 @@ export const purchasingExpenseUpload = defineWriteTool({
   },
 });
 
-const approveInput = z.object({
-  expense_id: z.string().uuid(),
-});
-
-interface ApprovePayload {
-  expense_id: string;
-  updated_at: string;
-}
-
-export const purchasingExpenseApprove = defineWriteTool({
-  name: "purchasing_expense_approve",
-  module: "purchasing",
-  scope: "purchasing.approve",
-  title: "Aprobar gasto",
-  description: "Pide la aprobación de un gasto en nombre de la persona representada.",
-  input: approveInput,
-  prepare: async (ctx, input) => {
-    const user = viewerOf(ctx);
-    if (!can(user, "purchasing.approve")) throw domainError("WC_FORBIDDEN");
-    const current = await getInvoice(requireWriter(ctx), user, input.expense_id);
-    const payload: ApprovePayload = { expense_id: input.expense_id, updated_at: current.updated_at };
-    return {
-      summary_es: `Aprobar gasto ${current.supplier_invoice_number ?? input.expense_id}`,
-      preview: {
-        id: current.id,
-        status: current.status,
-        total: current.total,
-        supplier: current.supplier_name,
-      },
-      payload,
-    };
-  },
-  commit: async (ctx, payload) => {
-    const user = viewerOf(ctx);
-    if (!can(user, "purchasing.approve")) throw domainError("WC_FORBIDDEN");
-    return approveInvoice(
-      requireWriter(ctx),
-      actorOf(ctx, "Aprobación de gasto"),
-      user,
-      payload.expense_id,
-      payload.updated_at,
-      noopApprovalHook,
-    );
-  },
-});
-
 function digest(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -156,10 +109,18 @@ function decodeFile(contentBase64: string, filename: string | undefined): {
   if (!/^[A-Za-z0-9+/=\s]+$/.test(contentBase64)) {
     throw domainError("WC_VALIDATION", { content_base64: "El fichero no es base64" });
   }
-  const bytes = Uint8Array.from(Buffer.from(contentBase64.replace(/\s+/g, ""), "base64"));
+  const compact = contentBase64.replace(/\s+/g, "");
+  if (compact.length > Math.ceil(MAX_MCP_UPLOAD_BYTES / 3) * 4) {
+    throw domainError("WC_VALIDATION", { content_base64: "El fichero supera el límite de 10 MB" });
+  }
+  const bytes = Uint8Array.from(Buffer.from(compact, "base64"));
   if (bytes.byteLength === 0) throw domainError("WC_VALIDATION", { content_base64: "El fichero está vacío" });
+  if (bytes.byteLength > MAX_MCP_UPLOAD_BYTES) {
+    throw domainError("WC_VALIDATION", { content_base64: "El fichero supera el límite de 10 MB" });
+  }
   const mime = detectMime(bytes);
   if (!mime) throw domainError("WC_VALIDATION", { content_base64: "Tipo de fichero no admitido" });
   const fallback = mime === "application/pdf" ? "gasto.pdf" : "gasto.jpg";
-  return { bytes, mime, filename: filename?.trim() || fallback };
+  const name = filename ? safeAttachmentName(filename) : "";
+  return { bytes, mime, filename: name || fallback };
 }

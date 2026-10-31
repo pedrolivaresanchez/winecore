@@ -5,8 +5,9 @@ import { domainError } from '../errors';
 import { newId } from '../ids';
 import { isMadridCivilDate } from '../time';
 import { addAreas, areaExceeds, formatArea, parseArea } from './quantity';
-import { dayOf, flag, idOf, instantOf, integerOrNull, text, textOrNull } from './rows';
+import { dayOf, flag, idOf, instantOf, integerOrNull, objectOf, text, textOrNull } from './rows';
 import { formatSigpac, parseSigpac, type SigpacRef } from './sigpac';
+import { latestParcelAnalysis } from '../winemaking/service';
 import { activeVariety } from './varieties';
 
 const CODE = /^[A-Z0-9-]{2,20}$/;
@@ -21,6 +22,10 @@ export interface ParcelVariety {
   area_ha: string;
   planting_year: number | null;
   rootstock: string | null;
+}
+
+export interface ParcelDetail extends Parcel {
+  latest_analysis: Record<string, unknown> | null;
 }
 
 export interface Parcel {
@@ -72,6 +77,60 @@ interface VarietyInput {
   rootstock: string | null;
 }
 
+export interface ParcelOption {
+  id: string;
+  code: string;
+  name: string;
+  area: string;
+  area_ha: string;
+  organic_status: string;
+}
+
+/** Selector ligero para catas, diseño de lote y el cuaderno. Solo parcelas activas. */
+export async function listParcelOptions(writer: Writer): Promise<{ items: ParcelOption[] }> {
+  const rows = await writer.read<Record<string, unknown>>(`
+    SELECT id::VARCHAR AS id, code, name, area_ha::VARCHAR AS area_ha, organic_status, is_organic
+    FROM vineyard.parcel
+    WHERE is_active
+    ORDER BY code
+  `);
+  return {
+    items: rows.map((row) => {
+      const area = formatArea(text(row.area_ha));
+      const organic = textOrNull(row.organic_status) ?? (flag(row.is_organic) ? 'organic' : 'conventional');
+      return {
+        id: idOf(row.id),
+        code: text(row.code),
+        name: text(row.name),
+        area,
+        area_ha: area,
+        organic_status: organic,
+      };
+    }),
+  };
+}
+
+export async function parcelSummary(writer: Writer) {
+  const rows = await writer.read<Record<string, unknown>>(`
+    SELECT COALESCE(sum(area_ha), 0)::VARCHAR AS area_ha, count(*)::VARCHAR AS parcels
+    FROM vineyard.parcel
+  `);
+  const settings = await writer.read<Record<string, unknown>>(sql`
+    SELECT value FROM core.setting WHERE key = 'vineyard.simplified_notebook_max_ha'
+  `);
+  const value = objectOf(settings[0]?.value) ?? {};
+  const maxHa = typeof value.max_ha === 'number' ? value.max_ha : Number(value.max_ha ?? 2);
+  const total = formatArea(text(rows[0]?.area_ha ?? '0'));
+  return {
+    total_area_ha: total,
+    parcel_count: integerOrNull(rows[0]?.parcels) ?? 0,
+    simplified_notebook_max_ha: Number.isFinite(maxHa) ? maxHa : 2,
+    simplified_notebook_confirmed: value.confirmed === true,
+    question: typeof value.question === 'string' ? value.question : 'Q-038',
+    within_threshold: Number(total) <= (Number.isFinite(maxHa) ? maxHa : 2),
+  };
+}
+
 export async function listParcels(writer: Writer): Promise<{ items: Parcel[]; total: number }> {
   const rows = await writer.read(`
     SELECT id::VARCHAR AS id, code, name, ownership, supplier_contact_id::VARCHAR AS supplier_contact_id,
@@ -88,8 +147,9 @@ export async function listParcels(writer: Writer): Promise<{ items: Parcel[]; to
   return { items, total: items.length };
 }
 
-export async function getParcel(writer: Writer, code: string): Promise<Parcel> {
-  return requireParcel(writer, code);
+export async function getParcel(writer: Writer, code: string): Promise<ParcelDetail> {
+  const parcel = await requireParcel(writer, code);
+  return { ...parcel, latest_analysis: await latestParcelAnalysis(writer, parcel.id) };
 }
 
 export async function createParcel(writer: Writer, actor: Actor, body: Record<string, unknown>): Promise<Parcel> {

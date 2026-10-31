@@ -1,4 +1,5 @@
 import type { Config } from '../../../config';
+import { devAuthEnabled } from '../../../auth/policy';
 import { newId } from '../../ids';
 import { sql } from '../../db/sql';
 import type { Tx } from '../../db/writer';
@@ -72,7 +73,7 @@ async function loginRow(read: Tx['read'], hash: Uint8Array): Promise<string | 'r
 }
 
 export function sessionHash(config: Config, request: Request, userId: string): Uint8Array {
-  if (config.authMode === 'dev') {
+  if (devAuthEnabled(config)) {
     const email = (request.headers.get('x-dev-user') ?? config.devUserEmail).trim().toLowerCase();
     return sha256Bytes(`dev\n${userId}\n${email}`);
   }

@@ -363,6 +363,56 @@ export interface FermentationEndRequest extends OperationHeader {
   abv_pct: string | null;
 }
 
+export interface BleedingRequest extends OperationHeader {
+  op_type: "bleeding";
+  lines: readonly FermentationVolumeLine[];
+  new_lot: { code: string; id?: string };
+}
+
+export interface PressingOffLine {
+  role: "input" | "output" | "loss";
+  lot: LotRef;
+  vessel_id: string;
+  volume_ml: number;
+  product_state: BulkProductState;
+  loss_kind: LossKind | null;
+  /** Set on an output that births a child lot. Null keeps the parent lot. */
+  new_lot_code: string | null;
+}
+
+export interface PressingOffRequest extends OperationHeader {
+  op_type: "pressing_off";
+  lines: readonly PressingOffLine[];
+}
+
+export interface DelestageRequest extends OperationHeader {
+  op_type: "delestage";
+  vessel_id: string;
+  lot: LotRef;
+  started_at: string;
+  ended_at: string;
+  notes: string | null;
+}
+
+export interface TemperatureControlRequest extends OperationHeader {
+  op_type: "temperature_control";
+  vessel_id: string;
+  lot: LotRef;
+  previous_setpoint_c: string;
+  new_setpoint_c: string;
+}
+
+/** Toma de muestras. No mueve volumen: el depósito y el lote se quedan igual. */
+export interface SamplingRequest extends OperationHeader {
+  op_type: "sampling";
+  vessel_id: string;
+  lot: LotRef;
+  sampled_at: string;
+  sample_code: string;
+  destination: "internal" | "lab";
+  lab_contact_id: string | null;
+}
+
 export type OperationRequest =
   | TransferRequest
   | BlendRequest
@@ -373,7 +423,12 @@ export type OperationRequest =
   | ReceptionRequest
   | PressingRequest
   | FermentationStartRequest
-  | FermentationEndRequest;
+  | FermentationEndRequest
+  | BleedingRequest
+  | PressingOffRequest
+  | DelestageRequest
+  | TemperatureControlRequest
+  | SamplingRequest;
 
 /** Hecho de SILICIE que no es una fila de inventory.fiscal_move (A14 uva, A32 elaboración). */
 export interface SilicieFactDraft {
@@ -509,6 +564,8 @@ export interface PlanSuccess {
   lotUpdates: readonly LotKindUpdate[];
   pressingYield: PressingYieldDraft | null;
   fermentationPhase: FermentationPhaseDraft | null;
+  /** Avisos que no son asientos. El descube y el sangrado citan Q-040. */
+  notes: readonly string[];
 }
 
 export interface PlanFailure {

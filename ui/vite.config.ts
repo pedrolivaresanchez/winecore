@@ -19,6 +19,12 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           rewrite: (requestPath) => requestPath.replace(/^\/api/, "") || "/",
         },
+        // Same paths the API serves under /auth, so a local redirect_uri without the
+        // /api prefix still reaches the process that accepts POST.
+        "/auth": {
+          target: env.VITE_API_PROXY_TARGET || "http://localhost:3000",
+          changeOrigin: true,
+        },
       },
     },
     preview: {

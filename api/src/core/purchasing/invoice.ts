@@ -211,7 +211,9 @@ type Loaded = {
 async function load(read: Tx['read'] | Writer['read'], id: string): Promise<Loaded | null> {
   if (!UUID.test(id)) return null;
   const rows = await read<Record<string, unknown>>(sql`
-    SELECT i.*, e.code AS entity_code, c.legal_name AS contact_name, c.tax_id AS contact_tax_id,
+    SELECT i.*, e.code AS entity_code,
+           COALESCE(NULLIF(trim(c.trade_name), ''), c.legal_name) AS contact_name,
+           c.tax_id AS contact_tax_id,
            cat.organic_relevant
     FROM purchasing.supplier_invoice i
     JOIN core.legal_entity e ON e.id = i.legal_entity_id
@@ -729,6 +731,58 @@ function memoryView(input: {
   };
 }
 
+export async function listExpenseCategories(writer: Writer): Promise<{
+  items: { code: string; name: string; default_account: string; organic_relevant: boolean }[];
+}> {
+  const rows = await writer.read<{
+    code: string;
+    name_es: string;
+    default_account: string;
+    organic_relevant: boolean;
+  }>(sql`
+    SELECT code, name_es, default_account, organic_relevant
+    FROM purchasing.expense_category
+    WHERE is_active
+    ORDER BY name_es, code
+  `);
+  return {
+    items: rows.map((row) => ({
+      code: String(row.code),
+      name: String(row.name_es),
+      default_account: String(row.default_account),
+      organic_relevant: row.organic_relevant === true,
+    })),
+  };
+}
+
+function monthFilter(raw: string | null): string | null {
+  if (raw == null || raw.trim() === '') return null;
+  const month = raw.trim();
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) invalid({ month: 'El mes debe ser AAAA-MM' });
+  return month;
+}
+
+async function categoryFilter(writer: Writer, raw: string | null): Promise<string | null> {
+  if (raw == null || raw.trim() === '') return null;
+  const code = raw.trim();
+  if (!/^[a-z_]{2,30}$/.test(code)) invalid({ category: 'Categoría no válida' });
+  const rows = await writer.read<{ code: string }>(sql`
+    SELECT code FROM purchasing.expense_category WHERE code = ${code}
+  `);
+  if (!rows[0]) invalid({ category: 'Categoría no válida' });
+  return code;
+}
+
+function searchFilter(raw: string | null): string | null {
+  if (raw == null) return null;
+  const trimmed = raw.trim();
+  if (trimmed === '') return null;
+  if (trimmed.length > 80) invalid({ q: 'La búsqueda admite como máximo 80 caracteres' });
+  const plain = trimmed.replace(/[%_\\]/g, '');
+  if (plain === '') return null;
+  return `%${plain}%`;
+}
+
 export async function getInvoice(writer: Writer, user: UserCtx, id: string): Promise<InvoiceJson> {
   return requireInvoice(writer.read.bind(writer), user, id, 'purchasing.read');
 }
@@ -742,6 +796,9 @@ export async function listInvoices(writer: Writer, user: UserCtx, url: URL): Pro
   if (status && !['captured', 'validated', 'approved', 'rejected', 'duplicate'].includes(status)) {
     invalid({ status: 'Estado no válido' });
   }
+  const month = monthFilter(url.searchParams.get('month'));
+  const category = await categoryFilter(writer, url.searchParams.get('category'));
+  const needle = searchFilter(url.searchParams.get('q') ?? url.searchParams.get('search'));
   const limitRaw = url.searchParams.get('limit');
   const limit = limitRaw == null || limitRaw === '' ? 50 : Number(limitRaw);
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) invalid({ limit: 'Debe estar entre 1 y 100' });
@@ -763,6 +820,18 @@ export async function listInvoices(writer: Writer, user: UserCtx, url: URL): Pro
     assertEntity(user, 'purchasing.read', entityId);
     filters.push(sql`i.legal_entity_id = CAST(${entityId} AS UUID)`);
   }
+  if (month) filters.push(sql`left(CAST(COALESCE(i.issue_date, i.accounting_date) AS VARCHAR), 7) = ${month}`);
+  if (category) filters.push(sql`i.category_code = ${category}`);
+  if (needle) {
+    filters.push(sql`(
+      strip_accents(lower(coalesce(c.legal_name, ''))) LIKE strip_accents(lower(${needle}))
+      OR strip_accents(lower(coalesce(c.trade_name, ''))) LIKE strip_accents(lower(${needle}))
+      OR strip_accents(lower(coalesce(c.tax_id, ''))) LIKE strip_accents(lower(${needle}))
+      OR strip_accents(lower(coalesce(i.supplier_invoice_number, ''))) LIKE strip_accents(lower(${needle}))
+      OR strip_accents(lower(coalesce(json_extract_string(i.ocr_extraction, '$.supplier_name'), ''))) LIKE strip_accents(lower(${needle}))
+      OR strip_accents(lower(coalesce(json_extract_string(i.ocr_extraction, '$.supplier_tax_id'), ''))) LIKE strip_accents(lower(${needle}))
+    )`);
+  }
   const where = filters.join(' AND ');
   const cursor = url.searchParams.get('cursor');
   let cursorSql = '';
@@ -777,12 +846,16 @@ export async function listInvoices(writer: Writer, user: UserCtx, url: URL): Pro
   const rows = await writer.read<{ id: unknown }>(`
     SELECT i.id
     FROM purchasing.supplier_invoice i
+    LEFT JOIN party.contact c ON c.id = i.supplier_id
     WHERE ${where}${cursorSql}
     ORDER BY i.updated_at DESC, i.id DESC
     LIMIT ${limit + 1}
   `);
   const totalRows = await writer.read<{ total: unknown }>(`
-    SELECT count(*) AS total FROM purchasing.supplier_invoice i WHERE ${where}
+    SELECT count(*) AS total
+    FROM purchasing.supplier_invoice i
+    LEFT JOIN party.contact c ON c.id = i.supplier_id
+    WHERE ${where}
   `);
   const hasMore = rows.length > limit;
   const page = hasMore ? rows.slice(0, limit) : rows;

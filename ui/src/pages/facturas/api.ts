@@ -20,6 +20,7 @@ function queryString(query: InvoiceQuery): string {
   if (query.customerId) params.set('customer_id', query.customerId)
   if (query.from) params.set('from', query.from)
   if (query.to) params.set('to', query.to)
+  if (query.verifactuStatus) params.set('verifactu_status', query.verifactuStatus)
   if (query.cursor) params.set('cursor', query.cursor)
   params.set('limit', String(query.limit ?? 50))
   return params.toString()

@@ -224,7 +224,7 @@ export async function createAddress(writer: Writer, request: Request, contactId:
   const rows = await writer.read(sql`SELECT * FROM party.contact_address WHERE id = CAST(${addressId} AS UUID)`);
   const row = rows[0];
   if (!row) throw domainError('WC_NOT_FOUND');
-  return addressOf(row);
+  return addressOf(row, user);
 }
 
 export async function patchAddress(writer: Writer, request: Request, contactId: string, addressId: string) {
@@ -239,7 +239,7 @@ export async function patchAddress(writer: Writer, request: Request, contactId: 
   const rows = await writer.read(sql`SELECT * FROM party.contact_address WHERE id = CAST(${addressId} AS UUID)`);
   const row = rows[0];
   if (!row) throw domainError('WC_NOT_FOUND');
-  return addressOf(row);
+  return addressOf(row, user);
 }
 
 export async function archiveAddress(writer: Writer, request: Request, contactId: string, addressId: string) {

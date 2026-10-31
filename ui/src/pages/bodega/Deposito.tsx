@@ -11,23 +11,21 @@ import { formatDateTime, formatLitres } from '@/lib/format'
 import { allows } from '@/lib/permissions'
 import { iconStroke } from '@/lib/motion'
 import type { Me } from '@/lib/types'
-import { Badge, Button, Dialog, DialogBody, DialogFooter, DialogHeader, EmptyState, GlassMenu, MenuItem, Skeleton, Textarea, useMenuOpen, useToast } from '@/ui'
+import { Badge, Button, Dialog, DialogBody, DialogFooter, DialogHeader, EmptyState, GlassMenu, MenuItem, Textarea, useMenuOpen, useToast } from '@/ui'
 import { MoreVertical, Printer } from '@/ui/icons'
 import { Fact, FactCard, FillMeter, ReadingColumn, RecordBar, SectionTabs } from '@/pages/bodega/chrome'
 import { materialLabel, opLabel, opStatusLabel, opStatusTone, vesselStatusLabel, vesselTone } from '@/pages/bodega/labels'
+import { BarrelMenu, BarrelRetireHost } from '@/pages/bodega-plano/BarrelMenu'
+import { BarrelPane } from '@/pages/bodega-plano/BarrelPane'
+import { DemijohnPane } from '@/pages/bodega-plano/DemijohnPane'
+import { vesselTabs, type VesselTabId } from '@/pages/bodega-plano/text'
+import { LotAnalyses } from '@/pages/elaboracion/Analiticas'
+import { LotCurve } from '@/pages/elaboracion/Lecturas'
+import { RecordSkeleton } from '@/components/RecordSkeleton'
 
 type HistoryPage = { items: CellarOperation[] }
 
-const TABS = [
-  { id: 'contenido', label: copy.cellar.content },
-  { id: 'lecturas', label: copy.cellar.readings },
-  { id: 'analiticas', label: copy.cellar.analyses },
-  { id: 'limpiezas', label: copy.cellar.cleanings },
-  { id: 'historial', label: copy.cellar.history },
-  { id: 'qr', label: copy.cellar.qr },
-] as const
-
-type TabId = (typeof TABS)[number]['id']
+type TabId = VesselTabId
 
 export function DepositoPage({ me }: { me: Me }) {
   const { vesselId = '' } = useParams()
@@ -39,12 +37,7 @@ export function DepositoPage({ me }: { me: Me }) {
 
   if (!allows(me, 'cellar.read')) return <NoPermission />
   if (data.loading && !data.data) {
-    return (
-      <div aria-busy="true" className="grid gap-3 p-6">
-        <Skeleton className="h-8 w-40" />
-        <Skeleton className="h-36" />
-      </div>
-    )
+    return <RecordSkeleton />
   }
   if (data.error || !data.data) {
     return (
@@ -91,6 +84,7 @@ function Loaded({
   const [busy, setBusy] = useState(false)
   const pct = fillPercent(vessel)
   const inside = holding(vessel)
+  const tabs = vesselTabs(vessel.kind)
   const nueva = `/bodega/operaciones/nueva?tipo=racking&vessel=${encodeURIComponent(vessel.code)}`
   const limpieza = `/bodega/operaciones/nueva?tipo=cleaning&vessel=${encodeURIComponent(vessel.code)}`
   const cleanings = operations.filter((item) => item.op_type === 'cleaning')
@@ -174,6 +168,15 @@ function Loaded({
               {copy.cellar.retire}
             </MenuItem>
           ) : null}
+          <MenuItem
+            onClick={() => {
+              more.close()
+              navigate(`/bodega/plano?recipiente=${encodeURIComponent(vessel.code)}`)
+            }}
+          >
+            {copy.plano.onPlan}
+          </MenuItem>
+          {canOperate && vessel.kind === 'barrel' ? <BarrelMenu code={vessel.code} close={more.close} /> : null}
         </GlassMenu>
       </RecordBar>
 
@@ -196,7 +199,7 @@ function Loaded({
             <Metric label={copy.cellar.fill} value={`${pct} %`} />
           </div>
           <FillMeter pct={pct} label={`${copy.cellar.fill} ${pct} %`} />
-          <SectionTabs label="Secciones" tabs={TABS} value={tab} onChange={onTab} />
+          <SectionTabs label="Secciones" tabs={tabs} value={tab} onChange={onTab} />
 
           {tab === 'contenido' ? (
             <FactCard title="Datos">
@@ -219,11 +222,14 @@ function Loaded({
             </FactCard>
           ) : null}
 
+          {tab === 'barrica' ? <BarrelPane me={me} code={vessel.code} /> : null}
+          {tab === 'damajuana' ? <DemijohnPane code={vessel.code} canOperate={canOperate} /> : null}
+
           {tab === 'lecturas' ? (
-            <EmptyState size="sm" title={copy.cellar.emptyReadings} description={copy.cellar.emptyReadingsHint} />
+            inside ? <LotCurve lotCode={inside.lot_code} /> : <EmptyState size="sm" title={copy.cellar.emptyReadings} description={copy.cellar.emptyReadingsHint} />
           ) : null}
           {tab === 'analiticas' ? (
-            <EmptyState size="sm" title={copy.cellar.emptyAnalyses} description={copy.cellar.emptyAnalysesHint} />
+            inside ? <LotAnalyses me={me} lotCode={inside.lot_code} /> : <EmptyState size="sm" title={copy.cellar.emptyAnalyses} description={copy.cellar.emptyAnalysesHint} />
           ) : null}
           {tab === 'limpiezas' ? (
             cleanings.length === 0 ? (
@@ -257,6 +263,7 @@ function Loaded({
           </Button>
         </DialogFooter>
       </Dialog>
+      {vessel.kind === 'barrel' ? <BarrelRetireHost /> : null}
     </ReadingColumn>
   )
 }

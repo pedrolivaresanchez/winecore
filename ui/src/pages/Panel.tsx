@@ -3,10 +3,10 @@ import { useChromeTitle } from '@/app/shell/shell-context'
 import { useEntity } from '@/app/entity-context'
 import { ErrorState } from '@/components/ErrorState'
 import { ArrowDown, ArrowUp } from '@/ui/icons'
-import { Skeleton } from '@/ui'
+import { FitAmount, Skeleton } from '@/ui'
 import { copy, fill } from '@/i18n'
 import { cn } from '@/lib/cn'
-import { formatInteger, formatMoney } from '@/lib/format'
+import { formatCompact, formatInteger, formatMoney } from '@/lib/format'
 import { iconStroke } from '@/lib/motion'
 import { allows } from '@/lib/permissions'
 import {
@@ -19,6 +19,7 @@ import {
 } from '@/lib/dashboard'
 import {
   entityFilter,
+  compactMeasure,
   formatDelta,
   formatMeasure,
   metricNumber,
@@ -27,6 +28,7 @@ import {
   type Measure,
 } from '@/lib/reports'
 import type { Me } from '@/lib/types'
+import { SetupCard } from '@/pages/ajustes/puesta-en-marcha/SetupPanel'
 
 const dateLabel = new Intl.DateTimeFormat('es-ES', {
   weekday: 'long',
@@ -54,16 +56,16 @@ export function Panel({ me }: { me: Me }) {
   const expenses = useReport(canReports ? 'expenses' : null, canReports ? yearQuery : null, true)
   const stock = useReport(canReports ? 'stock' : null, canReports ? yearQuery : null, true)
   const pending = dashboard.initial || (canReports && (sales.initial || expenses.initial || stock.initial))
-  const alerts =
-    (dashboard.data?.cellar?.count ?? 0) + (dashboard.data?.stock?.count ?? 0) + (dashboard.data?.submissions?.count ?? 0)
 
   return (
     <div data-screen={pending ? 'panel-cargando' : 'panel'} className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-3 py-5 sm:px-4 sm:py-8">
         <header>
           <p className="text-caption text-text-tertiary first-letter:uppercase">{dateLabel.format(new Date())}</p>
-          <h1 className="mt-1 text-heading font-medium tracking-[-0.02em] text-ink-900">{copy.panel.title}</h1>
+          <h1 className="mt-1 text-heading font-medium tracking-tight text-ink-900">{copy.panel.title}</h1>
         </header>
+
+        <SetupCard me={me} />
 
         {dashboard.initial ? (
           <PanelSkeleton />
@@ -100,8 +102,8 @@ export function Panel({ me }: { me: Me }) {
                   href={attentionHref.receivables}
                 />
               ) : null}
-              {dashboard.data.cellar || dashboard.data.stock || dashboard.data.submissions ? (
-                <CountTile label={copy.panel.alerts} value={alerts} href={attentionHref.cellar} />
+              {dashboard.data.alerts ? (
+                <CountTile label={copy.panel.alerts} value={dashboard.data.alerts.count} href={firstHref(dashboard.data.alerts)} />
               ) : null}
             </div>
           </>
@@ -135,6 +137,9 @@ export function Panel({ me }: { me: Me }) {
             {dashboard.data.receivables ? (
               <ReceivablesCard block={dashboard.data.receivables} />
             ) : null}
+            {dashboard.data.alerts ? (
+              <AttentionCard title={copy.panel.alerts} href={firstHref(dashboard.data.alerts)} block={dashboard.data.alerts} />
+            ) : null}
             {dashboard.data.submissions ? (
               <AttentionCard title={copy.panel.shipments} href={attentionHref.submissions} block={dashboard.data.submissions} className="max-md:hidden" />
             ) : null}
@@ -155,15 +160,19 @@ function PanelSkeleton() {
   return (
     <div className="grid gap-3" aria-busy="true">
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-        <Skeleton className="h-16 rounded-[10px]" />
-        <Skeleton className="h-16 rounded-[10px]" />
-        <Skeleton className="h-16 rounded-[10px]" />
-        <Skeleton className="h-16 rounded-[10px]" />
+        <Skeleton className="h-16 rounded-2xl" />
+        <Skeleton className="h-16 rounded-2xl" />
+        <Skeleton className="h-16 rounded-2xl" />
+        <Skeleton className="h-16 rounded-2xl" />
       </div>
       <Skeleton className="h-28 rounded-xl" />
       <Skeleton className="h-28 rounded-xl" />
     </div>
   )
+}
+
+function firstHref(block: AttentionBlock): string | null {
+  return block.items.find((item) => item.href)?.href ?? null
 }
 
 function CountTile({
@@ -174,21 +183,39 @@ function CountTile({
 }: {
   label: string
   value: number | string
-  href: string
+  href: string | null
   quiet?: boolean
 }) {
   const empty = quiet ?? value === 0
-  return (
-    <Link
-      to={href}
-      className="flex min-w-0 flex-col gap-1 rounded-[10px] border border-border-subtle bg-surface-subtle px-3 py-2.5 outline-none transition-colors duration-(--duration-quick) ease-(--ease-smooth-out) hover:border-border hover:bg-surface focus-visible:shadow-(--shadow-focus)"
-    >
+  const figure = tileFigure(value)
+  const className =
+    'flex min-w-0 flex-col gap-1 rounded-2xl border border-border-subtle bg-surface-subtle px-3 py-2.5 outline-none transition-colors duration-(--duration-quick) ease-(--ease-smooth-out) hover:border-border hover:bg-surface focus-visible:shadow-(--shadow-focus)'
+  const body = (
+    <>
       <span className="truncate text-caption text-text-tertiary">{label}</span>
-      <span className={cn('truncate text-heading font-medium leading-none tabular-nums', empty ? 'text-text-tertiary' : 'text-ink-900')}>
-        {typeof value === 'number' ? formatInteger(value) : value}
-      </span>
+      <FitAmount
+        full={figure.full}
+        short={figure.short}
+        className={cn('w-full text-heading font-medium leading-none tabular-nums', empty ? 'text-text-tertiary' : 'text-ink-900')}
+      />
+    </>
+  )
+  if (!href) return <div className={className}>{body}</div>
+  return (
+    <Link to={href} className={className}>
+      {body}
     </Link>
   )
+}
+
+function tileFigure(value: number | string): { full: string; short: string } {
+  if (typeof value === 'number') {
+    const full = formatInteger(value)
+    return { full, short: Math.abs(value) >= 1000 ? formatCompact(value) : full }
+  }
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return { full: value, short: value }
+  return { full: formatMoney(parsed), short: compactMeasure(parsed, 'amount') }
 }
 
 function YearTile({
@@ -204,13 +231,13 @@ function YearTile({
   measure: Measure
   polarity: 'up' | 'down' | 'neutral'
 }) {
-  if (report.initial) return <Skeleton className="h-16 rounded-[10px]" />
+  if (report.initial) return <Skeleton className="h-16 rounded-2xl" />
   if (!report.data) {
     return (
       <button
         type="button"
         onClick={report.reload}
-        className="flex min-w-0 flex-col items-start gap-1 rounded-[10px] border border-border-subtle bg-surface-subtle px-3 py-2.5 text-left outline-none focus-visible:shadow-(--shadow-focus)"
+        className="flex min-w-0 flex-col items-start gap-1 rounded-2xl border border-border-subtle bg-surface-subtle px-3 py-2.5 text-left outline-none focus-visible:shadow-(--shadow-focus)"
       >
         <span className="text-caption text-text-tertiary">{label}</span>
         <span className="text-caption text-ink-900">{copy.error.retry}</span>
@@ -225,13 +252,15 @@ function YearTile({
   return (
     <Link
       to={href}
-      className="flex min-w-0 flex-col gap-1 rounded-[10px] border border-border-subtle bg-surface-subtle px-3 py-2.5 outline-none transition-colors duration-(--duration-quick) ease-(--ease-smooth-out) hover:border-border hover:bg-surface focus-visible:shadow-(--shadow-focus)"
+      className="flex min-w-0 flex-col gap-1 rounded-2xl border border-border-subtle bg-surface-subtle px-3 py-2.5 outline-none transition-colors duration-(--duration-quick) ease-(--ease-smooth-out) hover:border-border hover:bg-surface focus-visible:shadow-(--shadow-focus)"
     >
       <span className="truncate text-caption text-text-tertiary">{label}</span>
       <span className="flex min-w-0 items-baseline gap-2">
-        <span className="truncate text-heading font-medium leading-none tabular-nums text-ink-900" title={formatMeasure(value, measure)}>
-          {formatMeasure(value, measure)}
-        </span>
+        <FitAmount
+          full={formatMeasure(value, measure)}
+          short={compactMeasure(value, measure)}
+          className="min-w-0 flex-1 text-heading font-medium leading-none tabular-nums text-ink-900"
+        />
         {delta ? (
           <span
             className={cn(
@@ -278,17 +307,22 @@ function AttentionCard({
   className,
 }: {
   title: string
-  href: string
+  href: string | null
   block: AttentionBlock
   days?: boolean
   className?: string
 }) {
+  const titleClass = 'min-w-0 truncate text-label font-medium text-ink-900 outline-none focus-visible:shadow-(--shadow-focus)'
   return (
     <section className={cn('rounded-xl bg-surface shadow-(--shadow-surface)', className)}>
       <div className="flex items-center justify-between gap-2 px-4 py-3">
-        <Link to={href} className="min-w-0 truncate text-label font-medium text-ink-900 outline-none focus-visible:shadow-(--shadow-focus)">
-          {title}
-        </Link>
+        {href ? (
+          <Link to={href} className={titleClass}>
+            {title}
+          </Link>
+        ) : (
+          <span className={titleClass}>{title}</span>
+        )}
         {block.count > 0 ? <span className="text-caption tabular-nums text-text-tertiary">{formatInteger(block.count)}</span> : null}
       </div>
       {block.items.length === 0 ? (
@@ -344,14 +378,20 @@ function ReceivablesCard({ block }: { block: ReceivablesBlock }) {
   )
 }
 
-function ItemLink({ item, href, days }: { item: AttentionItem; href: string; days: boolean }) {
+function ItemLink({ item, href, days }: { item: AttentionItem; href: string | null; days: boolean }) {
   const meta = [item.detail, days && item.daysLeft != null ? fill(copy.panel.days, { days: String(item.daysLeft) }) : null]
     .filter((part): part is string => Boolean(part))
     .join(' · ')
-  return (
-    <Link to={href} className="block px-4 py-2.5 outline-none hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)">
+  const body = (
+    <>
       <p className="truncate text-label text-ink-900">{item.title}</p>
       {meta ? <p className="truncate text-caption text-text-tertiary">{meta}</p> : null}
+    </>
+  )
+  if (!href) return <div className="px-4 py-2.5">{body}</div>
+  return (
+    <Link to={href} className="block px-4 py-2.5 outline-none hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)">
+      {body}
     </Link>
   )
 }

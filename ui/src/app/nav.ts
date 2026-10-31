@@ -1,4 +1,4 @@
-import { Archive, Box, ChartBar, Check, CreditCard, FileText, Home, Layers, Receipt, Settings2, ShareNetwork, Users, type IconComponent } from '@/ui/icons'
+import { Archive, Box, Calendar, ChartBar, Check, CreditCard, FileText, Home, Layers, MapPin, Receipt, Settings2, ShareNetwork, Users, type IconComponent } from '@/ui/icons'
 import { copy } from '@/i18n'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
@@ -12,7 +12,7 @@ export type NavChild = {
 }
 
 /** Menu groups from docs/08-ui/01-navegacion.md, in that order. */
-export type NavGroup = 'inicio' | 'ventas' | 'facturacion' | 'catalogo' | 'compras' | 'stock' | 'bodega' | 'informes'
+export type NavGroup = 'inicio' | 'ventas' | 'facturacion' | 'catalogo' | 'compras' | 'stock' | 'bodega' | 'vinedo' | 'regulatorio' | 'informes'
 
 export type NavEntry = {
   id: string
@@ -158,9 +158,41 @@ export const navigation: NavEntry[] = [
     group: 'bodega',
     children: [
       { id: 'vessels', label: copy.nav.vessels, path: '/bodega/depositos', permission: 'cellar.read' },
+      { id: 'plan', label: copy.nav.plan, path: '/bodega/plano', permission: 'cellar.read' },
       { id: 'lots', label: copy.nav.lots, path: '/bodega/lotes', permission: 'cellar.read' },
       { id: 'new-operation', label: copy.nav.newOperation, path: '/bodega/operaciones/nueva', permission: 'cellar.operate' },
+      { id: 'readings', label: copy.nav.readings, path: '/bodega/lecturas', permission: 'cellar.read' },
+      { id: 'phases', label: copy.nav.phases, path: '/bodega/fases', permission: 'cellar.read' },
+      { id: 'analyses', label: copy.nav.analyses, path: '/bodega/analiticas', permission: 'cellar.read' },
+      { id: 'tastings', label: copy.nav.tastings, path: '/bodega/catas', permission: 'cellar.read' },
+      { id: 'recipes', label: copy.nav.recipes, path: '/bodega/recetas', permission: 'cellar.read' },
+      { id: 'vintages', label: copy.nav.vintages, path: '/bodega/anadas', permission: 'cellar.read' },
+      { id: 'calculators', label: copy.nav.calculators, path: '/bodega/calculadoras', permission: 'cellar.read' },
+      { id: 'hygiene', label: copy.nav.hygiene, path: '/bodega/higiene', permission: 'cellar.read' },
+      { id: 'holders', label: copy.nav.holders, path: '/bodega/contenedores', permission: 'cellar.read' },
     ],
+  },
+  {
+    id: 'vineyard',
+    module: 'vineyard',
+    label: copy.nav.vineyard,
+    icon: MapPin,
+    path: '/vinedo',
+    permission: 'vineyard.read',
+    mobile: 'tab',
+    placement: 'main',
+    group: 'vinedo',
+  },
+  {
+    id: 'regulatory',
+    module: 'regulatory',
+    label: copy.nav.regulatory,
+    icon: Calendar,
+    path: '/regulatorio',
+    permission: 'regulatory.read',
+    mobile: 'more',
+    placement: 'main',
+    group: 'regulatorio',
   },
   {
     id: 'reports',

@@ -1,5 +1,5 @@
 import { Elysia } from 'elysia';
-import { requirePermission, type GuardDeps } from '../auth/guard';
+import { requirePermission, sessionOf, type GuardDeps } from '../auth/guard';
 import type { Writer } from '../core/db/writer';
 import {
   getImpact,
@@ -10,7 +10,18 @@ import {
   postRuleSet,
   putRuleSet,
 } from './sales-rules';
-import { getQuoteById, getQuotePdf, getQuotes, postQuote, postQuoteSend, postQuoteToOrder } from './sales-quotes';
+import { salesCatalog } from '../core/sales/catalog';
+import {
+  getQuoteById,
+  getQuotePdf,
+  getQuotes,
+  patchQuoteById,
+  postQuote,
+  postQuoteAccept,
+  postQuoteReject,
+  postQuoteSend,
+  postQuoteToOrder,
+} from './sales-quotes';
 import {
   getOrder,
   getOrders,
@@ -57,6 +68,10 @@ export function salesRoutes(writer: Writer, guardDeps: GuardDeps) {
     .get('/v1/billing-rules/sets/:id/impact', ({ request, params }) => getImpact(writer, request, params.id), { beforeHandle: settings })
     .post('/v1/billing-rules/sets/:id/request-activation', ({ request, params }) => postRequestActivation(writer, request, params.id), { beforeHandle: settings })
     .post('/v1/billing-rules/sets/:id/activate', ({ request, params }) => postActivate(writer, request, params.id), { beforeHandle: settings })
+    .get('/v1/sales/catalog', ({ request }) => {
+      sessionOf(request);
+      return salesCatalog(writer, new URL(request.url), new Date());
+    }, { beforeHandle: read })
     .get('/v1/quotes', ({ request }) => getQuotes(writer, request), { beforeHandle: read })
     .post('/v1/quotes', async ({ request, set }) => {
       const result = await postQuote(writer, request);
@@ -70,6 +85,9 @@ export function salesRoutes(writer: Writer, guardDeps: GuardDeps) {
       set.status = result.status;
       return result.body;
     }, { beforeHandle: write })
+    .post('/v1/quotes/:id/accept', ({ request, params }) => postQuoteAccept(writer, request, params.id), { beforeHandle: write })
+    .post('/v1/quotes/:id/reject', ({ request, params }) => postQuoteReject(writer, request, params.id), { beforeHandle: write })
+    .patch('/v1/quotes/:id', ({ request, params }) => patchQuoteById(writer, request, params.id), { beforeHandle: write })
     .get('/v1/quotes/:id', ({ request, params }) => getQuoteById(writer, request, params.id), { beforeHandle: read })
     .get('/v1/sales-orders', ({ request }) => getOrders(writer, request), { beforeHandle: read })
     .post('/v1/sales-orders', async ({ request, set }) => {

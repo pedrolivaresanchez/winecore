@@ -8,7 +8,7 @@ import { NoPermission } from '@/components/NoPermission'
 import { useApi } from '@/hooks/use-api'
 import { copy } from '@/i18n'
 import { allows } from '@/lib/permissions'
-import { productAliases, useSalesCatalog } from '@/lib/sales-catalog'
+import { mergeProducts, productAliases, useSalesCatalog, useSalesOffer } from '@/lib/sales-catalog'
 import { commercialLines, draftsFrom, type DraftLine } from '@/lib/sales-draft'
 import {
   channelLabel,
@@ -26,11 +26,13 @@ import {
   patchDelivery,
   returnDelivery,
   shipCountry,
+  todayMadrid,
   voidDelivery,
   type DeliveryNote,
 } from '@/lib/sales'
 import type { Me } from '@/lib/types'
-import { Button, Input, MenuItem, Skeleton, useToast } from '@/ui'
+import { Button, Input, MenuItem, useToast } from '@/ui'
+import { RecordSkeleton } from '@/components/RecordSkeleton'
 import {
   DocLink,
   EadChip,
@@ -51,12 +53,7 @@ export function DeliveryPage({ me }: { me: Me }) {
   useChromeTitle(note.data?.number || copy.sales.deliveries)
   if (!allows(me, 'sales.read')) return <NoPermission />
   if (note.loading && !note.data) {
-    return (
-      <div aria-busy="true" className="grid gap-3 p-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-40 w-full" />
-      </div>
-    )
+    return <RecordSkeleton />
   }
   if (note.error || !note.data) {
     return (
@@ -71,7 +68,15 @@ export function DeliveryPage({ me }: { me: Me }) {
 function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: () => void }) {
   const navigate = useNavigate()
   const toast = useToast()
-  const catalog = useSalesCatalog(productAliases(note.lines))
+  const aliases = productAliases(note.lines)
+  const catalog = useSalesCatalog(aliases)
+  const offer = useSalesOffer({
+    customerId: note.customer_id ?? undefined,
+    channel: note.channel ?? undefined,
+    date: note.issue_date ?? todayMadrid(),
+  })
+  const products = mergeProducts(offer.products, aliases)
+  const places = offer.locations.length > 0 ? offer.locations : catalog.locations
   const [tab, setTab] = useState('lines')
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -85,8 +90,8 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
   const customer = catalog.customers.find((item) => item.id === note.customer_id)
   const abroad = note.channel === 'export' || (shipCountry(note.ship_to) !== '' && shipCountry(note.ship_to) !== 'ES') || (customer != null && customer.country !== 'ES')
   const needsEad = (note.kind === 'sale' || note.kind === 'sample') && abroad
-  const from = catalog.locations.find((item) => item.id === note.from_location_id)?.code ?? note.from_location_id.slice(0, 8)
-  const to = note.to_location_id ? catalog.locations.find((item) => item.id === note.to_location_id)?.code ?? '—' : catalog.customerName(note.customer_id)
+  const from = places.find((item) => item.id === note.from_location_id)?.code ?? note.from_location_id.slice(0, 8)
+  const to = note.to_location_id ? places.find((item) => item.id === note.to_location_id)?.code ?? '—' : catalog.customerName(note.customer_id)
 
   async function run(action: () => Promise<void>) {
     setBusy(true)
@@ -205,9 +210,9 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
         editing ? (
           <LineEditor
             lines={lines}
-            products={catalog.products}
-            lots={catalog.lots}
-            locations={catalog.locations}
+            products={products}
+            lots={offer.lots}
+            locations={places}
             showLot
             locationId={note.from_location_id}
             onChange={setLines}
@@ -216,7 +221,7 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
         ) : (
           <LineTable
             lines={note.lines}
-            lotName={(id) => catalog.lots.find((lot) => lot.id === id)?.code ?? id.slice(0, 8)}
+            lotName={(id) => offer.lots.find((lot) => lot.id === id)?.code ?? id.slice(0, 8)}
           />
         )
       ) : null}
@@ -299,7 +304,7 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
       {dialog === 'return' ? (
         <ReturnDialog
           lines={note.lines.map((line) => ({ id: line.id, description: line.description, quantity: line.quantity }))}
-          locations={catalog.locations}
+          locations={places}
           onClose={() => setDialog(null)}
           onConfirm={async (toLocationId, rows) => {
             const created = await returnDelivery(note.id, { to_location_id: toLocationId, lines: rows })

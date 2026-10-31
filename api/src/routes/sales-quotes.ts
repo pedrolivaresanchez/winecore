@@ -1,7 +1,17 @@
 import { sessionOf } from '../auth/guard';
 import type { Writer } from '../core/db/writer';
 import { actorOf } from '../core/sales/db';
-import { createQuote, getQuote, listQuotes, quotePdf, quoteToOrder, sendQuote } from '../core/sales/quotes';
+import {
+  acceptQuote,
+  createQuote,
+  getQuote,
+  listQuotes,
+  patchQuote,
+  quotePdf,
+  quoteToOrder,
+  rejectQuote,
+  sendQuote,
+} from '../core/sales/quotes';
 
 export function getQuotes(writer: Writer, request: Request) {
   sessionOf(request);
@@ -23,6 +33,18 @@ export function postQuoteSend(writer: Writer, request: Request, id: string) {
 
 export function postQuoteToOrder(writer: Writer, request: Request, id: string) {
   return quoteToOrder(writer, request, id);
+}
+
+export function patchQuoteById(writer: Writer, request: Request, id: string) {
+  return patchQuote(writer, request, id);
+}
+
+export function postQuoteAccept(writer: Writer, request: Request, id: string) {
+  return acceptQuote(writer, request, id);
+}
+
+export function postQuoteReject(writer: Writer, request: Request, id: string) {
+  return rejectQuote(writer, request, id);
 }
 
 export function getQuotePdf(writer: Writer, request: Request, id: string) {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ApiError, api, apiText, isAbortError } from '@/lib/api'
-import { formatInteger, formatLitres, formatMoney } from '@/lib/format'
+import { formatCompact, formatInteger, formatLitres, formatMoney } from '@/lib/format'
 import { copy } from '@/i18n'
 import type { EntityChoice } from '@/lib/types'
 
@@ -102,6 +102,13 @@ function formatVolume(litres: number): string {
     return `${text.replace(/[\u00a0\u202f]/g, ' ')} L`
   }
   return formatLitres(litres)
+}
+
+/** Short form for a tile that cannot hold `formatMeasure` (`176,1 mil €`). */
+export function compactMeasure(value: number, measure: Measure): string {
+  if (!Number.isFinite(value) || Math.abs(value) < 1000) return formatMeasure(value, measure)
+  const unit = measure === 'amount' ? '€' : measure === 'volume' ? 'L' : ''
+  return formatCompact(value, unit)
 }
 
 export function formatMeasure(value: number, measure: Measure): string {

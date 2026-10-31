@@ -19,6 +19,7 @@ import { CatalogAudit } from '@/pages/catalogo/components/CatalogAudit'
 import { StockPanel } from '@/pages/catalogo/components/StockPanel'
 import { Fact, FactCard, RecordBar, RecordTabs } from '@/pages/catalogo/frame'
 import { formatAlcohol, formatPrice, formatQty } from '@/pages/catalogo/money'
+import { RecordSkeleton } from '@/components/RecordSkeleton'
 import {
   formatName,
   inputFromProduct,
@@ -68,12 +69,7 @@ export function ProductPage({ me }: { me: Me }) {
 
   if (!allows(me, 'catalog.read')) return <NoPermission />
   if (product.loading && !product.data) {
-    return (
-      <div data-screen="producto-cargando" aria-busy="true" className="grid gap-3 p-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-40 w-full" />
-      </div>
-    )
+    return <RecordSkeleton screen="producto-cargando" />
   }
   if (product.error || !product.data) {
     return (

@@ -183,9 +183,8 @@ export function MovesPage({ me }: { me: Me }) {
       }
       filters={
         <div className={cn(FRAME_STRIP_SCROLL, '[&>*]:shrink-0')}>
-          <DatePicker size="sm" locale="es" timeZone="Europe/Madrid" labels={DATE_LABELS} value={from || null} placeholder={copy.stock.from} className="w-36 shrink-0" onChange={(next) => assign({ from: next })} />
-          <DatePicker size="sm" locale="es" timeZone="Europe/Madrid" labels={DATE_LABELS} value={to || null} placeholder={copy.stock.to} className="w-36 shrink-0" onChange={(next) => assign({ to: next })} />
-          <span className="hidden whitespace-nowrap text-caption text-text-tertiary lg:inline">{copy.stock.booksLine}</span>
+          <DatePicker size="sm" locale="es" timeZone="Europe/Madrid" labels={DATE_LABELS} value={from || null} placeholder={copy.stock.from} className="w-40 shrink-0" onChange={(next) => assign({ from: next })} />
+          <DatePicker size="sm" locale="es" timeZone="Europe/Madrid" labels={DATE_LABELS} value={to || null} placeholder={copy.stock.to} className="w-40 shrink-0" onChange={(next) => assign({ to: next })} />
           <Select size="sm" aria-label={copy.stock.type} value={moveType} onChange={(event) => assign({ move_type: event.target.value || null })}>
             <option value="">{copy.stock.type}</option>
             {types.map((item) => (

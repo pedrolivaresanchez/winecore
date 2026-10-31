@@ -99,19 +99,26 @@ export async function createMaturityCheck(writer: Writer, actor: Actor, body: Re
   if (body.weather_snapshot !== undefined && body.weather_snapshot !== null && weather === null) {
     throw domainError('WC_VALIDATION', { weather_snapshot: 'Tiene que ser un objeto' });
   }
+  const tasting = parseTasting(body);
   const id = newId();
   await writer.withWrite(actor, async (tx) => {
     const parcel = await parcelByCode(tx, parcelCode);
     if (!parcel.is_active) throw domainError('WC_VALIDATION', { parcel_code: 'La parcela no está activa' });
+    if (tasting.photo_attachment_id) await assertAttachment(tx, tasting.photo_attachment_id);
     tx.write(sql`
       INSERT INTO vineyard.maturity_check (
         id, parcel_id, checked_at, author, sensory_notes, estimated_days_to_harvest,
-        sanitary_status, weather_snapshot, probable_abv, total_acidity, sugar_gl, ph, source
+        sanitary_status, weather_snapshot, probable_abv, total_acidity, sugar_gl, ph, source,
+        seed_color, seed_crunch, skin_astringency, skin_color_release, pulp_sweetness, pulp_acidity,
+        phenolic_maturity, photo_attachment_id
       ) VALUES (
         CAST(${id} AS UUID), CAST(${parcel.id} AS UUID), CAST(${checkedAt} AS TIMESTAMPTZ), ${author},
         ${notes}, ${days}, ${sanitary}, ${sql.json(weather)},
         CAST(${probable} AS DECIMAL(4,2)), CAST(${acidity} AS DECIMAL(5,2)),
-        CAST(${sugar} AS DECIMAL(6,2)), CAST(${ph} AS DECIMAL(4,2)), ${source}
+        CAST(${sugar} AS DECIMAL(6,2)), CAST(${ph} AS DECIMAL(4,2)), ${source},
+        ${tasting.seed_color}, ${tasting.seed_crunch}, ${tasting.skin_astringency}, ${tasting.skin_color_release},
+        ${tasting.pulp_sweetness}, ${tasting.pulp_acidity}, ${tasting.phenolic_maturity},
+        CAST(${tasting.photo_attachment_id} AS UUID)
       )
     `);
     tx.audit({
@@ -131,7 +138,9 @@ export async function listMaturityChecks(writer: Writer, parcelCode: string | nu
     SELECT m.id::VARCHAR AS id, p.code AS parcel_code, m.checked_at, m.author, m.sensory_notes,
            m.estimated_days_to_harvest, m.sanitary_status, m.probable_abv::VARCHAR AS probable_abv,
            m.total_acidity::VARCHAR AS total_acidity, m.sugar_gl::VARCHAR AS sugar_gl, m.ph::VARCHAR AS ph,
-           m.source, m.created_at
+           m.seed_color, m.seed_crunch, m.skin_astringency, m.skin_color_release,
+           m.pulp_sweetness, m.pulp_acidity, m.phenolic_maturity,
+           m.photo_attachment_id::VARCHAR AS photo_attachment_id, m.source, m.created_at
     FROM vineyard.maturity_check m
     JOIN vineyard.parcel p ON p.id = m.parcel_id
     ${filter}
@@ -150,6 +159,14 @@ export async function listMaturityChecks(writer: Writer, parcelCode: string | nu
       total_acidity: text(row.total_acidity),
       sugar_gl: textOrNull(row.sugar_gl),
       ph: textOrNull(row.ph),
+      seed_color: textOrNull(row.seed_color),
+      seed_crunch: row.seed_crunch == null ? null : flag(row.seed_crunch),
+      skin_astringency: integerOrNull(row.skin_astringency),
+      skin_color_release: integerOrNull(row.skin_color_release),
+      pulp_sweetness: integerOrNull(row.pulp_sweetness),
+      pulp_acidity: integerOrNull(row.pulp_acidity),
+      phenolic_maturity: integerOrNull(row.phenolic_maturity),
+      photo_attachment_id: textOrNull(row.photo_attachment_id)?.toLowerCase() ?? null,
       source: text(row.source),
       created_at: instantOf(row.created_at),
     })),
@@ -431,6 +448,45 @@ async function assertParcelVariety(tx: Tx, parcelId: string, variety: string): P
     WHERE parcel_id = CAST(${parcelId} AS UUID) AND variety = ${variety}
   `);
   if (rows.length === 0) throw domainError('WC_VALIDATION', { variety: 'La variedad no está en la parcela' });
+}
+
+const SEED_COLORS = ['green', 'mixed', 'brown'] as const;
+
+function parseTasting(body: Record<string, unknown>) {
+  return {
+    seed_color: body.seed_color === undefined || body.seed_color === null || body.seed_color === ''
+      ? null
+      : oneOf(body.seed_color, 'seed_color', SEED_COLORS),
+    seed_crunch: body.seed_crunch === undefined || body.seed_crunch === null ? null : body.seed_crunch === true,
+    skin_astringency: score(body.skin_astringency, 'skin_astringency'),
+    skin_color_release: score(body.skin_color_release, 'skin_color_release'),
+    pulp_sweetness: score(body.pulp_sweetness, 'pulp_sweetness'),
+    pulp_acidity: score(body.pulp_acidity, 'pulp_acidity'),
+    phenolic_maturity: score(body.phenolic_maturity, 'phenolic_maturity'),
+    photo_attachment_id: body.photo_attachment_id === undefined || body.photo_attachment_id === null || body.photo_attachment_id === ''
+      ? null
+      : uuidOf(body.photo_attachment_id, 'photo_attachment_id'),
+  };
+}
+
+function score(value: unknown, field: string): number | null {
+  if (value === undefined || value === null || value === '') return null;
+  const parsed = typeof value === 'number' ? value : Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 5) {
+    throw domainError('WC_VALIDATION', { [field]: 'Escala de 1 a 5' });
+  }
+  return parsed;
+}
+
+async function assertAttachment(tx: Tx, id: string): Promise<void> {
+  const rows = await tx.read<{ mime_type: string }>(sql`
+    SELECT mime_type FROM core.attachment WHERE id = CAST(${id} AS UUID)
+  `);
+  const mime = rows[0]?.mime_type ?? '';
+  if (!rows[0]) throw domainError('WC_VALIDATION', { photo_attachment_id: 'La foto no existe' });
+  if (!mime.startsWith('image/')) {
+    throw domainError('WC_VALIDATION', { photo_attachment_id: 'La foto debe ser JPEG, PNG o HEIC' });
+  }
 }
 
 function upper(value: unknown, field: string): string {

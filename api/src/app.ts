@@ -1,6 +1,7 @@
 import { cors } from '@elysiajs/cors';
 import { Elysia } from 'elysia';
-import { requestIdFor, requireOwner, requirePermission, requireUser, requireUserOrMachine } from './auth/guard';
+import { requestIdFor, requireOwner, requireOwnerOrAdmin, requirePermission, requireUser, requireUserOrMachine } from './auth/guard';
+import { isAllowedOrigin, securityHeaders } from './auth/policy';
 import { createTimbalAuth } from './auth/timbal';
 import type { FetchLike } from './core/db/timbal';
 import type { Config } from './config';
@@ -12,7 +13,9 @@ import { ocrFromEnv } from './core/purchasing/timbal';
 import { bindFinance } from './core/finance/runtime';
 import { installIntegrations } from './core/wiring/integrations';
 import { asDomainError, domainError, errorBody } from './core/errors';
+import { safeLogMessage } from './core/redact';
 import type { InvoiceDocumentStore } from './core/billing/pdf/documents';
+import { authCallback } from './routes/auth-callback';
 import { downloadInvoicePdf } from './routes/invoice-documents';
 import {
   getInvoiceDelivery,
@@ -43,9 +46,14 @@ import {
   verifyPasskeyRegistration,
 } from './routes/auth-credentials';
 import { catalogRoutes } from './routes/catalog';
+import { cellarAssetRoutes } from './routes/cellar-assets';
 import { cellarRoutes } from './routes/cellar';
 import { vineyardRoutes } from './routes/vineyard';
 import { winemakingRoutes } from './routes/winemaking';
+import { enologyRoutes } from './routes/enology';
+import { lotDesignRoutes } from './routes/lot-design';
+import { tastingRoutes } from './routes/tasting';
+import { hygieneRoutes } from './routes/hygiene';
 import {
   archiveAddress,
   archiveContact,
@@ -66,6 +74,7 @@ import {
   requestExpenseApproval,
   exportExpenses,
   getExpense,
+  listCategories,
   listExpenses,
   patchExpense,
   rejectExpense,
@@ -101,6 +110,7 @@ import {
 import { health } from './routes/health';
 import {
   getSettlement,
+  getTariff,
   getTariffs,
   patchTariff,
   postActivateTariff,
@@ -127,10 +137,14 @@ import {
 import { handleAuthenticatedMcp } from './mcp/http';
 import { RateLimiter } from './mcp/rate';
 import { createMcpClient, listMcpClients, revokeMcpClient, rotateMcpClient } from './routes/mcp-clients';
+import { getDashboard } from './routes/dashboard';
 import { me } from './routes/me';
+import { getUsers, patchUserRoute, postUser } from './routes/users';
 import { listNotifications, readAllNotifications, readNotification } from './routes/notifications';
 import { getReport } from './routes/reports';
-import { createNumberSeries, deactivateNumberSeries, listNumberSeries } from './routes/series';
+import { patchLegalEntityRoute } from './routes/legal-entities';
+import { getReadiness } from './routes/setup';
+import { createNumberSeries, createNumberSeriesBulk, deactivateNumberSeries, listNumberSeries } from './routes/series';
 import {
   closeInventoryCountRoute,
   getInventoryCountRoute,
@@ -146,6 +160,7 @@ import {
   getRegulatorySubmission,
   getSubmissionFile,
   listRegulatorySubmissions,
+  postCancelSubmission,
   postCorrectSubmission,
   postMarkResult,
   postMarkSubmitted,
@@ -153,7 +168,8 @@ import {
   postRequestApproval,
   postValidateSubmission,
 } from './routes/regulatory-submissions';
-import { listSilicieLedgers, postSilicieLedger, postValidateLedger } from './routes/silicie-ledgers';
+import { listSilicieLedgers, postOpenExercise, postSilicieLedger, postValidateLedger } from './routes/silicie-ledgers';
+import { getTaxWarehouses } from './routes/tax-warehouses';
 import { vineyardNotebookRoutes } from './routes/vineyard-notebook';
 
 export interface AppDeps {
@@ -193,10 +209,22 @@ export function createApp(deps: AppDeps) {
   const deliveryDeps = { writer: deps.writer, documents: deps.invoiceDocuments };
   const mcpLimiter = new RateLimiter(deps.mcpRatePerMinute);
   const app = new Elysia(deps.config.apiBasePath ? { prefix: deps.config.apiBasePath } : {})
-    .use(cors())
+    .use(cors({
+      origin: (request: Request) => {
+        const origin = request.headers.get('origin');
+        return origin !== null && isAllowedOrigin(deps.config, origin);
+      },
+      methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Authorization', 'Content-Type', 'Accept', 'Idempotency-Key', 'If-Match', 'X-Request-Id'],
+      exposeHeaders: ['x-request-id'],
+      credentials: true,
+    }))
     .onRequest(({ request, set }) => {
       startedAt.set(request, performance.now());
       set.headers['x-request-id'] = requestIdFor(request);
+      for (const [name, value] of Object.entries(securityHeaders(deps.config.nodeEnv))) {
+        set.headers[name] = value;
+      }
     })
     .onAfterResponse(({ request, set }) => {
       const start = startedAt.get(request) ?? performance.now();
@@ -227,7 +255,7 @@ export function createApp(deps: AppDeps) {
         request_id: requestIdFor(request),
         code: 'WC_INTERNAL',
         level: 'error',
-        message: error instanceof Error ? error.message : 'Error interno',
+        message: safeLogMessage(error instanceof Error ? error.message : 'Error interno'),
       }));
       set.status = 500;
       return { code: 'WC_INTERNAL', message: 'Error interno' };
@@ -235,7 +263,26 @@ export function createApp(deps: AppDeps) {
     .get('/health', () => health(deps.config, deps.writer))
     // Timbal's readiness probe: liveness only, it must not depend on the Knowledge Base.
     .get('/healthcheck', () => ({ status: 'ok' }))
+    // Public on purpose: the IdP posts the session here. See routes/auth-callback.ts.
+    .get('/auth/callback', ({ request }) => authCallback(request))
+    .post('/auth/callback', ({ request }) => authCallback(request))
     .get('/v1/me', ({ request }) => me(deps.writer, request), {
+      beforeHandle: requireUser(guardDeps),
+    })
+    .get('/v1/users', ({ request }) => getUsers(deps.writer, request), {
+      beforeHandle: requireUser(guardDeps),
+    })
+    .post('/v1/users', async ({ request, set }) => {
+      const created = await postUser(deps.writer, deps.config, request, http.now());
+      set.status = 201;
+      return created;
+    }, {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .patch('/v1/users/:id', ({ request, params }) => patchUserRoute(deps.writer, deps.config, request, params.id, http.now()), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .get('/v1/dashboard', ({ request }) => getDashboard(deps.writer, request, guardDeps.now?.() ?? new Date()), {
       beforeHandle: requireUser(guardDeps),
     })
     .get('/v1/reports/sales.csv', ({ request }) => getReport(deps.writer, request, 'sales'), {
@@ -384,6 +431,20 @@ export function createApp(deps: AppDeps) {
     }, {
       beforeHandle: requirePermission(guardDeps, 'settings.manage'),
     })
+    .post('/v1/number-series/bulk', async ({ request, set }) => {
+      const body = await createNumberSeriesBulk(deps.writer, request);
+      const created = body.items.some((item) => item.status !== 'skipped');
+      set.status = created ? 201 : 200;
+      return body;
+    }, {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .get('/v1/setup/readiness', ({ request }) => getReadiness(deps.writer, request, http.now(), deps.config.deliveryAlertHours), {
+      beforeHandle: requireOwnerOrAdmin(guardDeps),
+    })
+    .patch('/v1/legal-entities/:code', ({ request, params }) => patchLegalEntityRoute(deps.writer, request, params.code), {
+      beforeHandle: requireOwner(guardDeps),
+    })
     .post('/v1/number-series/:id/deactivate', ({ request, params }) => deactivateNumberSeries(deps.writer, request, params.id), {
       beforeHandle: requirePermission(guardDeps, 'settings.manage'),
     })
@@ -455,6 +516,9 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requireOwner(guardDeps),
     })
     // SILICIE y calendario regulatorio. El fichero se descarga; no se envía a la AEAT.
+    .get('/v1/tax-warehouses', ({ request }) => getTaxWarehouses(http, request), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
+    })
     .get('/v1/regulatory/obligations', ({ request }) => listRegulatoryObligations(http, request), {
       beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
     })
@@ -485,6 +549,9 @@ export function createApp(deps: AppDeps) {
     .post('/v1/regulatory/submissions/:id/correct', ({ request, params }) => postCorrectSubmission(http, request, params.id), {
       beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
     })
+    .post('/v1/regulatory/submissions/:id/cancel', ({ request, params }) => postCancelSubmission(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
     .get('/v1/regulatory/submissions/:id', ({ request, params }) => getRegulatorySubmission(http, request, params.id), {
       beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
     })
@@ -495,6 +562,13 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
     })
     .post('/v1/silicie-ledgers/:id/validate', ({ request, params }) => postValidateLedger(http, request, params.id), {
+      beforeHandle: requireUser(guardDeps),
+    })
+    .post('/v1/silicie-exercises', async ({ request, set }) => {
+      const opened = await postOpenExercise(http, request);
+      set.status = opened.created ? 201 : 200;
+      return opened;
+    }, {
       beforeHandle: requireUser(guardDeps),
     })
     .use(catalogRoutes(guardDeps))
@@ -554,6 +628,9 @@ export function createApp(deps: AppDeps) {
     .get('/v1/intercompany/tariffs', () => getTariffs(deps.writer), {
       beforeHandle: requirePermission(guardDeps, 'billing.read'),
     })
+    .get('/v1/intercompany/tariffs/:id', ({ params }) => getTariff(deps.writer, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.read'),
+    })
     .post('/v1/intercompany/tariffs', async ({ request, set }) => {
       const result = await postTariff(deps.writer, request);
       set.status = result.status;
@@ -586,6 +663,9 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requirePermission(guardDeps, 'billing.write'),
     })
     // Gastos (TASK-COMP-001..003). export y capture van antes de /:id.
+    .get('/v1/expense-categories', () => listCategories(deps.writer), {
+      beforeHandle: requirePermission(guardDeps, 'purchasing.read'),
+    })
     .get('/v1/supplier-invoices/export', ({ request }) => exportExpenses(deps.writer, request), {
       beforeHandle: requirePermission(guardDeps, 'purchasing.read'),
     })
@@ -742,6 +822,11 @@ export function createApp(deps: AppDeps) {
     })
     .use(vineyardRoutes(guardDeps))
     .use(winemakingRoutes({ writer: deps.writer, guard: guardDeps }))
-    .use(vineyardNotebookRoutes(guardDeps));
+    .use(vineyardNotebookRoutes(guardDeps))
+    .use(enologyRoutes({ writer: deps.writer, guard: guardDeps, now: deps.now }))
+    .use(cellarAssetRoutes({ writer: deps.writer, guard: guardDeps }))
+    .use(lotDesignRoutes({ writer: deps.writer, guard: guardDeps }))
+    .use(tastingRoutes({ writer: deps.writer, guard: guardDeps }))
+    .use(hygieneRoutes({ writer: deps.writer, guard: guardDeps }));
   return app;
 }
