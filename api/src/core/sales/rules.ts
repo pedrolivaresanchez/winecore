@@ -491,6 +491,76 @@ export function parseRuleInputs(raw: unknown): RuleInput[] {
   });
 }
 
+export type BillingSetupView =
+  | { kind: 'active' }
+  | { kind: 'pending'; approval_request_id: string; rule_set_id: string }
+  | { kind: 'needs_default'; rule_set_id: string | null }
+  | { kind: 'ready'; rule_set_id: string };
+
+/** Lee el borrador D3. No escribe: cada paso posterior confirma antes de pedir la aprobación. */
+export async function inspectBillingSetup(tx: Tx): Promise<BillingSetupView> {
+  const active = await activeSet(tx);
+  if (active) {
+    const current = await loadRules(tx, active.id);
+    if (current.some((rule) => rule.scope === 'default')) return { kind: 'active' };
+  }
+  const set = await latestDraft(tx);
+  if (!set) return { kind: 'needs_default', rule_set_id: null };
+  const pending = await pendingApproval(tx, set);
+  if (pending) return { kind: 'pending', approval_request_id: pending, rule_set_id: set.id };
+  const rules = await loadRules(tx, set.id);
+  if (!rules.some((rule) => rule.scope === 'default')) return { kind: 'needs_default', rule_set_id: set.id };
+  return { kind: 'ready', rule_set_id: set.id };
+}
+
+export async function ensureDefaultRule(tx: Tx, setId: string, issuingEntityId: string): Promise<void> {
+  const rules = await loadRules(tx, setId);
+  if (rules.some((rule) => rule.scope === 'default')) return;
+  await replaceRules(tx, setId, [
+    ...rules.map(ruleInputOf),
+    { scope: 'default', customerId: null, channel: null, issuingEntityId, notes: 'Puesta en marcha' },
+  ]);
+}
+
+async function latestDraft(tx: Tx): Promise<SetRow | null> {
+  const rows = await tx.read<Record<string, unknown>>(sql`
+    SELECT id, version, status, notes, approval_request_id, activated_at
+    FROM billing.billing_rule_set
+    WHERE status = 'draft'
+    ORDER BY version DESC
+    LIMIT 1
+  `);
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    id: idOf(row.id),
+    version: Number(row.version),
+    status: String(row.status),
+    notes: textOf(row.notes),
+    approval_request_id: idOrNull(row.approval_request_id),
+    activated_at: row.activated_at == null ? null : String(row.activated_at),
+  };
+}
+
+async function pendingApproval(tx: Tx, set: SetRow): Promise<string | null> {
+  if (!set.approval_request_id) return null;
+  const rows = await tx.read<{ status: string }>(sql`
+    SELECT status FROM ops.approval_request WHERE id = CAST(${set.approval_request_id} AS UUID)
+  `);
+  if (String(rows[0]?.status) !== 'pending') return null;
+  return set.approval_request_id;
+}
+
+function ruleInputOf(rule: RuleRow): RuleInput {
+  return {
+    scope: rule.scope,
+    customerId: rule.customer_id,
+    channel: rule.channel,
+    issuingEntityId: rule.issuing_entity_id,
+    notes: rule.notes,
+  };
+}
+
 export function resolutionJson(result: IssuingResolution): Record<string, unknown> {
   return {
     entity_id: result.entityId,

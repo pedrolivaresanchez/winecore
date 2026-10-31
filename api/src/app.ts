@@ -139,7 +139,7 @@ import { getUsers, patchUserRoute, postUser } from './routes/users';
 import { listNotifications, readAllNotifications, readNotification } from './routes/notifications';
 import { getReport } from './routes/reports';
 import { patchLegalEntityRoute } from './routes/legal-entities';
-import { getReadiness } from './routes/setup';
+import { getReadiness, postBillingRuleActivation } from './routes/setup';
 import { createNumberSeries, createNumberSeriesBulk, deactivateNumberSeries, listNumberSeries } from './routes/series';
 import {
   closeInventoryCountRoute,
@@ -164,8 +164,8 @@ import {
   postRequestApproval,
   postValidateSubmission,
 } from './routes/regulatory-submissions';
-import { listSilicieLedgers, postOpenExercise, postSilicieLedger, postValidateLedger } from './routes/silicie-ledgers';
-import { getTaxWarehouses } from './routes/tax-warehouses';
+import { listSilicieLedgers, postOpenExercise, postOpeningLedgers, postSilicieLedger, postValidateLedger } from './routes/silicie-ledgers';
+import { getTaxWarehouses, patchTaxWarehouse } from './routes/tax-warehouses';
 import { vineyardNotebookRoutes } from './routes/vineyard-notebook';
 
 export interface AppDeps {
@@ -435,6 +435,9 @@ export function createApp(deps: AppDeps) {
     .get('/v1/setup/readiness', ({ request }) => getReadiness(deps.writer, request, http.now(), deps.config.deliveryAlertHours), {
       beforeHandle: requireOwnerOrAdmin(guardDeps),
     })
+    .post('/v1/setup/billing-rules/request-activation', ({ request }) => postBillingRuleActivation(deps.writer, request), {
+      beforeHandle: requireOwner(guardDeps),
+    })
     .patch('/v1/legal-entities/:code', ({ request, params }) => patchLegalEntityRoute(deps.writer, request, params.code), {
       beforeHandle: requireOwner(guardDeps),
     })
@@ -512,6 +515,9 @@ export function createApp(deps: AppDeps) {
     .get('/v1/tax-warehouses', ({ request }) => getTaxWarehouses(http, request), {
       beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
     })
+    .patch('/v1/tax-warehouses/:id', ({ request, params }) => patchTaxWarehouse(http, request, params.id), {
+      beforeHandle: requireOwner(guardDeps),
+    })
     .get('/v1/regulatory/obligations', ({ request }) => listRegulatoryObligations(http, request), {
       beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
     })
@@ -553,6 +559,14 @@ export function createApp(deps: AppDeps) {
     })
     .post('/v1/silicie-ledgers', ({ request }) => postSilicieLedger(http, request), {
       beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .post('/v1/silicie-ledgers/opening', async ({ request, set }) => {
+      const body = await postOpeningLedgers(http, request);
+      const created = body.items.some((item) => item.status === 'created');
+      set.status = created ? 201 : 200;
+      return body;
+    }, {
+      beforeHandle: requireOwner(guardDeps),
     })
     .post('/v1/silicie-ledgers/:id/validate', ({ request, params }) => postValidateLedger(http, request, params.id), {
       beforeHandle: requireUser(guardDeps),

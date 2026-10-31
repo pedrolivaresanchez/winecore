@@ -1,6 +1,8 @@
 // Catálogo de establecimientos (CAE). El CAE completo solo lo ve la dirección.
 import { sql } from "../db/sql";
-import type { Writer } from "../db/writer";
+import type { Tx, Writer } from "../db/writer";
+import { domainError } from "../errors";
+import { newId } from "../ids";
 
 export interface WarehouseEntity {
   id: string;
@@ -39,6 +41,220 @@ interface WarehouseRow {
   is_active: boolean;
   is_test: boolean;
   created_at: string;
+}
+
+const CAE = /^ES[0-9A-Z]{11}$/;
+
+/** Forma de docs/04-regulatorio/silicie.md y del depósito: ES y 11 caracteres (13 en total). */
+export function parseCae(raw: string): string {
+  const cae = raw.trim().toUpperCase().replace(/[\s-]/g, "");
+  if (!CAE.test(cae)) {
+    throw domainError("WC_VALIDATION", { cae: "El CAE del establecimiento no tiene la forma ES y 11 caracteres" });
+  }
+  return cae;
+}
+
+export async function updateTaxWarehouseCae(
+  writer: Writer,
+  actor: { type: "user"; id: string; requestId: string; reason?: string },
+  id: string,
+  input: { cae: string; isTest?: boolean },
+): Promise<{ id: string; name: string; cae: string; is_test: boolean }> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    throw domainError("WC_NOT_FOUND");
+  }
+  const cae = parseCae(input.cae);
+  const rows = await writer.read<Record<string, unknown>>(sql`
+    SELECT id::VARCHAR AS id, name, cae, is_test, legal_entity_id::VARCHAR AS legal_entity_id
+    FROM inventory.tax_warehouse
+    WHERE id = CAST(${id} AS UUID)
+  `);
+  const current = rows[0];
+  if (!current) throw domainError("WC_NOT_FOUND");
+  const beforeCae = String(current.cae);
+  const beforeTest = flag(current.is_test);
+  const isTest = input.isTest ?? beforeTest;
+  const rowId = String(current.id).toLowerCase();
+  if (beforeCae === cae && beforeTest === isTest) {
+    return { id: rowId, name: String(current.name), cae, is_test: isTest };
+  }
+  const taken = await writer.read<{ id: string }>(sql`
+    SELECT id::VARCHAR AS id FROM inventory.tax_warehouse WHERE cae = ${cae} AND id <> CAST(${id} AS UUID)
+  `);
+  if (taken[0]) throw domainError("WC_VALIDATION", { cae: "Ya hay un depósito con este CAE" });
+  const hold = await planHold(writer, id, String(current.legal_entity_id), cae);
+  const parked = { moves: false, locations: false, fiscal: false };
+  try {
+    if (hold?.tempLocation) {
+      await writer.withWrite(actor, async (tx) => parkMoves(tx, hold));
+      parked.moves = true;
+    }
+    if (hold && hold.locationIds.length > 0) {
+      await writer.withWrite(actor, async (tx) => detachLocations(tx, hold));
+      parked.locations = true;
+    }
+    if (hold?.tempWarehouse) {
+      await writer.withWrite(actor, async (tx) => parkFiscal(tx, id, hold));
+      parked.fiscal = true;
+    }
+    await writer.withWrite(actor, async (tx) => {
+      tx.write(sql`
+        UPDATE inventory.tax_warehouse SET cae = ${cae}, is_test = ${isTest} WHERE id = CAST(${id} AS UUID)
+      `);
+      tx.audit({
+        table: "inventory.tax_warehouse",
+        rowId,
+        action: "UPDATE",
+        before: { cae: beforeCae, is_test: beforeTest },
+        after: { cae, is_test: isTest },
+      });
+    });
+  } finally {
+    const parkedHold = hold;
+    if (parkedHold && parked.fiscal) {
+      await writer.withWrite(actor, async (tx) => moveFiscalBack(tx, id, parkedHold));
+      await writer.withWrite(actor, async (tx) => {
+        if (parkedHold.tempWarehouse) tx.write(sql`DELETE FROM inventory.tax_warehouse WHERE id = CAST(${parkedHold.tempWarehouse} AS UUID)`);
+      });
+    }
+    if (parkedHold && parked.locations) await writer.withWrite(actor, async (tx) => reattachLocations(tx, id, parkedHold));
+    if (parkedHold && parked.moves) {
+      await writer.withWrite(actor, async (tx) => restoreMoves(tx, parkedHold));
+      await writer.withWrite(actor, async (tx) => {
+        if (parkedHold.tempLocation) tx.write(sql`DELETE FROM inventory.location WHERE id = CAST(${parkedHold.tempLocation} AS UUID)`);
+      });
+    }
+  }
+  return { id: rowId, name: String(current.name), cae, is_test: isTest };
+}
+
+type Hold = {
+  locationIds: string[];
+  stock: { id: string; locationId: string }[];
+  lines: { id: string; locationId: string }[];
+  reversals: { id: string; reverses: string }[];
+  tempLocation: string | null;
+  tempWarehouse: string | null;
+  scratch: string | null;
+  entityId: string;
+};
+
+async function planHold(writer: Writer, id: string, entityId: string, cae: string): Promise<Hold | null> {
+  const locations = await writer.read<{ id: string }>(sql`
+    SELECT id::VARCHAR AS id FROM inventory.location WHERE tax_warehouse_id = CAST(${id} AS UUID)
+  `);
+  const fiscal = await writer.read<{ id: string; reverses_move_id: string | null }>(sql`
+    SELECT id::VARCHAR AS id, reverses_move_id::VARCHAR AS reverses_move_id
+    FROM inventory.fiscal_move WHERE tax_warehouse_id = CAST(${id} AS UUID)
+  `);
+  if (locations.length === 0 && fiscal.length === 0) return null;
+  const locationIds = locations.map((row) => row.id.toLowerCase());
+  const stock = locationIds.length === 0 ? [] : await writer.read<{ id: string; location_id: string }>(
+    inList("SELECT id::VARCHAR AS id, location_id::VARCHAR AS location_id FROM inventory.stock_move WHERE location_id IN (", locationIds),
+  );
+  const lines = locationIds.length === 0 ? [] : await writer.read<{ id: string; location_id: string }>(
+    inList("SELECT id::VARCHAR AS id, location_id::VARCHAR AS location_id FROM inventory.inventory_count_line WHERE location_id IN (", locationIds),
+  );
+  const parkedStock = stock.map((row) => ({ id: row.id.toLowerCase(), locationId: row.location_id.toLowerCase() }));
+  const parkedLines = lines.map((row) => ({ id: row.id.toLowerCase(), locationId: row.location_id.toLowerCase() }));
+  const tempLocation = parkedStock.length + parkedLines.length > 0 ? newId() : null;
+  const tempWarehouse = fiscal.length > 0 ? newId() : null;
+  return {
+    locationIds,
+    stock: parkedStock,
+    lines: parkedLines,
+    reversals: fiscal.flatMap((row) => row.reverses_move_id ? [{ id: row.id.toLowerCase(), reverses: row.reverses_move_id.toLowerCase() }] : []),
+    tempLocation,
+    tempWarehouse,
+    scratch: tempWarehouse ? scratchCae(tempWarehouse, cae) : null,
+    entityId,
+  };
+}
+
+function parkMoves(tx: Tx, hold: Hold): void {
+  if (!hold.tempLocation) return;
+  tx.write(sql`
+    INSERT INTO inventory.location (id, code, name, kind, controlling_entity_id)
+    VALUES (CAST(${hold.tempLocation} AS UUID), ${tempCode(hold.tempLocation)}, 'Temporal', 'cellar', CAST(${hold.entityId} AS UUID))
+  `);
+  for (const row of hold.stock) {
+    tx.write(sql`UPDATE inventory.stock_move SET location_id = CAST(${hold.tempLocation} AS UUID) WHERE id = CAST(${row.id} AS UUID)`);
+  }
+  for (const row of hold.lines) {
+    tx.write(sql`UPDATE inventory.inventory_count_line SET location_id = CAST(${hold.tempLocation} AS UUID) WHERE id = CAST(${row.id} AS UUID)`);
+  }
+}
+
+function detachLocations(tx: Tx, hold: Hold): void {
+  for (const locationId of hold.locationIds) {
+    tx.write(sql`UPDATE inventory.location SET tax_warehouse_id = NULL WHERE id = CAST(${locationId} AS UUID)`);
+  }
+}
+
+function parkFiscal(tx: Tx, id: string, hold: Hold): void {
+  if (!hold.tempWarehouse || !hold.scratch) return;
+  tx.write(sql`
+    INSERT INTO inventory.tax_warehouse (id, legal_entity_id, cae, activity_code, name, is_test, is_active)
+    VALUES (CAST(${hold.tempWarehouse} AS UUID), CAST(${hold.entityId} AS UUID), ${hold.scratch}, 'V1', 'Temporal', TRUE, FALSE)
+  `);
+  for (const row of hold.reversals) {
+    tx.write(sql`UPDATE inventory.fiscal_move SET reverses_move_id = NULL WHERE id = CAST(${row.id} AS UUID)`);
+  }
+  tx.write(sql`
+    UPDATE inventory.fiscal_move SET tax_warehouse_id = CAST(${hold.tempWarehouse} AS UUID)
+    WHERE tax_warehouse_id = CAST(${id} AS UUID)
+  `);
+}
+
+function moveFiscalBack(tx: Tx, id: string, hold: Hold): void {
+  if (!hold.tempWarehouse) return;
+  tx.write(sql`
+    UPDATE inventory.fiscal_move SET tax_warehouse_id = CAST(${id} AS UUID)
+    WHERE tax_warehouse_id = CAST(${hold.tempWarehouse} AS UUID)
+  `);
+  for (const row of hold.reversals) {
+    tx.write(sql`
+      UPDATE inventory.fiscal_move SET reverses_move_id = CAST(${row.reverses} AS UUID) WHERE id = CAST(${row.id} AS UUID)
+    `);
+  }
+}
+
+function reattachLocations(tx: Tx, id: string, hold: Hold): void {
+  for (const locationId of hold.locationIds) {
+    tx.write(sql`UPDATE inventory.location SET tax_warehouse_id = CAST(${id} AS UUID) WHERE id = CAST(${locationId} AS UUID)`);
+  }
+}
+
+function restoreMoves(tx: Tx, hold: Hold): void {
+  for (const row of hold.stock) {
+    tx.write(sql`UPDATE inventory.stock_move SET location_id = CAST(${row.locationId} AS UUID) WHERE id = CAST(${row.id} AS UUID)`);
+  }
+  for (const row of hold.lines) {
+    tx.write(sql`UPDATE inventory.inventory_count_line SET location_id = CAST(${row.locationId} AS UUID) WHERE id = CAST(${row.id} AS UUID)`);
+  }
+}
+
+function flag(value: unknown): boolean {
+  return value === true || value === 1 || value === "true" || value === "t";
+}
+
+
+function inList(prefix: string, ids: string[]): string {
+  const list = ids.map((item) => {
+    if (!/^[0-9a-f-]{36}$/i.test(item)) throw domainError("WC_VALIDATION", { cae: "No se ha podido actualizar el CAE" });
+    return `CAST('${item.toLowerCase()}' AS UUID)`;
+  }).join(", ");
+  return `${prefix}${list})`;
+}
+
+function scratchCae(id: string, avoid: string): string {
+  const body = id.replaceAll("-", "").slice(0, 11).toUpperCase();
+  const cae = `ES${body}`;
+  return cae === avoid ? `ES${body.slice(0, 10)}Y` : cae;
+}
+
+function tempCode(id: string): string {
+  return `T${id.replaceAll("-", "").slice(0, 12).toUpperCase()}`;
 }
 
 export function maskCae(cae: string, reveal: boolean): string {

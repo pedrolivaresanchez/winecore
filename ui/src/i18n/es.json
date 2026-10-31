@@ -434,7 +434,22 @@
     "copied": "Copiado",
     "passkey": "Registrar passkey",
     "pending": "{count} pendientes",
-    "clear": "Listo"
+    "clear": "Listo",
+    "cae": "CAE",
+    "caeTitle": "CAE del depósito",
+    "caeTest": "CAE de pruebas",
+    "caeNow": "Ahora {cae}",
+    "exercise": "Abrir ejercicio",
+    "exerciseTitle": "Abrir ejercicio",
+    "exerciseHint": "Se abre el ejercicio de este depósito. Si ya estaba abierto, no cambia.",
+    "ledgers": "Crear mayores",
+    "ledgersTitle": "Mayores de SILICIE",
+    "ledgersHint": "Uva, granel y crianza por color. El mosto y el envasado los confirma el asesor.",
+    "rules": "Pedir aprobación",
+    "rulesTitle": "Reglas de entidad",
+    "rulesHint": "Queda pendiente de aprobación. No se activa sola.",
+    "rulesEntity": "Entidad por defecto",
+    "approvals": "Ver aprobaciones"
   },
   "contacts": {
     "title": "Contactos",

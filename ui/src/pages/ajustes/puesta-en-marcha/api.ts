@@ -32,12 +32,41 @@ export type BankSeed = {
   legal_name: string
 }
 
+export type WarehouseSeed = {
+  id: string
+  name: string
+  is_test: boolean
+  cae_masked: string
+}
+
+export type ExerciseSeed = {
+  tax_warehouse_id: string
+  name: string
+  year: number
+}
+
+export type LedgerSeed = {
+  tax_warehouse_id: string
+  name: string
+}
+
+export type BillingEntitySeed = {
+  id: string
+  code: string
+  legal_name: string
+}
+
 export type SetupAction =
   | { kind: 'patch_entity'; entity: EntityForm }
   | { kind: 'create_series'; items: SeriesSeed[] }
   | { kind: 'create_bank'; entities: BankSeed[] }
   | { kind: 'register_mcp' }
   | { kind: 'rotate_mcp'; id: string }
+  | { kind: 'patch_cae'; warehouse: WarehouseSeed }
+  | { kind: 'open_exercise'; items: ExerciseSeed[] }
+  | { kind: 'open_ledgers'; items: LedgerSeed[] }
+  | { kind: 'request_billing_rules'; entities: BillingEntitySeed[] }
+  | { kind: 'open_approvals' }
 
 export type SetupCheck = {
   id: string
@@ -105,4 +134,32 @@ export function registerCvbot() {
 
 export function rotateCvbot(id: string) {
   return api<{ token: string }>(`/v1/mcp/clients/${encodeURIComponent(id)}/rotate`, { method: 'POST' })
+}
+
+export function patchWarehouse(id: string, body: { cae: string; is_test: boolean }) {
+  return api(`/v1/tax-warehouses/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+export function openExercise(item: ExerciseSeed) {
+  return api('/v1/silicie-exercises', {
+    method: 'POST',
+    body: JSON.stringify({ tax_warehouse_id: item.tax_warehouse_id, year: item.year }),
+  })
+}
+
+export function openLedgers(taxWarehouseId: string) {
+  return api<{ items: { reference: string; status: string }[] }>('/v1/silicie-ledgers/opening', {
+    method: 'POST',
+    body: JSON.stringify({ tax_warehouse_id: taxWarehouseId }),
+  })
+}
+
+export function requestBillingRules(issuingEntityId: string | null) {
+  return api<{ approval_request_id: string; status: string }>('/v1/setup/billing-rules/request-activation', {
+    method: 'POST',
+    body: JSON.stringify(issuingEntityId ? { issuing_entity_id: issuingEntityId } : {}),
+  })
 }

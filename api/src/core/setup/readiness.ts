@@ -72,12 +72,41 @@ export type BankSeed = {
   legal_name: string;
 };
 
+export type WarehouseSeed = {
+  id: string;
+  name: string;
+  is_test: boolean;
+  cae_masked: string;
+};
+
+export type ExerciseSeed = {
+  tax_warehouse_id: string;
+  name: string;
+  year: number;
+};
+
+export type LedgerSeed = {
+  tax_warehouse_id: string;
+  name: string;
+};
+
+export type BillingEntitySeed = {
+  id: string;
+  code: string;
+  legal_name: string;
+};
+
 export type SetupAction =
   | { kind: 'patch_entity'; entity: EntityForm }
   | { kind: 'create_series'; items: SeriesSeed[] }
   | { kind: 'create_bank'; entities: BankSeed[] }
   | { kind: 'register_mcp' }
-  | { kind: 'rotate_mcp'; id: string };
+  | { kind: 'rotate_mcp'; id: string }
+  | { kind: 'patch_cae'; warehouse: WarehouseSeed }
+  | { kind: 'open_exercise'; items: ExerciseSeed[] }
+  | { kind: 'open_ledgers'; items: LedgerSeed[] }
+  | { kind: 'request_billing_rules'; entities: BillingEntitySeed[] }
+  | { kind: 'open_approvals' };
 
 export type SetupCheck = {
   id: string;
@@ -115,7 +144,16 @@ type BankFact = {
 
 type OpeningFact = { date: string; status: string };
 
-type WarehouseFact = { cae: string; test: boolean };
+type WarehouseFact = { id: string; name: string; cae: string; test: boolean };
+
+type ExerciseFact = { warehouseId: string; year: number; status: string };
+
+type BillingFact = {
+  activeWithDefault: boolean;
+  activeWithoutDefault: boolean;
+  pendingApproval: boolean;
+  draftReady: boolean;
+};
 
 type Facts = {
   entities: EntityFact[] | undefined;
@@ -127,14 +165,13 @@ type Facts = {
   exportWithoutEori: number | undefined;
   exportLines: number | undefined;
   priceLists: number | undefined;
-  billingSets: number | undefined;
-  billingDefaults: number | undefined;
+  billing: BillingFact | undefined;
   banks: BankFact[] | undefined;
   categories: number | undefined;
   vessels: number | undefined;
   opening: OpeningFact[] | undefined;
   warehouses: WarehouseFact[] | undefined;
-  exercises: { year: number; status: string }[] | undefined;
+  exercises: ExerciseFact[] | undefined;
   ledgers: { total: number; reviewed: number } | undefined;
   parcels: number | undefined;
   cvbot: { state: 'missing' | 'revoked' | 'no-token' | 'ok'; id: string | null } | undefined;
@@ -152,6 +189,7 @@ const HREF = {
   counts: '/stock/aforos/nuevo?kind=opening',
   security: 'settings:security',
   setup: '/ajustes/puesta-en-marcha',
+  approvals: '/aprobaciones',
 } as const;
 
 export function maskCae(cae: string): string {
@@ -204,7 +242,7 @@ function buildModules(facts: Facts, clock: { year: number; month: number; hours:
   const companies = facts.entities?.filter((entity) => entity.person_type === 'legal' && entity.code !== 'PO');
   const exportsExist = (facts.exportContacts ?? 0) > 0 || (facts.exportLines ?? 0) > 0;
   const priceLists = priceListCheck(facts.priceLists);
-  const rules = billingRulesCheck(facts.billingSets, facts.billingDefaults);
+  const rules = billingRulesCheck(facts.billing, facts.entities);
   const hours = deliveryHoursCheck(clock.hours);
   const passkey = passkeyCheck(facts.passkeys);
   const opening = openingCheck(facts.opening);
@@ -249,7 +287,7 @@ function buildModules(facts: Facts, clock: { year: number; month: number; hours:
     moduleOf('silicie', 'SILICIE', [
       warehouseCheck(facts.warehouses),
       exerciseCheck(facts.warehouses, facts.exercises, clock.year, clock.month),
-      ledgerCheck(facts.ledgers),
+      ledgerCheck(facts.ledgers, facts.warehouses),
     ]),
     moduleOf('vinedo', 'Viñedo', [parcelCheck(facts.parcels)]),
     moduleOf('cvbot', 'CVBOT/MCP', [mcpCheck(facts.cvbot)]),
@@ -294,8 +332,7 @@ async function loadFacts(read: Read, tables: Set<string>, today: string, now: Da
     exportWithoutEori: contacts?.exportWithoutEori,
     exportLines,
     priceLists,
-    billingSets: billing?.sets,
-    billingDefaults: billing?.defaults,
+    billing,
     banks,
     categories,
     vessels,
@@ -408,16 +445,36 @@ async function countPriceLists(read: Read, today: string): Promise<number> {
   return int(rows[0]?.total);
 }
 
-async function loadBillingRules(read: Read): Promise<{ sets: number; defaults: number }> {
+async function loadBillingRules(read: Read): Promise<BillingFact> {
   const rows = await read<Record<string, unknown>>(sql`
-    SELECT s.id, r.scope
+    SELECT s.id, s.status, s.version, r.scope, a.status AS approval_status
     FROM billing.billing_rule_set s
     LEFT JOIN billing.billing_rule r ON r.rule_set_id = s.id
-    WHERE s.status = 'active'
+    LEFT JOIN ops.approval_request a ON a.id = s.approval_request_id
+    ORDER BY s.version DESC
   `);
-  const sets = new Set(rows.map((row) => idOf(row.id)));
-  const defaults = rows.filter((row) => text(row.scope) === 'default').length;
-  return { sets: sets.size, defaults };
+  const byId = new Map<string, { status: string; version: number; scopes: string[]; approval: string }>();
+  for (const row of rows) {
+    const id = idOf(row.id);
+    const current = byId.get(id) ?? {
+      status: text(row.status),
+      version: int(row.version),
+      scopes: [],
+      approval: text(row.approval_status),
+    };
+    if (text(row.scope) !== '') current.scopes.push(text(row.scope));
+    byId.set(id, current);
+  }
+  const sets = [...byId.values()];
+  const active = sets.filter((set) => set.status === 'active');
+  const drafts = sets.filter((set) => set.status === 'draft').sort((a, b) => b.version - a.version);
+  const draft = drafts[0];
+  return {
+    activeWithDefault: active.some((set) => set.scopes.includes('default')),
+    activeWithoutDefault: active.length > 0 && active.every((set) => !set.scopes.includes('default')),
+    pendingApproval: draft?.approval === 'pending',
+    draftReady: draft != null && draft.scopes.includes('default') && draft.approval !== 'pending',
+  };
 }
 
 async function loadBanks(read: Read): Promise<BankFact[]> {
@@ -459,19 +516,28 @@ async function loadOpening(read: Read): Promise<OpeningFact[]> {
 
 async function loadWarehouses(read: Read): Promise<WarehouseFact[]> {
   const rows = await read<Record<string, unknown>>(sql`
-    SELECT cae, is_test FROM inventory.tax_warehouse WHERE is_active
+    SELECT id, name, cae, is_test FROM inventory.tax_warehouse WHERE is_active ORDER BY created_at, id
   `);
-  return rows.map((row) => ({ cae: text(row.cae), test: flag(row.is_test) }));
+  return rows.map((row) => ({
+    id: idOf(row.id),
+    name: text(row.name),
+    cae: text(row.cae),
+    test: flag(row.is_test),
+  }));
 }
 
-async function loadExercises(read: Read): Promise<{ year: number; status: string }[]> {
+async function loadExercises(read: Read): Promise<ExerciseFact[]> {
   const rows = await read<Record<string, unknown>>(sql`
-    SELECT e."year" AS exercise_year, e.status
+    SELECT e.tax_warehouse_id, e."year" AS exercise_year, e.status
     FROM regulatory.silicie_exercise e
     JOIN inventory.tax_warehouse w ON w.id = e.tax_warehouse_id
     WHERE w.is_active
   `);
-  return rows.map((row) => ({ year: int(row.exercise_year), status: text(row.status) }));
+  return rows.map((row) => ({
+    warehouseId: idOf(row.tax_warehouse_id),
+    year: int(row.exercise_year),
+    status: text(row.status),
+  }));
 }
 
 async function loadLedgers(read: Read): Promise<{ total: number; reviewed: number }> {
@@ -602,35 +668,52 @@ function priceListCheck(total: number | undefined): SetupCheck {
   );
 }
 
-function billingRulesCheck(sets: number | undefined, defaults: number | undefined): SetupCheck {
-  if (sets === undefined || defaults === undefined) return notDeployed('billing.rules', 'Reglas de entidad');
-  if (sets === 0) {
+function billingRulesCheck(billing: BillingFact | undefined, entities: EntityFact[] | undefined): SetupCheck {
+  if (billing === undefined) return notDeployed('billing.rules', 'Reglas de entidad');
+  if (billing.activeWithDefault) {
+    return item('billing.rules', 'ok', 'Reglas de entidad', 'Las reglas de entidad facturadora están activas.', HREF.invoices);
+  }
+  if (billing.pendingApproval) {
     return item(
       'billing.rules',
-      'missing',
+      'warning',
       'Reglas de entidad',
-      'No hay un conjunto de reglas de entidad facturadora (D3) activo.',
-      HREF.invoices,
+      'La activación de las reglas está pendiente de aprobación.',
+      HREF.approvals,
+      { kind: 'open_approvals' },
     );
   }
-  if (defaults === 0) {
+  const seeds = (entities ?? []).map((entity) => ({
+    id: entity.id,
+    code: entity.code,
+    legal_name: entity.legal_name,
+  }));
+  if (billing.activeWithoutDefault) {
     return item(
       'billing.rules',
       'warning',
       'Reglas de entidad',
       'El conjunto activo no tiene regla por defecto.',
-      HREF.invoices,
+      HREF.approvals,
+      { kind: 'request_billing_rules', entities: seeds },
     );
   }
-  return item('billing.rules', 'ok', 'Reglas de entidad', 'Las reglas de entidad facturadora están activas.', HREF.invoices);
+  return item(
+    'billing.rules',
+    'missing',
+    'Reglas de entidad',
+    'No hay un conjunto de reglas de entidad facturadora (D3) activo.',
+    HREF.approvals,
+    { kind: 'request_billing_rules', entities: billing.draftReady ? [] : seeds },
+  );
 }
 
 function deliveryHoursCheck(hours: number): SetupCheck {
-  const detail = `Los avisos de factura sin enviar saltan a las ${hours} horas.`;
+  const detail = `Los avisos de factura sin enviar saltan a las ${hours} horas. No se cambia desde aquí.`;
   if (hours > 72) {
-    return item('billing.delivery_hours', 'warning', 'Avisos de envío', `${detail} Puede ser tarde para reclamar el envío.`, HREF.invoices);
+    return item('billing.delivery_hours', 'warning', 'Avisos de envío', `${detail} Puede ser tarde para reclamar el envío.`, null);
   }
-  return item('billing.delivery_hours', 'ok', 'Avisos de envío', detail, HREF.invoices);
+  return item('billing.delivery_hours', 'ok', 'Avisos de envío', detail, null);
 }
 
 function passkeyCheck(total: number | undefined): SetupCheck {
@@ -874,22 +957,27 @@ function warehouseCheck(rows: WarehouseFact[] | undefined): SetupCheck {
     return item('silicie.warehouse', 'missing', 'Depósito fiscal', 'No hay depósito fiscal con CAE.', null);
   }
   const real = rows.find((row) => !row.test);
-  const shown = maskCae((real ?? rows[0])?.cae ?? '');
-  if (!real) {
+  const shown = rows.find((row) => !row.test) ?? rows[0];
+  const masked = maskCae(shown?.cae ?? '');
+  if (!real && shown) {
     return item(
       'silicie.warehouse',
       'warning',
       'Depósito fiscal',
-      `El depósito fiscal usa un CAE de pruebas (${shown}).`,
+      `El depósito fiscal usa un CAE de pruebas (${masked}).`,
       null,
+      {
+        kind: 'patch_cae',
+        warehouse: { id: shown.id, name: shown.name, is_test: shown.test, cae_masked: masked },
+      },
     );
   }
-  return item('silicie.warehouse', 'ok', 'Depósito fiscal', `Hay depósito fiscal (${shown}).`, null);
+  return item('silicie.warehouse', 'ok', 'Depósito fiscal', `Hay depósito fiscal (${masked}).`, null);
 }
 
 function exerciseCheck(
   warehouses: WarehouseFact[] | undefined,
-  rows: { year: number; status: string }[] | undefined,
+  rows: ExerciseFact[] | undefined,
   year: number,
   month: number,
 ): SetupCheck {
@@ -898,8 +986,18 @@ function exerciseCheck(
     return item('silicie.exercise', 'missing', 'Ejercicio SILICIE', 'Sin depósito fiscal no hay ejercicio SILICIE.', null);
   }
   const open = (value: number) => rows.some((row) => row.year === value && row.status === 'open');
+  const missing = (value: number) => warehouses
+    .filter((warehouse) => !rows.some((row) => row.warehouseId === warehouse.id && row.year === value && row.status === 'open'))
+    .map((warehouse) => ({ tax_warehouse_id: warehouse.id, name: warehouse.name, year: value }));
   if (!open(year)) {
-    return item('silicie.exercise', 'missing', 'Ejercicio SILICIE', `No hay ejercicio SILICIE abierto para ${year}.`, null);
+    return item(
+      'silicie.exercise',
+      'missing',
+      'Ejercicio SILICIE',
+      `No hay ejercicio SILICIE abierto para ${year}.`,
+      null,
+      { kind: 'open_exercise', items: missing(year) },
+    );
   }
   if (month >= 10 && !open(year + 1)) {
     return item(
@@ -908,15 +1006,24 @@ function exerciseCheck(
       'Ejercicio SILICIE',
       `El ejercicio ${year} está abierto. Falta abrir ${year + 1}.`,
       null,
+      { kind: 'open_exercise', items: missing(year + 1) },
     );
   }
   return item('silicie.exercise', 'ok', 'Ejercicio SILICIE', `El ejercicio ${year} está abierto.`, null);
 }
 
-function ledgerCheck(ledgers: { total: number; reviewed: number } | undefined): SetupCheck {
+function ledgerCheck(ledgers: { total: number; reviewed: number } | undefined, warehouses: WarehouseFact[] | undefined): SetupCheck {
   if (ledgers === undefined) return notDeployed('silicie.ledgers', 'Mayores SILICIE');
   if (ledgers.total === 0) {
-    return item('silicie.ledgers', 'missing', 'Mayores SILICIE', 'No hay mayores de SILICIE.', null);
+    const items = (warehouses ?? []).map((warehouse) => ({ tax_warehouse_id: warehouse.id, name: warehouse.name }));
+    return item(
+      'silicie.ledgers',
+      'missing',
+      'Mayores SILICIE',
+      'No hay mayores de SILICIE.',
+      null,
+      items.length > 0 ? { kind: 'open_ledgers', items } : undefined,
+    );
   }
   if (ledgers.reviewed === 0) {
     return item(

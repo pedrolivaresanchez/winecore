@@ -82,6 +82,51 @@ export async function createLedger(
   return draft;
 }
 
+const OPENING: { situation: LedgerSituation; ncCode?: string }[] = [
+  { situation: { productClass: "raw_grape" } },
+  { situation: { productClass: "bulk", color: "tinto" }, ncCode: "220429" },
+  { situation: { productClass: "bulk", color: "blanco" }, ncCode: "220429" },
+  { situation: { productClass: "bulk", color: "rosado" }, ncCode: "220429" },
+  { situation: { productClass: "bulk_wood", color: "tinto" }, ncCode: "220429" },
+  { situation: { productClass: "bulk_wood", color: "blanco" }, ncCode: "220429" },
+  { situation: { productClass: "bulk_wood", color: "rosado" }, ncCode: "220429" },
+];
+
+/** Mayores de §6 que la norma fija del todo: uva, granel y crianza por color. Idempotente por referencia. */
+export async function ensureOpeningLedgers(
+  tx: Tx,
+  taxWarehouseId: string,
+  createdAt: string,
+): Promise<{ reference: string; status: "created" | "existing" }[]> {
+  if (!UUID.test(taxWarehouseId)) throw domainError("WC_VALIDATION", { tax_warehouse_id: "Identificador no válido" });
+  const warehouses = await tx.read<{ id: string }>(sql`
+    SELECT id::VARCHAR AS id FROM inventory.tax_warehouse
+    WHERE id = CAST(${taxWarehouseId} AS UUID) AND is_active
+  `);
+  if (!warehouses[0]) throw domainError("WC_NOT_FOUND");
+  const out: { reference: string; status: "created" | "existing" }[] = [];
+  for (const item of OPENING) {
+    const draft = ledgerFromSituation({
+      id: "00000000-0000-0000-0000-000000000000",
+      taxWarehouseId,
+      createdAt,
+      situation: item.situation,
+      ncCode: item.ncCode,
+    });
+    const existing = await tx.read<{ id: string }>(sql`
+      SELECT id::VARCHAR AS id FROM regulatory.silicie_ledger
+      WHERE tax_warehouse_id = CAST(${taxWarehouseId} AS UUID) AND reference = ${draft.reference}
+    `);
+    if (existing[0]) {
+      out.push({ reference: draft.reference, status: "existing" });
+      continue;
+    }
+    await createLedger(tx, { taxWarehouseId, situation: item.situation, ncCode: item.ncCode, createdAt });
+    out.push({ reference: draft.reference, status: "created" });
+  }
+  return out;
+}
+
 export async function validateLedger(tx: Tx, id: string, advisorRef: string): Promise<void> {
   if (!UUID.test(id)) throw domainError("WC_NOT_FOUND");
   if (!/^[A-Za-z0-9 .:_-]{3,80}$/.test(advisorRef)) {

@@ -12,6 +12,7 @@ import { isOwner } from '@/pages/aprobaciones/model'
 import {
   Alert,
   Button,
+  Checkbox,
   Dialog,
   DialogBody,
   DialogFooter,
@@ -26,15 +27,23 @@ import {
 import {
   createBankAccount,
   createSeries,
+  openExercise,
+  openLedgers,
   patchEntity,
+  patchWarehouse,
   registerCvbot,
+  requestBillingRules,
   rotateCvbot,
   type BankSeed,
+  type BillingEntitySeed,
   type EntityForm,
+  type ExerciseSeed,
+  type LedgerSeed,
   type Readiness,
   type SeriesSeed,
   type SetupAction,
   type SetupCheck,
+  type WarehouseSeed,
 } from '@/pages/ajustes/puesta-en-marcha/api'
 
 const DOC: Record<string, string> = {
@@ -63,6 +72,10 @@ export function SetupPanel({ me }: { me: Me }) {
   const [series, setSeries] = useState<SeriesSeed[] | null>(null)
   const [banks, setBanks] = useState<BankSeed[] | null>(null)
   const [mcp, setMcp] = useState<'register' | { id: string } | null>(null)
+  const [warehouse, setWarehouse] = useState<WarehouseSeed | null>(null)
+  const [exercise, setExercise] = useState<ExerciseSeed[] | null>(null)
+  const [ledgers, setLedgers] = useState<LedgerSeed[] | null>(null)
+  const [rules, setRules] = useState<BillingEntitySeed[] | null>(null)
 
   if (ready.loading && !ready.data) {
     return (
@@ -91,6 +104,10 @@ export function SetupPanel({ me }: { me: Me }) {
     if (action.kind === 'create_bank') setBanks(action.entities)
     if (action.kind === 'register_mcp') setMcp('register')
     if (action.kind === 'rotate_mcp') setMcp({ id: action.id })
+    if (action.kind === 'patch_cae') setWarehouse(action.warehouse)
+    if (action.kind === 'open_exercise') setExercise(action.items)
+    if (action.kind === 'open_ledgers') setLedgers(action.items)
+    if (action.kind === 'request_billing_rules') setRules(action.entities)
   }
 
   return (
@@ -165,6 +182,47 @@ export function SetupPanel({ me }: { me: Me }) {
           onSaved={ready.reload}
         />
       ) : null}
+      {warehouse ? (
+        <CaeDialog
+          key={warehouse.id}
+          warehouse={warehouse}
+          onClose={() => setWarehouse(null)}
+          onSaved={() => {
+            setWarehouse(null)
+            ready.reload()
+          }}
+        />
+      ) : null}
+      {exercise ? (
+        <ExerciseDialog
+          items={exercise}
+          onClose={() => setExercise(null)}
+          onSaved={() => {
+            setExercise(null)
+            ready.reload()
+          }}
+        />
+      ) : null}
+      {ledgers ? (
+        <LedgerDialog
+          items={ledgers}
+          onClose={() => setLedgers(null)}
+          onSaved={() => {
+            setLedgers(null)
+            ready.reload()
+          }}
+        />
+      ) : null}
+      {rules ? (
+        <RulesDialog
+          entities={rules}
+          onClose={() => setRules(null)}
+          onSaved={() => {
+            setRules(null)
+            ready.reload()
+          }}
+        />
+      ) : null}
     </div>
   )
 }
@@ -219,6 +277,41 @@ function CheckAction({ check, onOpen }: { check: SetupCheck; onOpen: (action: Se
     return (
       <Button type="button" variant="secondary" size="sm" onClick={() => onOpen(action)}>
         {copy.setup.rotate}
+      </Button>
+    )
+  }
+  if (action?.kind === 'patch_cae') {
+    return (
+      <Button type="button" variant="secondary" size="sm" onClick={() => onOpen(action)}>
+        {copy.setup.fix}
+      </Button>
+    )
+  }
+  if (action?.kind === 'open_exercise') {
+    return (
+      <Button type="button" variant="secondary" size="sm" onClick={() => onOpen(action)}>
+        {copy.setup.exercise}
+      </Button>
+    )
+  }
+  if (action?.kind === 'open_ledgers') {
+    return (
+      <Button type="button" variant="secondary" size="sm" onClick={() => onOpen(action)}>
+        {copy.setup.ledgers}
+      </Button>
+    )
+  }
+  if (action?.kind === 'request_billing_rules') {
+    return (
+      <Button type="button" variant="secondary" size="sm" onClick={() => onOpen(action)}>
+        {copy.setup.rules}
+      </Button>
+    )
+  }
+  if (action?.kind === 'open_approvals') {
+    return (
+      <Button type="button" variant="secondary" size="sm" onClick={() => window.location.assign('/aprobaciones')}>
+        {copy.setup.approvals}
       </Button>
     )
   }
@@ -508,6 +601,203 @@ function McpDialog({
             {rotateId ? copy.setup.rotate : copy.setup.mcpRegister}
           </Button>
         )}
+      </DialogFooter>
+    </Dialog>
+  )
+}
+
+function CaeDialog({
+  warehouse,
+  onClose,
+  onSaved,
+}: {
+  warehouse: WarehouseSeed
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const toast = useToast()
+  const [cae, setCae] = useState('')
+  const [test, setTest] = useState(warehouse.is_test)
+  const [error, setError] = useState<ApiError | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function save() {
+    setBusy(true)
+    setError(null)
+    try {
+      await patchWarehouse(warehouse.id, { cae: cae.trim(), is_test: test })
+      toast(copy.setup.saved, { tone: 'success' })
+      onSaved()
+    } catch (err: unknown) {
+      setError(err instanceof ApiError ? err : new ApiError(0, 'WC_ERROR', copy.error.load))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open onClose={onClose} labelledBy="cae-titulo">
+      <DialogHeader titleId="cae-titulo" title={copy.setup.caeTitle} description={warehouse.name} onClose={onClose} />
+      <DialogBody>
+        <form id="cae-form" className="grid gap-4" onSubmit={(event) => { event.preventDefault(); void save() }}>
+          {error && !error.fields ? <Alert tone="danger">{error.message}</Alert> : null}
+          <p className="text-caption text-text-tertiary">{fill(copy.setup.caeNow, { cae: warehouse.cae_masked })}</p>
+          <Field id="cae" label={copy.setup.cae} error={fieldError(error, 'cae')}>
+            <Input id="cae" value={cae} autoComplete="off" spellCheck={false} invalid={Boolean(fieldError(error, 'cae'))} onChange={(event) => setCae(event.target.value)} />
+          </Field>
+          <Checkbox checked={test} onChange={setTest} label={copy.setup.caeTest} />
+        </form>
+      </DialogBody>
+      <DialogFooter>
+        <Button type="button" variant="secondary" size="sm" onClick={onClose}>{copy.setup.cancel}</Button>
+        <Button type="submit" form="cae-form" variant="primary" size="sm" loading={busy}>{copy.setup.save}</Button>
+      </DialogFooter>
+    </Dialog>
+  )
+}
+
+function ExerciseDialog({
+  items,
+  onClose,
+  onSaved,
+}: {
+  items: ExerciseSeed[]
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const toast = useToast()
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function save() {
+    setBusy(true)
+    setError(null)
+    try {
+      for (const item of items) await openExercise(item)
+      toast(copy.setup.saved, { tone: 'success' })
+      onSaved()
+    } catch (err: unknown) {
+      setError(err instanceof ApiError ? err.message : copy.error.load)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open onClose={onClose} labelledBy="ejercicio-titulo">
+      <DialogHeader titleId="ejercicio-titulo" title={copy.setup.exerciseTitle} description={copy.setup.exerciseHint} onClose={onClose} />
+      <DialogBody>
+        {error ? <Alert tone="danger">{error}</Alert> : null}
+        <ul className="grid gap-1">
+          {items.map((item) => (
+            <li key={`${item.tax_warehouse_id}-${item.year}`} className="text-caption text-text-secondary">
+              {item.name} · {item.year}
+            </li>
+          ))}
+        </ul>
+      </DialogBody>
+      <DialogFooter>
+        <Button type="button" variant="secondary" size="sm" onClick={onClose}>{copy.setup.cancel}</Button>
+        <Button type="button" variant="primary" size="sm" loading={busy} onClick={() => void save()}>{copy.setup.exercise}</Button>
+      </DialogFooter>
+    </Dialog>
+  )
+}
+
+function LedgerDialog({
+  items,
+  onClose,
+  onSaved,
+}: {
+  items: LedgerSeed[]
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const toast = useToast()
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function save() {
+    setBusy(true)
+    setError(null)
+    try {
+      for (const item of items) await openLedgers(item.tax_warehouse_id)
+      toast(copy.setup.saved, { tone: 'success' })
+      onSaved()
+    } catch (err: unknown) {
+      setError(err instanceof ApiError ? err.message : copy.error.load)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open onClose={onClose} labelledBy="mayores-titulo">
+      <DialogHeader titleId="mayores-titulo" title={copy.setup.ledgersTitle} description={copy.setup.ledgersHint} onClose={onClose} />
+      <DialogBody>
+        {error ? <Alert tone="danger">{error}</Alert> : null}
+        <ul className="grid gap-1">
+          {items.map((item) => (
+            <li key={item.tax_warehouse_id} className="text-caption text-text-secondary">{item.name}</li>
+          ))}
+        </ul>
+      </DialogBody>
+      <DialogFooter>
+        <Button type="button" variant="secondary" size="sm" onClick={onClose}>{copy.setup.cancel}</Button>
+        <Button type="button" variant="primary" size="sm" loading={busy} onClick={() => void save()}>{copy.setup.ledgers}</Button>
+      </DialogFooter>
+    </Dialog>
+  )
+}
+
+function RulesDialog({
+  entities,
+  onClose,
+  onSaved,
+}: {
+  entities: BillingEntitySeed[]
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const toast = useToast()
+  const [entityId, setEntityId] = useState(entities[0]?.id ?? '')
+  const [error, setError] = useState<ApiError | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function save() {
+    setBusy(true)
+    setError(null)
+    try {
+      await requestBillingRules(entities.length > 0 ? entityId : null)
+      toast(copy.setup.saved, { tone: 'success' })
+      onSaved()
+    } catch (err: unknown) {
+      setError(err instanceof ApiError ? err : new ApiError(0, 'WC_ERROR', copy.error.load))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open onClose={onClose} labelledBy="reglas-titulo">
+      <DialogHeader titleId="reglas-titulo" title={copy.setup.rulesTitle} description={copy.setup.rulesHint} onClose={onClose} />
+      <DialogBody>
+        <form id="reglas-form" className="grid gap-4" onSubmit={(event) => { event.preventDefault(); void save() }}>
+          {error ? <Alert tone="danger">{error.message}</Alert> : null}
+          {entities.length > 0 ? (
+            <Field id="regla-entidad" label={copy.setup.rulesEntity} error={fieldError(error, 'issuing_entity_id')}>
+              <Select id="regla-entidad" className="w-full" value={entityId} onChange={(event) => setEntityId(event.target.value)}>
+                {entities.map((entity) => (
+                  <option key={entity.id} value={entity.id}>{labelOf(entity.code)}</option>
+                ))}
+              </Select>
+            </Field>
+          ) : null}
+        </form>
+      </DialogBody>
+      <DialogFooter>
+        <Button type="button" variant="secondary" size="sm" onClick={onClose}>{copy.setup.cancel}</Button>
+        <Button type="submit" form="reglas-form" variant="primary" size="sm" loading={busy}>{copy.setup.rules}</Button>
       </DialogFooter>
     </Dialog>
   )

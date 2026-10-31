@@ -3,7 +3,7 @@ import { can } from "../core/auth/permissions";
 import { sql } from "../core/db/sql";
 import { domainError } from "../core/errors";
 import { openSilicieExercise, warehouseEntityId } from "../core/regulatory/exercises";
-import { createLedger, listLedgerRows, validateLedger } from "../core/regulatory/silicie/ledger-store";
+import { createLedger, ensureOpeningLedgers, listLedgerRows, validateLedger } from "../core/regulatory/silicie/ledger-store";
 import type { LedgerProductClass, LedgerSituation, WineColor } from "../core/regulatory/silicie/types";
 import type { RegulatoryDeps } from "./regulatory-submissions";
 
@@ -43,6 +43,22 @@ export async function postSilicieLedger(deps: RegulatoryDeps, request: Request) 
     createdAt: deps.now().toISOString(),
   }));
   return ledger;
+}
+
+export async function postOpeningLedgers(deps: RegulatoryDeps, request: Request) {
+  const user = sessionOf(request);
+  const body = asRecord(await request.json().catch(() => {
+    throw domainError("WC_VALIDATION", { body: "El cuerpo no es JSON" });
+  }));
+  const taxWarehouseId = requiredUuid(body.tax_warehouse_id);
+  await entityOfWarehouse(deps, taxWarehouseId);
+  const items = await deps.writer.withWrite({
+    type: "user",
+    id: user.id,
+    requestId: requestIdFor(request),
+    reason: "mayores de apertura SILICIE",
+  }, (tx) => ensureOpeningLedgers(tx, taxWarehouseId, deps.now().toISOString()));
+  return { items };
 }
 
 export async function postOpenExercise(deps: RegulatoryDeps, request: Request) {
