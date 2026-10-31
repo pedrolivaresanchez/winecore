@@ -9,13 +9,21 @@ export class ApiError extends Error {
   status: number;
   code: string;
   fields?: Record<string, string>;
+  details?: Record<string, unknown>;
 
-  constructor(status: number, code: string, message: string, fields?: Record<string, string>) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    fields?: Record<string, string>,
+    details?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.fields = fields;
+    this.details = details;
   }
 }
 
@@ -60,8 +68,13 @@ function normalizeFields(fields: unknown): Record<string, string> | undefined {
   return Object.keys(out).length > 0 ? out : undefined;
 }
 
+function normalizeDetails(details: unknown): Record<string, unknown> | undefined {
+  if (!details || typeof details !== "object" || Array.isArray(details)) return undefined;
+  return details as Record<string, unknown>;
+}
+
 async function readError(response: Response): Promise<ApiError> {
-  let payload: { code?: unknown; message?: unknown; fields?: unknown } = {};
+  let payload: { code?: unknown; message?: unknown; fields?: unknown; details?: unknown } = {};
   try {
     payload = (await response.json()) as typeof payload;
   } catch {
@@ -69,7 +82,7 @@ async function readError(response: Response): Promise<ApiError> {
   }
   const code = typeof payload.code === "string" ? payload.code : "WC_ERROR";
   const message = typeof payload.message === "string" ? payload.message : copy.api.generic;
-  return new ApiError(response.status, code, message, normalizeFields(payload.fields));
+  return new ApiError(response.status, code, message, normalizeFields(payload.fields), normalizeDetails(payload.details));
 }
 
 function redirectToLogin() {
@@ -77,10 +90,10 @@ function redirectToLogin() {
   window.location.assign("/login");
 }
 
-export async function api<T>(path: string, init?: RequestInit, retried = false): Promise<T> {
+async function send(path: string, init: RequestInit | undefined, retried: boolean): Promise<Response> {
   const headers = new Headers(init?.headers);
-  headers.set("Accept", "application/json");
-  if (init?.body != null && !headers.has("Content-Type")) {
+  if (!headers.has("Accept")) headers.set("Accept", "application/json");
+  if (init?.body != null && !headers.has("Content-Type") && !(init.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
   if (isAuthEnabled) {
@@ -97,9 +110,7 @@ export async function api<T>(path: string, init?: RequestInit, retried = false):
   }
 
   if (response.status === 401) {
-    if (isAuthEnabled && !retried && (await refreshAccessToken())) {
-      return api<T>(path, init, true);
-    }
+    if (isAuthEnabled && !retried && (await refreshAccessToken())) return send(path, init, true);
     if (isAuthEnabled) {
       clearTokens();
       redirectToLogin();
@@ -113,7 +124,11 @@ export async function api<T>(path: string, init?: RequestInit, retried = false):
     if (error.status === 403 && NO_ACCESS.has(error.code)) markNoAccess();
     throw error;
   }
+  return response;
+}
 
+export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await send(path, init, false);
   if (response.status === 204) return undefined as T;
   const text = await response.text();
   if (!text) return undefined as T;
@@ -122,4 +137,18 @@ export async function api<T>(path: string, init?: RequestInit, retried = false):
   } catch {
     throw new ApiError(response.status, "WC_BAD_RESPONSE", copy.api.invalid);
   }
+}
+
+export async function apiText(path: string, init?: RequestInit): Promise<string> {
+  const response = await send(path, { ...init, headers: { Accept: "text/csv", ...headersOf(init) } }, false);
+  return response.text();
+}
+
+function headersOf(init?: RequestInit): Record<string, string> {
+  const headers = new Headers(init?.headers);
+  const out: Record<string, string> = {};
+  headers.forEach((value, key) => {
+    out[key] = value;
+  });
+  return out;
 }

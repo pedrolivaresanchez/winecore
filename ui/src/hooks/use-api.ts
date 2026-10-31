@@ -8,13 +8,15 @@ type State<T> = {
   loading: boolean;
 };
 
-export function useApi<T>(path: string) {
+export function useApi<T>(path: string | null) {
   const [attempt, setAttempt] = useState(0);
-  const [state, setState] = useState<State<T>>({ data: null, error: null, loading: true });
+  const [state, setState] = useState<State<T>>({ data: null, error: null, loading: path !== null });
 
   useEffect(() => {
+    if (!path) return;
     const controller = new AbortController();
     let active = true;
+    setState((current) => ({ ...current, loading: true, error: null }));
 
     api<T>(path, { signal: controller.signal })
       .then((data) => {

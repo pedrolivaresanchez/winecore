@@ -1,122 +1,159 @@
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { ErrorState } from "@/components/ErrorState";
-import { EmptyState } from "@/components/EmptyState";
 import { PageHeader } from "@/components/PageHeader";
-import { Skeleton } from "@/components/ui/skeleton";
 import { StatTile } from "@/components/StatTile";
-import { StatusPill } from "@/components/StatusPill";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useApi } from "@/hooks/use-api";
 import { copy, fill } from "@/i18n";
-import { entityName, roleLabel } from "@/lib/labels";
-import type { EntityCode, Health, Me } from "@/lib/types";
+import { ApiError, isAbortError } from "@/lib/api";
+import { contactAudit, contactQuery, listContacts, type AuditEvent, type ContactPage } from "@/lib/contacts";
+import { formatDateTime, formatInteger } from "@/lib/format";
+import { allows } from "@/lib/permissions";
+import type { Me } from "@/lib/types";
 
-function versionOf(sha: string) {
-  const clean = sha.trim();
-  return clean ? clean.slice(0, 7) : "—";
-}
+const ACTIONS: Record<string, string> = {
+  create: "creó",
+  update: "cambió",
+  archive: "archivó",
+  unarchive: "recuperó",
+};
 
-function databaseLabel(db: string) {
-  if (db === "local") return copy.panel.dbLocal;
-  if (db === "timbal") return copy.panel.dbTimbal;
-  return db;
-}
+function useRecent() {
+  const [items, setItems] = useState<{ id: string; contactId: string; name: string; event: AuditEvent }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
-function writerLabel(writer: string) {
-  if (writer === "leader") return copy.panel.writerLeader;
-  if (writer === "standby") return copy.panel.writerStandby;
-  return writer;
-}
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    listContacts({ limit: 8, archived: false }, controller.signal)
+      .then(async (page) => {
+        const top = [...page.items].sort((a, b) => b.updated_at.localeCompare(a.updated_at)).slice(0, 4);
+        const audits = await Promise.all(
+          top.map(async (contact) => ({ contact, audit: await contactAudit(contact.id, controller.signal) })),
+        );
+        if (!active) return;
+        const rows = audits.flatMap(({ contact, audit }) =>
+          audit.items.slice(0, 2).map((event) => ({
+            id: event.id,
+            contactId: contact.id,
+            name: contact.legal_name,
+            event,
+          })),
+        );
+        rows.sort((a, b) => b.event.occurred_at.localeCompare(a.event.occurred_at));
+        setItems(rows.slice(0, 6));
+        setError(null);
+        setLoading(false);
+      })
+      .catch((err: unknown) => {
+        if (!active || isAbortError(err)) return;
+        setError(err instanceof ApiError ? err.message : copy.error.load);
+        setLoading(false);
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [attempt]);
 
-function rolesFor(me: Me, code: EntityCode | null) {
-  return [...new Set(me.roles.filter((role) => role.legal_entity_code === code).map((role) => role.role))];
+  return {
+    items,
+    loading,
+    error,
+    reload: () => {
+      setLoading(true);
+      setAttempt((value) => value + 1);
+    },
+  };
 }
 
 export function Panel({ me }: { me: Me }) {
-  const health = useApi<Health>("/health");
   const name = me.display_name.trim() || me.email;
-  const groupRoles = rolesFor(me, null);
-  const settled = !health.loading;
+  const canWrite = allows(me, "contacts.write");
+  const canRead = allows(me, "contacts.read");
+  const all = useApi<ContactPage>(canRead ? contactQuery({ limit: 1, archived: false }) : null);
+  const customers = useApi<ContactPage>(canRead ? contactQuery({ limit: 1, role: "customer", archived: false }) : null);
+  const suppliers = useApi<ContactPage>(canRead ? contactQuery({ limit: 1, role: "supplier", archived: false }) : null);
+  const recent = useRecent();
+  const ready = !canRead || (!all.loading && !customers.loading && !suppliers.loading && !recent.loading);
 
   return (
-    <div data-screen={settled ? "panel" : "panel-cargando"} className="flex flex-col gap-4">
+    <div data-screen={ready ? "panel" : "panel-cargando"} className="flex flex-col gap-6">
       <PageHeader title={copy.panel.title} description={fill(copy.panel.hello, { name })} />
+      <p className="text-body text-muted-foreground">{copy.panel.lead}</p>
 
-      <section aria-labelledby="estado-sistema" className="rounded-xl border bg-card p-4 card-shadow">
-        <div className="flex items-center justify-between gap-3">
-          <h2 id="estado-sistema" className="text-body font-semibold">
-            {copy.panel.system}
-          </h2>
-          {health.data && health.data.status !== "ok" ? (
-            <StatusPill tone="warning">{copy.panel.incident}</StatusPill>
-          ) : null}
-        </div>
+      {canWrite ? (
+        <section className="grid gap-3">
+          <h2 className="text-body font-semibold">{copy.panel.quick}</h2>
+          <div>
+            <Button asChild>
+              <Link to="/contactos/nuevo">{copy.panel.newContact}</Link>
+            </Button>
+          </div>
+        </section>
+      ) : null}
 
-        {health.loading ? (
-          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4" aria-busy="true">
-            <p className="sr-only">{copy.loading}</p>
-            {Array.from({ length: 4 }, (_, index) => (
-              <Skeleton key={index} className="h-11 sm:h-24" />
-            ))}
-          </div>
-        ) : health.error ? (
-          <div className="mt-3" data-health="error">
-            <ErrorState
-              framed={false}
-              title={`${copy.error.load} (${health.error.code})`}
-              detail={health.error.message}
-              onRetry={health.reload}
-            />
-          </div>
-        ) : health.data ? (
-          <div className="mt-1 divide-y divide-border sm:mt-3 sm:grid sm:grid-cols-2 sm:gap-3 sm:divide-y-0 lg:grid-cols-4" data-health="ok">
-            <StatTile label={copy.panel.version} value={versionOf(health.data.sha)} hint={health.data.sha} />
-            <StatTile label={copy.panel.schema} value={health.data.schema_version || "—"} />
-            <StatTile label={copy.panel.database} value={databaseLabel(health.data.db)} />
-            <StatTile label={copy.panel.writer} value={writerLabel(health.data.writer)} />
-          </div>
-        ) : null}
-      </section>
+      {canRead ? (
+        <section className="grid gap-3">
+          <h2 className="text-body font-semibold">{copy.panel.kpis}</h2>
+          {all.error ? (
+            <ErrorState title={`${copy.error.load} (${all.error.code})`} detail={all.error.message} onRetry={all.reload} />
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Link to="/contactos" className="rounded-xl focus-visible:outline">
+                <Tile label="Contactos" value={all.data?.total} loading={all.loading} />
+              </Link>
+              <Link to="/contactos?role=customer" className="rounded-xl">
+                <Tile label={copy.panel.customers} value={customers.data?.total} loading={customers.loading} />
+              </Link>
+              <Link to="/contactos?role=supplier" className="rounded-xl">
+                <Tile label={copy.panel.suppliers} value={suppliers.data?.total} loading={suppliers.loading} />
+              </Link>
+            </div>
+          )}
+        </section>
+      ) : null}
 
-      <section aria-labelledby="entidades" className="flex flex-col gap-3">
-        <h2 id="entidades" className="text-body font-semibold">
-          {copy.panel.entities}
-        </h2>
-        {me.entities.length === 0 && groupRoles.length === 0 ? (
-          <EmptyState title={copy.panel.noEntities} />
-        ) : (
-          <ul className="grid gap-3 lg:grid-cols-2">
-            {groupRoles.length > 0 ? (
-              <li className="rounded-xl border bg-card p-3 card-shadow md:p-4">
-                <h3 className="text-body font-semibold">{copy.entity.all}</h3>
-                <p className="mt-0.5 text-meta text-muted-foreground">{copy.panel.group}</p>
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {groupRoles.map((role) => (
-                    <StatusPill key={role}>{roleLabel(role)}</StatusPill>
-                  ))}
-                </div>
-              </li>
-            ) : null}
-            {me.entities.map((entity) => {
-              const roles = rolesFor(me, entity.code);
-              const label = entityName(entity.code);
-              return (
-                <li key={entity.id} className="rounded-xl border bg-card p-3 card-shadow md:p-4">
-                  <h3 className="text-body font-semibold">{label}</h3>
-                  {entity.legal_name && entity.legal_name !== label ? (
-                    <p className="mt-0.5 text-meta break-words text-muted-foreground">{entity.legal_name}</p>
-                  ) : null}
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {roles.length > 0 ? (
-                      roles.map((role) => <StatusPill key={role}>{roleLabel(role)}</StatusPill>)
-                    ) : (
-                      <p className="text-compact text-muted-foreground">{copy.panel.noRole}</p>
-                    )}
-                  </div>
+      {canRead ? (
+        <section className="grid gap-3">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-body font-semibold">{copy.panel.recent}</h2>
+          </div>
+          {recent.loading ? (
+            <div className="grid gap-2" aria-busy="true">
+              <Skeleton className="h-14 w-full" />
+              <Skeleton className="h-14 w-full" />
+            </div>
+          ) : recent.error ? (
+            <ErrorState title={recent.error} onRetry={recent.reload} />
+          ) : recent.items.length === 0 ? (
+            <p className="text-compact text-muted-foreground">{copy.panel.recentEmpty}</p>
+          ) : (
+            <ul className="grid gap-2">
+              {recent.items.map((item) => (
+                <li key={item.id}>
+                  <Link to={`/contactos/${item.contactId}`} className="block rounded-xl border bg-card p-3 hover:bg-accent">
+                    <p className="text-body">
+                      <span className="font-medium">{item.event.actor.display_name}</span>{" "}
+                      {ACTIONS[item.event.action] ?? item.event.action} {item.name}
+                    </p>
+                    <p className="text-meta text-muted-foreground">{formatDateTime(item.event.occurred_at)}</p>
+                  </Link>
                 </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
     </div>
   );
+}
+
+function Tile({ label, value, loading }: { label: string; value?: number; loading: boolean }) {
+  if (loading || value == null) return <StatTile label={label} value="…" />;
+  return <StatTile label={label} value={formatInteger(value)} />;
 }

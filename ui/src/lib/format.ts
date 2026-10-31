@@ -34,6 +34,11 @@ const dateTimeFormat = new Intl.DateTimeFormat("es-ES", {
   hourCycle: "h23",
 });
 
+export function formatInteger(value: number): string {
+  if (!Number.isFinite(value)) return "—";
+  return formatGrouped(value, 0);
+}
+
 /** `1.234,56 €` */
 export function formatMoney(value: number): string {
   if (!Number.isFinite(value)) return "—";

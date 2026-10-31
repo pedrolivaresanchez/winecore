@@ -30,6 +30,8 @@ export function DataTable<T>({
   search,
   onSearchChange,
   searchPlaceholder = copy.table.search,
+  onRowClick,
+  selectedKey,
   loading = false,
   hasMore = false,
   loadingMore = false,
@@ -42,9 +44,11 @@ export function DataTable<T>({
   columns: Column<T>[];
   rows: T[];
   rowKey: (row: T) => string;
-  search: string;
-  onSearchChange: (value: string) => void;
+  search?: string;
+  onSearchChange?: (value: string) => void;
   searchPlaceholder?: string;
+  onRowClick?: (row: T) => void;
+  selectedKey?: string;
   loading?: boolean;
   hasMore?: boolean;
   loadingMore?: boolean;
@@ -58,18 +62,20 @@ export function DataTable<T>({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-20 -mx-4 border-b bg-background px-4 py-3 md:-mx-6 md:px-6">
-        <label className="sr-only" htmlFor={searchId}>
-          {searchPlaceholder}
-        </label>
-        <Input
-          id={searchId}
-          type="search"
-          value={search}
-          placeholder={searchPlaceholder}
-          onChange={(event) => onSearchChange(event.target.value)}
-        />
-      </div>
+      {onSearchChange ? (
+        <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-20 -mx-4 border-b bg-background px-4 py-3 md:-mx-6 md:px-6">
+          <label className="sr-only" htmlFor={searchId}>
+            {searchPlaceholder}
+          </label>
+          <Input
+            id={searchId}
+            type="search"
+            value={search ?? ""}
+            placeholder={searchPlaceholder}
+            onChange={(event) => onSearchChange(event.target.value)}
+          />
+        </div>
+      ) : null}
 
       {loading ? (
         <div aria-busy="true">
@@ -112,7 +118,23 @@ export function DataTable<T>({
               </TableHeader>
               <TableBody>
                 {rows.map((row) => (
-                  <TableRow key={rowKey(row)}>
+                  <TableRow
+                    key={rowKey(row)}
+                    data-state={selectedKey === rowKey(row) ? "selected" : undefined}
+                    tabIndex={onRowClick ? 0 : undefined}
+                    className={onRowClick ? "cursor-pointer" : undefined}
+                    onClick={onRowClick ? () => onRowClick(row) : undefined}
+                    onKeyDown={
+                      onRowClick
+                        ? (event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              onRowClick(row);
+                            }
+                          }
+                        : undefined
+                    }
+                  >
                     {columns.map((column) => (
                       <TableCell
                         key={column.id}
@@ -134,7 +156,12 @@ export function DataTable<T>({
             {rows.map((row) => {
               const [title, second, third] = cards;
               return (
-                <li key={rowKey(row)} className="rounded-xl border bg-card p-4 card-shadow">
+                <li key={rowKey(row)}>
+                  <button
+                    type="button"
+                    className="w-full rounded-xl border bg-card p-4 text-left card-shadow"
+                    onClick={onRowClick ? () => onRowClick(row) : undefined}
+                  >
                   {title ? <p className="text-body font-medium break-words">{title.cell(row)}</p> : null}
                   {second || third ? (
                     <dl className="mt-2 grid gap-1">
@@ -148,6 +175,7 @@ export function DataTable<T>({
                       )}
                     </dl>
                   ) : null}
+                  </button>
                 </li>
               );
             })}

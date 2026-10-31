@@ -1,9 +1,12 @@
+import { Ellipsis } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { copy } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { navItems } from "@/app/nav";
+import { mobileTabs } from "@/app/nav";
+import type { Me } from "@/lib/types";
 
-export function BottomNav() {
+export function BottomNav({ me, onOpenMore }: { me: Me; onOpenMore: () => void }) {
+  const tabs = mobileTabs(me);
   return (
     <nav
       aria-label={copy.nav.primary}
@@ -14,20 +17,18 @@ export function BottomNav() {
         paddingRight: "env(safe-area-inset-right)",
       }}
     >
-      <div className="grid h-14 grid-cols-3">
-        {navItems.map((item) => {
+      <div className="grid h-14" style={{ gridTemplateColumns: `repeat(${tabs.length + 1}, minmax(0, 1fr))` }}>
+        {tabs.map((item) => {
           const Icon = item.icon;
           return (
             <NavLink
-              key={item.to}
-              to={item.to}
+              key={item.id}
+              to={item.path}
               end={item.end}
               className={({ isActive }) =>
                 cn(
                   "flex h-14 flex-col items-center justify-center gap-0.5 text-meta",
-                  isActive
-                    ? "font-medium text-foreground shadow-[inset_0_2px_0_var(--ink-900)]"
-                    : "text-muted-foreground",
+                  isActive ? "font-medium text-foreground shadow-[inset_0_2px_0_var(--ink-900)]" : "text-muted-foreground",
                 )
               }
             >
@@ -36,6 +37,14 @@ export function BottomNav() {
             </NavLink>
           );
         })}
+        <button
+          type="button"
+          className="flex h-14 flex-col items-center justify-center gap-0.5 text-meta text-muted-foreground"
+          onClick={onOpenMore}
+        >
+          <Ellipsis aria-hidden className="size-5" />
+          <span>{copy.nav.more}</span>
+        </button>
       </div>
     </nav>
   );

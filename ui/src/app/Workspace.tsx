@@ -8,11 +8,12 @@ import { useApi } from "@/hooks/use-api";
 import { useNoAccess } from "@/hooks/use-no-access";
 import { copy } from "@/i18n";
 import type { Me } from "@/lib/types";
-import { Contactos } from "@/pages/Contactos";
-import { Mas } from "@/pages/Mas";
 import { NoAccess } from "@/pages/NoAccess";
 import { NotFound } from "@/pages/NotFound";
 import { Panel } from "@/pages/Panel";
+import { ContactCreate } from "@/pages/contactos/ContactCreate";
+import { ContactList } from "@/pages/contactos/ContactList";
+import { ContactPage } from "@/pages/contactos/ContactPage";
 
 function LoadingScreen() {
   return (
@@ -54,8 +55,9 @@ export function Workspace() {
       <Shell me={me.data}>
         <Routes>
           <Route index element={<Panel me={me.data} />} />
-          <Route path="contactos" element={<Contactos />} />
-          <Route path="mas" element={<Mas />} />
+          <Route path="contactos" element={<ContactList me={me.data} />} />
+          <Route path="contactos/nuevo" element={<ContactCreate me={me.data} />} />
+          <Route path="contactos/:id" element={<ContactPage me={me.data} />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Shell>

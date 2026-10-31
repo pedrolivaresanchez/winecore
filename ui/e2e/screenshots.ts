@@ -1,15 +1,15 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { chromium, type Browser, type Page, type Route } from "playwright";
-import { healthError, healthOk, meForbidden, meOk } from "./fixtures";
+import { auditEvents, contactDetail, filterContacts, healthOk, meForbidden, meOk } from "./fixtures";
 
 const port = 5199;
 const baseUrl = `http://127.0.0.1:${port}`;
 const outDir = "/opt/cursor/artifacts/screenshots";
 const chromePath = "/usr/local/bin/google-chrome";
 
-type Mode = "ok" | "forbidden" | "health-error";
+type Mode = "ok" | "empty" | "forbidden";
 
 const viewports = [
   { width: 390, height: 844 },
@@ -24,52 +24,100 @@ function fulfill(route: Route, body: unknown, status = 200) {
   });
 }
 
+function pageOf(url: URL) {
+  const matched = filterContacts(url);
+  const limit = Number(url.searchParams.get("limit") ?? "50");
+  const start = Number(url.searchParams.get("cursor") ?? "0");
+  const items = matched.slice(start, start + limit);
+  const next = start + limit < matched.length ? String(start + limit) : null;
+  return { items, next_cursor: next, total: matched.length };
+}
+
 async function installApi(page: Page, mode: Mode) {
-  await page.route("**/api/**", (route) => {
-    const pathname = new URL(route.request().url()).pathname;
-    if (pathname.endsWith("/health")) {
-      if (mode === "health-error") return fulfill(route, healthError, 503);
-      return fulfill(route, healthOk);
-    }
+  await page.route("**/api/**", async (route) => {
+    const url = new URL(route.request().url());
+    const pathname = url.pathname;
+    const method = route.request().method();
+
+    if (pathname.endsWith("/health")) return fulfill(route, healthOk);
     if (pathname.endsWith("/v1/me")) {
       if (mode === "forbidden") return fulfill(route, meForbidden, 403);
       return fulfill(route, meOk);
+    }
+    if (pathname.endsWith("/v1/contacts/export.csv")) {
+      return route.fulfill({
+        status: 200,
+        contentType: "text/csv",
+        body: "nombre,nif\nVinoteca La Encina S.L.,B00000000\n",
+      });
+    }
+    if (pathname.endsWith("/v1/audit")) {
+      const row = url.searchParams.get("row_id");
+      const items = auditEvents
+        .filter((event) => !row || event.row_id === row)
+        .map((event) => ({
+          id: event.id,
+          occurred_at: event.occurred_at,
+          actor: event.actor,
+          action: event.action,
+          changes: event.changes,
+        }));
+      return fulfill(route, { items, next_cursor: null });
+    }
+    if (pathname.endsWith("/v1/contacts") && method === "GET") {
+      if (mode === "empty") return fulfill(route, { items: [], next_cursor: null, total: 0 });
+      return fulfill(route, pageOf(url));
+    }
+    if (pathname.endsWith("/v1/contacts") && method === "POST") {
+      const body = route.request().postDataJSON() as { tax_id?: string; legal_name?: string };
+      const tax = (body.tax_id ?? "").replace(/[\s.-]/g, "").toUpperCase();
+      if (tax === "00000000T") {
+        return fulfill(
+          route,
+          {
+            code: "WC_CONTACT_DUPLICATE_TAX_ID",
+            message: "Ya existe un contacto con este NIF",
+            details: { existing_id: "c-nora", existing_name: "Nora Vidal" },
+          },
+          409,
+        );
+      }
+      return fulfill(
+        route,
+        contactDetail("c-encina"),
+        201,
+      );
+    }
+    const contactMatch = pathname.match(/\/v1\/contacts\/([^/]+)$/);
+    if (contactMatch && method === "GET") return fulfill(route, contactDetail(contactMatch[1] ?? ""));
+    if (contactMatch && method === "PATCH") return fulfill(route, contactDetail(contactMatch[1] ?? ""));
+    if (pathname.endsWith("/archive") || pathname.endsWith("/unarchive")) {
+      return fulfill(route, contactDetail("c-encina"));
+    }
+    if (pathname.includes("/addresses") && method === "POST") {
+      return fulfill(route, { id: "a-new", kind: "billing", label: null, line1: "Nueva", line2: null, postal_code: null, city: "Haro", province: null, country_code: "ES", is_default: false }, 201);
+    }
+    if (pathname.includes("/persons") && method === "POST") {
+      return fulfill(route, { id: "p-new", full_name: "Nueva", role: null, email: null, phone: null, receives_invoices: false, receives_dunning: false }, 201);
     }
     return fulfill(route, { code: "WC_NOT_FOUND", message: "No encontrado" }, 404);
   });
 }
 
-async function overflow(page: Page) {
-  return page.evaluate(() => {
-    const root = document.documentElement;
-    return {
-      extra: root.scrollWidth - root.clientWidth,
-      offenders: Array.from(document.querySelectorAll("body *"))
-        .map((node) => {
-          const box = node.getBoundingClientRect();
-          return { node, box };
-        })
-        .filter(({ box }) => box.width > 0 && (box.right > window.innerWidth + 1 || box.left < -1))
-        .slice(0, 8)
-        .map(({ node, box }) => ({
-          tag: node.tagName,
-          className: node instanceof HTMLElement ? node.className.toString().slice(0, 120) : "",
-          left: Math.round(box.left),
-          right: Math.round(box.right),
-        })),
-    };
-  });
+async function assertInView(page: Page, name: string) {
+  const extra = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  if (extra > 1) throw new Error(`${name} se sale ${extra}px`);
 }
 
-async function shoot(
-  browser: Browser,
-  name: string,
-  routePath: string,
-  mode: Mode,
-  viewport: { width: number; height: number },
-  ready: string,
-  after?: (page: Page) => Promise<void>,
-) {
+async function shot(page: Page, name: string) {
+  await page.waitForTimeout(200);
+  const file = path.join(outDir, `${name}.png`);
+  await page.screenshot({ path: file });
+  await assertInView(page, name);
+  console.log(file);
+}
+
+async function openContext(browser: Browser, viewport: { width: number; height: number }, mode: Mode) {
   const context = await browser.newContext({
     viewport,
     deviceScaleFactor: 1,
@@ -82,46 +130,31 @@ async function shoot(
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await installApi(page, mode);
+  return {
+    page,
+    errors,
+    async close() {
+      if (errors.length > 0) throw new Error(errors.join(" | "));
+      await context.close();
+    },
+  };
+}
+
+async function gotoReady(page: Page, routePath: string, ready: string) {
   await page.goto(`${baseUrl}${routePath}`, { waitUntil: "domcontentloaded" });
   await page.waitForSelector(`[data-screen="${ready}"]`, { timeout: 15_000 });
-  if (ready === "panel" && mode === "ok") {
-    await page.getByRole("heading", { name: "Panel" }).waitFor();
-    await page.getByText("Ana Rivas").waitFor();
-    await page.getByText("abc1234").waitFor();
-    await page.getByText("Estado del sistema").waitFor();
-  }
-  if (ready === "contactos") await page.getByText("Aún no hay contactos").waitFor();
-  if (ready === "sin-acceso") {
-    await page.getByRole("heading", { name: "No tienes acceso a WineCore" }).waitFor();
-  }
-  await page.evaluate(() => document.fonts.ready);
-  if (after) await after(page);
-  await page.waitForTimeout(150);
-  const file = path.join(outDir, `${name}-${viewport.width}.png`);
-  await page.screenshot({ path: file, fullPage: false });
-  const layout = await overflow(page);
-  await context.close();
-  if (errors.length > 0) throw new Error(`${name}-${viewport.width}: ${errors.join(" | ")}`);
-  if (layout.extra > 1) {
-    throw new Error(`${name}-${viewport.width} se sale ${layout.extra}px: ${JSON.stringify(layout.offenders)}`);
-  }
-  console.log(file);
 }
 
 function startServer() {
   const logs: string[] = [];
-  const proc = spawn(
-    process.execPath,
-    ["run", "dev", "--", "--host", "127.0.0.1", "--port", String(port), "--strictPort"],
-    {
-      cwd: process.cwd(),
-      env: { ...process.env, VITE_AUTH_ENABLED: "false" },
-      stdio: ["ignore", "pipe", "pipe"],
-    },
-  );
+  const proc = spawn(process.execPath, ["run", "dev", "--", "--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
+    cwd: process.cwd(),
+    env: { ...process.env, VITE_AUTH_ENABLED: "false" },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   const collect = (chunk: Buffer) => {
     logs.push(chunk.toString());
-    if (logs.length > 40) logs.shift();
+    if (logs.length > 30) logs.shift();
   };
   proc.stdout?.on("data", collect);
   proc.stderr?.on("data", collect);
@@ -130,30 +163,24 @@ function startServer() {
 
 async function waitForServer(proc: ChildProcess, logs: string[]) {
   const started = Date.now();
-  let last = "";
   while (Date.now() - started < 30_000) {
-    if (proc.exitCode !== null) {
-      throw new Error(`Vite terminó con ${proc.exitCode}\n${logs.join("")}`);
-    }
+    if (proc.exitCode !== null) throw new Error(`Vite terminó\n${logs.join("")}`);
     try {
       const response = await fetch(baseUrl);
       if (response.ok) return;
-      last = `HTTP ${response.status}`;
-    } catch (error) {
-      last = error instanceof Error ? error.message : "sin conexión";
+    } catch {
+      /* sigue arrancando */
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  throw new Error(`Vite no arrancó (${last})\n${logs.join("")}`);
-}
-
-function stop(proc: ChildProcess) {
-  if (proc.exitCode !== null) return;
-  proc.kill("SIGTERM");
+  throw new Error(`Vite no arrancó\n${logs.join("")}`);
 }
 
 async function main() {
   await mkdir(outDir, { recursive: true });
+  for (const file of await readdir(outDir)) {
+    if (file.endsWith(".png")) await rm(path.join(outDir, file));
+  }
   const { proc, logs } = startServer();
   try {
     await waitForServer(proc, logs);
@@ -163,45 +190,93 @@ async function main() {
       args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
     });
     try {
-      const pages = [
-        { name: "panel", path: "/", ready: "panel" },
-        { name: "contactos", path: "/contactos", ready: "contactos" },
-        { name: "mas", path: "/mas", ready: "mas" },
-        { name: "no-encontrada", path: "/no-existe", ready: "no-encontrada" },
-      ];
       for (const viewport of viewports) {
-        for (const item of pages) {
-          await shoot(browser, item.name, item.path, "ok", viewport, item.ready);
-        }
-        await shoot(browser, "sin-acceso", "/", "forbidden", viewport, "sin-acceso");
-        await shoot(browser, "panel-error", "/", "health-error", viewport, "panel", async (page) => {
-          await page.waitForSelector("[data-health='error']");
-        });
-        await shoot(browser, "panel-menu", "/", "ok", viewport, "panel", async (page) => {
-          await page.getByRole("button", { name: "Cuenta de ana@winecore.test" }).click();
-          await page.getByRole("menuitem", { name: "Cerrar sesión" }).waitFor();
-        });
+        const width = viewport.width;
+        const panel = await openContext(browser, viewport, "ok");
+        await gotoReady(panel.page, "/", "panel");
+        await panel.page.getByText("Acciones rápidas").waitFor();
+        await shot(panel.page, `panel-${width}`);
+        await panel.close();
+
+        const list = await openContext(browser, viewport, "ok");
+        await gotoReady(list.page, "/contactos", "contactos");
+        await shot(list.page, `contactos-${width}`);
+        const target =
+          width < 768
+            ? list.page.locator("button", { hasText: "Vinoteca La Encina S.L." })
+            : list.page.locator("tr", { hasText: "Vinoteca La Encina S.L." });
+        await target.first().click();
+        await list.page.waitForSelector("[data-screen='contacto-preview']");
+        await list.page.getByText("Luis Encina").waitFor();
+        await shot(list.page, `contacto-preview-${width}`);
+        await list.close();
+
+        const create = await openContext(browser, viewport, "ok");
+        await gotoReady(create.page, "/contactos/nuevo", "contacto-nuevo");
+        await create.page.getByRole("button", { name: "Crear contacto" }).click();
+        await create.page.locator("#legal_name-error").waitFor();
+        await shot(create.page, `contacto-nuevo-${width}`);
+        await create.close();
+
+        const duplicate = await openContext(browser, viewport, "ok");
+        await gotoReady(duplicate.page, "/contactos/nuevo", "contacto-nuevo");
+        await duplicate.page.locator("#legal_name").fill("Bodega Duplicada S.L.");
+        await duplicate.page.locator("#tax_id").fill("00000000T");
+        await duplicate.page.getByRole("button", { name: "Crear contacto" }).click();
+        await duplicate.page.getByText("Ya existe Nora Vidal con este NIF").waitFor();
+        await shot(duplicate.page, `contacto-duplicado-${width}`);
+        await duplicate.close();
+
+        const ficha = await openContext(browser, viewport, "ok");
+        await gotoReady(ficha.page, "/contactos/c-encina", "ficha");
+        await shot(ficha.page, `ficha-resumen-${width}`);
+        if (width < 768) await ficha.page.locator("#ficha-seccion").selectOption("direcciones");
+        else await ficha.page.getByRole("tab", { name: "Direcciones" }).click();
+        await ficha.page.getByText("Calle de la Encina 12").waitFor();
+        await shot(ficha.page, `ficha-direcciones-${width}`);
+        if (width < 768) await ficha.page.locator("#ficha-seccion").selectOption("personas");
+        else await ficha.page.getByRole("tab", { name: "Personas" }).click();
+        await ficha.page.getByText("Luis Encina").waitFor();
+        await shot(ficha.page, `ficha-personas-${width}`);
+        if (width < 768) await ficha.page.locator("#ficha-seccion").selectOption("historial");
+        else await ficha.page.getByRole("tab", { name: "Historial" }).click();
+        await ficha.page.getByText("Ana Rivas").waitFor();
+        await shot(ficha.page, `ficha-historial-${width}`);
+        await ficha.close();
+
+        const empty = await openContext(browser, viewport, "empty");
+        await gotoReady(empty.page, "/contactos", "contactos-vacio");
+        await shot(empty.page, `contactos-vacio-${width}`);
+        await empty.close();
       }
-      await shoot(browser, "panel-oscuro", "/", "ok", { width: 390, height: 844 }, "panel", async (page) => {
-        await page.getByRole("button", { name: "Cuenta de ana@winecore.test" }).click();
-        await page.getByRole("menuitem", { name: "Usar tema oscuro" }).click();
-        await page.waitForSelector("html.dark");
-        await page.keyboard.press("Escape");
-        await page.getByRole("menuitem", { name: "Cerrar sesión" }).waitFor({ state: "hidden" });
-      });
-      await shoot(browser, "panel-plegado", "/", "ok", { width: 1440, height: 900 }, "panel", async (page) => {
-        await page.getByRole("button", { name: "Plegar menú" }).click();
-        await page.getByRole("button", { name: "Desplegar menú" }).waitFor();
-      });
+
+      const mobile = await openContext(browser, viewports[0], "ok");
+      await gotoReady(mobile.page, "/", "panel");
+      await mobile.page.getByRole("button", { name: "Más" }).click();
+      await mobile.page.waitForSelector("[data-screen='mas']");
+      await shot(mobile.page, "mas-390");
+      await mobile.page.getByRole("button", { name: "Ajustes" }).click();
+      await mobile.page.waitForSelector("[data-screen='ajustes']");
+      await mobile.page.getByText("Entidades y usuarios").waitFor();
+      await shot(mobile.page, "ajustes-390");
+      await mobile.close();
+
+      const desktop = await openContext(browser, viewports[1], "ok");
+      await gotoReady(desktop.page, "/", "panel");
+      await desktop.page.getByRole("button", { name: "Ajustes" }).click();
+      await desktop.page.waitForSelector("[data-screen='ajustes']");
+      await desktop.page.getByText("Entidades y usuarios").waitFor();
+      await shot(desktop.page, "ajustes-1440");
+      await desktop.close();
     } finally {
       await browser.close();
     }
   } finally {
-    stop(proc);
+    if (proc.exitCode === null) proc.kill("SIGTERM");
   }
 }
 
 main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : error);
+  console.error(error instanceof Error ? error.stack : error);
   process.exitCode = 1;
 });
