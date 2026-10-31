@@ -54,6 +54,8 @@ const CATALOG = {
   WC_VESSEL_NOT_IN_SERVICE: [409, 'El recipiente no está en servicio'],
   WC_ILLEGAL_TRANSITION: [409, 'La transición de estado no está permitida'],
   WC_ECO_MIX: [422, 'No se puede ensamblar un lote ecológico con uno que no lo es'],
+  WC_ENOLOGY_PROHIBITED: [422, 'Práctica enológica prohibida en esta bodega'],
+  WC_ENOLOGY_LOSS: [422, 'La merma supera la tolerancia y falta el motivo'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;
