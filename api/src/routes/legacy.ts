@@ -1,4 +1,5 @@
 import { sessionOf } from '../auth/guard';
+import { listLinks, readContent } from '../core/attachments/store';
 import { loadLegacyDocument, loadLegacyInvoice, readHoldedInvoice } from '../core/legacy/detail';
 import { listLegacyDocuments } from '../core/legacy/documents';
 import { listLegacyInvoices } from '../core/legacy/invoices';
@@ -21,7 +22,8 @@ export function getLegacyInvoice(writer: Writer, request: Request, id: string) {
 
 export async function getLegacyInvoicePdf(writer: Writer, request: Request, id: string): Promise<Response> {
   const loaded = await readHoldedInvoice(writer, sessionOf(request), id);
-  const bytes = await renderHoldedInvoicePdf(holdedPdfInput(loaded));
+  const stored = await storedInvoicePdf(writer, id);
+  const bytes = stored ?? await renderHoldedInvoicePdf(holdedPdfInput(loaded));
   const filename = holdedPdfFilename(loaded.detail.number);
   return new Response(Buffer.from(bytes), {
     headers: {
@@ -29,6 +31,17 @@ export async function getLegacyInvoicePdf(writer: Writer, request: Request, id: 
       'Content-Disposition': `attachment; filename="${filename}"`,
     },
   });
+}
+
+async function storedInvoicePdf(writer: Writer, id: string): Promise<Uint8Array | null> {
+  const links = await listLinks(writer.read.bind(writer), 'legacy.holded_invoice', id);
+  const link = links.find((item) => item.role === 'invoice_pdf' || item.role === 'supplier_invoice_scan');
+  if (!link) return null;
+  try {
+    return await readContent(writer.read.bind(writer), link.sha256);
+  } catch {
+    return null;
+  }
 }
 
 export function getLegacyDocument(writer: Writer, request: Request, id: string) {

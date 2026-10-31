@@ -97,7 +97,7 @@ const COLUMN_LABELS: Record<ColumnId, string> = {
   active: 'Activo',
   warnings: 'Avisos',
 }
-const DEFAULT_HIDDEN = new Set<ColumnId>(['gtin', 'nc', 'tax', 'alcohol'])
+const DEFAULT_HIDDEN = new Set<ColumnId>(['nc', 'tax', 'alcohol'])
 
 function readHidden(): Set<ColumnId> {
   const raw = readStorage(COLUMN_KEY)
