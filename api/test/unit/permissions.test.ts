@@ -9,12 +9,12 @@ import {
 } from '../../src/core/auth/permissions';
 
 const granted: Record<RoleCode, readonly Permission[]> = {
-  owner: ['contacts.read', 'contacts.write', 'settings.manage', 'users.manage', 'audit.read'],
-  approver: ['contacts.read', 'audit.read'],
-  admin: ['contacts.read', 'contacts.write'],
-  cellar: [],
+  owner: ['contacts.read', 'contacts.write', 'settings.manage', 'users.manage', 'audit.read', 'inventory.read', 'inventory.count'],
+  approver: ['contacts.read', 'audit.read', 'inventory.read'],
+  admin: ['contacts.read', 'contacts.write', 'inventory.read', 'inventory.count'],
+  cellar: ['inventory.read', 'inventory.count'],
   field: [],
-  advisor: ['contacts.read', 'audit.read'],
+  advisor: ['contacts.read', 'audit.read', 'inventory.read'],
 };
 
 function user(role: RoleCode, legalEntityId: string | null = null): UserCtx {
