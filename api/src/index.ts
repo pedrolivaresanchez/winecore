@@ -2,6 +2,7 @@ import { createApp } from './app';
 import { loadConfig } from './config';
 import { openClient } from './core/db/open';
 import { createWriter, installWriter } from './core/db/writer';
+import { registerFermentationAlerts } from './jobs/fermentation-alerts';
 import { registerOutboxDispatch } from './jobs/outbox';
 import { createScheduler } from './jobs/scheduler';
 import { migrate } from '../db/migrate';
@@ -25,6 +26,7 @@ async function main(): Promise<void> {
     : createScheduler({ isLeader: async () => (await writer.currentRole()) === 'leader' });
   if (scheduler) {
     registerOutboxDispatch(scheduler, { writer, config });
+    registerFermentationAlerts(scheduler, { writer });
     scheduler.start();
   }
   const app = createApp({ config, writer });

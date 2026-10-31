@@ -57,6 +57,7 @@ const guardSpecs: readonly GuardSpec[] = [
   { id: "WC042", kind: "core", table: "ops.approval_request", description: "La solicitud de aprobación no está pendiente.", ownerTask: "TASK-APR-001", implemented: true },
   { id: "WC043", kind: "core", table: "ops.approval_request", description: "La solicitud de aprobación ha caducado.", ownerTask: "TASK-APR-001", implemented: true },
   { id: "WC050", kind: "core", table: "catalog.price_list_item", description: "Una versión de tarifa que no está en borrador no se edita.", ownerTask: "TASK-CAT-002", implemented: true },
+  { id: "WC_ANALYSIS_RANGE", kind: "core", table: "cellar.analysis_result", description: "Un resultado de analítica fuera del rango físico del parámetro se rechaza.", ownerTask: "TASK-BOD-011", implemented: true },
   { id: "WC060", kind: "core", table: "sales.delivery_note", description: "Un albarán emitido no se edita y uno anulado es definitivo.", ownerTask: "TASK-VENT-003", implemented: false },
   { id: "WC070", kind: "core", table: "billing.billing_rule", description: "Un conjunto de reglas de facturación que no está en borrador no se edita.", ownerTask: "TASK-VENT-001", implemented: false },
   { id: "WC080", kind: "core", table: "billing.invoice", description: "Una factura emitida solo admite cambios de cobro, envío, PDF, Verifactu y anulación.", ownerTask: "TASK-FACT-003", implemented: false },

@@ -30,7 +30,7 @@ const MISSING_COLUMNS: Record<string, readonly string[]> = {
   // ninguna columna de la referencia se omite
 };
 const EXTRA_COLUMNS: Record<string, readonly string[]> = {
-  // ninguna columna extra
+  // ninguna columna extra: DuckDB no puede alterar cellar.analysis
 };
 
 function splitSql(sql: string): string[] {
@@ -329,8 +329,9 @@ test("el esquema DuckDB reproduce tablas, vistas y columnas de la referencia", a
   const migrations = readdirSync(join(root, "api/db/migrations")).filter((name) => name.endsWith(".sql")).sort();
   expect(migrations[0]).toBe("0001_core.sql");
   expect(migrations).toContain("0002_core_ops.sql");
-  expect(migrations.at(-1)).toBe("0016_legacy.sql");
-  expect(migrations).toHaveLength(16);
+  expect(migrations).toContain("0016_legacy.sql");
+  expect(migrations.at(-1)).toBe("0065_analysis_evolution.sql");
+  expect(migrations).toHaveLength(20);
   await migrate(client);
 
   const refs = referenceObjects(root);

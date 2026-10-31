@@ -7,6 +7,7 @@ import {
   lotMoves,
   lotTraceability,
 } from '../core/cellar/service/lots';
+import { listAnalyses } from '../core/winemaking/service';
 
 export function listLotRoute(writer: Writer, request: Request) {
   return listLots(writer, request);
@@ -25,7 +26,7 @@ export function lotMovesRoute(writer: Writer, request: Request, code: string) {
 }
 
 export function lotAnalysesRoute(writer: Writer, request: Request, code: string) {
-  return emptyLotList(writer, request, code);
+  return listAnalyses(writer, request, code);
 }
 
 export function lotAdditionsRoute(writer: Writer, request: Request, code: string) {

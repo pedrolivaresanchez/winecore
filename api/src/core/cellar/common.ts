@@ -20,27 +20,44 @@
 import type {
   BulkProductState,
   CellarState,
+  FermentationPhaseDraft,
   FiscalLedger,
   FiscalMoveDraft,
   IdSource,
   LossKind,
   LotKind,
+  LotKindUpdate,
   LotRef,
   OperationHeader,
   PlanFailure,
   PlanSuccess,
+  PressingYieldDraft,
+  SilicieFactDraft,
   StockMoveDraft,
   VesselState,
   VesselStateAfter,
 } from "./types";
+
+type PlanExtra = "silicieFacts" | "lotUpdates" | "pressingYield" | "fermentationPhase" | "notes";
 
 export function fail(code: string, message: string, details?: unknown): PlanFailure {
   if (details === undefined) return { ok: false, code, message };
   return { ok: false, code, message, details };
 }
 
-export function succeed(parts: Omit<PlanSuccess, "ok">): PlanSuccess {
-  return { ok: true, ...parts };
+export function succeed(
+  parts: Omit<PlanSuccess, "ok" | PlanExtra> &
+    Partial<Pick<PlanSuccess, PlanExtra>>,
+): PlanSuccess {
+  return {
+    ok: true,
+    silicieFacts: [] as readonly SilicieFactDraft[],
+    lotUpdates: [] as readonly LotKindUpdate[],
+    pressingYield: null as PressingYieldDraft | null,
+    fermentationPhase: null as FermentationPhaseDraft | null,
+    notes: [] as readonly string[],
+    ...parts,
+  };
 }
 
 export function isSafeInt(value: unknown): value is number {

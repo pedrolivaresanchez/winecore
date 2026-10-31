@@ -64,5 +64,6 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
     "WC042",
     "WC043",
     "WC050",
+    "WC_ANALYSIS_RANGE",
   ]);
 });
