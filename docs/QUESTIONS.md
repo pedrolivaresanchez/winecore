@@ -16,10 +16,10 @@
 | Q-005 | Quién aprueba qué (personas identificadas) y desde dónde | M1 | **05-11-2026** | ABIERTA |
 | Q-006 | Certificado para Verifactu y custodia | M1 (pruebas en preproducción y producción) | **12-11-2026** | ABIERTA |
 | Q-007 | Productor del software (declaración responsable Verifactu) | Paso a producción de M1 | **15-12-2026** | ABIERTA |
-| Q-008 | Plan B de Verifactu: Holded u otro software en enero | Gate del 01-12-2026 | **01-12-2026** | ABIERTA |
+| Q-008 | Plan B de Verifactu: Holded (ya adaptado) en enero si WineCore no pasa el gate | Gate del 01-12-2026 | **01-12-2026** | ABIERTA |
 | Q-009 | Qué entidad factura a El Corte Inglés | M3 (EDI) | 15-01-2027 | ABIERTA |
 | Q-010 | Fecha fiscal de la salida en SILICIE (albarán o factura) y naturaleza de TFRP | M2 | 15-12-2026 | ABIERTA |
-| Q-011 | Calendario legal de SILICIE (2 presentaciones/año) | M2 | 15-01-2027 | ABIERTA (en verificación) |
+| Q-011 | Calendario legal de SILICIE (2 presentaciones/año) | — (resuelta por la norma) | — | CERRADA (31-10-2026) |
 | Q-012 | SISV: periodicidad, acceso y formato | M3 | 15-02-2027 | ABIERTA (en verificación) |
 | Q-013 | Fecha de corte, aforo físico y quién lo firma | M2 | 01-12-2026 | ABIERTA |
 | Q-014 | Envío de facturas por correo (M365) | No bloqueante (M1 usa descarga) | 30-11-2026 | ABIERTA |
@@ -38,6 +38,8 @@
 | Q-027 | Cuenta de AWS (PostgreSQL + S3 en la UE) y coste mensual | M0 | **06-11-2026** | ABIERTA |
 | Q-028 | Preguntas técnicas a Timbal (lista en `07-arquitectura.md` §14) | M0 (parcial) | 06-11-2026 | ABIERTA |
 | Q-029 | Cómo recibe CVBOT los eventos de WineCore (URL y firma) | M1 | 13-11-2026 | ABIERTA |
+| Q-030 | Devoluciones de clientes y "zona fuera de fábrica" autorizada | M3 | 15-01-2027 | ABIERTA |
+| Q-031 | INFOVI: números REOVI/NIDPB y acceso al portal | M3 | 15-02-2027 | ABIERTA |
 
 ---
 
@@ -111,8 +113,9 @@
 
 ## Q-008 · Plan B de Verifactu — BLOQUEANTE para el gate del 01-12-2026
 
-- **Pregunta**: si el 01-12-2026 WineCore no supera las pruebas en preproducción, ¿con qué se factura CVPO desde el 01-01-2027? ¿Se mantiene la suscripción de Holded hasta entonces?
-- **Recomendación**: **no dar de baja Holded** hasta que WineCore emita en producción sin incidencias durante 2 semanas; verificar (ver `docs/04-regulatorio/verifactu.md`) si Holded está adaptado.
+- **Hecho verificado** (31-10-2026): Holded **ya está adaptado a Verifactu** en todos sus planes (puede enviar con el certificado de la empresa o actuar como colaborador social): https://help.holded.com/es/articles/11406283-como-funciona-verifactu-en-holded. Según Holded, una vez activado hay que mantenerlo hasta el 31 de diciembre del año siguiente (base legal pendiente de confirmar con el asesor).
+- **Pregunta**: si el 01-12-2026 WineCore no supera las pruebas en preproducción, ¿se factura CVPO en Holded con Verifactu desde el 01-01-2027?
+- **Recomendación**: sí. **No dar de baja Holded** hasta que WineCore emita en producción sin incidencias durante 2 semanas. Si se activa el plan B, Verifactu se activa en Holded para CVPO con una **serie distinta** de la de WineCore.
 - **Dueño**: Pedro · **Fecha límite**: 01-12-2026.
 
 ## Q-009 · ¿Qué entidad factura a El Corte Inglés? — Bloquea M3
@@ -129,10 +132,10 @@
 - **Recomendación**: WineCore guarda **las dos fechas** y la regla es configurable (por defecto, D2). Pedir al asesor una confirmación por escrito antes de la primera presentación de 2027. Confirmar también que TFRP **no** es depósito fiscal (supuesto S2).
 - **Fecha límite**: 15-12-2026.
 
-## Q-011 · Calendario legal de SILICIE — Bloquea M2 (en verificación)
+## Q-011 · Calendario legal de SILICIE — CERRADA (31-10-2026, por la norma)
 
-- La reunión dice "2 declaraciones al año (agosto y diciembre)" por producir < 100.000 L. Estoy verificando la base legal (ver `docs/04-regulatorio/silicie.md`). Pregunta a Pedro/asesor: ¿tienen la autorización o comunicación de la AEAT que lo permite? ¿Fechas exactas de las últimas presentaciones?
-- **Fecha límite**: 15-01-2027.
+- **Hecho verificado**: para elaboradores de vino de **100.000 L o menos** (año natural anterior) que suministran desde su propio sistema contable, el plazo de suministro de los asientos termina el **último día hábil de diciembre** (movimientos de agosto a noviembre) y el **último día hábil de agosto** (movimientos de diciembre a julio). **No requiere autorización previa**. Fuentes: Orden HAC/998/2019, disposición adicional 1.ª.3 (https://www.boe.es/buscar/act.php?id=BOE-A-2019-14247) y preguntas frecuentes de la AEAT (https://sede.agenciatributaria.gob.es/Sede/impuestos-especiales-medioambientales/silicie/preguntas-frecuentes/establecimiento-autorizado-elaborador-vino.html), consultadas el 31-10-2026. Detalle en `04-regulatorio/silicie.md`.
+- Lo que la reunión llamaba "autorización" es este plazo legal. WineCore genera los asientos al día y los agrupa en dos envíos al año, con aviso a 30, 7 y 1 días.
 
 ## Q-012 · SISV: periodicidad, acceso y formato — Bloquea M3 (en verificación)
 
@@ -245,3 +248,16 @@
 - **Pregunta**: ¿CVBOT tiene una URL para recibir eventos? ¿Con qué autenticación?
 - **Defecto propuesto**: `POST` JSON a `CVBOT_EVENTS_URL` con cabecera `X-WineCore-Signature: sha256=<HMAC del cuerpo>` y reintentos (1 min, 5 min, 30 min, 2 h). Si CVBOT no puede recibir, consultará `approvals_list_pending` y `regulatory_obligations_list` por MCP periódicamente.
 - **Fecha límite**: 13-11-2026.
+
+## Q-030 · Devoluciones de clientes y "zona fuera de fábrica" — Bloquea M3
+
+- **Hecho** (documentación de Bacosoft LEX, que cita los arts. 38 y 55 del Reglamento de Impuestos Especiales; pendiente de leer los artículos en el BOE): las devoluciones comerciales (sobrantes de grandes superficies, cambios de añada…) **no pueden reintroducirse** en la fábrica salvo casos tasados; para recibirlas con el impuesto ya devengado hace falta una **zona fuera de fábrica** autorizada por la oficina gestora, con contabilidad propia.
+- **Preguntas**: ¿P.O tiene esa zona autorizada? ¿Cómo se gestionan hoy las devoluciones de El Corte Inglés y de los distribuidores?
+- **Defecto propuesto**: las devoluciones entran en una ubicación `DEVOLUCIONES` **fuera** del perímetro fiscal hasta que el asesor confirme el tratamiento.
+- **Fecha límite**: 15-01-2027.
+
+## Q-031 · INFOVI — Bloquea M3
+
+- **Hecho** (RD 739/2015, arts. 3.2 y 5.3, https://www.boe.es/buscar/act.php?id=BOE-A-2015-8647, consultado el 31-10-2026): con menos de 1.000 hl de media, P.O debe presentar la declaración de existencias/producción en **diciembre y agosto** (hasta el día 20) y la **declaración de cosecha** hasta el **10 de diciembre**.
+- **Preguntas**: ¿quién la presenta hoy? ¿Cuáles son los números REOVI y NIDPB de la bodega? ¿Acceso al portal (certificado)?
+- **Fecha límite**: 15-02-2027.
