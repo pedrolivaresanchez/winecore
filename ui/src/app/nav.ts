@@ -1,4 +1,4 @@
-import { Box, ChartBar, Check, Home, Settings2, Users, type IconComponent } from '@/ui/icons'
+import { Box, ChartBar, Check, Home, Layers, Settings2, Users, type IconComponent } from '@/ui/icons'
 import { copy } from '@/i18n'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
@@ -70,6 +70,20 @@ export const navigation: NavEntry[] = [
       { id: 'wines', label: copy.catalog.wines, path: '/catalogo/vinos', permission: 'catalog.read' },
       { id: 'formats', label: copy.catalog.formats, path: '/catalogo/formatos', permission: 'catalog.read' },
       { id: 'tariffs', label: copy.catalog.tariffs, path: '/catalogo/tarifas', permission: 'catalog.read' },
+    ],
+  },
+  {
+    id: 'cellar',
+    module: 'cellar',
+    label: copy.nav.cellar,
+    icon: Layers,
+    permission: 'cellar.read',
+    mobile: 'tab',
+    placement: 'main',
+    children: [
+      { id: 'vessels', label: copy.nav.vessels, path: '/bodega/depositos', permission: 'cellar.read' },
+      { id: 'lots', label: copy.nav.lots, path: '/bodega/lotes', permission: 'cellar.read' },
+      { id: 'new-operation', label: copy.nav.newOperation, path: '/bodega/operaciones/nueva', permission: 'cellar.operate' },
     ],
   },
   {
