@@ -40,6 +40,7 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
     "UQ:party.contact_address(contact_id,kind)",
     "WC020",
     "WC021",
+    "WC023",
     "WC024",
     "WC025",
     "WC026",
