@@ -5,7 +5,11 @@ import { loadConfig, type Env } from '../src/config';
 import { createLocalClient } from '../src/core/db/local';
 import { createWriter } from '../src/core/db/writer';
 
-export async function createTestApp(options?: { log?: (line: string) => void; env?: Env }) {
+export async function createTestApp(options?: {
+  log?: (line: string) => void;
+  env?: Env;
+  now?: () => Date;
+}) {
   const client = await createLocalClient(':memory:');
   await migrate(client);
   await seed(client, seedInputFromEnv({ NODE_ENV: 'test' }));
@@ -20,9 +24,15 @@ export async function createTestApp(options?: { log?: (line: string) => void; en
     PORT: '3000',
     API_BASE_PATH: '',
     GIT_SHA: 'testsha',
+    WINECORE_DATA_KEY: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
     ...options?.env,
   });
-  const deps: AppDeps = { config, writer, log: options?.log ?? (() => undefined) };
+  const deps: AppDeps = {
+    config,
+    writer,
+    log: options?.log ?? (() => undefined),
+    now: options?.now,
+  };
   const app = createApp(deps);
   return {
     app,
