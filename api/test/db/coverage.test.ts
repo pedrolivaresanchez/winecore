@@ -21,5 +21,8 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
   expect(missingCodes).toEqual([]);
   expect(missingIndexes).toEqual([]);
   expect(new Set(guards.map((guard) => guard.id)).size).toBe(guards.length);
-  expect(guards.every((guard) => guard.implemented === false)).toBe(true);
+  const implemented = new Set(["WC021", "WC023", "WC024", "WC025", "WC026", "WC027"]);
+  for (const guard of guards) {
+    expect(guard.implemented).toBe(implemented.has(guard.id));
+  }
 });
