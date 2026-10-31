@@ -55,6 +55,10 @@ main().catch((error: unknown) => {
   // The platform exposes no runtime logs: keep the port open and report the startup failure on every path.
   Bun.serve({
     port: Number(process.env.PORT) || 3000,
-    fetch: () => Response.json({ status: 'error', stage: 'startup', message }, { status: 503 }),
+    // /healthcheck stays 200 so the platform keeps the process up and the reason is readable on /health.
+    fetch: (request) =>
+      new URL(request.url).pathname.endsWith('/healthcheck')
+        ? Response.json({ status: 'degraded' })
+        : Response.json({ status: 'error', stage: 'startup', message }, { status: 503 }),
   });
 });

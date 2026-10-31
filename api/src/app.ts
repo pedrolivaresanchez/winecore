@@ -115,6 +115,8 @@ export function createApp(deps: AppDeps) {
       return { code: 'WC_INTERNAL', message: 'Error interno' };
     })
     .get('/health', () => health(deps.config, deps.writer))
+    // Timbal's readiness probe: liveness only, it must not depend on the Knowledge Base.
+    .get('/healthcheck', () => ({ status: 'ok' }))
     .get('/v1/me', ({ request }) => me(deps.writer, request), {
       beforeHandle: requireUser(guardDeps),
     })
