@@ -14,6 +14,12 @@ import { Panel } from "@/pages/Panel";
 import { ContactCreate } from "@/pages/contactos/ContactCreate";
 import { ContactList } from "@/pages/contactos/ContactList";
 import { ContactPage } from "@/pages/contactos/ContactPage";
+import { CountCreate } from "@/pages/existencias/CountCreate";
+import { CountPage } from "@/pages/existencias/CountPage";
+import { CountsPage } from "@/pages/existencias/CountsPage";
+import { InspectionPage } from "@/pages/existencias/InspectionPage";
+import { MovesPage } from "@/pages/existencias/MovesPage";
+import { StockPage } from "@/pages/existencias/StockPage";
 
 function LoadingScreen() {
   return (
@@ -58,6 +64,12 @@ export function Workspace() {
           <Route path="contactos" element={<ContactList me={me.data} />} />
           <Route path="contactos/nuevo" element={<ContactCreate me={me.data} />} />
           <Route path="contactos/:id" element={<ContactPage me={me.data} />} />
+          <Route path="stock" element={<StockPage me={me.data} />} />
+          <Route path="stock/informe" element={<InspectionPage me={me.data} />} />
+          <Route path="stock/movimientos" element={<MovesPage me={me.data} />} />
+          <Route path="stock/aforos" element={<CountsPage me={me.data} />} />
+          <Route path="stock/aforos/nuevo" element={<CountCreate me={me.data} />} />
+          <Route path="stock/aforos/:id" element={<CountPage me={me.data} />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Shell>

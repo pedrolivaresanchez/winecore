@@ -1,4 +1,4 @@
-import { LayoutDashboard, Settings, Users, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, Settings, Users, Warehouse, type LucideIcon } from "lucide-react";
 import { copy } from "@/i18n";
 import { allows } from "@/lib/permissions";
 import type { Me } from "@/lib/types";
@@ -9,6 +9,8 @@ export type NavChild = {
   path: string;
   permission?: string;
   mobile?: "tab";
+  /** Evita que `/stock` quede activo dentro de `/stock/movimientos`. */
+  end?: boolean;
 };
 
 export type NavEntry = {
@@ -46,6 +48,21 @@ export const navigation: NavEntry[] = [
     permission: "contacts.read",
     mobile: "tab",
     placement: "main",
+  },
+  {
+    id: "stock",
+    module: "inventory",
+    label: copy.nav.stock,
+    icon: Warehouse,
+    path: "/stock",
+    permission: "inventory.read",
+    mobile: "tab",
+    placement: "main",
+    children: [
+      { id: "stock-at", label: "Existencias a fecha", path: "/stock", end: true, permission: "inventory.read" },
+      { id: "stock-moves", label: "Movimientos", path: "/stock/movimientos", permission: "inventory.read" },
+      { id: "stock-counts", label: "Aforos", path: "/stock/aforos", permission: "inventory.read" },
+    ],
   },
   {
     id: "settings",
