@@ -7,14 +7,27 @@ import { APPROVAL_ID, expectError, makeCtx, readToolResult } from "./fixture";
 
 const DECISION = /approve|issue|void|send|delete|secret|decide|reject/i;
 
+const FORBIDDEN = /approve|issue|void|send|delete|module|role|secret/i;
+
 describe("catalogue safety", () => {
   test("no tool name implies approving or deciding", () => {
     const names = catalogueNames();
     expect(names).toContain("approvals_get_link");
+    expect(names).toContain("approvals_list_pending");
     expect(names).toContain("system_whoami");
     expect(names).not.toContain("system_modules");
+    expect(names).toContain("billing_invoice_pdf_get");
+    expect(names).toContain("billing_invoice_delivery_mark_sent");
+    expect(names).toContain("purchasing_expense_approve_prepare");
+    expect(names).toContain("purchasing_expense_approve_commit");
+    const allowed = new Set([
+      "purchasing_expense_approve_prepare",
+      "purchasing_expense_approve_commit",
+    ]);
     for (const name of names) {
+      if (allowed.has(name)) continue;
       expect(DECISION.test(name)).toBe(false);
+      expect(FORBIDDEN.test(name)).toBe(false);
     }
   });
 

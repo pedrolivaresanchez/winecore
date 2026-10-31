@@ -778,7 +778,7 @@ describe('políticas', () => {
       const listed = await call(ctx.app, 'GET', '/v1/approval-policies');
       expect(listed.status).toBe(200);
       const items = listed.body?.items as PolicyItem[];
-      expect(items).toHaveLength(12);
+      expect(items).toHaveLength(13);
       const third = items.find((item) => item.kind === 'third_party_message');
       expect(third?.requires_step_up).toBe(false);
       expect(third?.allow_self_approval).toBe(true);

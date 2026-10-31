@@ -8,8 +8,12 @@ const TIMESTAMP_TYPES = new Set<DuckDBTypeId>([
   DuckDBTypeId.TIMESTAMP_S,
   DuckDBTypeId.TIMESTAMP_MS,
   DuckDBTypeId.TIMESTAMP_NS,
+  // node-api 1.5.5 no define TIMESTAMP_TZ_NS.
   DuckDBTypeId.TIMESTAMP_TZ,
 ]);
+// DuckDB 1.5.5 has no TIMESTAMP_TZ_NS (that id arrived in 2.x).
+const timestampTzNs = (DuckDBTypeId as unknown as Record<string, DuckDBTypeId | undefined>).TIMESTAMP_TZ_NS;
+if (timestampTzNs !== undefined) TIMESTAMP_TYPES.add(timestampTzNs);
 
 function plainValue(
   typeId: DuckDBTypeId,

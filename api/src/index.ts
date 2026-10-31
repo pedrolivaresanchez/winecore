@@ -2,10 +2,14 @@ import { createApp } from './app';
 import { loadConfig } from './config';
 import { openClient } from './core/db/open';
 import { createWriter, installWriter } from './core/db/writer';
+import { registerFermentationAlerts } from './jobs/fermentation-alerts';
+import { registerCueReminder } from './jobs/cue-reminder';
 import { registerOutboxDispatch } from './jobs/outbox';
+import { registerRegulatoryDeadlines } from './jobs/regulatory-deadlines';
 import { createScheduler } from './jobs/scheduler';
 import { migrate } from '../db/migrate';
 import { withoutApiPrefix } from './api-prefix';
+import { startDeliveryAlertJob } from './jobs/delivery-alerts';
 
 async function main(): Promise<void> {
   const config = loadConfig(process.env);
@@ -25,9 +29,13 @@ async function main(): Promise<void> {
     : createScheduler({ isLeader: async () => (await writer.currentRole()) === 'leader' });
   if (scheduler) {
     registerOutboxDispatch(scheduler, { writer, config });
+    registerRegulatoryDeadlines(scheduler, { writer });
+    registerFermentationAlerts(scheduler, { writer });
+    registerCueReminder(scheduler, writer);
     scheduler.start();
   }
   const app = createApp({ config, writer });
+  const stopDeliveryAlerts = startDeliveryAlertJob(writer, config.deliveryAlertHours);
   Bun.serve({
     port: config.port,
     idleTimeout: 120,
@@ -36,6 +44,7 @@ async function main(): Promise<void> {
   console.log(JSON.stringify({ level: 'info', event: 'listen', port: config.port, role }));
 
   const shutdown = async () => {
+    stopDeliveryAlerts();
     scheduler?.stop();
     writer.stopMaintenance();
     await client.close?.();

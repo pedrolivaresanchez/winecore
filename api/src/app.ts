@@ -9,7 +9,18 @@ import type { SupplierInvoiceApprovalHook } from './core/purchasing/approval';
 import { noopApprovalHook } from './core/purchasing/approval';
 import type { OcrWorkforce } from './core/purchasing/extract';
 import { ocrFromEnv } from './core/purchasing/timbal';
+import { bindFinance } from './core/finance/runtime';
+import { installIntegrations } from './core/wiring/integrations';
 import { asDomainError, domainError, errorBody } from './core/errors';
+import type { InvoiceDocumentStore } from './core/billing/pdf/documents';
+import { downloadInvoicePdf } from './routes/invoice-documents';
+import {
+  getInvoiceDelivery,
+  listInvoiceDeliveries,
+  markInvoiceDeliveryFailed,
+  markInvoiceDeliverySent,
+  resendInvoiceDelivery,
+} from './routes/invoice-delivery';
 import { listAudit, verifyAudit } from './routes/audit';
 import {
   decideApproval,
@@ -32,6 +43,8 @@ import {
 } from './routes/auth-credentials';
 import { catalogRoutes } from './routes/catalog';
 import { cellarRoutes } from './routes/cellar';
+import { vineyardRoutes } from './routes/vineyard';
+import { winemakingRoutes } from './routes/winemaking';
 import {
   archiveAddress,
   archiveContact,
@@ -64,6 +77,23 @@ import {
   putExportDocuments,
 } from './routes/export-docs';
 import { materialRoutes } from './routes/materials';
+import { getBankAccounts, postBankAccount } from './routes/finance-accounts';
+import { getPayments, getPaymentById, postPayment, postPaymentReverse } from './routes/finance-payments';
+import { getReceivables } from './routes/finance-receivables';
+import {
+  getRemittanceById,
+  getRemittanceFile,
+  postRemittance,
+  postRemittanceApproval,
+  postRemittanceFile,
+  postRemittanceSubmitted,
+} from './routes/finance-remittances';
+import {
+  getBankStatementSuggestions,
+  postBankStatement,
+  postBankStatementConfirm,
+  postBankStatementIgnore,
+} from './routes/finance-statements';
 import { health } from './routes/health';
 import {
   getSettlement,
@@ -77,6 +107,22 @@ import {
   postSettlement,
   postTariff,
 } from './routes/intercompany';
+import {
+  batchIssueExecute,
+  batchIssueRequest,
+  createInvoice,
+  discardInvoice,
+  exportInvoices,
+  getInvoice,
+  issueInvoiceRoute,
+  listInvoices,
+  patchInvoice,
+  validateInvoiceRoute,
+  voidInvoiceRoute,
+} from './routes/invoices';
+import { handleAuthenticatedMcp } from './mcp/http';
+import { RateLimiter } from './mcp/rate';
+import { createMcpClient, listMcpClients, revokeMcpClient, rotateMcpClient } from './routes/mcp-clients';
 import { me } from './routes/me';
 import { listNotifications, readAllNotifications, readNotification } from './routes/notifications';
 import { getReport } from './routes/reports';
@@ -91,6 +137,20 @@ import {
 } from './routes/stock-counts';
 import { salesRoutes } from './routes/sales';
 import { stockBalances, stockFiscalBalances, stockInspection, stockMoves } from './routes/stock';
+import { listRegulatoryObligations, postSyncObligations } from './routes/regulatory-obligations';
+import {
+  getRegulatorySubmission,
+  getSubmissionFile,
+  listRegulatorySubmissions,
+  postCorrectSubmission,
+  postMarkResult,
+  postMarkSubmitted,
+  postRegulatorySubmission,
+  postRequestApproval,
+  postValidateSubmission,
+} from './routes/regulatory-submissions';
+import { listSilicieLedgers, postSilicieLedger, postValidateLedger } from './routes/silicie-ledgers';
+import { vineyardNotebookRoutes } from './routes/vineyard-notebook';
 
 export interface AppDeps {
   config: Config;
@@ -101,11 +161,16 @@ export interface AppDeps {
   now?: () => Date;
   ocr?: OcrWorkforce;
   approvalHook?: SupplierInvoiceApprovalHook;
+  invoiceDocuments?: InvoiceDocumentStore;
+  /** Límite de llamadas MCP por minuto y cliente. Por defecto 60. */
+  mcpRatePerMinute?: number;
 }
 
 const startedAt = new WeakMap<Request, number>();
 
 export function createApp(deps: AppDeps) {
+  installIntegrations();
+  bindFinance(deps.writer, { dataKey: deps.config.dataKey });
   const log = deps.log ?? ((line: string) => console.log(line));
   const timbalAuth = createTimbalAuth(deps.config, deps.fetchImpl);
   const guardDeps = {
@@ -116,6 +181,13 @@ export function createApp(deps: AppDeps) {
   };
   const http = { config: deps.config, writer: deps.writer, now: deps.now ?? (() => new Date()) };
   const expenses = { ocr: deps.ocr ?? ocrFromEnv(), approvalHook: deps.approvalHook ?? noopApprovalHook };
+  const invoiceDeps = {
+    writer: deps.writer,
+    config: deps.config,
+    documents: deps.invoiceDocuments,
+  };
+  const deliveryDeps = { writer: deps.writer, documents: deps.invoiceDocuments };
+  const mcpLimiter = new RateLimiter(deps.mcpRatePerMinute);
   const app = new Elysia(deps.config.apiBasePath ? { prefix: deps.config.apiBasePath } : {})
     .use(cors())
     .onRequest(({ request, set }) => {
@@ -230,6 +302,70 @@ export function createApp(deps: AppDeps) {
     .post('/v1/contacts/:id/persons/:pid/archive', ({ request, params }) => archivePerson(deps.writer, request, params.id, params.pid), {
       beforeHandle: requirePermission(guardDeps, 'contacts.write'),
     })
+    // Facturación (TASK-FACT-002, 003, 005, 006, 008, 011). Sin Verifactu: el módulo sigue apagado.
+    .get('/v1/invoices', ({ request }) => listInvoices(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'billing.read'),
+    })
+    .get('/v1/invoices/export', ({ request }) => exportInvoices(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'billing.read'),
+    })
+    .get('/v1/invoices/deliveries/pending', ({ request }) => listInvoiceDeliveries(deliveryDeps, request), {
+      beforeHandle: requirePermission(guardDeps, 'billing.deliver'),
+    })
+    .post('/v1/invoices/batch-issue-request', ({ request }) => batchIssueRequest(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'billing.write'),
+    })
+    .post('/v1/invoices/batch-issue/:requestId/execute', ({ request, params }) => batchIssueExecute(deps.writer, request, params.requestId), {
+      beforeHandle: requirePermission(guardDeps, 'billing.issue'),
+    })
+    .post('/v1/invoices', async ({ request, set }) => {
+      const body = await createInvoice(deps.writer, request);
+      set.status = 201;
+      return body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'billing.write'),
+    })
+    .get('/v1/invoices/:id', ({ request, params }) => getInvoice(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.read'),
+    })
+    .get('/v1/invoices/:id/pdf', ({ request, params }) => downloadInvoicePdf(invoiceDeps, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.read'),
+    })
+    .get('/v1/invoices/:id/delivery', ({ request, params }) => getInvoiceDelivery(deliveryDeps, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.deliver'),
+    })
+    .post('/v1/invoices/:id/delivery/sent', ({ request, params }) => markInvoiceDeliverySent(deliveryDeps, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.deliver'),
+    })
+    .post('/v1/invoices/:id/delivery/failed', ({ request, params }) => markInvoiceDeliveryFailed(deliveryDeps, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.deliver'),
+    })
+    .post('/v1/invoices/:id/delivery/resend', ({ request, params }) => resendInvoiceDelivery(deliveryDeps, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.deliver'),
+    })
+    .patch('/v1/invoices/:id', ({ request, params }) => patchInvoice(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.write'),
+    })
+    .post('/v1/invoices/:id/validate', ({ request, params }) => validateInvoiceRoute(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.write'),
+    })
+    .post('/v1/invoices/:id/issue', async ({ request, params, set }) => {
+      const result = await issueInvoiceRoute(deps.writer, request, params.id);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'billing.issue'),
+    })
+    .post('/v1/invoices/:id/void', async ({ request, params, set }) => {
+      const result = await voidInvoiceRoute(deps.writer, request, params.id);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'billing.void'),
+    })
+    .post('/v1/invoices/:id/discard', ({ request, params }) => discardInvoice(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.write'),
+    })
     // Series de numeración (TASK-CORE-004). Sin borrado.
     .get('/v1/number-series', ({ request }) => listNumberSeries(deps.writer, request), {
       beforeHandle: requirePermission(guardDeps, 'settings.manage'),
@@ -310,6 +446,49 @@ export function createApp(deps: AppDeps) {
     })
     .put('/v1/approval-policies/:kind', ({ request, params, body }) => putApprovalPolicy(http, request, params.kind, body), {
       beforeHandle: requireOwner(guardDeps),
+    })
+    // SILICIE y calendario regulatorio. El fichero se descarga; no se envía a la AEAT.
+    .get('/v1/regulatory/obligations', ({ request }) => listRegulatoryObligations(http, request), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
+    })
+    .post('/v1/regulatory/obligations/sync', ({ request }) => postSyncObligations(http, request), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .get('/v1/regulatory/submissions', ({ request }) => listRegulatorySubmissions(http, request), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
+    })
+    .post('/v1/regulatory/submissions', ({ request }) => postRegulatorySubmission(http, request), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .get('/v1/regulatory/submissions/:id/file', ({ request, params }) => getSubmissionFile(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
+    })
+    .post('/v1/regulatory/submissions/:id/validate', ({ request, params }) => postValidateSubmission(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .post('/v1/regulatory/submissions/:id/request-approval', ({ request, params }) => postRequestApproval(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .post('/v1/regulatory/submissions/:id/mark-submitted', ({ request, params }) => postMarkSubmitted(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .post('/v1/regulatory/submissions/:id/mark-result', ({ request, params }) => postMarkResult(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .post('/v1/regulatory/submissions/:id/correct', ({ request, params }) => postCorrectSubmission(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .get('/v1/regulatory/submissions/:id', ({ request, params }) => getRegulatorySubmission(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
+    })
+    .get('/v1/silicie-ledgers', ({ request }) => listSilicieLedgers(http, request), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
+    })
+    .post('/v1/silicie-ledgers', ({ request }) => postSilicieLedger(http, request), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
+    .post('/v1/silicie-ledgers/:id/validate', ({ request, params }) => postValidateLedger(http, request, params.id), {
+      beforeHandle: requireUser(guardDeps),
     })
     .use(catalogRoutes(guardDeps))
     // Existencias (stock): saldos, informe, movimientos y aforos.
@@ -427,6 +606,126 @@ export function createApp(deps: AppDeps) {
     })
     .post('/v1/supplier-invoices/:id/reject', ({ request, params }) => rejectExpense(deps.writer, request, params.id), {
       beforeHandle: requirePermission(guardDeps, 'purchasing.write'),
-    });
+    })
+    // Finanzas: cobros, pendientes, extractos y remesas SEPA.
+    .get('/v1/receivables', ({ request }) => getReceivables(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'finance.read'),
+    })
+    .get('/v1/payments', ({ request }) => getPayments(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'finance.read'),
+    })
+    .post('/v1/payments', async ({ request, set }) => {
+      const result = await postPayment(deps.writer, request);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'finance.write'),
+    })
+    .get('/v1/payments/:id', ({ request, params }) => getPaymentById(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'finance.read'),
+    })
+    .post('/v1/payments/:id/reverse', async ({ request, params, set }) => {
+      const result = await postPaymentReverse(deps.writer, request, params.id);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'finance.manage'),
+    })
+    .get('/v1/bank-accounts', ({ request }) => getBankAccounts(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'finance.read'),
+    })
+    .post('/v1/bank-accounts', async ({ request, set }) => {
+      const result = await postBankAccount(deps.writer, request);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'finance.manage'),
+    })
+    .post('/v1/bank-statements', async ({ request, set }) => {
+      const result = await postBankStatement(deps.writer, request);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'finance.write'),
+    })
+    .get('/v1/bank-statements/:id/suggestions', ({ request, params }) => getBankStatementSuggestions(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'finance.read'),
+    })
+    .post('/v1/bank-statements/:id/lines/:lineId/confirm', async ({ request, params, set }) => {
+      const result = await postBankStatementConfirm(deps.writer, request, params.id, params.lineId);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'finance.write'),
+    })
+    .post('/v1/bank-statements/:id/lines/:lineId/ignore', async ({ request, params, set }) => {
+      const result = await postBankStatementIgnore(deps.writer, request, params.id, params.lineId);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'finance.write'),
+    })
+    .post('/v1/remittances', async ({ request, set }) => {
+      const result = await postRemittance(deps.writer, request);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'finance.manage'),
+    })
+    .get('/v1/remittances/:id/file', ({ request, params }) => getRemittanceFile(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'finance.manage'),
+    })
+    .get('/v1/remittances/:id', ({ request, params }) => getRemittanceById(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'finance.read'),
+    })
+    .post('/v1/remittances/:id/request-approval', async ({ request, params, set }) => {
+      const result = await postRemittanceApproval(deps.writer, request, params.id);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'finance.manage'),
+    })
+    .post('/v1/remittances/:id/generate', async ({ request, params, set }) => {
+      const result = await postRemittanceFile(deps.writer, request, params.id);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'finance.manage'),
+    })
+    .post('/v1/remittances/:id/submitted', async ({ request, params, set }) => {
+      const result = await postRemittanceSubmitted(deps.writer, request, params.id);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'finance.manage'),
+    })
+    // MCP (Streamable HTTP, sin estado). Con API_BASE_PATH=/api queda en /api/m2m/mcp.
+    .post('/m2m/mcp', ({ request }) => handleAuthenticatedMcp({
+      config: deps.config,
+      writer: deps.writer,
+      now: http.now,
+      limiter: mcpLimiter,
+    }, request), {
+      beforeHandle: requireUserOrMachine(guardDeps),
+    })
+    .get('/v1/mcp/clients', () => listMcpClients(deps.writer), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .post('/v1/mcp/clients', async ({ request, set }) => {
+      const result = await createMcpClient(deps.writer, request, http.now());
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .post('/v1/mcp/clients/:id/rotate', ({ request, params }) => rotateMcpClient(deps.writer, request, params.id, http.now()), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .post('/v1/mcp/clients/:id/revoke', ({ request, params }) => revokeMcpClient(deps.writer, request, params.id, http.now()), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .use(vineyardRoutes(guardDeps))
+    .use(winemakingRoutes({ writer: deps.writer, guard: guardDeps }))
+    .use(vineyardNotebookRoutes(guardDeps));
   return app;
 }

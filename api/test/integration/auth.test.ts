@@ -16,7 +16,10 @@ describe('auth', () => {
       expect(body.email).toBe('owner@winecore.test');
       expect(body.permissions).toEqual([
         'audit.read',
+        'billing.deliver',
+        'billing.issue',
         'billing.read',
+        'billing.void',
         'billing.write',
         'catalog.read',
         'catalog.write',
@@ -25,17 +28,25 @@ describe('auth', () => {
         'cellar.read',
         'contacts.read',
         'contacts.write',
+        'finance.manage',
+        'finance.read',
+        'finance.write',
         'inventory.count',
         'inventory.read',
         'purchasing.approve',
         'purchasing.read',
         'purchasing.write',
+        'regulatory.approve',
+        'regulatory.prepare',
+        'regulatory.read',
         'reports.read',
         'sales.manage',
         'sales.read',
         'sales.write',
         'settings.manage',
         'users.manage',
+        'vineyard.read',
+        'vineyard.write',
       ]);
       await new Promise((resolve) => setTimeout(resolve, 0));
       const line = logs.find((entry) => entry.includes('"/v1/me"'));

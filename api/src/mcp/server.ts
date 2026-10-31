@@ -2,21 +2,22 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { CallToolRequestSchema, ListToolsRequestSchema, type CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z, type ZodType } from "zod";
 
+import { sha256Hex } from "../core/hash";
 import { DomainError, domainError } from "../core/errors";
-import { consumeConfirmation, issueConfirmation } from "./confirm";
+import { canonicalJson, consumeConfirmation, issueConfirmation } from "./confirm";
 import {
   mcpNames,
   moduleActive,
   toolVisible,
   type AnyTool,
+  type DirectWriteTool,
   type McpContext,
   type ReadTool,
   type WriteTool,
 } from "./registry";
-import { approvalsGetLink } from "./tools/approvals";
-import { systemWhoami } from "./tools/system";
+import { mcpTools } from "./tools";
 
-export const baseTools: readonly AnyTool[] = [systemWhoami, approvalsGetLink];
+export const baseTools: readonly AnyTool[] = mcpTools;
 
 const INSTRUCTIONS =
   "Servidor MCP de WineCore. Las lecturas son inmediatas. Las escrituras van en dos pasos: *_prepare devuelve una vista previa y no guarda el negocio; la persona confirma; *_commit ejecuta exactamente lo previsualizado. No hay herramientas para aprobar, emitir, anular, enviar a terceros ni borrar.";
@@ -120,6 +121,22 @@ function jsonObjectSchema(schema: ZodType): JsonObjectSchema {
 }
 
 function expose(tool: AnyTool): ExposedTool[] {
+  if (tool.kind === "direct") {
+    return [
+      {
+        name: tool.name,
+        title: tool.title,
+        description: tool.description,
+        input: tool.input,
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+    ];
+  }
   if (tool.kind === "read") {
     return [
       {
@@ -175,6 +192,7 @@ function visibleExposed(ctx: McpContext, tools: readonly AnyTool[]): ExposedTool
 
 type Resolved =
   | { kind: "read"; tool: ReadTool }
+  | { kind: "direct"; tool: DirectWriteTool }
   | { kind: "prepare"; tool: WriteTool }
   | { kind: "commit"; tool: WriteTool };
 
@@ -182,6 +200,10 @@ function resolve(name: string, tools: readonly AnyTool[]): Resolved | null {
   for (const tool of tools) {
     if (tool.kind === "read") {
       if (tool.name === name) return { kind: "read", tool };
+      continue;
+    }
+    if (tool.kind === "direct") {
+      if (tool.name === name) return { kind: "direct", tool };
       continue;
     }
     if (`${tool.name}_prepare` === name) return { kind: "prepare", tool };
@@ -198,7 +220,7 @@ function assertAccess(tool: AnyTool, ctx: McpContext): void {
   throw domainError("WC_FORBIDDEN");
 }
 
-async function runRead(ctx: McpContext, tool: ReadTool, args: unknown): Promise<unknown> {
+async function runRead(ctx: McpContext, tool: ReadTool | DirectWriteTool, args: unknown): Promise<unknown> {
   assertAccess(tool, ctx);
   const input = parseInput(tool.input, args);
   return tool.handler(ctx, input);
@@ -216,9 +238,12 @@ async function runPrepare(ctx: McpContext, tool: WriteTool, args: unknown): Prom
     preview: prepared.preview,
     payload: prepared.payload,
   });
+  const summary = prepared.summary_es?.trim();
   return {
     preview: prepared.preview,
-    summary_es: `Vista previa de «${tool.title}». Revisa el detalle y confirma solo si quieres que se ejecute.`,
+    summary_es: summary && summary.length > 0
+      ? summary
+      : `Vista previa de «${tool.title}». Revisa el detalle y confirma solo si quieres que se ejecute.`,
     confirmation_token: issued.token,
     expires_at: issued.expiresAt,
   };
@@ -259,14 +284,53 @@ export async function callTool(
       throw domainError("WC_FORBIDDEN");
     }
     let data: unknown;
-    if (resolved.kind === "read") data = await runRead(ctx, resolved.tool, args);
+    if (resolved.kind === "read" || resolved.kind === "direct") data = await runRead(ctx, resolved.tool, args);
     else if (resolved.kind === "prepare") data = await runPrepare(ctx, resolved.tool, args);
     else data = await runCommit(ctx, resolved.tool, args);
-    return successResult(data);
+    const result = successResult(data);
+    await recordCall(ctx, name, args, result);
+    return result;
   } catch (error) {
-    if (error instanceof DomainError) return failureResult(toolErrorBody(error));
-    return failureResult(toolErrorBody(domainError("WC002", undefined, "Error interno al ejecutar la herramienta.")));
+    const result = error instanceof DomainError
+      ? failureResult(toolErrorBody(error))
+      : failureResult(toolErrorBody(domainError("WC002", undefined, "Error interno al ejecutar la herramienta.")));
+    try {
+      await recordCall(ctx, name, args, result);
+    } catch {
+      return failureResult(toolErrorBody(domainError("WC002", undefined, "No se ha podido registrar la llamada.")));
+    }
+    return result;
   }
+}
+
+function resultCode(result: CallToolResult): string | null {
+  if (result.isError !== true) return null;
+  const block = result.content[0];
+  if (!block || block.type !== "text") return null;
+  try {
+    const body = JSON.parse(block.text) as { code?: unknown };
+    return typeof body.code === "string" ? body.code : null;
+  } catch {
+    return null;
+  }
+}
+
+async function recordCall(ctx: McpContext, name: string, args: unknown, result: CallToolResult): Promise<void> {
+  if (!ctx.deps.audit) return;
+  let argsSha256 = "0".repeat(64);
+  try {
+    argsSha256 = sha256Hex(canonicalJson(args ?? {}));
+  } catch {
+    argsSha256 = sha256Hex("unserializable");
+  }
+  await ctx.deps.audit({
+    tool: name,
+    clientId: ctx.client.id,
+    onBehalfOf: ctx.actor?.id ?? null,
+    argsSha256,
+    ok: result.isError !== true,
+    code: resultCode(result),
+  });
 }
 
 export function createMcpServer(ctx: McpContext, tools: readonly AnyTool[] = baseTools): Server {

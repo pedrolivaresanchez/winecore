@@ -19,6 +19,7 @@ export const APPROVAL_KINDS = [
   'tariff_activation',
   'module_toggle',
   'third_party_message',
+  'sepa_remittance',
 ] as const;
 
 export type ApprovalKind = (typeof APPROVAL_KINDS)[number];

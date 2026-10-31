@@ -155,6 +155,7 @@ export async function seedDemo(
         WHERE NOT EXISTS (SELECT 1 FROM catalog.product WHERE sku = 'METABI')
       `);
       for (const statement of cellarOperationSeriesStatements()) tx.write(statement);
+      for (const statement of syntheticParcelStatements()) tx.write(statement);
     },
   );
   const counted = await writer.read<{ total: number }>('SELECT count(*)::INTEGER AS total FROM party.contact');
@@ -262,6 +263,63 @@ function sqlValue(column: string, value: unknown): string {
   if (TIME_COLUMNS.has(column) && typeof value === 'string') return sql`CAST(${value} AS TIMESTAMPTZ)`;
   if (DECIMAL_COLUMNS.has(column) && typeof value === 'string') return sql`CAST(${value} AS DECIMAL)`;
   return sql`${value}`;
+}
+
+function syntheticParcelStatements(): string[] {
+  return [
+    sql`
+      INSERT INTO vineyard.grape_variety (code, name, color)
+      SELECT 'BOBAL', 'Bobal', 'red'
+      WHERE NOT EXISTS (SELECT 1 FROM vineyard.grape_variety WHERE code = 'BOBAL')
+    `,
+    sql`
+      INSERT INTO vineyard.grape_variety (code, name, color)
+      SELECT 'TEMPRANILLO', 'Tempranillo', 'red'
+      WHERE NOT EXISTS (SELECT 1 FROM vineyard.grape_variety WHERE code = 'TEMPRANILLO')
+    `,
+    sql`
+      INSERT INTO vineyard.parcel (
+        code, name, ownership,
+        sigpac_province, sigpac_municipality, sigpac_aggregate, sigpac_zone,
+        sigpac_polygon, sigpac_parcel, sigpac_enclosure,
+        area_ha, is_organic, organic_since, organic_status
+      )
+      SELECT 'P-07', 'Pago Norte', 'own',
+        23, 50, 0, 0, 7, 7, 1,
+        CAST('0.8400' AS DECIMAL(8,4)), TRUE, CAST('2019-01-01' AS DATE), 'organic'
+      WHERE NOT EXISTS (SELECT 1 FROM vineyard.parcel WHERE code = 'P-07')
+    `,
+    sql`
+      INSERT INTO vineyard.parcel (
+        code, name, ownership,
+        sigpac_province, sigpac_municipality, sigpac_aggregate, sigpac_zone,
+        sigpac_polygon, sigpac_parcel, sigpac_enclosure,
+        area_ha, is_organic, organic_status
+      )
+      SELECT 'P-08', 'Pago Sur', 'own',
+        23, 50, 0, 0, 8, 8, 1,
+        CAST('1.2500' AS DECIMAL(8,4)), FALSE, 'conventional'
+      WHERE NOT EXISTS (SELECT 1 FROM vineyard.parcel WHERE code = 'P-08')
+    `,
+    sql`
+      INSERT INTO vineyard.parcel_variety (parcel_id, variety, color, area_ha, planting_year)
+      SELECT p.id, 'BOBAL', 'red', CAST('0.8400' AS DECIMAL(8,4)), 2004
+      FROM vineyard.parcel p
+      WHERE p.code = 'P-07'
+        AND NOT EXISTS (
+          SELECT 1 FROM vineyard.parcel_variety v WHERE v.parcel_id = p.id AND v.variety = 'BOBAL'
+        )
+    `,
+    sql`
+      INSERT INTO vineyard.parcel_variety (parcel_id, variety, color, area_ha, planting_year)
+      SELECT p.id, 'TEMPRANILLO', 'red', CAST('1.2500' AS DECIMAL(8,4)), 2011
+      FROM vineyard.parcel p
+      WHERE p.code = 'P-08'
+        AND NOT EXISTS (
+          SELECT 1 FROM vineyard.parcel_variety v WHERE v.parcel_id = p.id AND v.variety = 'TEMPRANILLO'
+        )
+    `,
+  ];
 }
 
 async function main(): Promise<void> {

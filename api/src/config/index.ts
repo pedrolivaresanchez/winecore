@@ -28,6 +28,8 @@ export interface Config {
   dataKey: Uint8Array | null;
   /** Public origin of the web app. QR labels point at `${appPublicUrl}/q/{token}`. */
   appPublicUrl: string;
+  /** Hours before a pending CVBOT delivery raises a notification. Default 24. */
+  deliveryAlertHours: number;
 }
 
 function invalid(name: string): never {
@@ -147,7 +149,17 @@ export function loadConfig(env: Env): Config {
     webauthnRpName: 'WineCore',
     dataKey,
     appPublicUrl,
+    deliveryAlertHours: deliveryAlertHours(env),
   };
+}
+
+function deliveryAlertHours(env: Env): number {
+  const raw = read(env, 'WINECORE_DELIVERY_ALERT_HOURS');
+  if (raw === undefined) return 24;
+  if (!/^\d+$/.test(raw)) invalid('WINECORE_DELIVERY_ALERT_HOURS');
+  const hours = Number(raw);
+  if (hours < 1 || hours > 24 * 14) invalid('WINECORE_DELIVERY_ALERT_HOURS');
+  return hours;
 }
 
 function readHttpUrl(env: Env, name: string): string | null {

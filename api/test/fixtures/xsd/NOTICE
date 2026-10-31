@@ -1,0 +1,12 @@
+Estos esquemas XML los publica la Registration Authority de ISO 20022
+(pain.008.001.02 y pain.001.001.03, generados por SWIFTStandards Workstation
+el 2009-01-08). No forman parte del código de WineCore y no los cubre la
+licencia del repositorio.
+
+This copy is not the official ISO 20022 site. The sole source of up-to-date
+materials and information on ISO 20022 message standards and the Repository
+is https://www.iso20022.org/.
+
+The schemas are reproduced under the ISO 20022 terms of use (material intended
+to be used and reproduced freely under the ISO 20022 Intellectual Property
+Right Policy). They are provided as is, without warranty.

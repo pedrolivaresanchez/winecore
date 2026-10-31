@@ -1,5 +1,6 @@
 import type { ZodType } from "zod";
 
+import type { Writer } from "../core/db/writer";
 import type { ConfirmationStore } from "./confirm";
 
 export interface McpActor {
@@ -17,11 +18,23 @@ export interface ApprovalSource {
   get(approvalId: string): Promise<ApprovalView | null>;
 }
 
+export interface McpAuditEvent {
+  tool: string;
+  clientId: string;
+  onBehalfOf: string | null;
+  argsSha256: string;
+  ok: boolean;
+  code: string | null;
+}
+
 export interface McpDeps {
   confirmations: ConfirmationStore;
   approvals?: ApprovalSource;
   /** Origin of the WineCore web app, without a trailing path. Links stay relative when omitted. */
   webBaseUrl?: string;
+  writer?: Writer;
+  /** When set, every tool call is written to the audit chain. Payloads stay free of secrets and PII. */
+  audit?: (event: McpAuditEvent) => Promise<void>;
 }
 
 /** One stateless MCP request. The parent injects the authenticated client and stores. */
@@ -31,6 +44,15 @@ export interface McpContext {
   actor: McpActor | null;
   now: () => Date;
   deps: McpDeps;
+  /**
+   * Permissions of the represented person. When set, a tool is visible only if
+   * both the client scopes and these grants allow it. Omitted in unit tests
+   * that only exercise client scopes.
+   */
+  behalfGrants?: readonly string[];
+  requestId?: string;
+  /** `user` when a person calls with their own session. */
+  principal?: "user" | "agent";
 }
 
 export interface ReadTool {
@@ -41,12 +63,15 @@ export interface ReadTool {
   readonly title: string;
   readonly description: string;
   readonly input: ZodType;
+  /** Other accepted scope spellings, for example `write:cellar.operation_draft`. */
+  readonly extraScopes?: readonly string[];
   readonly handler: (ctx: McpContext, input: unknown) => Promise<unknown> | unknown;
 }
 
 export interface PreparedWrite {
   preview: unknown;
   payload: unknown;
+  summary_es?: string;
 }
 
 export interface WriteTool {
@@ -57,11 +82,25 @@ export interface WriteTool {
   readonly title: string;
   readonly description: string;
   readonly input: ZodType;
+  readonly extraScopes?: readonly string[];
   readonly prepare: (ctx: McpContext, input: unknown) => Promise<PreparedWrite> | PreparedWrite;
   readonly commit: (ctx: McpContext, payload: unknown) => Promise<unknown> | unknown;
 }
 
-export type AnyTool = ReadTool | WriteTool;
+/** A write that records an external fact. It does not use prepare/commit. */
+export interface DirectWriteTool {
+  readonly kind: "direct";
+  readonly name: string;
+  readonly module: string;
+  readonly scope: string;
+  readonly title: string;
+  readonly description: string;
+  readonly input: ZodType;
+  readonly extraScopes?: readonly string[];
+  readonly handler: (ctx: McpContext, input: unknown) => Promise<unknown> | unknown;
+}
+
+export type AnyTool = ReadTool | WriteTool | DirectWriteTool;
 
 export interface ReadToolDefinition<T> {
   name: string;
@@ -70,6 +109,7 @@ export interface ReadToolDefinition<T> {
   title: string;
   description: string;
   input: ZodType<T>;
+  extraScopes?: readonly string[];
   handler: (ctx: McpContext, input: T) => Promise<unknown> | unknown;
 }
 
@@ -80,7 +120,11 @@ export interface WriteToolDefinition<T, P> {
   title: string;
   description: string;
   input: ZodType<T>;
-  prepare: (ctx: McpContext, input: T) => Promise<{ preview: unknown; payload: P }> | { preview: unknown; payload: P };
+  extraScopes?: readonly string[];
+  prepare: (
+    ctx: McpContext,
+    input: T,
+  ) => Promise<{ preview: unknown; payload: P; summary_es?: string }> | { preview: unknown; payload: P; summary_es?: string };
   commit: (ctx: McpContext, payload: P) => Promise<unknown> | unknown;
 }
 
@@ -102,6 +146,33 @@ export function defineReadTool<T>(definition: ReadToolDefinition<T>): ReadTool {
     title: definition.title,
     description: definition.description,
     input: definition.input,
+    extraScopes: definition.extraScopes,
+    handler: (ctx, input) => definition.handler(ctx, input as T),
+  };
+}
+
+export interface DirectWriteDefinition<T> {
+  name: string;
+  module: string;
+  scope: string;
+  title: string;
+  description: string;
+  input: ZodType<T>;
+  extraScopes?: readonly string[];
+  handler: (ctx: McpContext, input: T) => Promise<unknown> | unknown;
+}
+
+export function defineDirectWrite<T>(definition: DirectWriteDefinition<T>): DirectWriteTool {
+  assertToolName(definition.name);
+  return {
+    kind: "direct",
+    name: definition.name,
+    module: definition.module,
+    scope: definition.scope,
+    title: definition.title,
+    description: definition.description,
+    input: definition.input,
+    extraScopes: definition.extraScopes,
     handler: (ctx, input) => definition.handler(ctx, input as T),
   };
 }
@@ -116,6 +187,7 @@ export function defineWriteTool<T, P>(definition: WriteToolDefinition<T, P>): Wr
     title: definition.title,
     description: definition.description,
     input: definition.input,
+    extraScopes: definition.extraScopes,
     prepare: (ctx, input) => definition.prepare(ctx, input as T),
     commit: (ctx, payload) => definition.commit(ctx, payload as P),
   };
@@ -127,8 +199,8 @@ export function untrustedText(value: string): { untrusted_text: string } {
 }
 
 export function mcpNames(tool: AnyTool): readonly string[] {
-  if (tool.kind === "read") return [tool.name];
-  return [`${tool.name}_prepare`, `${tool.name}_commit`];
+  if (tool.kind === "write") return [`${tool.name}_prepare`, `${tool.name}_commit`];
+  return [tool.name];
 }
 
 const ALWAYS_ON_MODULES = new Set(["", "system", "core"]);
@@ -167,6 +239,28 @@ export function scopeGranted(grantedScopes: readonly string[], required: string)
   return false;
 }
 
+/**
+ * A grant allows the tool when it matches `scope` or an extra spelling.
+ * `*.read` / `read:*` is also allowed by any read permission: the matrix uses
+ * it for tools any reader may call. A write grant does not count as read.
+ */
+export function accessGranted(grantedScopes: readonly string[], tool: AnyTool): boolean {
+  if (scopeGranted(grantedScopes, tool.scope)) return true;
+  for (const extra of tool.extraScopes ?? []) {
+    if (scopeGranted(grantedScopes, extra)) return true;
+  }
+  if (normalizeScope(tool.scope) === "read:*") {
+    return grantedScopes.some((scope) => {
+      const have = normalizeScope(scope);
+      return have === "read:*" || have.startsWith("read:") || scope.endsWith(".read");
+    });
+  }
+  return false;
+}
+
 export function toolVisible(tool: AnyTool, ctx: McpContext): boolean {
-  return moduleActive(tool.module, ctx.activeModules) && scopeGranted(ctx.client.scopes, tool.scope);
+  if (!moduleActive(tool.module, ctx.activeModules)) return false;
+  if (!accessGranted(ctx.client.scopes, tool)) return false;
+  if (ctx.behalfGrants && !accessGranted(ctx.behalfGrants, tool)) return false;
+  return true;
 }

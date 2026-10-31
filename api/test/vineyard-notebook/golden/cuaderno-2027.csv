@@ -1,0 +1,15 @@
+﻿seccion;orden;fecha;campana;codigo_parcela;sigpac;cultivo;variedad;superficie_ha;superficie_tratada_ha;ecologica;problema;aplicador;carne_ropo;asesor;producto;numero_registro;sustancias_activas;apto_ecologico;dosis;unidad_dosis;dosis_maxima;unidad_dosis_maxima;cantidad;unidad_cantidad;equipo_roma;plazo_seguridad_dias;eficacia;meteorologia;metodo;tipo;nutrientes;momento_aplicacion;estado_cue;anotado_cue;labor;horas;kg_cosecha;aviso;notas
+metadatos;1;;2027;;;;;;;;;;;;;;;;;;;;;;;;;;;campana;;;;;;;;;Año natural. La forma AAAA/AAAA es la campaña vitivinícola del 1 de agosto al 31 de julio.
+metadatos;2;2027-01-01;2027;;;;;;;;;;;;;;;;;;;;;;;;;;;ventana;;;;;;;;;2027-01-01 a 2027-12-31
+metadatos;3;;2027;;;;;;;;;;;;;;;;;;;;;;;;;;;titular;;;;;;;;;P.O. El agricultor presenta este cuaderno. WineCore no lo envía a ninguna administración ni al CUE.
+metadatos;4;;2027;;;;;;;;;;;;;;;;;;;;;;;;;;;formato;;;;;;;;;CSV con los campos del anexo III del RD 1311/2012 y de la fertilización citados en la especificación. No es el modelo oficial v9 ni un envío al CUE.
+metadatos;5;2027-09-15;2027;;;;;;;;;;;;;;;;;;;;;;;;;;;generado;;;;;;;;;Generado para revisión del agricultor.
+parcelas;1;;2027;PSINT1;46:250:0:0:12:34:1;Vid;Bobal;1.2500;1.2500;Sí;;;;;;;;;;;;;;;;;;;;;;;;;;;;;Pago sintético. Ecológica desde 2019-01-01.
+productos;1;;2027;;;;;;;;;;;;Azufre mojable sintético;ES-SINT-0001;azufre;Sí;;;4.0000;kg/ha;;;;21;;;;phytosanitary;;;;;;;;;
+productos;2;;2027;;;;;;;;;;;;Compost sintético;ENM-SINT-01;materia organica;Sí;;;2000.0000;kg/ha;;;;0;;;;fertiliser;2-1-2;;;;;;;;
+fitosanitarios;1;2027-09-01;2027;PSINT1;46:250:0:0:12:34:1;Vid;Bobal;;1.0000;Sí;Oidio;Ana Sintética;ROPO-SINT-1001;Asesor sintético;Azufre mojable sintético;ES-SINT-0001;azufre;Sí;3.000;kg/ha;4.0000;kg/ha;3.0000;kg;ROMA-SINT-01;21;;Cielo cubierto, sin viento;Pulverización;phytosanitary;;;pendiente;;;;;La vendimia del 2027-09-10 cae dentro del plazo de seguridad (21 días desde el 2027-09-01, se puede vendimiar a partir del 2027-09-22).;
+fertilizacion;1;2027-03-02;2027;PSINT1;46:250:0:0:12:34:1;Vid;Bobal;;1.2500;Sí;;Ana Sintética;;;Compost sintético;ENM-SINT-01;materia organica;Sí;1500.000;kg/ha;2000.0000;kg/ha;1875.0000;kg;;0;;;Reparto en superficie;fertiliser;2-1-2;fondo;no_aplica;;;;;;
+operaciones;1;2027-04-02;2027;PSINT1;46:250:0:0:12:34:1;;;;;;;Ana Sintética;;;Agua;;ninguna;;;;;;20.0000;l;;;;;;cleaning;;;;;Limpieza;;;;Limpieza de la cuba de tratamiento
+labores;1;2027-02-01;2027;PSINT1;46:250:0:0:12:34:1;;;;;;;Ana Sintética;;;;;;;;;;;;;;;;;;pruning;;;;;Poda;6.50;;;Poda de invierno
+cosecha;1;2027-09-10;2027;PSINT1;46:250:0:0:12:34:1;;Bobal;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;820.5;;Vendimia sintetica
+avisos;1;2027-09-10;2027;PSINT1;46:250:0:0:12:34:1;;;;;;;;;;;;;;;;;;;;;;;;;SAFETY_INTERVAL;;;;;;;;La vendimia del 2027-09-10 cae dentro del plazo de seguridad (21 días desde el 2027-09-01, se puede vendimiar a partir del 2027-09-22).;

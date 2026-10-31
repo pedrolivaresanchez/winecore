@@ -1,6 +1,8 @@
 -- WineCore · 0009_billing · dialecto DuckDB (ADR 002).
 -- Referencia: docs/02-ddl/0009_billing.sql
 -- Disparadores, funciones e índices únicos parciales: api/src/core/db/guards/registry.ts
+-- Sin FK hacia billing.invoice: DuckDB rehace el UPDATE de una fila referenciada
+-- como delete+insert y el cobro no podría actualizar amount_paid.
 
 -- =====================================================================
 -- WineCore · Migración 0009 · facturación (billing)
@@ -154,7 +156,9 @@ CREATE INDEX invoice_customer_idx ON billing.invoice(customer_id, issue_date);
 
 CREATE TABLE billing.invoice_line (
   id                     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  invoice_id             uuid NOT NULL REFERENCES billing.invoice(id),
+  -- Sin REFERENCES a billing.invoice: DuckDB rechaza el UPDATE de la factura
+  -- mientras exista la clave foránea, aunque la fila hija siga siendo válida.
+  invoice_id             uuid NOT NULL,
   line_no                smallint NOT NULL CHECK (line_no > 0),
   product_id             uuid,
   sku                    VARCHAR,
@@ -179,7 +183,7 @@ CREATE INDEX invoice_line_dn_idx ON billing.invoice_line(delivery_note_line_id);
 -- Desglose por impuesto/régimen/tipo (= Desglose/DetalleDesglose de Verifactu). Se calcula al emitir.
 CREATE TABLE billing.invoice_tax (
   id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  invoice_id       uuid NOT NULL REFERENCES billing.invoice(id),
+  invoice_id       uuid NOT NULL,
   tax_code         VARCHAR NOT NULL REFERENCES billing.tax_code(code),
   tax              VARCHAR NOT NULL,
   regime_key       VARCHAR NOT NULL,
@@ -199,8 +203,8 @@ CREATE TABLE billing.invoice_tax (
 -- Facturas rectificadas o sustituidas por una rectificativa/F3
 CREATE TABLE billing.invoice_rectification (
   id                     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  rectifying_invoice_id  uuid NOT NULL REFERENCES billing.invoice(id),
-  rectified_invoice_id   uuid REFERENCES billing.invoice(id),            -- NULL si la original es de Holded (legacy)
+  rectifying_invoice_id  uuid NOT NULL,
+  rectified_invoice_id   uuid,                                          -- NULL si la original es de Holded (legacy)
   rectified_number       VARCHAR NOT NULL,
   rectified_issue_date   date NOT NULL,
   rectified_issuer_tax_id VARCHAR NOT NULL,
@@ -216,7 +220,7 @@ CREATE TABLE billing.invoice_rectification (
 -- Vencimientos (cobros previstos). Se fijan al emitir.
 CREATE TABLE billing.invoice_due (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  invoice_id  uuid NOT NULL REFERENCES billing.invoice(id),
+  invoice_id  uuid NOT NULL,
   seq         smallint NOT NULL CHECK (seq > 0),
   due_date    date NOT NULL,
   amount      DECIMAL(14,2) NOT NULL,
@@ -245,7 +249,7 @@ CREATE TABLE billing.intercompany_settlement (id                   uuid PRIMARY 
   period_end           date NOT NULL,
   status               VARCHAR NOT NULL DEFAULT 'open' CHECK (status IN ('open','closed','invoiced','cancelled')),
   tariff_id            uuid,
-  invoice_id           uuid REFERENCES billing.invoice(id),
+  invoice_id           uuid,
   purchase_invoice_id  uuid,
   -- FK a purchasing.supplier_invoice (0010): gasto espejo en CVPO
   closed_at            TIMESTAMPTZ,

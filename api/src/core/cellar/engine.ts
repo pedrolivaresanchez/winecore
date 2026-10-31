@@ -4,7 +4,10 @@ import { planBlend } from "./ops/blend";
 import { planBottling } from "./ops/bottling";
 import { planCleaning } from "./ops/cleaning";
 import { planLoss } from "./ops/loss";
+import { planReception } from "./ops/reception";
 import { planTransfer } from "./ops/transfer";
+import { planFermentationEnd, planFermentationStart } from "../winemaking/fermentation";
+import { planPressing } from "../winemaking/pressing";
 import type { CellarState, IdSource, OperationRequest, PlanResult } from "./types";
 
 /**
@@ -35,6 +38,16 @@ export function planOperation(
       return planLoss(req, state, ids);
     case "cleaning":
       return planCleaning(req, state, ids);
+    case "reception":
+      return planReception(req, state, ids);
+    case "crushing_pressing":
+      return planPressing(req, state, ids);
+    case "fermentation_start":
+    case "malolactic_start":
+      return planFermentationStart(req, state, ids);
+    case "fermentation_end":
+    case "malolactic_end":
+      return planFermentationEnd(req, state, ids);
     default: {
       const unknown: never = req;
       return fail("WC_VALIDATION", "WC_VALIDATION: el tipo de operación no está soportado.", {
