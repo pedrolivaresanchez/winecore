@@ -267,7 +267,10 @@ export const auditEvents = [
     occurred_at: "2026-10-26T11:00:00Z",
     actor: { type: "user", id: "u-ana", display_name: "Ana Rivas" },
     action: "update",
-    changes: [{ field: "is_carrier", before: false, after: true }],
+    changes: [
+      { field: "legal_name", before: null, after: "Transportes del Ebro S.L." },
+      { field: "is_carrier", before: false, after: true },
+    ],
   },
 ];
 
