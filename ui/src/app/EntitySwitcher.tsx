@@ -1,65 +1,76 @@
-import { useRef } from "react";
-import { copy } from "@/i18n";
-import { entityName } from "@/lib/labels";
-import { cn } from "@/lib/utils";
-import { useEntity } from "@/app/entity-context";
-import type { EntityChoice } from "@/lib/types";
+import { Building } from '@/ui/icons'
+import { GlassMenu, MenuItem, SegmentedControl, useMenuOpen } from '@/ui'
+import { iconStroke } from '@/lib/motion'
+import { copy } from '@/i18n'
+import { entityName } from '@/lib/labels'
+import { useEntity } from '@/app/entity-context'
+import type { EntityChoice } from '@/lib/types'
 
-export function EntitySwitcher() {
-  const { filter, setFilter, entities } = useEntity();
-  const buttons = useRef<Array<HTMLButtonElement | null>>([]);
+export function EntitySwitcher({ collapsed = false }: { collapsed?: boolean }) {
+  const { filter, setFilter, entities } = useEntity()
+  const menu = useMenuOpen()
   const options: { value: EntityChoice; label: string }[] = [
-    { value: "all", label: copy.entity.all },
+    { value: 'all', label: copy.entity.all },
     ...entities.map((entity) => ({ value: entity.code, label: entityName(entity.code) })),
-  ];
-
-  function move(from: number, direction: 1 | -1) {
-    const next = (from + direction + options.length) % options.length;
-    const option = options[next];
-    if (!option) return;
-    setFilter(option.value);
-    buttons.current[next]?.focus();
+  ]
+  if (collapsed) {
+    return (
+      <GlassMenu
+        open={menu.open}
+        onOpenChange={menu.setOpen}
+        placement="right-start"
+        panelClassName="min-w-[160px]"
+        trigger={
+          <button
+            type="button"
+            onClick={menu.toggle}
+            aria-label={copy.entity.label}
+            className="flex size-7 items-center justify-center rounded-md text-control hover:bg-sidebar-hover"
+          >
+            <Building className="size-3.5" strokeWidth={iconStroke} />
+          </button>
+        }
+      >
+        {options.map((option) => (
+          <MenuItem
+            key={option.value}
+            radio
+            checked={option.value === filter}
+            onClick={() => {
+              setFilter(option.value)
+              menu.close()
+            }}
+          >
+            {option.label}
+          </MenuItem>
+        ))}
+      </GlassMenu>
+    )
   }
 
   return (
     <div
-      role="radiogroup"
-      aria-label={copy.entity.label}
-      className="inline-flex max-w-full items-center rounded-lg bg-muted p-0.5"
       onKeyDown={(event) => {
-        const index = options.findIndex((option) => option.value === filter);
-        if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-          event.preventDefault();
-          move(index, 1);
-        }
-        if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-          event.preventDefault();
-          move(index, -1);
-        }
+        const index = options.findIndex((option) => option.value === filter)
+        const direction = event.key === 'ArrowRight' || event.key === 'ArrowDown' ? 1 : event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 0
+        if (!direction) return
+        event.preventDefault()
+        const next = (index + direction + options.length) % options.length
+        const option = options[next]
+        if (!option) return
+        setFilter(option.value)
+        const radios = event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]')
+        radios[next]?.focus()
       }}
     >
-      {options.map((option, index) => {
-        const selected = filter === option.value;
-        return (
-          <button
-            key={option.value}
-            ref={(node) => {
-              buttons.current[index] = node;
-            }}
-            type="button"
-            role="radio"
-            aria-checked={selected}
-            tabIndex={selected ? 0 : -1}
-            className={cn(
-              "h-11 min-w-11 shrink-0 rounded-md px-2 text-compact whitespace-nowrap",
-              selected ? "bg-ink text-ink-foreground" : "text-foreground hover:bg-background/80",
-            )}
-            onClick={() => setFilter(option.value)}
-          >
-            {option.label}
-          </button>
-        );
-      })}
+      <SegmentedControl
+        size="sm"
+        fill
+        aria-label={copy.entity.label}
+        value={filter}
+        onChange={setFilter}
+        options={options.map((option) => ({ value: option.value, content: option.label }))}
+      />
     </div>
-  );
+  )
 }

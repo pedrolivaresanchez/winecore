@@ -1,0 +1,282 @@
+/* Timbal-platform toast material — inverted pill on Sonner.
+   Motion open/close lives on `.t-toast` in transitions.css. */
+
+.toast-toaster [data-sonner-toast] {
+  width: var(--width);
+  transition:
+    transform var(--toast-close) var(--toast-ease),
+    opacity var(--toast-close) var(--toast-ease),
+    height var(--toast-open) var(--toast-ease);
+}
+
+.toast-toaster [data-sonner-toast][data-mounted='true'][data-removed='false'] {
+  transition:
+    transform var(--toast-open) var(--toast-ease),
+    opacity var(--toast-open) var(--toast-ease),
+    height var(--toast-open) var(--toast-ease);
+}
+
+/* The inverted pill: page's opposite value. Flat fill + top-half sheen —
+   a button gradient on a wide capsule reads as a lit floor. */
+.toast-surface {
+  --toast-accent: var(--toast-neutral);
+  --toast-glyph: var(--toast-fg);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 44px;
+  padding: 7px 8px 7px 14px;
+  color: var(--toast-fg);
+  background: var(--toast-fill);
+  border-radius: 9999px;
+  box-shadow:
+    var(--toast-shine),
+    var(--toast-lift);
+  font-family: var(--font-sans);
+  pointer-events: auto;
+}
+
+.toast-surface[data-toast-type='success'] {
+  --toast-accent: var(--toast-success);
+  --toast-glyph: var(--toast-glyph-fg);
+}
+
+.toast-surface[data-toast-type='error'] {
+  --toast-accent: var(--toast-error);
+  --toast-glyph: var(--toast-glyph-fg);
+}
+
+.toast-surface[data-toast-type='warning'] {
+  --toast-accent: var(--toast-warning);
+  --toast-glyph: var(--toast-glyph-fg);
+}
+
+.toast-surface[data-toast-type='info'] {
+  --toast-accent: var(--toast-info);
+  --toast-glyph: var(--toast-glyph-fg);
+}
+
+.toast-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--toast-glyph);
+  background: var(--toast-accent);
+  border-radius: 9999px;
+  opacity: 0;
+  transform: scale(0.6);
+  transition:
+    opacity var(--toast-open) var(--toast-ease),
+    transform var(--toast-open) var(--toast-ease);
+}
+
+.t-toast.is-open .toast-icon {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* Spinner stays bare — a spinning fill would strobe the disc. */
+.toast-icon[data-toast-icon-type='loading'] {
+  color: var(--toast-fg-secondary);
+  background: none;
+}
+
+.toast-icon[data-toast-icon-type='loading'] svg {
+  animation: toast-spin 900ms linear infinite;
+}
+
+.toast-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* A toast that leads somewhere makes the copy the control, not a chip beside it: the
+   title is what somebody is already reading, and it is a far bigger target than a 30px
+   pill at the far end of a 404px bar. Underline on hover, the same affordance a record
+   name wears in the grid — the toast keeps its own face, so a fill here would read as a
+   second surface inside the pill. */
+.toast-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.toast-link:focus-visible {
+  outline: 2px solid var(--toast-fg-secondary);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .toast-link:hover .toast-title {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+}
+
+.toast-title,
+.toast-description {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toast-title {
+  color: var(--toast-fg);
+  font-size: var(--text-body);
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: -0.006em;
+}
+
+.toast-description {
+  margin-top: 1px;
+  color: var(--toast-fg-secondary);
+  font-size: var(--text-label);
+  font-weight: 500;
+  line-height: 16px;
+}
+
+.toast-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+
+.toast-action {
+  min-height: 30px;
+  padding: 0 12px;
+  color: var(--toast-fg);
+  background: var(--toast-chip);
+  border: 0;
+  border-radius: 9999px;
+  box-shadow: var(--toast-chip-shine);
+  font: inherit;
+  font-size: var(--text-body);
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-quick) var(--ease-smooth-out),
+    transform var(--duration-quick) var(--ease-smooth-out);
+}
+
+.toast-action[data-toast-action-kind='cancel'] {
+  color: var(--toast-fg-secondary);
+  background: transparent;
+  box-shadow: none;
+}
+
+.toast-action:active {
+  transform: scale(0.97);
+}
+
+.toast-action:focus-visible,
+.toast-dismiss:focus-visible {
+  outline: 2px solid var(--toast-fg-secondary);
+  outline-offset: 2px;
+}
+
+.toast-dismiss {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: var(--toast-fg-quiet);
+  background: transparent;
+  border: 0;
+  border-radius: 9999px;
+  cursor: pointer;
+  transition:
+    color var(--duration-quick) var(--ease-smooth-out),
+    background-color var(--duration-quick) var(--ease-smooth-out);
+}
+
+.toast-countdown {
+  width: 18px;
+  height: 18px;
+  overflow: visible;
+  transform: rotate(-90deg);
+}
+
+.toast-countdown-track,
+.toast-countdown-value {
+  fill: none;
+  stroke-width: 1.5;
+}
+
+.toast-countdown-track {
+  stroke: var(--toast-track);
+}
+
+.toast-countdown-value {
+  stroke: var(--toast-fg-secondary);
+  stroke-linecap: round;
+  stroke-dasharray: 47.2;
+  stroke-dashoffset: 0;
+  animation: toast-countdown var(--toast-countdown-dur) linear forwards;
+}
+
+.toast-toaster:hover .toast-countdown-value {
+  animation-play-state: paused;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .toast-action:hover {
+    background: var(--toast-chip-hover);
+  }
+
+  .toast-action[data-toast-action-kind='cancel']:hover {
+    color: var(--toast-fg);
+    background: var(--toast-chip);
+  }
+
+  .toast-dismiss:hover {
+    color: var(--toast-fg);
+    background: var(--toast-chip);
+  }
+}
+
+@keyframes toast-countdown {
+  to {
+    stroke-dashoffset: 47.2;
+  }
+}
+
+@keyframes toast-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@media only screen and (max-width: 600px) {
+  .toast-toaster [data-sonner-toast] {
+    width: calc(100% - var(--mobile-offset-left, 16px) * 2);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast-icon {
+    opacity: 1;
+    transform: none;
+    transition: opacity var(--duration-quick) linear;
+  }
+
+  .toast-toaster [data-sonner-toast] {
+    transition: opacity var(--duration-quick) linear;
+  }
+
+  .toast-icon[data-toast-icon-type='loading'] svg,
+  .toast-countdown-value {
+    animation: none;
+  }
+}
