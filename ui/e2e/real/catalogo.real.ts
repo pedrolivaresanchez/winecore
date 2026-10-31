@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium, type Browser, type Page } from "playwright";
 import { gtinWithCheck } from "../../src/pages/catalogo/gtin.ts";
@@ -181,6 +181,7 @@ async function runOwner(page: Page, width: number, catalog: Catalog) {
   await shown(page, catalog.sample.name).first().waitFor();
   await page.getByText(/\d+ productos/).filter({ visible: true }).first().waitFor();
   await shot(page, "lista", width);
+  await assertProductCsv(page);
 
   await page.getByRole("button", { name: "Granel", exact: true }).click();
   await shown(page, "Nada coincide con los filtros").first().waitFor();
@@ -371,6 +372,19 @@ function bumpPrice(value: string): string {
   if (!match) throw new Error(`Precio no editable: ${value}`);
   const digit = match[2] === "9" ? "8" : String(Number(match[2]) + 1);
   return `${match[1]}${digit}`;
+}
+
+async function assertProductCsv(page: Page) {
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Más acciones" }).click();
+  await page.getByRole("menuitem", { name: "Exportar CSV" }).click();
+  const download = await downloadPromise;
+  const file = await download.path();
+  if (!file) throw new Error("La exportación no dejó fichero");
+  const bytes = await readFile(file);
+  if (bytes[0] !== 0xef || bytes[1] !== 0xbb || bytes[2] !== 0xbf) {
+    throw new Error("El CSV no lleva la marca BOM");
+  }
 }
 
 async function expectHidden(page: Page, text: string) {

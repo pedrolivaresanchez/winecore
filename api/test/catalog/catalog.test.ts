@@ -360,6 +360,10 @@ describe('catálogo HTTP', () => {
     const field = await call('/v1/products', { user: 'campo@winecore.test' });
     expect(field.status).toBe(403);
     expect(field.json?.code).toBe('WC_FORBIDDEN');
+    const fieldCsv = await ctx.app.handle(new Request('http://localhost/v1/products/export.csv', {
+      headers: { 'x-dev-user': 'campo@winecore.test' },
+    }));
+    expect(fieldCsv.status).toBe(403);
     const admin = await call('/v1/wines', {
       method: 'POST',
       user: 'admin@winecore.test',
@@ -382,6 +386,61 @@ describe('catálogo HTTP', () => {
     expect(ok.status).toBe(201);
     expect(ok.json?.is_stock_tracked).toBe(false);
     expect(ok.json?.requires_lot).toBe(false);
+  });
+
+  it('exporta el CSV filtrado con BOM y coma decimal', async () => {
+    const wine = await call('/v1/wines', {
+      method: 'POST',
+      body: JSON.stringify({ code: code('W'), name: 'Exportable', color: 'red' }),
+    });
+    const format = await call('/v1/formats', {
+      method: 'POST',
+      body: JSON.stringify({ code: code('F'), name: 'Botella', container: 'bottle', nominal_volume_ml: 750 }),
+    });
+    const sku = code('SKU');
+    const created = await call('/v1/products', {
+      method: 'POST',
+      body: JSON.stringify({
+        sku,
+        name: 'Cosecha exportable',
+        kind: 'wine',
+        wine_id: wine.json?.id,
+        vintage: 2019,
+        format_id: format.json?.id,
+        alcohol_pct: '13.50',
+        gtin: gtin('840000000090'),
+      }),
+    });
+    expect(created.status).toBe(201);
+    const other = await call('/v1/products', {
+      method: 'POST',
+      body: JSON.stringify({ sku: code('SKU'), name: 'Servicio aparte', kind: 'service' }),
+    });
+    expect(other.status).toBe(201);
+
+    const response = await ctx.app.handle(new Request('http://localhost/v1/products/export.csv?q=exportable&kind=wine'));
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('text/csv');
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    expect([...bytes.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+    const text = new TextDecoder().decode(bytes);
+    expect(text.startsWith('SKU;Nombre;Nombre en inglés;Tipo;Vino;')).toBe(true);
+    expect(text).toContain(`${sku};Cosecha exportable;`);
+    expect(text).toContain(';Vino;Exportable;2019;');
+    expect(text).toContain('13,50');
+    expect(text).not.toContain('Servicio aparte');
+
+    const missing = await ctx.app.handle(new Request('http://localhost/v1/products/export.csv?missing=gtin'));
+    expect(missing.status).toBe(200);
+    const missingText = await missing.text();
+    expect(missingText).not.toContain(sku);
+    expect(missingText).toContain('Servicio aparte');
+
+    const advisor = await ctx.app.handle(new Request('http://localhost/v1/products/export.csv?q=exportable', {
+      headers: { 'x-dev-user': 'asesor@winecore.test' },
+    }));
+    expect(advisor.status).toBe(200);
+    expect([...(new Uint8Array(await advisor.arrayBuffer())).slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
   });
 });
 

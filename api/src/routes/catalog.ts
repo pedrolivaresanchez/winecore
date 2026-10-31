@@ -12,6 +12,7 @@ import {
 } from '../core/catalog/pricing';
 import {
   createProduct,
+  exportProducts,
   getProduct,
   listProductPrices,
   listProducts,
@@ -69,6 +70,7 @@ export function catalogRoutes(deps: GuardDeps) {
       updateFormat(writer, actor(request, 'editar formato'), params.id, await jsonBody(request))
     ), { beforeHandle: write })
     .get('/v1/products', ({ request }) => listProducts(writer, request), { beforeHandle: read })
+    .get('/v1/products/export.csv', ({ request }) => exportProducts(writer, request), { beforeHandle: read })
     .post('/v1/products', async ({ request, set }) => {
       const created = await createProduct(writer, actor(request, 'alta de producto'), await jsonBody(request));
       set.status = 201;

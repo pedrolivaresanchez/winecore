@@ -122,6 +122,78 @@ export async function listProducts(writer: Writer, request: Request) {
   return pageOf(rows.map(toProduct), limit, asCount(totalRows[0]?.total), (row) => row.sku);
 }
 
+const KIND_ES: Record<string, string> = {
+  wine: 'Vino',
+  bulk_wine: 'Granel',
+  packaging_material: 'Material',
+  oenological_product: 'Enológico',
+  merchandise: 'Mercancía',
+  service: 'Servicio',
+  gift_card: 'Tarjeta',
+  other: 'Otro',
+};
+
+const UNIT_ES: Record<string, string> = {
+  ud: 'Unidades',
+  l: 'Litros',
+  kg: 'Kilogramos',
+  h: 'Horas',
+  month: 'Meses',
+  service: 'Servicio',
+};
+
+export async function exportProducts(writer: Writer, request: Request): Promise<Response> {
+  const url = new URL(request.url);
+  const where = productFilters(url).join(' AND ');
+  const rows = await writer.read(`
+    SELECT ${PRODUCT_SELECT},
+           w.name AS wine_name, f.code AS format_code
+    FROM catalog.product p
+    LEFT JOIN catalog.gtin_current c ON c.gtin = p.gtin
+    LEFT JOIN catalog.wine w ON w.id = p.wine_id
+    LEFT JOIN catalog.format f ON f.id = p.format_id
+    WHERE ${where}
+    ORDER BY p.sku, p.id
+  `);
+  const header = [
+    'SKU', 'Nombre', 'Nombre en inglés', 'Tipo', 'Vino', 'Añada', 'Formato', 'Unidad',
+    'GTIN', 'GTIN caja', 'Código NC', 'Mayor SILICIE', 'Grado', 'IVA', 'Cuenta de ventas',
+    'Controla existencias', 'Requiere lote', 'Activo', 'GTIN vigente',
+  ];
+  const lines = [header.join(';')];
+  for (const row of rows) {
+    const product = toProduct(row);
+    lines.push([
+      product.sku,
+      product.name,
+      product.name_en,
+      KIND_ES[product.kind] ?? product.kind,
+      asNullableString(row.wine_name),
+      product.vintage == null ? null : String(product.vintage),
+      asNullableString(row.format_code),
+      UNIT_ES[product.unit] ?? product.unit,
+      product.gtin,
+      product.gtin_case,
+      product.nc_code,
+      product.excise_product_key,
+      decimalComma(product.alcohol_pct),
+      product.default_tax_code,
+      product.sales_account,
+      yes(product.is_stock_tracked),
+      yes(product.requires_lot),
+      yes(product.is_active),
+      yes(product.is_gtin_current),
+    ].map(csvCell).join(';'));
+  }
+  const bytes = Buffer.from(`\uFEFF${lines.join('\r\n')}\r\n`, 'utf8');
+  return new Response(bytes, {
+    headers: {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="productos.csv"',
+    },
+  });
+}
+
 export async function getProduct(writer: Writer, id: string): Promise<Product> {
   requireUuid(id);
   const rows = await writer.read(`
@@ -683,6 +755,21 @@ function toProduct(row: Record<string, unknown>): Product {
     updated_at: asString(row.updated_at),
     is_gtin_current: asBool(row.is_gtin_current),
   };
+}
+
+function decimalComma(value: string | null): string | null {
+  if (!value) return null;
+  return value.replace('.', ',');
+}
+
+function yes(value: boolean): string {
+  return value ? 'Sí' : 'No';
+}
+
+function csvCell(value: string | null): string {
+  const text = value ?? '';
+  if (/[;"\r\n]/.test(text)) return `"${text.replaceAll('"', '""')}"`;
+  return text;
 }
 
 function toGtin(row: Record<string, unknown>) {

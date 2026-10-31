@@ -188,7 +188,8 @@ export function requestActivation(priceListId: string, version: number) {
 export async function exportProducts(query: ProductQuery) {
   const path = productQuery(query).replace("/v1/products?", "/v1/products/export.csv?");
   const csv = await apiText(path);
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const withBom = csv.charCodeAt(0) === 0xfeff ? csv : `\uFEFF${csv}`;
+  const blob = new Blob([withBom], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
