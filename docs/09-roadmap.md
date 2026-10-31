@@ -1,6 +1,6 @@
 # 09 · Hoja de ruta
 
-> Versión 1 · 31-10-2026. Fechas objetivo; cada hito cierra con QA (`11-tests.md` §13), demo en `staging` y PR a `main` aprobado por Pedro. Paralelismo de Fase 2: máximo 3–4 agentes hijo (§7.1), sin ficheros solapados. La ruta crítica es **Verifactu de CVPO**.
+> Versión 2 · 31-10-2026 (correcciones de Pedro: **todo en Timbal**, **Verifactu fuera de la ruta crítica**, primero las operaciones del núcleo). Fechas objetivo; cada hito cierra con QA en todas sus pantallas a 390 y 1440 px (`11-tests.md` §13), demo en un entorno de pruebas y PR a `main` aprobado por Pedro. Subagentes: Grok por defecto y como mucho un Opus a la vez.
 
 ## 1. Vista general
 
@@ -8,96 +8,87 @@
 gantt
   dateFormat  YYYY-MM-DD
   axisFormat  %d-%m
-  title WineCore — hitos (fechas objetivo)
-  section Especificación
-  Aprobación de la especificación      :milestone, s0, 2026-11-04, 0d
+  title WineCore — hitos (fechas objetivo, versión 2)
   section M0
-  Fundaciones                           :m0, 2026-11-04, 10d
-  section M1 (ruta crítica)
-  Facturación CVPO + Verifactu preprod  :crit, m1, 2026-11-09, 22d
-  Gate Verifactu (plan B si falla)      :milestone, crit, g1, 2026-12-01, 0d
-  Producción CVPO (certificado, declaración, ensayo) :crit, m1b, 2026-12-01, 30d
-  Arranque CVPO en WineCore             :milestone, crit, g2, 2027-01-01, 0d
+  Fundaciones en Timbal                     :m0, 2026-11-02, 12d
+  section M1
+  Stock, almacenes, bodega y lotes; contactos y catálogo; UI móvil; MCP :m1, 2026-11-16, 61d
+  Aforo de arranque                         :milestone, a1, 2026-12-31, 0d
   section M2
-  Albaranes, dos stocks, bodega mínima, SILICIE, P.O, compras :m2, 2027-01-04, 54d
+  Ventas, facturación sin Verifactu y SILICIE :m2, 2027-01-11, 75d
   section M3
-  SISV, EMCS, AecocEDI, INFOVI por computer use y asistente :m3, 2027-03-01, 61d
+  Regulatorio por computer use y asistente  :m3, 2027-03-29, 61d
   section M4
-  Bodega completa, viñedo, ecológico (antes de vendimia) :m4, 2027-05-03, 75d
+  Verifactu CVPO y P.O                      :m4, 2027-05-03, 59d
+  Control de preproducción                  :milestone, g4, 2027-06-01, 0d
+  Obligación P.O y paso de CVPO desde Holded :milestone, g5, 2027-07-01, 0d
   section M5
-  Gate Verifactu P.O                    :milestone, g5, 2027-06-01, 0d
-  Obligación Verifactu P.O              :milestone, g6, 2027-07-01, 0d
+  Bodega completa, viñedo y ecológico (antes de la vendimia) :m5, 2027-05-03, 75d
   section M6–M8
-  Tesorería y datos para modelos        :m6, 2027-07-01, 92d
-  Contabilidad y migración histórica    :m7, 2027-10-01, 61d
+  Tesorería y datos para modelos            :m6, 2027-07-05, 88d
+  Contabilidad y migración histórica        :m7, 2027-10-01, 61d
   Factura electrónica B2B (antes de 06-10-2028) :m8, 2028-01-10, 140d
 ```
 
 ## 2. Hitos
 
-### M0 · Fundaciones — 04-11 → 13-11-2026
-- **Entrega**: estructura Timbal (`ui/`, `api/`, `workforce/`) sobre GitHub como fuente de verdad; CI completa (`ci.yml`, `deploy.yml`, `remotes-drift.yml`); BD PostgreSQL (dev, staging, prod) con las 16 migraciones y permisos; acceso con Microsoft + lista blanca; roles; auditoría; series; adjuntos en S3; módulos activables; *outbox* y notificador a CVBOT; esqueleto MCP (`system_whoami`); sistema de diseño y navegación; generador de datos sintéticos; esqueleto de la bandeja de aprobaciones.
-- **Depende de**: aprobación de la especificación; Q-004 (GitHub conectado o credencial para el Plan B; entornos `staging` y `dev`); Q-027 (cuenta de AWS); Q-028 (rutas de máquina en Timbal); Q-029 (URL de eventos de CVBOT; si falta, el notificador queda desactivado).
-- **Criterio de salida**: un PR de prueba recorre `feat/*` → `dev` → `staging` y despliega la misma SHA; `api/health` devuelve la SHA y las migraciones; login con un usuario de la lista blanca y 403 con otro.
+### M0 · Fundaciones en Timbal — 02-11 → 13-11-2026
+- **Entrega**: monorepo con la estructura del SDR (`ui/`, `api/`, `workforce/`) en GitHub como fuente de verdad; CI (`ci.yml`) y despliegue en el proyecto Timbal 3942; esquema DuckDB en la Knowledge Base con la **prueba de atomicidad** (ADR 002); escritor único y guardas del núcleo con sus tests; acceso con Microsoft y lista blanca; roles; auditoría encadenada; series; documentos; módulos activables; *outbox* y avisos a CVBOT; esqueleto MCP (`system_whoami`); sistema de diseño y navegación móvil; datos sintéticos.
+- **Depende de**: credencial de Timbal para el agente (cuenta dedicada **solo de la org 122**, Q-004); Q-028 (Knowledge Base); copia del SDR para su estructura y su UI (Q-034); Q-029 (si falta, los avisos a CVBOT quedan desactivados). GitHub conectado en Timbal es tarea de Pedro: si no está, se usa el remoto git interno de Timbal.
+- **Criterio de salida**: un commit de `main` se despliega en el entorno Main (4165) con la misma SHA; `api/health` responde con la SHA y la versión del esquema; login con un usuario de la lista blanca y 403 con otro; resultados de la prueba de atomicidad documentados.
 
-### M1 · Facturación de CVPO con Verifactu en preproducción — 09-11 → 30-11-2026 · **Gate 01-12-2026**
-- **Entrega**: contactos (con importación de CVPO y deduplicación), catálogo aprobado, tarifas, reglas de entidad facturadora (D3), pedidos (manual y MCP), facturas completas y rectificativas, IRPF y recargo, PDF ES/EN con QR, emisión en lote con aprobación, anulación, **registros Verifactu encadenados y envío al entorno de pruebas de la AEAT**, estado y subsanación, declaración responsable en Ajustes, passkeys y bandeja de aprobaciones, cobros parciales y partidas abiertas de CVPO, herramientas MCP de M1, avisos a CVBOT.
-- **Depende de**: M0; Q-002 y Q-003 (modalidad y aprobación en la emisión) y Q-005 (aprobadores), que se aplican con su recomendación como **SUPUESTO** mientras Pedro no responda; un certificado reconocido **de pruebas** para preproducción (Q-006 queda para el final y solo bloquea M1b); Q-015 y Q-025 (tienen valor por defecto).
-- **Gate del 01-12-2026** (Pedro decide con datos): batería de preproducción de `verifactu.md` al 100 %; 0 fallos de numeración en las propiedades; QA de M1 completo. **Si no pasa → plan B (Q-008)**: CVPO factura en Holded con Verifactu desde el 01-01-2027 y WineCore entra en producción cuando pase.
+### M1 · Stock, almacenes, bodega y lotes — 16-11-2026 → 15-01-2027
+- **Entrega**: contactos (importación de CVPO y P.O con deduplicación), catálogo aprobado y tarifas; ubicaciones y almacenes (incluidos los externos, Q-021); depósitos con QR; lotes y genealogía; operaciones de bodega (trasiego, ensamblaje, adiciones, envasado, etiquetado de jaulón, mermas, limpiezas, rectificación); libros físico y fiscal; **aforo de arranque del 31-12-2026**; existencias a fecha e informe de inspección; conciliación físico ↔ fiscal; bloqueo de periodos; bandeja de aprobaciones con passkey; MCP de lectura (existencias, lotes, depósitos) y borradores de operación con confirmación; UI móvil de bodega (operación, depósitos, aforo).
+- **Depende de**: M0; Q-005 (se aplica su recomendación como supuesto); Q-013 (aforo); Q-020 (códigos de depósitos); Q-021.
 
-### M1b · Paso a producción de CVPO — 01-12 → 31-12-2026
-- **Entrega**: certificado de producción custodiado (ADR 003; Q-006 se decide al final, como tarde el 15-12-2026), declaración responsable firmada (Q-007), instalación Verifactu de producción, series de 2027 (`CF27-`, `CR27-`), carga final de contactos y partidas abiertas de CVPO, ensayo general (emisión de facturas de prueba en el entorno de pruebas de la AEAT con datos reales en una serie de pruebas que nunca va a producción), formación de administración.
-- **Arranque**: **01-01-2027** CVPO factura en WineCore. Holded queda en solo lectura para CVPO (no se da de baja hasta 2 semanas sin incidencias).
+### M2 · Ventas, facturación sin Verifactu y SILICIE — 11-01 → 26-03-2027
+- **Entrega**: reglas de entidad facturadora (D3); pedidos; albaranes con lote (venta, consigna, traspaso, devolución) e incidencias; **facturación de P.O** (completas y rectificativas, IRPF, recargo, exportación, intracomunitaria, Canarias, PDF ES/EN, emisión en lote con aprobación); cobros y partidas abiertas; intercompañía mensual; **SILICIE**: mayores, asientos al día (incluidos los cambios depósito ↔ barrica) y fichero CSV oficial, con la presentación aún manual hasta M3; gastos con OCR y libros de IVA; revisión de albaranes pendientes de Holded; MCP de ventas y facturación.
+- **CVPO**: hasta M4 sigue facturando en **Holded con Verifactu** (obligatorio desde el 01-01-2027); WineCore lleva sus pedidos, albaranes y cobros e importa sus facturas de Holded como externas (Q-033, supuesto).
+- **Depende de**: M1; Q-009, Q-010, Q-016, Q-017, Q-033.
 
-### M2 · Albaranes, dos stocks, bodega mínima, SILICIE, P.O y compras — 04-01 → 26-02-2027
-- **Entrega**: aforo de arranque firmado (31-12-2026) y saldos iniciales en ambos libros; ubicaciones; depósitos; lotes; trasiego, ensamblaje (sin fórmula), adiciones, envasado, etiquetado de jaulón, mermas, limpiezas, rectificación de operaciones; albaranes de venta/consigna/traspaso/devolución; incidencias; libro físico y fiscal con regla de fecha fiscal configurable; existencias a fecha y PDF de inspección; conciliación físico/fiscal; bloqueo de periodos; **asientos SILICIE generados al día** (presentación aún manual con el fichero de WineCore); informe de libros SISV para teclear a mano hasta M3; P.O factura en WineCore (con VERI*FACTU activado voluntariamente desde el principio); exportación, intracomunitaria y Canarias; intercompañía mensual con factura espejo; gastos con OCR; libros de IVA; revisión de albaranes pendientes de Holded; partidas abiertas de P.O; tarifa intercompañía y costes estándar; correo de facturas con clic (si Q-014).
-- **Depende de**: M1; Q-010, Q-013, Q-016, Q-017, Q-020, Q-021.
+### M3 · Regulatorio por *computer use* y asistente — 29-03 → 28-05-2027
+- **Entrega**: ejecutor local; presentación de SILICIE (importación de fichero), SISV (importación mensual), EMCS (e-DA y mensajes), AecocEDI (pedidos, factura, aviso de pago) e INFOVI; calendario de obligaciones; cuadre SISV ↔ SILICIE; asistente interno; resumen diario; vigilantes; pedidos web (si Q-018).
+- **Depende de**: M2; Q-012, Q-018, Q-019, Q-024, Q-026, Q-030, Q-031.
 
-### M3 · Regulatorio por *computer use* y asistente — 01-03 → 30-04-2027
-- **Entrega**: ejecutor local instalado y protocolo; conectores SILICIE (carga de fichero), SISV (importación mensual y envío de libros), EMCS (e-DA, recepción, anulación, cambio de destino), AecocEDI (lectura de pedidos, factura, aviso de pago, ficha para teclear), INFOVI (declaraciones y cosecha); calendario de obligaciones; cuadre SISV ↔ SILICIE semanal; asistente interno; resumen diario; vigilantes; pedidos web por Stripe (si Q-018).
-- **Depende de**: M2; Q-009, Q-012, Q-018, Q-019, Q-024, Q-026, Q-030, Q-031.
-- **Primeros envíos reales con aprobación**: SISV de marzo (antes del 10-04-2027, si se confirma ese plazo); e-DA desde abril.
+### M4 · Verifactu (CVPO y P.O) — 03-05 → 30-06-2027 · control 01-06-2027
+- **Entrega**: registros encadenados, envío por servicio web desde el entorno aislado `verifactu`, subsanaciones, declaración responsable, batería de preproducción VF-01…VF-22, PDF con QR.
+- **Control del 01-06-2027**: batería al 100 % en preproducción. **01-07-2027**: P.O factura con Verifactu en WineCore (obligación legal) y CVPO pasa de Holded a WineCore.
+- **Depende de**: Q-002 y Q-003 (supuestos), Q-006 (certificado, se decide al final), Q-007 (declaración responsable), Q-008.
 
-### M4 · Bodega completa, viñedo y ecológico — 03-05 → 16-07-2027 (antes de la vendimia)
-- **Entrega**: recepción de uva con documento de acompañamiento; prensado/encubado; fin de fermentación; lecturas de fermentación con gráfica y alertas; analíticas y catas; ensamblaje con fórmula (mL → % → L); parcelas SIGPAC, tratamientos, labores, controles de maduración por voz y foto (agente `vendimia-campo`), vendimia; informe para la certificadora; trazabilidad completa botella → parcela.
+### M5 · Bodega completa, viñedo y ecológico — 03-05 → 16-07-2027 (antes de la vendimia)
+- **Entrega**: recepción de uva, prensado, fin de fermentación, lecturas con alertas, analíticas y catas, ensamblaje con fórmula; parcelas, tratamientos y cuaderno (CUE), labores, maduración, vendimia; certificados e informe ecológicos; trazabilidad completa botella → parcela. Va en paralelo a M4.
 
-### M5 · Verifactu de P.O — gate 01-06-2027, obligación 01-07-2027
-- P.O ya factura en WineCore desde M2 con VERI*FACTU; M5 verifica producción, certificado de P.O y declaración, y cierra cualquier hallazgo antes del 01-07-2027.
-
-### M6 · Tesorería y datos para modelos — 01-07 → 30-09-2027
-- Importación de extractos (Norma 43/CAMT/CSV) y conciliación sugerida; remesas SEPA; previsión de tesorería; exportaciones para 303/390/347/349/115/130 (`modelos-aeat.md`).
+### M6 · Tesorería y datos para modelos — 05-07 → 30-09-2027
+- Extractos y conciliación, remesas SEPA, previsión de tesorería, exportaciones para 303/390/347/349/115/130 (`modelos-aeat.md`).
 
 ### M7 · Contabilidad y migración histórica — 01-10 → 30-11-2027
-- Plan de cuentas, asientos automáticos y exportación a la asesoría (según Q-022); histórico completo de Holded y Shopify con cuadre al céntimo; PDF vinculados; diario D7.
+- Plan de cuentas y asientos (Q-022); histórico de Holded y Shopify con cuadre; PDF vinculados; diario D7.
 
-### M8 · Factura electrónica B2B — antes del 06-10-2028 (planificación en 2T-2027)
-- Recepción de facturas electrónicas (cargos de ECI desde el 06-10-2027 si el asesor lo confirma, Q-032); emisión UBL por la solución pública o plataforma conforme; estados (CVPO desde 2028; P.O desde 2029); decisión AecocEDI (ADR 006 C/D).
+### M8 · Factura electrónica B2B — antes del 06-10-2028
+- Recepción y emisión estructuradas (UBL) y estados (Q-032); decisión AecocEDI (ADR 006).
 
 ### Posterior (sin fecha)
-Etiqueta electrónica, conocimiento de añadas, planificador de vendimia, costes por partida, TPV con simplificadas, OSS, integraciones de paquetería, APPCC.
+Etiqueta electrónica, conocimiento de añadas, planificador de vendimia, costes por partida, TPV con simplificadas, OSS, paquetería, APPCC.
 
 ## 3. Calendario regulatorio que condiciona los hitos
 
-| Fecha | Obligación | Quién lo hace | Hito que lo cubre |
+| Fecha | Obligación | Quién lo hace | Hito |
 |---|---|---|---|
-| 20-12-2026 | INFOVI (declaración de noviembre; < 1.000 hl) | Como hoy (manual) | M3 desde agosto de 2027 |
-| 10-12 (anual) | Declaración de cosecha (RD 739/2015 art. 3.2) | Como hoy en 2026 | M4 para 2027 |
-| 31-12-2026 (último día hábil de diciembre) | SILICIE: movimientos de agosto a noviembre de 2026 | Como hoy (administración saliente/asesoría) | — |
-| **01-01-2027** | **Verifactu CVPO** (RD 1007/2023 DF 4ª, mod. RDL 15/2025) | WineCore (o plan B) | M1/M1b |
-| Mensual, día 10 (según Bacosoft; pendiente de la Junta) | SISV: importación y envío de libros del mes anterior | Manual con el informe de WineCore (M2) → *computer use* (M3) | M2/M3 |
-| **01-07-2027** | **Verifactu P.O** | WineCore | M2/M5 |
-| 20-08-2027 | INFOVI (declaración de julio) | WineCore | M3 |
-| **31-08-2027** (último día hábil de agosto) | SILICIE: movimientos de diciembre de 2026 a julio de 2027 | WineCore + ejecutor | M2/M3 |
-| ~31-10-2027 | Cierre del ejercicio SILICIE 2026 (2 meses tras el último plazo; art. 4 bis Orden HAC/998/2019) | WineCore + ejecutor | M3 |
-| 06-10-2027 | ECI obligada a factura electrónica B2B | — | M8 (recepción) |
-| 31-12-2027 | SILICIE: agosto–noviembre de 2027 | WineCore | — |
-| 06-10-2028 | Factura electrónica B2B para P.O y CVPO | WineCore | M8 |
+| Ya (31-10-2026 es sábado → primer día hábil) | Comunicación de cierre de SILICIE 2025 | Administración actual | — (R24) |
+| 10-12 y 20-12-2026 | Declaración de cosecha e INFOVI | Como hoy | M3 desde 2027 |
+| 31-12-2026 | SILICIE: agosto–noviembre de 2026 | Como hoy | — |
+| **01-01-2027** | **Verifactu CVPO** | **Holded** con Verifactu hasta M4 (Q-033) | M4 |
+| Mensual, día 10 | SISV del mes anterior | Manual con el informe de WineCore → *computer use* | M2/M3 |
+| **01-07-2027** | **Verifactu P.O** (y paso de CVPO) | WineCore | M4 |
+| 20-08-2027 | INFOVI | WineCore | M3 |
+| **31-08-2027** | SILICIE: diciembre de 2026 a julio de 2027 (incluida la apertura de 2027) | WineCore + ejecutor | M2/M3 |
+| 02-11-2027 | Cierre del ejercicio SILICIE 2026 | WineCore + ejecutor | M3 |
+| 06-10-2027 / 06-10-2028 | Factura electrónica B2B (ECI / P.O y CVPO) | WineCore | M8 |
 
-**Vigilancia normativa**: la nota de Hacienda del 05-10-2026 anuncia la intención de aplazar Verifactu a octubre de 2028; **no está en el BOE** a 31-10-2026. El plan mantiene las fechas del BOE. Si se publica el aplazamiento, Pedro decide si relajar M1 (recomendación: mantener M1 igualmente, porque Holded es caro y la facturación propia es la base del resto).
+**Vigilancia normativa**: Hacienda anunció el 05-10-2026 la intención de aplazar Verifactu a octubre de 2028; **no está en el BOE** a 31-10-2026. Si se publica, CVPO podría facturar en WineCore antes de M4 sin Verifactu.
 
-## 4. Dependencias entre hitos y riesgos de calendario
-- La **latencia de aprobación de esta especificación** es el primer riesgo (R20): cada día de retraso sobre el 04-11-2026 se come margen del gate.
-- M1 no depende de stock ni de bodega (la factura de CVPO lleva lote como texto hasta M2).
-- M2 necesita el aforo del 31-12-2026: si no se hace ese día, se hace en la primera semana de enero con fecha de corte declarada y los movimientos de enero se registran después (sin perder la regla de periodos).
-- M3 necesita el equipo del ejecutor (Q-026) y las credenciales en su llavero.
-- M4 tiene una fecha natural inamovible: la **vendimia** (agosto–septiembre de 2027).
+## 4. Dependencias y riesgos de calendario
+- M0 necesita la credencial de Timbal: sin ella se avanza en código y CI, pero no se despliega.
+- M1 necesita el aforo del 31-12-2026: si no se hace ese día, en la primera semana de enero con fecha de corte declarada.
+- M3 necesita el equipo del ejecutor (Q-026).
+- M4 tiene una fecha legal inamovible (01-07-2027) y M5 una natural (la vendimia).

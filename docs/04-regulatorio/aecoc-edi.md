@@ -126,7 +126,7 @@ Lo que el ejecutor completa en "Crear factura" (o la ficha para teclear) **debe 
 ## 6. Aprobación humana
 `ops.approval_policy.kind = 'edi_submission'`: el aprobador ve la factura de WineCore, la captura del formulario rellenado y la comparación (debe ser "sin diferencias"; si hay diferencias, el botón de aprobar está desactivado con el motivo).
 
-## 7. Evidencias (≥ 6 años, S3 `evidence/edi/`)
+## 7. Evidencias (≥ 6 años, documentos de la Knowledge Base)
 Captura del pedido leído y su texto extraído; captura del formulario rellenado + comparación; captura de la confirmación de envío; avisos de pago leídos.
 
 ## 8. Reintentos y errores

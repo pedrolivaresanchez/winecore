@@ -1,46 +1,40 @@
-# ADR 002 · Base de datos y almacenamiento de ficheros
+# ADR 002 · Datos y documentos en la Knowledge Base de Timbal
 
-- **Estado**: propuesto · 31-10-2026 · Decisor: Pedro (coste y cuenta del proveedor)
-- **Fuentes** (consultadas el 31-10-2026): https://docs.timbal.ai/api-reference/knowledge-bases/query, …/knowledge-bases/get, …/backups/create, …/restores/create, https://docs.timbal.ai/api-reference/introduction, https://docs.timbal.ai/api-reference/files/upload, plugin oficial de Timbal para Cursor (`skills/timbal-knowledge-base`), https://timbal.ai/legal/terms (§17.1), https://timbal.ai/legal/subprocessors.
+- **Estado**: aceptado por decisión de Pedro (31-10-2026: **todo en Timbal, sin AWS**). Sustituye a la versión anterior (PostgreSQL en AWS).
+- **Relacionado**: ADR 003 (certificado), ADR 007 (despliegue), ADR 011 (núcleo en `api/`), `02-modelo-dominio.md`, `02-ddl/`, riesgo R26, Q-028.
 
-## Requisitos (del plan y del dominio)
+## Contexto (hechos de la documentación de Timbal, consultada el 31-10-2026)
 
-| # | Requisito | Por qué |
-|---|---|---|
-| R-1 | **Transacciones ACID** multi-sentencia con bloqueo de fila | Numeración sin huecos, emisión de factura + registro Verifactu + stock en una sola transacción |
-| R-2 | Restricciones, triggers y constraint triggers diferidos | Invariantes del modelo (02-modelo-dominio §19) |
-| R-3 | Migraciones versionadas | Esquema evolutivo y reproducible |
-| R-4 | Auditoría inmutable (roles sin UPDATE/DELETE) | Rectificar, nunca borrar |
-| R-5 | Copias con restauración a un instante (PITR) y exportación completa | Conservación de libros 4–6 años; cero dependencia de un proveedor |
-| R-6 | Datos en la UE | RGPD |
-| R-7 | Coste bajo para 1–3 usuarios y < 10.000 documentos/año | R8 |
-
-## Opciones evaluadas
-
-| Opción | R-1 | R-2 | R-3 | R-4 | R-5 | R-6 | R-7 | Valoración |
-|---|---|---|---|---|---|---|---|---|
-| **Knowledge Base de Timbal** | **No documentado**: SQL solo por HTTP; "multiple statements allowed; only the last result is returned"; sin BEGIN/COMMIT documentados; motor **DuckDB** según el plugin oficial (un escritor por fichero) | Parcial (DuckDB no tiene triggers) | Manual | Políticas "stored opaquely in this release" | Backups diarios *keep-last-N* (N sin documentar); restore sin PITR documentado; sin descarga de backups | Sí (eu-north-1) | Incluido en créditos | **No apta** como base transaccional. Útil para búsqueda semántica sobre documentación (opcional). |
-| **PostgreSQL gestionado en AWS RDS (eu-north-1, Estocolmo)** | Sí | Sí | Sí | Sí (roles y GRANT) | Copias automáticas con PITR hasta 35 días + volcados propios | Sí; misma región que Timbal (latencia mínima) | ~20–35 €/mes (instancia pequeña de un solo AZ + 20 GB) — **a verificar al contratar** | **Recomendada** |
-| PostgreSQL serverless (Neon, región UE) | Sí | Sí | Sí | Sí | PITR según plan; ramas por entorno | Sí (Fráncfort) | Desde ~0–25 €/mes según uso — a verificar | Alternativa válida si Pedro prefiere no gestionar AWS |
-| PostgreSQL de Supabase (UE) | Sí | Sí | Sí | Sí | Copias diarias; PITR es un extra caro | Sí | ~25 €/mes + extras | Alternativa; añade servicios que no se usan |
+- El único almacén de datos de la plataforma es la **Knowledge Base** (KB), un recurso de la organización que se vincula al proyecto. El motor es **DuckDB** y se usa por HTTP: `POST /orgs/{org}/k2/{kb}/query` (SQL con parámetros; admite varias sentencias separadas por `;` y devuelve el último resultado). No hay PostgreSQL ni cadena de conexión.
+- En los despliegues, Timbal inyecta `TIMBAL_ORG_ID` y `TIMBAL_KB_ID`.
+- Copias: diarias y gestionadas por Timbal ("keep-last-N", N sin documentar); restauración por API; no hay descarga directa de copias.
+- Ficheros: hasta 100 MB por fichero en la KB.
+- **No está documentado** si una petición con varias sentencias es atómica ni cómo se comportan escrituras concurrentes (PENDIENTE, Q-028). DuckDB admite transacciones y es de un solo escritor por base de datos.
 
 ## Decisión
 
-1. **Base de datos transaccional del núcleo: PostgreSQL 16 gestionado en la UE**, preferentemente **AWS RDS en eu-north-1** (la misma región donde Timbal declara alojar los datos, según su lista de subencargados). Configuración mínima: instancia pequeña de un solo AZ, almacenamiento gp3 de 20 GB con autoescalado, cifrado en reposo (KMS), **TLS obligatorio** (`rds.force_ssl = 1`), copias automáticas **35 días** (PITR), protección contra borrado, parámetros `timezone = UTC`, extensiones `pgcrypto`, `citext`, `btree_gist`.
-2. Tres bases (una por entorno): `winecore_prod`, `winecore_staging`, `winecore_dev`. **Staging y dev nunca contienen datos reales** (solo sintéticos, `11-tests.md` §7).
-3. **Roles de base de datos** (los crea `docs/02-ddl/0000_roles.sql` en Fase 2, ejecutado por un administrador):
-   - `winecore_migrator`: propietario de los esquemas; solo lo usa el job de migraciones de CI (ADR 007).
-   - `winecore_app`: `USAGE` en los esquemas; `SELECT, INSERT, UPDATE` en tablas de negocio; **sin** `DELETE` ni `TRUNCATE`; en `audit.audit_log` solo `INSERT` y `SELECT`; `EXECUTE` en funciones. Lo usa la API en tiempo de ejecución.
-   - `winecore_readonly`: `SELECT` para informes y exportaciones de la asesoría.
-   - `winecore_vf_sender`: solo para el emisor de Verifactu (ADR 003). Lee registros e instalaciones, actualiza **solo** las columnas de estado de envío y crea `submission`/`connector_run`. Escribe en la auditoría sin poder leerla (la última huella la da `audit.last_hash()`, `SECURITY DEFINER`).
-4. **Ficheros** (PDF de facturas, fotos de gastos, capturas y acuses de envíos regulatorios, informes de laboratorio): **S3 en eu-north-1** con versionado, cifrado SSE-KMS y **Object Lock en modo *compliance*** con retención de 6 años para los prefijos `evidence/` y `invoices/` (no se pueden borrar ni sobrescribir). Prefijos: `invoices/{entidad}/{año}/`, `evidence/{flujo}/{año}/`, `expenses/{entidad}/{año}/`, `labs/`, `exports/`. OneDrive se usa solo como **copia de consulta** opcional de los PDF para Pedro (Q-014), nunca como archivo maestro.
-5. **Copias y exportación**: además del PITR, un job semanal hace `pg_dump` cifrado a `s3://…/exports/db/` (retención 6 años con Object Lock) y un job mensual exporta a CSV las tablas de negocio (portabilidad, cero dependencia). Prueba de restauración trimestral en una base temporal (checklist en `11-tests.md` §10).
-6. **Knowledge Base de Timbal**: no se usa para datos de negocio. Se puede usar más adelante para búsqueda semántica sobre documentación pública (normas, manuales), nunca con datos personales.
-7. **Acceso desde Timbal**: la API (`api/`) se conecta con `DATABASE_URL` (rol `winecore_app`, `sslmode=verify-full` con el certificado raíz de RDS empaquetado en `api/certs/`). Como Timbal no documenta IP de salida fija, el grupo de seguridad no puede limitar por IP: se compensa con TLS obligatorio, contraseña larga rotada cada 90 días y usuario sin privilegios de DDL. **Pendiente** preguntar a Timbal por IP de salida fija o conectividad privada (si existe, se restringe).
+1. **Un único almacén**: la KB vinculada al proyecto 3942 para producción. Desarrollo, CI y pruebas usan **otra KB** de la org 122 (o DuckDB local en CI), nunca la de producción. Si Timbal permite una KB por entorno, se usa una por entorno (pregunta en `07-arquitectura.md` §14).
+2. **Esquema físico en DuckDB**: traducción del modelo lógico de `02-ddl/` (esquemas, tablas, claves primarias y únicas, CHECK, claves foráneas, secuencias). DuckDB no tiene disparadores, funciones PL/pgSQL ni roles: el DDL de PostgreSQL se conserva como **referencia validada** del modelo y de sus invariantes.
+3. **Integridad en el núcleo** (`api/src/core/db/`):
+   - **Escritor único**: solo el componente `api` escribe en la KB (`desired_count: 1`), con una cola en proceso que serializa las escrituras; la workforce y los agentes nunca escriben directamente (usan la API de WineCore).
+   - **Una operación de negocio = una petición atómica** (`BEGIN; …; COMMIT;` en una sola llamada), si la prueba de M0 confirma la atomicidad.
+   - Cada guarda de base de datos de la especificación (`WC001`…`WC140`: inmutabilidad, libros de solo inserción, numeración sin huecos, saldos, conservación de volumen, cadenas de huellas, un solo envío en curso) se implementa en TypeScript **con el mismo código de error** y con los mismos casos de prueba de `02-ddl/tests/invariants_test.sql`.
+   - La cadena de auditoría (hash encadenado) se calcula en el núcleo; un job diario la verifica junto con la cadena Verifactu.
+4. **Documentos** (PDF, evidencias, fotos): tabla de documentos en la misma KB (contenido binario ≤ 100 MB, SHA-256, sin borrado ni sustitución; deduplicación por hash).
+5. **Copias**: las diarias de Timbal + una **exportación semanal propia** de todas las tablas de negocio (Parquet o CSV) guardada en la KB y descargada por Pedro cada mes; prueba de restauración trimestral en una KB de pruebas.
+6. **Prueba técnica en M0** (TASK-INFRA-003): atomicidad de una petición con varias sentencias y un fallo provocado a mitad, latencia p95, concurrencia y límites. Si la atomicidad no se cumple, **no se improvisa**: se para y se lleva a Pedro con opciones.
+
+## Alternativas consideradas
+
+| Opción | Por qué no |
+|---|---|
+| PostgreSQL gestionado en AWS (versión anterior de este ADR) | Pedro decide no usar AWS |
+| PostgreSQL propio vía el conector de Timbal (caja local) | No está "en Timbal" y el conector es de solo lectura por defecto |
+| SQLite o DuckDB dentro de un componente | El almacenamiento de los componentes es efímero: se perderían los datos |
 
 ## Consecuencias
 
-- Pieza externa a Timbal **justificada**: Timbal no ofrece una base transaccional documentada (R19). Requiere una **cuenta de AWS** a nombre de CVPO o P.O (Q-027) y aprobar el coste.
-- Las migraciones las aplica CI con el rol `winecore_migrator` antes de desplegar (ADR 007); la API nunca tiene permisos de DDL.
-- Latencia API ↔ BD mínima si ambos están en eu-north-1 (a confirmar: la web de Timbal también muestra Fráncfort, discrepancia pendiente).
-- Si Pedro prefiere Neon, solo cambia la cadena de conexión y la sección de copias (Neon gestiona el PITR); el resto del diseño no cambia.
+- Se pierden las garantías que daba PostgreSQL por sí mismo (disparadores, roles, bloqueos): pasan al núcleo y a sus tests, y un único proceso escribe.
+- El volumen de WineCore (RNF-02: ~400 facturas y ~3.000 movimientos al año) encaja de sobra con DuckDB y un escritor único.
+- La exportación semanal es la vía de salida de los datos si algún día se deja Timbal.
+- Riesgo R26 (`00-triaje.md`) hasta que la prueba de M0 y Timbal confirmen la atomicidad.

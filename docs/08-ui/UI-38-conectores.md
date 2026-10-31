@@ -18,7 +18,7 @@ Tarjetas por flujo (Verifactu, SILICIE, SISV, EMCS, EDI, INFOVI, ecológico) con
 - `GET/POST /api/v1/api-clients`; `POST /api/v1/api-clients/{id}/rotate` (el token se muestra **una vez**).
 
 ## Reglas
-- Nunca se muestran ni se piden aquí certificados, contraseñas de portales ni secretos (regla dura 0.2): la pantalla explica dónde viven (llavero del ejecutor, Secrets Manager).
+- Nunca se muestran ni se piden aquí certificados, contraseñas de portales ni secretos (regla dura 0.2): la pantalla explica dónde viven (llavero del ejecutor; variable secreta del entorno `verifactu` de Timbal).
 - Un cliente de máquina nunca recibe `regulatory.approve`.
 
 ## Acciones
@@ -35,7 +35,7 @@ Estado (lectura).
 ## Wireframe
 ```
 Conectores
-┌ Verifactu · API (emisor AWS) · último envío 10:41 · certificado caduca 02-2028 ┐
+┌ Verifactu · API (entorno verifactu) · último envío 10:41 · certificado caduca 02-2028 ┐
 ┌ SILICIE · computer use · ejecutor "Equipo bodega" · latido hace 40 s           ┐
 ┌ SISV · computer use · —                                                         ┐
 Clientes de máquina: CVBOT (lectura, borradores con confirmación) · rotado 01-01

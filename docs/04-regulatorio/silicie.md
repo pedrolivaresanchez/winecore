@@ -168,7 +168,7 @@ Cada envío (dos al año + correcciones + comunicaciones de apertura y cierre) e
 
 ## 9. Evidencias, reintentos y errores
 
-- Evidencias (S3 con bloqueo, 6 años + el corriente): CSV enviado (hash = el aprobado), fichero de resultado, capturas antes y después de "Enviar", justificante PDF si el portal lo da.
+- Evidencias (documentos de la Knowledge Base sin borrado, 6 años + el corriente): CSV enviado (hash = el aprobado), fichero de resultado, capturas antes y después de "Enviar", justificante PDF si el portal lo da.
 - Reintentos: un único envío en curso por submission (`connector_run_single_submit_uq`). Si el portal falla **antes** de enviar, se reintenta con espera (5 min, 30 min, 2 h) hasta 3 veces; si falla **después** de pulsar "Enviar" sin resultado claro, el estado pasa a `needs_human`: nunca se reenvía sin consultar antes los asientos del ejercicio (riesgo de duplicados).
 - Rechazos por línea: el asiento queda `rejected` con el error; se corrige en WineCore y entra en el siguiente envío. Un asiento aceptado erróneo se corrige con **anulación + alta** (§1).
 

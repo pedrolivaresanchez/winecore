@@ -84,7 +84,7 @@ Los R1–R12 son los del plan (§9), revisados; R13–R25 son nuevos de este tri
 | R4 | AecocEDI solo web; términos de uso | Media | Medio | Ficha para teclear como respaldo; consultar términos (Q-024). | Abierto |
 | R5 | Descuadres heredados (operador logístico, depósito, embotellado sin declarar, venta pendiente) | Alta | Alto | Aforo físico antes de cargar stock; regularización con motivo; no migrar movimientos de SISV/SILICIE (Q-013). | Abierto |
 | R6 | Histórico contable tarde (D7) | Media | Medio | El arranque no depende de él; saldos de apertura del asesor. | Abierto |
-| R7 | Custodia del certificado en la nube | Media | Crítico | ADR 003: certificado dedicado (preferible sello de CVPO) solo en AWS Secrets Manager, leído únicamente por el emisor de Verifactu aislado de Timbal y de los agentes; el certificado de P.O no sale del equipo del ejecutor local (Q-006). | Abierto |
+| R7 | Custodia del certificado en la nube | Media | Crítico | ADR 003: certificado dedicado (preferible sello de CVPO) como secreto de un entorno propio de Timbal (`verifactu`) donde solo corre el emisor, lejos de los agentes; el certificado de P.O no sale del equipo del ejecutor local (Q-006). | Abierto |
 | R8 | Sobredimensionar para 1–3 usuarios | Media | Medio | MVP estricto; H1 confirma volúmenes bajos. | Abierto |
 | R9 | Coste de agentes (escalados a Opus) | Media | Medio | Criterios §7.3; coste visible en PROGRESS. | Abierto |
 | R10 | Doble remoto o despliegue doble | Media | Medio | Un solo mecanismo (ADR 001 Plan A o B; ADR 007) + job diario de comparación de SHA. **Agravante confirmado**: el Composer de Timbal ya hizo un commit por su cuenta en el proyecto 3942 (`f89f339`); se prohíbe el Composer en ramas de entorno. | Abierto |

@@ -32,7 +32,7 @@ Un PR **no** se puede fusionar si falla cualquiera de:
 - Nombre: `<función>.test.ts`, `describe('<función>')`, casos `it('<condición> → <resultado esperado>')` en español.
 - Sin red ni reloj real: `api/src/core/time.ts` se inyecta (`Clock`); fechas fijas en Europe/Madrid, incluidos los días de cambio de hora (último domingo de marzo y de octubre).
 - Dinero con `Decimal`; las comparaciones de importes, siempre como cadenas con 2 decimales.
-- Prohibido "vaciar" un caso con mocks: los mocks solo se permiten para fronteras externas (AEAT, S3, Timbal, CVBOT).
+- Prohibido "vaciar" un caso con mocks: los mocks solo se permiten para fronteras externas (AEAT, Timbal, CVBOT).
 
 ## 4. Invariantes de base de datos
 `invariants_test.sql` (16 bloques a 31-10-2026) se ejecuta en un PostgreSQL 16 de servicio tras aplicar todas las migraciones. Cada invariante nuevo del modelo debe añadir su bloque (prueba negativa con su código `WCnnn` y prueba positiva).

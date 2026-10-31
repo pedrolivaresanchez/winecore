@@ -12,7 +12,7 @@
 | Q-001 | El repo de GitHub es **público** | — (Pedro decide mantenerlo público de momento) | Revisar antes del primer código de Fase 2 (M0) | RESPONDIDA (31-10-2026) |
 | Q-002 | Verifactu: modalidad y canal de envío (computer use no es viable) | M1 | **05-11-2026** | ABIERTA · se aplica la recomendación como SUPUESTO (31-10-2026) |
 | Q-003 | Verifactu: ¿aprobar la emisión = aprobar el envío del registro? | M1 | **05-11-2026** | ABIERTA · se aplica la recomendación como SUPUESTO (31-10-2026) |
-| Q-004 | Proyecto Timbal (existe: id 3942, entorno Main 4165), conexión con GitHub y credenciales | M0 (infraestructura) | **04-11-2026** | EN CURSO (31-10-2026) |
+| Q-004 | Proyecto Timbal 3942: credencial de Timbal para el agente (cuenta solo de la org 122) y conexión con GitHub (tarea de Pedro) | M0 (despliegue) | **04-11-2026** | EN CURSO (31-10-2026) |
 | Q-005 | Quién aprueba qué (personas identificadas) y desde dónde | M1 | **05-11-2026** | ABIERTA · se aplica la recomendación como SUPUESTO (31-10-2026) |
 | Q-006 | Certificado para Verifactu y custodia | Solo el paso a producción (M1b); el desarrollo y la preproducción usan un certificado de pruebas | 15-12-2026 | APLAZADA por Pedro (31-10-2026): se decide al final |
 | Q-007 | Productor del software (declaración responsable Verifactu) | Paso a producción de M1 | **15-12-2026** | ABIERTA |
@@ -35,12 +35,14 @@
 | Q-024 | AECOC: GTIN/GLN, DESADV y credenciales (detalle que Pedro pasará) | M3 | 15-02-2027 | ABIERTA (pendiente §12.3) |
 | Q-025 | Reglas iniciales de entidad facturadora (Ajustes) | M1 (precarga) | 20-11-2026 | ABIERTA |
 | Q-026 | Equipo dedicado para el ejecutor local de *computer use* (certificado en local) | M2 (SILICIE) | 15-12-2026 | ABIERTA |
-| Q-027 | Cuenta de AWS (PostgreSQL + S3 en la UE) y coste mensual | M0 | **06-11-2026** | ABIERTA |
-| Q-028 | Preguntas técnicas a Timbal (lista en `07-arquitectura.md` §14) | M0 (parcial) | 06-11-2026 | ABIERTA |
+| Q-027 | Cuenta de AWS | — | — | CERRADA (31-10-2026): sin AWS, todo en Timbal |
+| Q-028 | Preguntas técnicas a Timbal (lista en `07-arquitectura.md` §14), sobre todo la atomicidad de la Knowledge Base | M0 | 06-11-2026 | ABIERTA |
 | Q-029 | Cómo recibe CVBOT los eventos de WineCore (URL y firma) | M1 | 13-11-2026 | ABIERTA |
 | Q-030 | Devoluciones de clientes y "zona fuera de fábrica" autorizada | M3 | 15-01-2027 | ABIERTA |
 | Q-031 | INFOVI: números REOVI/NIDPB y acceso al portal | M3 | 15-02-2027 | ABIERTA |
 | Q-032 | Factura electrónica B2B (RD 238/2026): recibir cargos de ECI desde 06-10-2027 y emitir desde 06-10-2028 | M8 (planificación) | 30-06-2027 | ABIERTA |
+| Q-033 | Quién emite las facturas de CVPO desde el 01-01-2027 hasta que Verifactu esté en WineCore (M4) | M2 | 15-12-2026 | ABIERTA · se aplica la recomendación como SUPUESTO |
+| Q-034 | Copia de solo lectura del proyecto SDR para seguir su estructura y su UI | M0 | 04-11-2026 | ABIERTA |
 
 ---
 
@@ -86,10 +88,10 @@
   1. **Proteger ramas en GitHub antes de conectar** (`main` con PR y tu aprobación; `staging`/`dev` con PR y checks; sin *force push*; sin *bypass* para apps).
   2. **Conectar GitHub** en el proyecto 3942 (Settings → Git Settings → Connect GitHub, cuenta `pedrolivaresanchez`, repo `pedrolivaresanchez/winecore`, `main` ↔ Main 4165) y **anotar V1–V7** del ADR 001 (permisos que pide la app, qué queda en `main`, si despliega solo, entornos para `staging`/`dev`, entornos efímeros, si el Composer sigue haciendo commits).
   3. **Crear los entornos `staging` y `dev`** asociados a sus ramas y pasarme sus id.
-  4. **Solo si hace falta el Plan B**: una **cuenta de Timbal dedicada, miembro solo de la org 122**, y su API key en GitHub Secrets (`TIMBAL_API_KEY`). No uses tu API key personal: hereda permisos en todas tus organizaciones, incluida la org 1.
+  4. **Credencial para el agente (necesaria ya para desplegar M0)**: una **cuenta de Timbal dedicada, miembro solo de la org 122**, y su API key como secreto `TIMBAL_API_KEY` en Cursor (Dashboard → Cloud Agents → Secrets) y en GitHub Secrets. No uses tu API key personal: hereda permisos en todas tus organizaciones, incluida la org 1. Con ella, si GitHub aún no está conectado, el agente usa el remoto git interno de Timbal (decisión de Pedro, 31-10-2026).
   5. **No usar el Composer** en `main`, `staging` ni `dev`.
   6. Copia de solo lectura del código del SDR (sigue pendiente) para el sistema de diseño; sin ella, la UI se hace con las reglas de `docs/08-ui/00-sistema-diseno.md`.
-- **Recomendación**: Plan A si V2–V4 y V6 salen bien; si no, Plan B.
+- **Recomendación**: Plan A si V2–V4 y V6 salen bien; si no, Plan B. Conectar GitHub es tarea de Pedro y no bloquea: mientras tanto se usa el remoto interno con la credencial del punto 4.
 - **Dueño**: Pedro · **Fecha límite**: 04-11-2026.
 
 ## Q-005 · Quién aprueba qué y desde dónde — BLOQUEANTE para M1
@@ -105,8 +107,8 @@
 
 - **Hechos** (31-10-2026): vale cualquier certificado válido en la sede de la AEAT, y puede enviar el propio obligado o un tercero con apoderamiento o colaboración social (Orden HAC/1177/2024, art. 5). La AEAT tiene un servicio específico para **certificados de sello** (`www10`). En Timbal las variables secretas llegan a todos los componentes del entorno, agentes incluidos.
 - **Preguntas**: (a) ¿CVPO puede obtener un **sello electrónico cualificado** de empresa para Verifactu (preferido) o usamos un certificado de representante dedicado? (b) ¿P.O apodera a CVPO para el trámite de Verifactu, de modo que un solo certificado envíe los registros de ambas? (c) ¿Quién sube el certificado al almacén de secretos? (propuesta: solo Pedro, con el procedimiento guiado).
-- **Opciones** (ADR 003): (1) emisor aislado en AWS Lambda con el certificado en AWS Secrets Manager, que solo él puede leer; (2) certificado como variable secreta de Timbal; (3) emisor en el equipo del ejecutor local; (4) proveedor externo.
-- **Recomendación**: (1), con sello de CVPO y apoderamiento de P.O a CVPO (confirmar con el asesor y en preproducción). (2) solo como respaldo si AWS no está listo el 20-11-2026. Para preproducción vale cualquier certificado reconocido. El certificado personal de P.O no sale nunca del equipo del ejecutor local.
+- **Opciones** (ADR 003, versión 2, todo en Timbal): (1) entorno propio de Timbal (`verifactu`) donde solo corre el emisor, con el certificado como variable secreta solo de ese entorno; (2) certificado en el entorno principal (llegaría a los agentes); (3) emisor en el equipo del ejecutor local; (4) proveedor externo.
+- **Recomendación**: (1), con sello de CVPO y apoderamiento de P.O a CVPO (confirmar con el asesor y en preproducción). (2) descartada. Para preproducción vale cualquier certificado reconocido. El certificado personal de P.O no sale nunca del equipo del ejecutor local.
 - **Decisión de Pedro (31-10-2026)**: se deja para el final. Impacto: el desarrollo y la batería de preproducción **no** la necesitan (basta un certificado reconocido de pruebas en el entorno de pruebas); solo bloquea el paso a producción de CVPO (M1b).
 - **Dueño**: Pedro (con el asesor para el apoderamiento) · **Fecha límite**: 15-12-2026 (antes de facturar en producción el 01-01-2027).
 
@@ -238,14 +240,18 @@
 - **Recomendación**: (1). Requisitos mínimos: macOS o Linux actual, disco cifrado, usuario de sistema propio, conexión estable; ningún puerto abierto hacia fuera.
 - **Fecha límite**: 15-12-2026.
 
-## Q-027 · Cuenta de AWS para la base de datos y los ficheros — Bloquea M0
+## Q-027 · Cuenta de AWS para la base de datos y los ficheros — CERRADA (31-10-2026)
+
+- **Decisión de Pedro (31-10-2026)**: **no se usa AWS**. Todo corre en Timbal (proyecto 3942, org 122): alojamiento, datos, ficheros, tareas programadas, secretos y aislamiento del certificado. Ver ADR 002 y ADR 003 (versión 2). Lo que sigue es el histórico de la pregunta.
 
 - **Contexto**: la Knowledge Base de Timbal es DuckDB por HTTP sin transacciones documentadas: no sirve para facturas, numeración ni libros fiscales (ADR 002).
 - **Opciones**: (1) **AWS RDS PostgreSQL + S3 en eu-north-1** (misma región que Timbal; ~25–40 €/mes); (2) Neon (PostgreSQL serverless en la UE) + S3; (3) Supabase.
 - **Recomendación**: (1), cuenta de AWS a nombre de CVPO con facturación a CVPO, MFA en la cuenta raíz y un usuario administrador para Pedro. Necesito que me digas quién la crea; yo no necesito acceso a la consola, solo las cadenas de conexión como secretos de Timbal y de GitHub.
 - **Fecha límite**: 06-11-2026.
 
-## Q-028 · Preguntas técnicas a Timbal — Bloquea M0 (parcialmente)
+## Q-028 · Preguntas técnicas a Timbal — Bloquea M0
+
+- **Más urgente desde el 31-10-2026** (todo en Timbal, ADR 002): ¿una petición `/query` de la Knowledge Base con varias sentencias (`BEGIN; …; COMMIT;`) es atómica y qué pasa si falla a mitad?; ¿concurrencia de escritores?; ¿una KB por entorno?; ¿retención de copias y descarga?; ¿una variable secreta con `env_ids` llega solo a esos entornos? La prueba técnica de M0 (TASK-INFRA-003) lo comprueba también en la práctica.
 
 - Lista completa en `07-arquitectura.md` §14. Las urgentes para M0: (a) si `timbalAuth` permite rutas de máquina con token propio (`/api/m2m/*`, MCP de CVBOT, webhooks); (b) quién puede iniciar sesión en la app (solo miembros/invitados de la org 122); (c) si un merge en GitHub despliega solo (se verá al conectar GitHub, V3); (d) IP de salida fija o red privada hacia la base de datos.
 - **Dueño**: Pedro (canaliza con Timbal) · **Fecha límite**: 06-11-2026.
@@ -276,3 +282,18 @@
 - **Preguntas para el asesor**: ¿desde el 06-10-2027 P.O debe poder **recibir** las facturas de cargo/abono de ECI como factura electrónica? ¿Qué volumen de facturación computa cada entidad (art. 121 LIVA)?
 - **Recomendación**: hito **M8** (antes del 2T-2028): emisión UBL con copia a la solución pública o por sus servicios web, recepción de facturas recibidas y comunicación de estados; decidir entonces con ECI el canal (ADR 006).
 - **Fecha límite**: 30-06-2027.
+
+## Q-033 · Facturas de CVPO desde el 01-01-2027 hasta Verifactu en WineCore — Bloquea M2
+
+- **Contexto**: Pedro saca Verifactu de la ruta crítica (31-10-2026) y lo pasa a M4 (control el 01-06-2027). Pero la obligación legal de CVPO sigue siendo el **01-01-2027** (RD 1007/2023, DF 4.ª; el aplazamiento anunciado no está en el BOE). P.O no está obligada hasta el 01-07-2027.
+- **Opciones**: (1) CVPO factura en **Holded con Verifactu** (ya adaptado) hasta M4; WineCore lleva sus pedidos, albaranes y cobros e importa sus facturas de Holded como externas; (2) WineCore factura CVPO sin Verifactu: **no es legal** desde el 01-01-2027 salvo que se publique el aplazamiento; (3) adelantar Verifactu solo para CVPO, que vuelve a la ruta crítica.
+- **Recomendación**: (1). Se aplica como **SUPUESTO** mientras Pedro no responda. P.O sí puede facturar en WineCore desde M2 sin Verifactu hasta el 30-06-2027.
+- **Dueño**: Pedro (con el asesor) · **Fecha límite**: 15-12-2026.
+
+## Q-034 · Copia del proyecto SDR para usarlo de referencia — Bloquea la UI de M0
+
+- **Contexto**: Pedro pide seguir la estructura, el despliegue y la UI del proyecto SDR (org 1, proyecto 1501), que es **solo lectura**. Para leerlo hace falta una credencial con acceso a la org 1 o una copia; no tengo ninguna de las dos.
+- **Opciones**: (1) Pedro sube una copia del repositorio del SDR (sin `.env` ni secretos) a `uploads/`; (2) una credencial de solo lectura con acceso a la org 1 (Timbal no documenta claves de solo lectura: una API key personal permite escribir, así que no la recomiendo).
+- **Mientras tanto**: se usan las plantillas públicas de Timbal en GitHub (`pedrolivaresanchez/timbal-project` y `timbal-react`) y las reglas de diseño del plan (§3.3), recogidas en `08-ui/00-sistema-diseno.md`.
+- **Recomendación**: (1). Nunca se modifica nada del SDR ni de la org 1.
+- **Dueño**: Pedro · **Fecha límite**: 04-11-2026.

@@ -200,7 +200,7 @@ Fuente: pestañas "A) Cuadro Operativa Alta" y "B) Cuadro Operativa Anulación" 
 | Respuesta por registro | `Correcto` · `AceptadoConErrores` · `Incorrecto` (+ código y descripción) y, si es duplicado, `EstadoRegistroDuplicado` (`Correcta`, `AceptadaConErrores`, `Anulada`) | Listas L19–L21 |
 | Incidencias | Si no se puede enviar, reintentar **al menos cada hora**, respetar el orden de generación, marcar `Incidencia = S` y **mostrar un aviso con cuántos registros faltan** mientras quede alguno | Orden HAC/1177/2024, art. 16.4 |
 
-Implementación: `api/src/core/regulatory/verifactu/` (huella, XML, SOAP, QR y parseo de respuestas; sin certificado) y el emisor `sender/` (`verifactu-sender`, con certificado, aislado según ADR 003). El emisor envía **por entidad**, en orden de `chain_seq`, nunca un registro antes que su anterior, y guarda la petición y la respuesta completas como evidencia.
+Implementación: `api/src/core/regulatory/verifactu/` (huella, XML, SOAP, QR y parseo de respuestas; sin certificado) y el emisor (`api/` en el entorno aislado `verifactu` de Timbal, con certificado, según ADR 003; M4). El emisor envía **por entidad**, en orden de `chain_seq`, nunca un registro antes que su anterior, y guarda la petición y la respuesta completas como evidencia.
 
 ## 11. Reintentos, errores y avisos
 

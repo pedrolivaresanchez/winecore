@@ -31,7 +31,7 @@
 | `shopify/orders_export_1.csv` | (web) | 168 pedidos / 322 líneas | 2022-11 → 2026-09 | `legacy.shopify_order` + líneas | M7 |
 | `shopify/products_export_1.csv` | (web) | 53 productos / 95 filas | — | atributos de `catalog.wine`/`product` | M1 |
 | `shopify/transactions_export.csv`, `discounts…`, `gift_cards…` | (web) | 55 / 3 / 2 | — | `legacy` (consulta) | M7 |
-| PDF de Holded (~2.900, en zips) | ambas | **no recibidos aún** | — | S3 `legacy/` + `legacy.document_file` | M7 |
+| PDF de Holded (~2.900, en zips) | ambas | **no recibidos aún** | — | Documentos de la Knowledge Base + `legacy.document_file` | M7 |
 | Histórico contable D7 (diario y mayor) | ambas | **pendiente** (tarea aparte) | ≤ 2026 | `legacy.accounting_journal_line` | M7 |
 
 **Estructura común de los XLSX de Holded**: una hoja; 3 o 4 filas de cabecera de informe (empresa, título, periodo y una vacía) antes de la fila de nombres de columna; **una última fila con un sello de generación** (solo la primera celda, con el patrón `… - dd/mm/aaaa hh:mm`). El extractor localiza la fila de cabecera **por nombres de columna esperados** (no por posición), descarta la fila del sello y guarda su fecha como `export_generated_at` del lote. Las columnas con el mismo nombre (p. ej. dos `IVA` en P.O, dos `Facturado` en albaranes) se renombran `IVA`, `IVA_2` / `Facturado_importe`, `Facturado_estado` según su orden.
@@ -172,7 +172,7 @@ Reglas de validación al cargar: fechas dentro del año; cuentas de 3–10 dígi
 - `transactions_export.csv`, `discounts_export_1.csv`, `gift_cards_export_1.csv` → `legacy` (consulta). Si alguna tarjeta regalo tiene saldo vivo, el informe lo destaca (obligación de canje).
 
 ## 10. PDF (~2.900) — cuando lleguen
-1. Copiar los zips a `data/holded-pdf/` (privado); calcular SHA-256 de cada PDF; subir a S3 `legacy/holded/<entidad>/<año>/<sha256>.pdf` (Object Lock) y crear `core.attachment` (`classification = 'personal_data'`).
+1. Copiar los zips a `data/holded-pdf/` (privado); calcular SHA-256 de cada PDF; guardarlo como documento de la Knowledge Base (deduplicado por SHA-256, sin borrado) y crear `core.attachment` (`classification = 'personal_data'`).
 2. Extraer el número del nombre del fichero y, si no, del texto del PDF (primera coincidencia de `F\d{6}(-\d+)?|CN\d{6}|A\d{6}` o enteros en 2022 con el año del documento).
 3. Emparejar con `legacy.holded_invoice` / `holded_delivery_note` por (entidad, número, año). Resultado en `legacy.document_file` (`matched` / `unmatched` / `ambiguous`). Hecho conocido: faltan ~132 PDF de compras de CVPO y un lote de P.O → aparecerán como facturas sin PDF en el informe.
 
