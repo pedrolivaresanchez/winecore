@@ -26,7 +26,10 @@ declare module 'node:crypto' {
   }
   export function createCipheriv(algorithm: 'aes-256-gcm', key: Uint8Array, iv: Uint8Array): AesCipher;
   export function createDecipheriv(algorithm: 'aes-256-gcm', key: Uint8Array, iv: Uint8Array): AesDecipher;
-  export function randomBytes(size: number): Uint8Array;
+  interface CryptoBytes extends Uint8Array {
+    toString(encoding?: 'base64' | 'base64url' | 'hex'): string;
+  }
+  export function randomBytes(size: number): CryptoBytes;
   export function timingSafeEqual(a: Uint8Array, b: Uint8Array): boolean;
 
   export interface EcJsonWebKey {

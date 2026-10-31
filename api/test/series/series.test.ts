@@ -229,8 +229,12 @@ describe('numeración', () => {
       const badBody = await json(bad);
       expect(badBody.code).toBe('WC_VALIDATION');
       expect(JSON.stringify(badBody)).toContain('<');
-      const empty = await json(await ctx.app.handle(new Request('http://localhost/v1/number-series')));
-      expect(empty.items).toEqual([]);
+      const seeded = await json(await ctx.app.handle(new Request('http://localhost/v1/number-series')));
+      const seededItems = seeded.items as { doc_type: string; code: string }[];
+      expect(seededItems.length).toBeGreaterThan(0);
+      expect(seededItems.every((item) => item.doc_type === 'cellar_operation' && item.code === 'OB')).toBe(true);
+      const invoiceBefore = await json(await ctx.app.handle(new Request('http://localhost/v1/number-series?doc_type=invoice')));
+      expect(invoiceBefore.items).toEqual([]);
 
       const created = await json(await post(ctx, {
         legal_entity_id: legalEntityId,
@@ -279,7 +283,7 @@ describe('numeración', () => {
         code: 'OB',
         prefix: 'OB01-',
       }));
-      expect(opened.year).toBe(Number(businessDate(new Date()).slice(0, 4)) + 1);
+      expect(opened.year).toBe(Number(businessDate(new Date()).slice(0, 4)) + 2);
 
       const skipped = await post(ctx, {
         legal_entity_id: legalEntityId,
