@@ -98,6 +98,7 @@ class FifoWriter implements Writer {
 
   tryAcquireLease(): Promise<boolean> {
     return this.enqueue(async () => {
+      if (!this.leader) await this.client.query('ROLLBACK').catch(() => undefined);
       await this.client.query(sql`
         UPDATE core.writer_lease
         SET holder = ${this.instanceId}, expires_at = now() + INTERVAL 60 SECOND
@@ -188,7 +189,15 @@ class FifoWriter implements Writer {
       .join(';\n')
       .concat(';');
     try {
-      await this.client.query(script);
+      try {
+        await this.client.query(script);
+      } catch (error) {
+        // The Knowledge Base keeps a failed transaction open on its shared connection until someone sends
+        // ROLLBACK; if another client left it like that, clear it and retry this operation once.
+        if (!isAbortedTransaction(error)) throw error;
+        await this.client.query('ROLLBACK').catch(() => undefined);
+        await this.client.query(script);
+      }
       this.leader = true;
       this.lastRenewAt = Date.now();
     } catch (error) {
@@ -201,6 +210,10 @@ class FifoWriter implements Writer {
       throw mapped;
     }
   }
+}
+
+function isAbortedTransaction(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('Current transaction is aborted');
 }
 
 let active: Writer | undefined;
