@@ -6,10 +6,21 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { copy } from "@/i18n";
 import { readStorage, writeStorage } from "@/lib/storage";
 import { cn } from "@/lib/utils";
-import { footerNav, mainNav, visibleChildren, type NavEntry } from "@/app/nav";
+import { footerNav, mainNav, visibleChildren, type NavChild, type NavEntry } from "@/app/nav";
 import type { Me } from "@/lib/types";
 
 const GROUPS_KEY = "winecore.nav.groups";
+
+function childIsCurrent(pathname: string, child: NavChild, siblings: NavChild[]): boolean {
+  const matches = pathname === child.path || pathname.startsWith(`${child.path}/`);
+  if (!matches) return false;
+  return !siblings.some(
+    (other) =>
+      other.path !== child.path &&
+      other.path.length > child.path.length &&
+      (pathname === other.path || pathname.startsWith(`${other.path}/`)),
+  );
+}
 
 function readGroups(): Record<string, boolean> {
   try {
@@ -114,10 +125,12 @@ export function Sidebar({
                 <NavLink
                   key={child.id}
                   to={child.path}
-                  className={({ isActive }) =>
+                  className={() =>
                     cn(
                       "flex min-h-11 items-center rounded-md px-3 text-compact",
-                      isActive ? "bg-ink font-medium text-ink-foreground" : "hover:bg-accent",
+                      childIsCurrent(location.pathname, child, children)
+                        ? "bg-ink font-medium text-ink-foreground"
+                        : "hover:bg-accent",
                     )
                   }
                 >
