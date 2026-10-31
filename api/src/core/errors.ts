@@ -41,6 +41,8 @@ const CATALOG = {
   WC_IDEMPOTENCY_MISMATCH: [409, 'La clave de idempotencia ya se usó con otra petición'],
   WC_NOT_FOUND: [404, 'No encontrado'],
   WC_STALE_VERSION: [409, 'El registro ha cambiado; vuelve a cargarlo'],
+  WC_MAIL_DISABLED: [409, 'El envío por correo no está configurado'],
+  WC_MAIL_FAILED: [502, 'No se ha podido enviar el correo'],
   WC_UNAUTHENTICATED: [401, 'No autenticado'],
   WC_NO_ACCESS: [403, 'No tienes acceso a WineCore'],
   // Contactos (TASK-CONT-001)

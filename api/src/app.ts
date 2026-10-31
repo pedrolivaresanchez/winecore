@@ -6,6 +6,10 @@ import type { FetchLike } from './core/db/timbal';
 import type { Config } from './config';
 import type { Writer } from './core/db/writer';
 import { asDomainError, domainError, errorBody } from './core/errors';
+import { closedBatchSendApproval, type BatchSendApprovalHook } from './core/billing/send/approval';
+import type { InvoiceDocumentStore } from './core/billing/pdf/documents';
+import { mailProviderFromConfig, type MailProvider } from './core/billing/send/provider';
+import { downloadInvoicePdf, sendInvoiceDocument } from './routes/invoice-documents';
 import { listAudit, verifyAudit } from './routes/audit';
 import {
   archiveAddress,
@@ -29,6 +33,9 @@ export interface AppDeps {
   writer: Writer;
   log?: (line: string) => void;
   fetchImpl?: FetchLike;
+  invoiceDocuments?: InvoiceDocumentStore;
+  mailProvider?: MailProvider;
+  batchSendApproval?: BatchSendApprovalHook;
 }
 
 const startedAt = new WeakMap<Request, number>();
@@ -37,6 +44,13 @@ export function createApp(deps: AppDeps) {
   const log = deps.log ?? ((line: string) => console.log(line));
   const timbalAuth = createTimbalAuth(deps.config, deps.fetchImpl);
   const guardDeps = { config: deps.config, writer: deps.writer, timbalAuth };
+  const invoiceDeps = {
+    writer: deps.writer,
+    config: deps.config,
+    documents: deps.invoiceDocuments,
+    mail: deps.mailProvider ?? mailProviderFromConfig(deps.config, deps.fetchImpl),
+    approvals: deps.batchSendApproval ?? closedBatchSendApproval,
+  };
   const app = new Elysia(deps.config.apiBasePath ? { prefix: deps.config.apiBasePath } : {})
     .use(cors())
     .onRequest(({ request, set }) => {
@@ -129,6 +143,12 @@ export function createApp(deps: AppDeps) {
     })
     .post('/v1/contacts/:id/persons/:pid/archive', ({ request, params }) => archivePerson(deps.writer, request, params.id, params.pid), {
       beforeHandle: requirePermission(guardDeps, 'contacts.write'),
+    })
+    .get('/v1/invoices/:id/pdf', ({ request, params }) => downloadInvoicePdf(invoiceDeps, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.read'),
+    })
+    .post('/v1/invoices/:id/send', ({ request, params }) => sendInvoiceDocument(invoiceDeps, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.issue'),
     });
   return app;
 }

@@ -17,6 +17,16 @@ export interface Config {
   authMode: AuthMode;
   devUserEmail: string;
   gitSha: string;
+  /** Outbound invoice mail. Disabled until Q-014 is configured. Never reads a mailbox. */
+  outboundMail: OutboundMailConfig;
+}
+
+export interface OutboundMailConfig {
+  enabled: boolean;
+  tenantId: string;
+  clientId: string;
+  clientSecret: string;
+  sender: string;
 }
 
 function invalid(name: string): never {
@@ -106,5 +116,34 @@ export function loadConfig(env: Env): Config {
     authMode,
     devUserEmail,
     gitSha,
+    outboundMail: outboundMail(env),
   };
+}
+
+const DISABLED_MAIL: OutboundMailConfig = {
+  enabled: false,
+  tenantId: '',
+  clientId: '',
+  clientSecret: '',
+  sender: '',
+};
+
+/** Graph is off unless the provider and the four mailbox settings are present and well formed. */
+function outboundMail(env: Env): OutboundMailConfig {
+  const provider = read(env, 'WINECORE_MAIL_PROVIDER') ?? 'none';
+  if (provider === 'none') return DISABLED_MAIL;
+  if (provider !== 'graph') invalid('WINECORE_MAIL_PROVIDER');
+
+  const tenantId = read(env, 'WINECORE_GRAPH_TENANT_ID') ?? '';
+  const clientId = read(env, 'WINECORE_GRAPH_CLIENT_ID') ?? '';
+  const clientSecret = read(env, 'WINECORE_GRAPH_CLIENT_SECRET') ?? '';
+  const sender = read(env, 'WINECORE_GRAPH_SENDER') ?? '';
+  if (tenantId === '' || clientId === '' || clientSecret === '' || sender === '') return DISABLED_MAIL;
+  if (!/^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$/.test(tenantId) || tenantId.includes('..')) {
+    invalid('WINECORE_GRAPH_TENANT_ID');
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._~-]{0,127}$/.test(clientId)) invalid('WINECORE_GRAPH_CLIENT_ID');
+  if (clientSecret.length > 512 || /[\r\n]/.test(clientSecret)) invalid('WINECORE_GRAPH_CLIENT_SECRET');
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(sender)) invalid('WINECORE_GRAPH_SENDER');
+  return { enabled: true, tenantId, clientId, clientSecret, sender };
 }
