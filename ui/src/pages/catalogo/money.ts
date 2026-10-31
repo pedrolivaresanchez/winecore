@@ -1,5 +1,3 @@
-import { formatDecimal } from "@/lib/format";
-
 /** Precios y cantidades como texto decimal, sin pasar por Number. */
 
 const DECIMAL = /^(-?)(\d+)(?:\.(\d+))?$/;
@@ -56,6 +54,45 @@ export function sumDecimals(values: Array<string | null | undefined>): string {
     total += scaled;
   }
   return unscaleDecimal(total);
+}
+
+export function formatDecimal(value: string, fractionDigits: number): string {
+  const match = DECIMAL.exec(value.trim());
+  if (!match) return "—";
+  const negative = match[1] === "-";
+  let whole = (match[2] ?? "0").replace(/^0+(?=\d)/, "");
+  if (!whole) whole = "0";
+  const frac = match[3] ?? "";
+  let outFrac = "";
+  if (fractionDigits === 0) {
+    if ((frac[0] ?? "0") >= "5") whole = (BigInt(whole) + 1n).toString();
+  } else if (frac.length <= fractionDigits) {
+    outFrac = frac.padEnd(fractionDigits, "0");
+  } else {
+    const keep = frac.slice(0, fractionDigits);
+    if ((frac[fractionDigits] ?? "0") < "5") {
+      outFrac = keep;
+    } else {
+      const bumped = (BigInt(keep || "0") + 1n).toString().padStart(fractionDigits, "0");
+      if (bumped.length > fractionDigits) {
+        whole = (BigInt(whole) + 1n).toString();
+        outFrac = "0".repeat(fractionDigits);
+      } else {
+        outFrac = bumped;
+      }
+    }
+  }
+  const grouped = whole.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  const zero = whole === "0" && (outFrac === "" || /^0+$/.test(outFrac));
+  const sign = negative && !zero ? "-" : "";
+  return fractionDigits > 0 ? `${sign}${grouped},${outFrac}` : `${sign}${grouped}`;
+}
+
+/** `7,9000 €` — cuatro decimales, como en la tarifa. */
+export function formatPrice(value: string | null | undefined): string {
+  if (!value) return "—";
+  const shown = formatDecimal(value, 4);
+  return shown === "—" ? shown : `${shown} €`;
 }
 
 /** Cantidad: enteros sin decimales, el resto con tres. */

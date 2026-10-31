@@ -1,22 +1,16 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { KeyRound } from "lucide-react";
-import { toast } from "sonner";
-import { ErrorState } from "@/components/ErrorState";
-import { PageHeader } from "@/components/PageHeader";
-import { StatusPill } from "@/components/StatusPill";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useApi } from "@/hooks/use-api";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import { useChromeTitle } from "@/app/shell/shell-context";
+import { useMinWidth } from "@/hooks/use-media";
+import { ArrowLeft, ArrowRight, Key, MoreVertical } from "@/ui/icons";
 import { copy } from "@/i18n";
 import { ApiError } from "@/lib/api";
+import { cn } from "@/lib/cn";
 import { formatDateTime } from "@/lib/format";
-import type { Me } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { iconStroke } from "@/lib/motion";
+import { useApi } from "@/hooks/use-api";
 import { decideApproval } from "@/pages/aprobaciones/api";
 import { notifyApprovalsChanged } from "@/pages/aprobaciones/events";
-import { RejectDialog } from "@/pages/aprobaciones/RejectDialog";
-import { StepUpDialog } from "@/pages/aprobaciones/StepUpDialog";
 import {
   closedNote,
   entityLabel,
@@ -29,11 +23,28 @@ import {
   statusMeta,
   type ApprovalDetail as ApprovalRecord,
 } from "@/pages/aprobaciones/model";
+import { presentPayload } from "@/pages/aprobaciones/payload";
+import { RejectDialog } from "@/pages/aprobaciones/RejectDialog";
+import { StepUpDialog } from "@/pages/aprobaciones/StepUpDialog";
+import {
+  Alert,
+  Badge,
+  Button,
+  GlassMenu,
+  InfoTip,
+  MenuItem,
+  Skeleton,
+  useMenuOpen,
+  useToast,
+} from "@/ui";
 
 type PendingAction = { decision: "approve" | "reject"; note?: string };
 
-export function ApprovalDetail({ me }: { me: Me }) {
-  const { id = "" } = useParams();
+export function ApprovalDetail({ id, backTo }: { id: string; backTo: string }) {
+  useChromeTitle(copy.approvals.title);
+  const wide = useMinWidth(768);
+  const toast = useToast();
+  const more = useMenuOpen();
   const approval = useApi<ApprovalRecord>(id ? `/v1/approvals/${encodeURIComponent(id)}` : null);
   const [note, setNote] = useState("");
   const [noteError, setNoteError] = useState<string | null>(null);
@@ -52,7 +63,9 @@ export function ApprovalDetail({ me }: { me: Me }) {
         payload_sha256: approval.data.payload_sha256,
         note: action.note,
       });
-      toast(action.decision === "approve" ? "Aprobado. Se ejecutará en unos minutos." : "Rechazado. Se ha avisado a quien lo pidió.");
+      toast(action.decision === "approve" ? copy.approvals.approvedToast : copy.approvals.rejectedToast, {
+        tone: "success",
+      });
       setStepUp(null);
       setRejectOpen(false);
       setNote("");
@@ -64,8 +77,7 @@ export function ApprovalDetail({ me }: { me: Me }) {
         setStepUp(action);
         return;
       }
-      const message = error instanceof ApiError ? explainError(error) : "No se ha podido registrar la decisión.";
-      setBanner(message);
+      setBanner(error instanceof ApiError ? explainError(error) : copy.approvals.decideFail);
       setStepUp(null);
     } finally {
       setBusy(false);
@@ -74,9 +86,10 @@ export function ApprovalDetail({ me }: { me: Me }) {
 
   if (approval.loading && !approval.data) {
     return (
-      <div data-screen="aprobacion-cargando" aria-busy="true" className="grid gap-3">
+      <div data-screen="aprobacion-cargando" aria-busy="true" className="flex flex-col gap-3 p-4">
         <p className="sr-only">{copy.loading}</p>
-        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-5 w-48" />
+        <Skeleton className="h-24 w-full" />
         <Skeleton className="h-40 w-full" />
       </div>
     );
@@ -84,11 +97,12 @@ export function ApprovalDetail({ me }: { me: Me }) {
 
   if (approval.error || !approval.data) {
     return (
-      <ErrorState
-        title={`${copy.error.load} (${approval.error?.code ?? "WC_ERROR"})`}
-        detail={approval.error?.message}
-        onRetry={approval.reload}
-      />
+      <div className="p-4">
+        <Alert tone="danger">{`${copy.error.load} (${approval.error?.code ?? "WC_ERROR"})`}</Alert>
+        <Button type="button" variant="secondary" size="sm" className="mt-3" onClick={approval.reload}>
+          {copy.error.retry}
+        </Button>
+      </div>
     );
   }
 
@@ -96,107 +110,172 @@ export function ApprovalDetail({ me }: { me: Me }) {
   const status = statusMeta(record.status);
   const expiry = expiryLabel(record.expires_at, record.status, Date.now());
   const canAct = record.status === "pending" && record.can_decide;
-  const phrase = "Vas a aprobar exactamente lo que ves.";
+  const presented = presentPayload(record.payload_display ?? []);
+  const noteText = closedNote(record.status);
+  const fraction = Math.min(100, (record.approvals_count / Math.max(1, record.min_approvals)) * 100);
+
+  const actions = canAct ? (
+    <div className="flex items-center gap-1.5">
+      <Button type="button" size="sm" loading={busy && !rejectOpen} onClick={() => void submit({ decision: "approve" })}>
+        <Key aria-hidden strokeWidth={iconStroke} />
+        {copy.approvals.approve}
+      </Button>
+      <GlassMenu
+        open={more.open}
+        onOpenChange={more.setOpen}
+        placement="bottom-end"
+        trigger={
+          <Button type="button" variant="secondary" size="sm" iconOnly aria-label={copy.approvals.more} onClick={more.toggle}>
+            <MoreVertical strokeWidth={iconStroke} />
+          </Button>
+        }
+      >
+        <MenuItem
+          tone="danger"
+          onClick={() => {
+            more.close();
+            setRejectOpen(true);
+          }}
+        >
+          {copy.approvals.reject}
+        </MenuItem>
+      </GlassMenu>
+    </div>
+  ) : null;
 
   return (
-    <div data-screen="aprobacion" data-status={record.status} className={cn("flex flex-col gap-4", canAct && "pb-40 md:pb-0")}>
-      <Link to="/aprobaciones" className="text-compact text-muted-foreground">
-        ← Aprobaciones
-      </Link>
-      <PageHeader
-        title={record.title}
-        description={`${kindLabel(record.kind)} · ${entityLabel(record.legal_entity_code)}`}
-        actions={<StatusPill tone={status.tone}>{status.label}</StatusPill>}
-      />
-      {banner ? (
-        <p role="alert" data-screen="decision-error" className="rounded-xl bg-status-danger px-3 py-3 text-compact text-status-danger-fg">
-          {banner}
-        </p>
-      ) : null}
-      {!canAct && record.reason_cannot_decide ? (
-        <p className="rounded-xl bg-muted px-3 py-3 text-compact">{record.reason_cannot_decide}</p>
-      ) : null}
-      {closedNote(record.status) ? <p className="text-compact text-muted-foreground">{closedNote(record.status)}</p> : null}
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
-        <section className="grid gap-3">
-          <div className="rounded-xl border bg-card px-3 py-3">
-            <p className="text-meta text-muted-foreground">Hash del contenido</p>
-            <p className="mt-1 font-mono text-body font-medium tracking-wide">{shortHash(record.payload_sha256)}</p>
-            <p className="mt-1 font-mono text-meta break-all text-muted-foreground">{record.payload_sha256}</p>
-            <p className="mt-2 text-meta text-muted-foreground">Tiene que coincidir con lo que se va a ejecutar.</p>
+    <div data-screen="aprobacion" data-status={record.status} className="flex min-h-0 flex-1 flex-col bg-surface">
+      <header className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border-subtle px-3 py-1.5 sm:px-4">
+        <Link
+          to={backTo}
+          className="flex size-7 shrink-0 items-center justify-center rounded-md text-ink-900 hover:bg-fill-hover"
+          aria-label={copy.approvals.back}
+        >
+          <ArrowLeft className="size-3.5" strokeWidth={iconStroke} />
+        </Link>
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-label font-medium text-ink-900">{record.title}</h1>
+          <p className="truncate text-caption text-text-tertiary">
+            {kindLabel(record.kind)} · {entityLabel(record.legal_entity_code)}
+          </p>
+        </div>
+        <Badge tone={status.tone} dot size="sm">
+          {status.label}
+        </Badge>
+        {wide ? actions : null}
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto flex w-full max-w-3xl flex-col px-4 py-6">
+        {banner ? (
+          <Alert tone="danger" className="mb-4">
+            {banner}
+          </Alert>
+        ) : null}
+        {record.status === "pending" && record.reason_cannot_decide ? (
+          <Alert tone="warning" className="mb-4">
+            {record.reason_cannot_decide}
+          </Alert>
+        ) : null}
+        {noteText ? <p className="mb-4 text-label text-text-secondary">{noteText}</p> : null}
+        {canAct && wide ? <p className="mb-4 text-caption text-text-tertiary">{copy.approvals.phrase}</p> : null}
+
+        <section className="rounded-2xl border border-border-subtle px-4 py-3">
+          <div className="flex items-center gap-1.5">
+            <h3 className="text-caption font-medium text-ink-900">{copy.approvals.hash}</h3>
+            <InfoTip label={copy.approvals.hash}>{copy.approvals.hashHelp}</InfoTip>
           </div>
-          <h2 className="text-body font-semibold">Qué se va a ejecutar</h2>
-          <dl className="divide-y rounded-xl border bg-card">
-            {record.payload_display.map((row) => (
-              <div key={row.label} className="grid gap-0.5 px-3 py-2 sm:grid-cols-[11rem_minmax(0,1fr)] sm:items-baseline sm:gap-3">
-                <dt className="text-meta text-muted-foreground">{row.label}</dt>
-                <dd className="text-compact break-words whitespace-pre-wrap">{row.value}</dd>
-              </div>
-            ))}
-          </dl>
+          <p className="mt-1 font-mono text-body font-medium tracking-wide text-ink-900">{shortHash(record.payload_sha256)}</p>
+          <p className="mt-1 font-mono text-caption break-all text-text-tertiary">{record.payload_sha256}</p>
         </section>
-        <aside className="grid gap-4">
-          {canAct ? (
-            <div className="max-md:fixed max-md:inset-x-0 max-md:bottom-[calc(3.5rem+env(safe-area-inset-bottom))] max-md:z-30 max-md:border-t max-md:bg-background max-md:px-3 max-md:pt-3 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-              <p className="mb-2 text-center text-compact font-medium md:text-left">
-                <span className="hidden md:inline">Firmas como {me.display_name}. </span>
-                {phrase}
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                <Button type="button" variant="danger" className="h-12" disabled={busy || Boolean(stepUp)} onClick={() => setRejectOpen(true)}>
-                  Rechazar
-                </Button>
-                <Button type="button" className="h-12" disabled={busy || Boolean(stepUp)} onClick={() => void submit({ decision: "approve" })}>
-                  <KeyRound aria-hidden />
-                  {busy && !rejectOpen ? "Enviando…" : "Aprobar"}
-                </Button>
-              </div>
+
+        <section className="mt-6">
+          <h3 className="text-label font-medium text-ink-900">{copy.approvals.payload}</h3>
+          {presented.lines.length === 0 ? (
+            <p className="mt-2 text-label text-text-secondary">{record.summary}</p>
+          ) : (
+            <dl className="mt-3 divide-y divide-border-subtle overflow-hidden rounded-2xl border border-border-subtle">
+              {presented.lines.map((row) => (
+                <div key={`${row.label}-${row.value}`} className="grid gap-0.5 px-4 py-2.5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-baseline sm:gap-3">
+                  <dt className="text-caption text-text-tertiary">{row.label}</dt>
+                  <dd className="text-label break-words whitespace-pre-wrap text-ink-900">{row.value}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </section>
+
+        {presented.diffs.length > 0 ? (
+          <section className="mt-6">
+            <h3 className="text-label font-medium text-ink-900">{copy.approvals.diff}</h3>
+            <ul className="mt-3 divide-y divide-border-subtle overflow-hidden rounded-2xl border border-border-subtle">
+              {presented.diffs.map((diff) => (
+                <li key={`${diff.label}-${diff.before}-${diff.after}`} className="px-4 py-3">
+                  <p className="text-label font-medium text-ink-900">{diff.label}</p>
+                  <p className="mt-1 flex flex-wrap items-center gap-1.5 text-caption">
+                    <span className="text-text-tertiary line-through">{diff.before}</span>
+                    <ArrowRight className="size-3 text-icon-muted" strokeWidth={iconStroke} />
+                    <span className="font-medium text-ink-900">{diff.after}</span>
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        <dl className="mt-6 grid gap-4 sm:grid-cols-3">
+          <div>
+            <dt className="text-caption text-text-tertiary">{copy.approvals.quorum}</dt>
+            <dd className="mt-1 text-label font-medium tabular-nums text-ink-900">{quorumLabel(record.approvals_count, record.min_approvals)}</dd>
+            <div className="mt-2 h-1 overflow-hidden rounded-full bg-ink-100" aria-hidden>
+              <div className="h-full bg-ink-900" style={{ width: `${fraction}%` }} />
             </div>
-          ) : null}
-          <div className="rounded-xl border bg-card px-3 py-3">
-            <p className="text-meta text-muted-foreground">Aprobaciones</p>
-            <p className="mt-1 text-title font-semibold tabular-nums">{quorumLabel(record.approvals_count, record.min_approvals)}</p>
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted" aria-hidden>
-              <div
-                className="h-full bg-ink"
-                style={{ width: `${Math.min(100, (record.approvals_count / Math.max(1, record.min_approvals)) * 100)}%` }}
-              />
-            </div>
           </div>
           <div>
-            <p className="text-meta text-muted-foreground">Lo pide</p>
-            <p className="text-compact font-medium">{record.requested_by.display_name}</p>
-            <p className="text-meta text-muted-foreground">{formatDateTime(record.requested_at)}</p>
+            <dt className="text-caption text-text-tertiary">{copy.approvals.requester}</dt>
+            <dd className="mt-1 text-label font-medium text-ink-900">{record.requested_by.display_name}</dd>
+            <dd className="text-caption text-text-tertiary">{formatDateTime(record.requested_at)}</dd>
           </div>
           <div>
-            <p className="text-meta text-muted-foreground">Plazo</p>
-            <p className={cn("text-compact", expiry.urgent && "font-medium text-destructive")}>{expiry.text}</p>
-            <p className="text-meta text-muted-foreground">{formatDateTime(record.expires_at)}</p>
+            <dt className="text-caption text-text-tertiary">{copy.approvals.deadline}</dt>
+            <dd className={cn("mt-1 text-label font-medium", expiry.urgent ? "text-danger-600" : "text-ink-900")}>{expiry.text}</dd>
+            <dd className="text-caption text-text-tertiary">{formatDateTime(record.expires_at)}</dd>
           </div>
-          <div>
-            <h2 className="text-body font-semibold">Decisiones</h2>
-            {record.decisions.length === 0 ? (
-              <p className="mt-1 text-compact text-muted-foreground">Todavía no hay decisiones.</p>
-            ) : (
-              <ul className="mt-2 grid gap-3">
-                {record.decisions.map((decision) => (
-                  <li key={decision.id} className="text-compact">
-                    <p className="font-medium">
-                      {decision.decided_by.display_name} {decision.decision === "approve" ? "aprobó" : "rechazó"}
-                    </p>
-                    <p className="text-meta text-muted-foreground">
-                      {formatDateTime(decision.decided_at)}
-                      {decision.step_up_method === "passkey" ? " · passkey" : null}
-                      {decision.step_up_method === "totp" ? " · código" : null}
-                    </p>
-                    {decision.note ? <p className="mt-1 break-words">{decision.note}</p> : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        </aside>
+        </dl>
+
+        <section className="mt-6">
+          <h3 className="text-label font-medium text-ink-900">{copy.approvals.decisions}</h3>
+          {record.decisions.length === 0 ? (
+            <p className="mt-2 text-label text-text-secondary">{copy.approvals.noDecisions}</p>
+          ) : (
+            <ul className="mt-3 divide-y divide-border-subtle overflow-hidden rounded-2xl border border-border-subtle">
+              {record.decisions.map((decision, index) => (
+                <li key={decision.id ?? `${decision.decided_at}-${index}`} className="px-4 py-3">
+                  <p className="text-label text-ink-900">
+                    <span className="font-medium">{decision.decided_by.display_name}</span>{" "}
+                    {decision.decision === "approve" ? copy.approvals.approvedVerb : copy.approvals.rejectedVerb}
+                  </p>
+                  <p className="text-caption text-text-tertiary">
+                    {formatDateTime(decision.decided_at)}
+                    {decision.step_up_method === "passkey" ? ` · ${copy.approvals.viaPasskey}` : null}
+                    {decision.step_up_method === "totp" ? ` · ${copy.approvals.viaCode}` : null}
+                  </p>
+                  {decision.note ? <p className="mt-1 text-label break-words text-ink-900">{decision.note}</p> : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+        </div>
       </div>
+
+      {canAct && !wide ? (
+        <div className="shrink-0 border-t border-border-subtle bg-surface px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <p className="mb-2 text-center text-caption text-text-secondary">{copy.approvals.phrase}</p>
+          <div className="flex justify-end">{actions}</div>
+        </div>
+      ) : null}
+
       <RejectDialog
         open={rejectOpen}
         note={note}
@@ -228,4 +307,11 @@ export function ApprovalDetail({ me }: { me: Me }) {
       />
     </div>
   );
+}
+
+export function ApprovalPage() {
+  const { id = "" } = useParams();
+  const [params] = useSearchParams();
+  const query = params.toString();
+  return <ApprovalDetail id={id} backTo={query ? `/aprobaciones?${query}` : "/aprobaciones"} />;
 }

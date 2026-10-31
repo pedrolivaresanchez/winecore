@@ -2,7 +2,9 @@ import { ApiError, api, apiText } from "@/lib/api";
 import type {
   Format,
   FormatInput,
+  FormatMaterial,
   ListPage,
+  MaterialPer,
   PriceItem,
   PriceList,
   PriceListVersion,
@@ -23,10 +25,11 @@ function text(value: unknown): string | null {
   return null;
 }
 
-function asProduct(raw: Product): Product {
+function asProduct(raw: Product & { is_gtin_current?: boolean }): Product {
   return {
     ...raw,
     name_en: raw.name_en ?? null,
+    gtin_is_current: raw.gtin_is_current ?? raw.is_gtin_current ?? false,
     wine_id: raw.wine_id ?? null,
     vintage: raw.vintage ?? null,
     format_id: raw.format_id ?? null,
@@ -90,13 +93,13 @@ export function markGtinCurrent(id: string) {
 }
 
 export function productPrices(id: string, signal?: AbortSignal) {
-  return api<ListPage<ProductPrice>>(`/v1/products/${id}/prices`, { signal }).then((page) =>
+  return api<ListPage<ProductPrice & { code?: string; name?: string }>>(`/v1/products/${id}/prices`, { signal }).then((page) =>
     asPage(page, (item) => ({
       ...item,
+      price_list_code: item.price_list_code ?? item.code,
+      price_list_name: item.price_list_name || item.name || "Tarifa",
       unit_price: text(item.unit_price) ?? "0",
       min_qty: text(item.min_qty) ?? "1",
-      price_list_name: item.price_list_name || item.name,
-      price_list_code: item.price_list_code || item.code,
     })),
   );
 }
@@ -188,8 +191,7 @@ export function requestActivation(priceListId: string, version: number) {
 export async function exportProducts(query: ProductQuery) {
   const path = productQuery(query).replace("/v1/products?", "/v1/products/export.csv?");
   const csv = await apiText(path);
-  const withBom = csv.charCodeAt(0) === 0xfeff ? csv : `\uFEFF${csv}`;
-  const blob = new Blob([withBom], { type: "text/csv;charset=utf-8" });
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
@@ -203,13 +205,42 @@ export function isStale(error: unknown): boolean {
 }
 
 export function moduleDisabled(error: unknown): boolean {
-  if (!(error instanceof ApiError) || error.status !== 404) return false;
-  return error.code === "WC_MODULE_DISABLED" || error.code === "WC_NOT_FOUND";
+  return error instanceof ApiError && error.status === 404;
+}
+
+export function listFormatMaterials(formatId: string, signal?: AbortSignal) {
+  return api<{ items: FormatMaterial[] }>(`/v1/formats/${formatId}/materials`, { signal });
+}
+
+export function createFormatMaterial(
+  formatId: string,
+  body: { material_product_id: string; per: MaterialPer; quantity: string },
+  idempotencyKey: string,
+) {
+  return api<FormatMaterial>(`/v1/formats/${formatId}/materials`, {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "Idempotency-Key": idempotencyKey },
+  });
+}
+
+export function updateFormatMaterial(
+  formatId: string,
+  materialId: string,
+  body: { material_product_id: string; per: MaterialPer; quantity: string },
+) {
+  return api<FormatMaterial>(`/v1/formats/${formatId}/materials/${materialId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteFormatMaterial(formatId: string, materialId: string) {
+  return api<FormatMaterial>(`/v1/formats/${formatId}/materials/${materialId}`, { method: "DELETE" });
 }
 
 export function duplicateProduct(error: unknown): { id: string; name: string } | null {
-  if (!(error instanceof ApiError) || !error.details) return null;
-  if (error.status !== 409 && error.status !== 422) return null;
+  if (!(error instanceof ApiError) || error.status !== 409 || !error.details) return null;
   const id = error.details.existing_id;
   const name = error.details.existing_name;
   if (typeof id === "string" && typeof name === "string") return { id, name };

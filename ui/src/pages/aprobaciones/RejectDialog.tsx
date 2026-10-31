@@ -1,8 +1,6 @@
-import { Button } from "@/components/ui/button";
-import { TextArea } from "@/components/ui/native-field";
-import { Field } from "@/components/Field";
+import { copy } from "@/i18n";
 import { noteProblem } from "@/pages/aprobaciones/model";
-import { OverlayDialog } from "@/pages/aprobaciones/OverlayDialog";
+import { Button, Dialog, DialogBody, DialogFooter, DialogHeader, Textarea } from "@/ui";
 
 export function RejectDialog({
   open,
@@ -22,39 +20,47 @@ export function RejectDialog({
   onConfirm: () => void;
 }) {
   const length = note.trim().length;
+  const over = length > 0 && noteProblem(note);
   return (
-    <OverlayDialog open={open} title="Rechazar" titleId="rechazo-title" screen="rechazo" onClose={onClose}>
-      <p className="text-compact text-muted-foreground">El motivo se envía a quien lo pidió. Entre 10 y 500 caracteres.</p>
+    <Dialog open={open} onClose={onClose} size="sm" labelledBy="rechazo-title">
       <form
-        className="mt-3 grid gap-3"
+        data-screen="rechazo"
         onSubmit={(event) => {
           event.preventDefault();
           onConfirm();
         }}
       >
-        <Field id="motivo" label="Motivo" error={error ?? undefined}>
-          <TextArea
-            id="motivo"
-            data-autofocus
-            value={note}
-            maxLength={500}
-            aria-invalid={Boolean(error)}
-            aria-describedby="motivo-cuenta"
-            onChange={(event) => onNote(event.target.value)}
-          />
-        </Field>
-        <p id="motivo-cuenta" className={length > 0 && noteProblem(note) ? "text-meta text-destructive" : "text-meta text-muted-foreground"}>
-          {length}/500
-        </p>
-        <div className="grid grid-cols-2 gap-2">
-          <Button type="button" variant="secondary" onClick={onClose} disabled={busy}>
-            Cancelar
+        <DialogHeader title={copy.approvals.rejectTitle} titleId="rechazo-title" description={copy.approvals.rejectHint} onClose={onClose} />
+        <DialogBody>
+          <label className="grid gap-1.5 text-label font-medium text-ink-900" htmlFor="motivo">
+            {copy.approvals.reason}
+            <Textarea
+              id="motivo"
+              value={note}
+              maxLength={500}
+              invalid={Boolean(error)}
+              aria-describedby="motivo-cuenta"
+              onChange={(event) => onNote(event.target.value)}
+            />
+          </label>
+          <p id="motivo-cuenta" className={over || error ? "mt-2 text-caption text-danger-600" : "mt-2 text-caption text-text-tertiary"}>
+            {length}/500
+          </p>
+          {error ? (
+            <p role="alert" className="mt-2 text-caption text-danger-600">
+              {error}
+            </p>
+          ) : null}
+        </DialogBody>
+        <DialogFooter>
+          <Button type="button" variant="secondary" size="sm" onClick={onClose} disabled={busy}>
+            {copy.approvals.cancel}
           </Button>
-          <Button type="submit" variant="danger" disabled={busy}>
-            {busy ? "Enviando…" : "Rechazar"}
+          <Button type="submit" variant="danger" size="sm" loading={busy}>
+            {busy ? copy.approvals.sending : copy.approvals.reject}
           </Button>
-        </div>
+        </DialogFooter>
       </form>
-    </OverlayDialog>
+    </Dialog>
   );
 }

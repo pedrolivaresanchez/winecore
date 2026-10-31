@@ -1,102 +1,52 @@
-import { Route, Routes } from "react-router-dom";
-import { EntityProvider } from "@/app/entity-context";
-import { Shell } from "@/app/Shell";
-import { ErrorState } from "@/components/ErrorState";
-import { BrandMark } from "@/components/BrandMark";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useApi } from "@/hooks/use-api";
-import { useNoAccess } from "@/hooks/use-no-access";
-import { copy } from "@/i18n";
-import type { Me } from "@/lib/types";
-import { NoAccess } from "@/pages/NoAccess";
-import { NotFound } from "@/pages/NotFound";
-import { Panel } from "@/pages/Panel";
-import { ApprovalDetail } from "@/pages/aprobaciones/Detail";
-import { ApprovalInbox } from "@/pages/aprobaciones/Inbox";
-import { ContactCreate } from "@/pages/contactos/ContactCreate";
-import { ContactList } from "@/pages/contactos/ContactList";
-import { ContactPage } from "@/pages/contactos/ContactPage";
-import { DepositoPage } from "@/pages/bodega/Deposito";
-import { LotePage } from "@/pages/bodega/Lote";
-import { MapaPage } from "@/pages/bodega/Mapa";
-import { OperacionPage } from "@/pages/bodega/Operacion";
-import { QrOpen } from "@/pages/bodega/QrOpen";
-import { PriceListPage } from "@/pages/catalogo/PriceListPage";
-import { PriceListsPage } from "@/pages/catalogo/PriceListsPage";
-import { ProductList } from "@/pages/catalogo/ProductList";
-import { ProductPage } from "@/pages/catalogo/ProductPage";
-import { WinesPage } from "@/pages/catalogo/WinesPage";
-import { CountCreate } from "@/pages/existencias/CountCreate";
-import { CountPage } from "@/pages/existencias/CountPage";
-import { CountsPage } from "@/pages/existencias/CountsPage";
-import { InspectionPage } from "@/pages/existencias/InspectionPage";
-import { MovesPage } from "@/pages/existencias/MovesPage";
-import { StockPage } from "@/pages/existencias/StockPage";
+import { EntityProvider } from '@/app/entity-context'
+import { AppRoutes } from '@/app/routes'
+import { Shell } from '@/app/shell/app-layout'
+import { BrandMark } from '@/components/BrandMark'
+import { ErrorState } from '@/components/ErrorState'
+import { useApi } from '@/hooks/use-api'
+import { useNoAccess } from '@/hooks/use-no-access'
+import { copy } from '@/i18n'
+import { Skeleton } from '@/ui'
+import type { Me } from '@/lib/types'
+import { NoAccess } from '@/pages/NoAccess'
 
 function LoadingScreen() {
   return (
-    <div className="min-h-dvh bg-background px-4 py-5" data-screen="cargando" aria-busy="true">
+    <div className="min-h-dvh bg-canvas px-4 py-5" data-screen="cargando" aria-busy="true">
       <p className="sr-only">{copy.loading}</p>
       <Skeleton className="h-8 w-32" />
-      <Skeleton className="mt-6 h-40 w-full max-w-[1280px]" />
+      <Skeleton className="mt-6 h-40 w-full max-w-3xl" />
     </div>
-  );
+  )
 }
 
 export function Workspace() {
-  const denied = useNoAccess();
-  const me = useApi<Me>("/v1/me");
+  const denied = useNoAccess()
+  const me = useApi<Me>('/v1/me')
 
-  if (denied) return <NoAccess />;
+  if (denied) return <NoAccess />
 
-  if (me.loading && !me.data) return <LoadingScreen />;
+  if (me.loading && !me.data) return <LoadingScreen />
 
   if (me.error || !me.data) {
-    const error = me.error;
+    const error = me.error
     return (
-      <main
-        data-screen="error"
-        className="flex min-h-dvh flex-col items-center justify-center gap-6 px-4"
-      >
+      <main data-screen="error" className="flex min-h-dvh flex-col items-center justify-center gap-6 bg-canvas px-4">
         <BrandMark word="always" />
         <ErrorState
-          title={`${copy.error.load} (${error?.code ?? "WC_ERROR"})`}
+          title={`${copy.error.load} (${error?.code ?? 'WC_ERROR'})`}
           detail={error?.message}
           onRetry={me.reload}
         />
       </main>
-    );
+    )
   }
 
   return (
     <EntityProvider me={me.data}>
       <Shell me={me.data}>
-        <Routes>
-          <Route index element={<Panel me={me.data} />} />
-          <Route path="aprobaciones" element={<ApprovalInbox />} />
-          <Route path="aprobaciones/:id" element={<ApprovalDetail me={me.data} />} />
-          <Route path="contactos" element={<ContactList me={me.data} />} />
-          <Route path="contactos/nuevo" element={<ContactCreate me={me.data} />} />
-          <Route path="contactos/:id" element={<ContactPage me={me.data} />} />
-          <Route path="q/:token" element={<QrOpen me={me.data} />} />
-          <Route path="bodega" element={<MapaPage me={me.data} />} />
-          <Route path="bodega/operacion/nueva" element={<OperacionPage me={me.data} />} />
-          <Route path="bodega/:vesselId" element={<DepositoPage me={me.data} />} />
-          <Route path="lotes/:lotId" element={<LotePage me={me.data} />} />
-          <Route path="catalogo" element={<ProductList me={me.data} />} />
-          <Route path="catalogo/vinos" element={<WinesPage me={me.data} />} />
-          <Route path="catalogo/tarifas" element={<PriceListsPage me={me.data} />} />
-          <Route path="catalogo/tarifas/:id" element={<PriceListPage me={me.data} />} />
-          <Route path="catalogo/:id" element={<ProductPage me={me.data} />} />
-          <Route path="stock" element={<StockPage me={me.data} />} />
-          <Route path="stock/informe" element={<InspectionPage me={me.data} />} />
-          <Route path="stock/movimientos" element={<MovesPage me={me.data} />} />
-          <Route path="stock/aforos" element={<CountsPage me={me.data} />} />
-          <Route path="stock/aforos/nuevo" element={<CountCreate me={me.data} />} />
-          <Route path="stock/aforos/:id" element={<CountPage me={me.data} />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <AppRoutes me={me.data} />
       </Shell>
     </EntityProvider>
-  );
+  )
 }

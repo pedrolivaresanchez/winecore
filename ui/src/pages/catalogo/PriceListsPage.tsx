@@ -1,92 +1,125 @@
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { DataTable, type Column } from "@/components/DataTable";
-import { ErrorState } from "@/components/ErrorState";
-import { NoPermission } from "@/components/NoPermission";
-import { PageHeader } from "@/components/PageHeader";
-import { StatusPill } from "@/components/StatusPill";
-import { Input } from "@/components/ui/input";
-import { useApi } from "@/hooks/use-api";
-import { copy } from "@/i18n";
-import { formatDate } from "@/lib/format";
-import { allows } from "@/lib/permissions";
-import type { Me } from "@/lib/types";
-import { CatalogTabs } from "@/pages/catalogo/components/CatalogTabs";
-import type { ListPage, PriceList } from "@/pages/catalogo/model";
+import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { ErrorState } from '@/components/ErrorState'
+import { NoPermission } from '@/components/NoPermission'
+import { useApi } from '@/hooks/use-api'
+import { copy } from '@/i18n'
+import { formatDate } from '@/lib/format'
+import { iconStroke } from '@/lib/motion'
+import { allows } from '@/lib/permissions'
+import type { Me } from '@/lib/types'
+import { Badge, DataGrid, EmptyState, Input, type GridColumn } from '@/ui'
+import { Search } from '@/ui/icons'
+import { listVersions } from '@/pages/catalogo/api'
+import { ListFrame } from '@/pages/catalogo/frame'
+import { GRID_LABELS } from '@/pages/catalogo/labels'
+import type { ListPage, PriceList, PriceListVersion } from '@/pages/catalogo/model'
 
 export function PriceListsPage({ me }: { me: Me }) {
-  const navigate = useNavigate();
-  const lists = useApi<ListPage<PriceList>>("/v1/price-lists?limit=100");
-  const [q, setQ] = useState("");
-  const needle = q.trim().toLowerCase();
+  const navigate = useNavigate()
+  const lists = useApi<ListPage<PriceList>>('/v1/price-lists?limit=100')
+  const [q, setQ] = useState('')
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [widths, setWidths] = useState<Record<string, number>>({ name: 260, code: 140 })
+  const [versions, setVersions] = useState<Record<string, PriceListVersion[]>>({})
+  const needle = q.trim().toLowerCase()
   const rows = (lists.data?.items ?? []).filter((list) => {
-    if (!needle) return true;
-    return list.name.toLowerCase().includes(needle) || list.code.toLowerCase().includes(needle);
-  });
+    if (!needle) return true
+    return list.name.toLowerCase().includes(needle) || list.code.toLowerCase().includes(needle)
+  })
 
-  const columns = useMemo<Column<PriceList>[]>(
+  useEffect(() => {
+    const items = lists.data?.items ?? []
+    if (items.length === 0) return
+    let live = true
+    Promise.all(items.map((list) => listVersions(list.id).then((page) => [list.id, page.items] as const)))
+      .then((pairs) => {
+        if (!live) return
+        setVersions(Object.fromEntries(pairs))
+      })
+      .catch(() => {
+        if (live) setVersions({})
+      })
+    return () => {
+      live = false
+    }
+  }, [lists.data])
+
+  const columns = useMemo<GridColumn<PriceList>[]>(
     () => [
-      { id: "name", header: "Nombre", card: true, cell: (row) => <span className="font-medium">{row.name}</span> },
-      { id: "code", header: "Código", card: true, cell: (row) => row.code },
-      { id: "currency", header: "Moneda", cell: (row) => row.currency },
-      { id: "tax", header: "IVA", cell: (row) => (row.tax_included ? "Incluido" : "Aparte") },
+      { id: 'name', header: 'Nombre', cell: (row) => row.name },
+      { id: 'code', header: 'Código', cell: (row) => <span className="font-mono text-caption">{row.code}</span> },
+      { id: 'currency', header: 'Moneda', cell: (row) => row.currency },
+      { id: 'tax', header: 'IVA', cell: (row) => (row.tax_included ? 'Incluido' : 'Aparte') },
       {
-        id: "version",
-        header: "Versión activa",
-        card: true,
-        cell: (row) =>
-          row.active_version
-            ? `v${row.active_version}${row.active_valid_from ? ` · ${formatDate(row.active_valid_from)}` : ""}`
-            : "—",
+        id: 'version',
+        header: 'Versión activa',
+        cell: (row) => {
+          const active = (versions[row.id] ?? []).find((version) => version.status === 'active')
+          const version = row.active_version ?? active?.version
+          const from = row.active_valid_from ?? active?.valid_from
+          return version ? `v${version}${from ? ` · ${formatDate(from)}` : ''}` : '—'
+        },
       },
       {
-        id: "active",
-        header: "Estado",
-        cell: (row) => <StatusPill tone={row.is_active ? "success" : "neutral"}>{row.is_active ? "Activa" : "Inactiva"}</StatusPill>,
+        id: 'active',
+        header: 'Estado',
+        cell: (row) => <Badge tone={row.is_active ? 'success' : 'neutral'}>{row.is_active ? 'Activa' : 'Inactiva'}</Badge>,
       },
     ],
-    [],
-  );
+    [versions],
+  )
 
-  if (!allows(me, "catalog.read")) return <NoPermission />;
-
-  const loading = lists.loading && !lists.data;
-  const empty = !loading && !lists.error && (lists.data?.items.length ?? 0) === 0;
-  const screen = loading ? "tarifas-cargando" : empty ? "tarifas-vacio" : "tarifas";
+  if (!allows(me, 'catalog.read')) return <NoPermission />
+  const loading = lists.loading && !lists.data
+  const empty = !loading && !lists.error && (lists.data?.items.length ?? 0) === 0
+  const screen = loading ? 'tarifas-cargando' : empty ? 'tarifas-vacio' : 'tarifas'
 
   return (
-    <div data-screen={screen} className="flex flex-col gap-4">
-      <CatalogTabs />
-      <PageHeader
-        title="Tarifas"
-        description="Precios por canal. Cada cambio es una versión nueva y se activa con aprobación."
-      />
-      <div className="sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-20 -mx-4 bg-background px-4 py-2 md:static md:mx-0 md:px-0">
-        <label className="sr-only" htmlFor="buscar-tarifas">
-          Buscar tarifa
-        </label>
+    <ListFrame
+      screen={screen}
+      object="tarifas"
+      toolbar={
         <Input
           id="buscar-tarifas"
+          size="sm"
           type="search"
           value={q}
-          placeholder="Buscar por nombre o código"
+          placeholder={copy.catalog.search}
+          aria-label="Buscar tarifa"
+          className="w-28 min-w-0 flex-1 sm:w-56 sm:flex-none"
+          prefix={<Search className="size-3.5" strokeWidth={iconStroke} />}
           onChange={(event) => setQ(event.target.value)}
         />
-      </div>
+      }
+    >
       {lists.error ? (
-        <ErrorState title={`${copy.error.load} (${lists.error.code})`} detail={lists.error.message} onRetry={lists.reload} />
+        <div className="p-4">
+          <ErrorState title={`${copy.error.load} (${lists.error.code})`} detail={lists.error.message} onRetry={lists.reload} />
+        </div>
       ) : (
-        <DataTable
-          label="Tarifas"
+        <DataGrid
           columns={columns}
           rows={rows}
           rowKey={(row) => row.id}
+          labels={GRID_LABELS}
+          widths={widths}
+          onResize={(id, width) => setWidths((current) => ({ ...current, [id]: width }))}
+          selected={picked}
+          onSelectedChange={setPicked}
+          onOpenRow={(row) => navigate(`/catalogo/tarifas/${row.id}`)}
+          rowHref={(row) => `/catalogo/tarifas/${row.id}`}
           loading={loading}
-          onRowClick={(row) => navigate(`/catalogo/tarifas/${row.id}`)}
-          emptyTitle={needle ? "Ninguna tarifa coincide" : "Aún no hay tarifas"}
-          emptyDescription={needle ? undefined : "Las tarifas de cliente final, distribuidor y tienda aparecen aquí."}
+          total={rows.length}
+          empty={
+            <EmptyState
+              size="sm"
+              title={needle ? copy.catalog.noTariffMatch : copy.catalog.emptyTariffs}
+              description={needle ? undefined : copy.catalog.emptyTariffsHint}
+            />
+          }
         />
       )}
-    </div>
-  );
+    </ListFrame>
+  )
 }

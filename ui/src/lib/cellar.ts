@@ -92,6 +92,7 @@ export type Lot = {
   id: string;
   code: string;
   kind: "grape" | "must" | "wine" | "bottled" | string;
+  wine_id?: string | null;
   wine_name: string | null;
   vintage: number | null;
   is_organic: boolean;
@@ -234,6 +235,9 @@ const ERROR_COPY: Record<string, string> = {
   WC028: "El cambio de mayor SILICIE (depósito ↔ barrica) no cuadra",
   WC030: "La genealogía de ese lote tendría un ciclo",
   WC_VESSEL_NOT_IN_SERVICE: "El depósito está fuera de servicio",
+  WC_NOT_APPROVED: "Falta la aprobación de la merma",
+  WC027: "El saldo fiscal no alcanza",
+  WC032: "Esa operación no se puede confirmar ni rectificar",
 };
 
 export function cellarMessage(code: string, message?: string): string {
@@ -303,12 +307,61 @@ export type PreviewLot = {
   volume_ml?: number;
 };
 
+/** Corks, capsules, cases and pallets a bottling would consume. Absent on older APIs. */
+export type PreviewMaterial = {
+  sku: string;
+  name: string;
+  per: string;
+  quantity: number;
+  available: number;
+  required_total?: number;
+  shortfall?: number;
+  short: boolean;
+  warning: string | null;
+};
+
 /** Efectos que devolvería confirmar, sin escribir libros. */
 export type OperationPreview = {
   stock_moves: PreviewMove[];
   fiscal_moves: PreviewFiscalMove[];
   new_lots: PreviewLot[];
+  materials?: PreviewMaterial[];
 };
+
+export type LotListItem = {
+  id: string;
+  code: string;
+  kind: string;
+  wine_id?: string | null;
+  vintage: number | null;
+  is_organic: boolean;
+  status: string;
+  volume_ml: number;
+  qty_units: number;
+  vessel_code: string | null;
+  location_code: string | null;
+};
+
+export type Page<T> = { items: T[]; next_cursor: string | null; total: number };
+
+export function listLots(query: { q?: string; kind?: string; vintage?: string; status?: string; cursor?: string; limit?: number } = {}, signal?: AbortSignal) {
+  const params = new URLSearchParams();
+  if (query.q) params.set("q", query.q);
+  if (query.kind) params.set("kind", query.kind);
+  if (query.vintage) params.set("vintage", query.vintage);
+  if (query.status) params.set("status", query.status);
+  if (query.cursor) params.set("cursor", query.cursor);
+  params.set("limit", String(query.limit ?? 50));
+  const suffix = params.toString();
+  return api<Page<LotListItem>>(`/v1/lots${suffix ? `?${suffix}` : ""}`, { signal });
+}
+
+export function getOperation(id: string, signal?: AbortSignal) {
+  return api<CellarOperation & { lines?: OperationLine[]; cleaning?: CleaningRecord | null }>(
+    `/v1/cellar-operations/${encodeURIComponent(id)}`,
+    { signal },
+  );
+}
 
 export function confirmOperation(id: string) {
   return api<CellarOperation>(`/v1/cellar-operations/${encodeURIComponent(id)}/confirm`, { method: "POST" });

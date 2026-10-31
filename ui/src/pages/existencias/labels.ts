@@ -133,7 +133,8 @@ export function productLabel(row: {
   return row.wine_name || "Sin producto";
 }
 
-export function sourceHref(table: string, id: string): string | null {
+export function sourceHref(table: string, id: string, lotCode?: string | null): string | null {
+  if (table === "inventory.lot" && lotCode && lotCode !== "—") return `/bodega/lotes/${encodeURIComponent(lotCode)}`;
   if (table === "sales.delivery_note") return `/ventas/albaranes/${id}`;
   if (table === "billing.invoice") return `/facturas/${id}`;
   if (table === "cellar.operation") return `/bodega/operaciones/${id}`;

@@ -26,4 +26,11 @@ export default tseslint.config([
       globals: globals.node,
     },
   },
+  {
+    files: ["src/ui/**/*.{ts,tsx}", "src/lib/**/*.{ts,tsx}", "src/theme/**/*.{ts,tsx}", "src/app/shell/**/*.{ts,tsx}"],
+    rules: {
+      "react-refresh/only-export-components": "off",
+      "react-hooks/exhaustive-deps": "off",
+    },
+  },
 ]);

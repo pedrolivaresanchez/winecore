@@ -163,6 +163,13 @@ export function emptyDraft(op: OpType | "", performedBy: string): Draft {
   };
 }
 
+const PRODUCT_STATES = ["grape", "must", "wine", "packaged_unlabeled", "packaged_labeled"] as const;
+
+function asProductState(value: string | null | undefined): DraftLine["product_state"] | null {
+  if (!value) return null;
+  return (PRODUCT_STATES as readonly string[]).includes(value) ? (value as DraftLine["product_state"]) : null;
+}
+
 export function withVessel(line: DraftLine, vessel: Vessel): DraftLine {
   const inside = holding(vessel);
   return {
@@ -170,6 +177,7 @@ export function withVessel(line: DraftLine, vessel: Vessel): DraftLine {
     vessel_code: vessel.code,
     lot_id: inside?.lot_id ?? "",
     lot_code: inside?.lot_code ?? "",
+    product_state: asProductState(vessel.product_state) ?? line.product_state,
   };
 }
 
@@ -494,11 +502,13 @@ type PayloadLine = {
   role: LineRole;
   lot_id: string | null;
   vessel_id: string | null;
+  location_id: string | null;
   volume_ml: number;
   qty_units: number;
   mass_g: number;
   loss_kind: "authorized" | "incident" | null;
   product_state: DraftLine["product_state"];
+  nominal_volume_ml: number | null;
   notes: string | null;
 };
 
@@ -512,15 +522,19 @@ export function buildPayload(draft: Draft, vessels: Vessel[], legalEntityId: str
     const fresh = (op === "blend" || op === "bottling") && role === "output";
     const follow = role !== "input" && (op === "racking" || op === "filtration" || op === "labeling");
     const lotId = fresh ? null : follow ? source?.lot_id || null : line.lot_id || null;
+    const place = vessels.find((item) => item.code === line.vessel_code);
+    const carried = role === "input" || role === "loss" ? line.product_state : null;
     return {
       role,
       lot_id: lotId || null,
       vessel_id: vesselId(line.vessel_code),
+      location_id: place?.location_id ?? null,
       volume_ml: mlOf(op, role, line),
       qty_units: qtyOf(op, role, line),
       mass_g: 0,
       loss_kind: role === "loss" ? (op === "destruction" ? "incident" : line.loss_kind) : null,
-      product_state: productState(op, role),
+      product_state: carried ?? productState(op, role),
+      nominal_volume_ml: op === "bottling" && role === "output" ? litresToMl(line.nominal_text || "0") : null,
       notes: line.notes.trim() ? line.notes.trim() : null,
     };
   };
@@ -551,6 +565,9 @@ export function buildPayload(draft: Draft, vessels: Vessel[], legalEntityId: str
     created_by: draft.performed_by.trim(),
     details,
     lines,
+    ...((op === "blend" || op === "bottling") && draft.new_lot_code.trim()
+      ? { new_lot: { code: draft.new_lot_code.trim() } }
+      : {}),
     ...(op === "cleaning"
       ? {
           cleaning: {

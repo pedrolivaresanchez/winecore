@@ -1,6 +1,5 @@
-import { Columns3 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { copy } from '@/i18n'
+import { GlassMenu, MenuChip, MenuItem, useMenuOpen } from '@/ui'
 
 export function ColumnMenu({
   ids,
@@ -9,36 +8,30 @@ export function ColumnMenu({
   locked,
   onToggle,
 }: {
-  ids: readonly string[];
-  labels: Record<string, string>;
-  hidden: Set<string>;
-  locked?: string;
-  onToggle: (id: string) => void;
+  ids: readonly string[]
+  labels: Record<string, string>
+  hidden: Set<string>
+  locked?: string
+  onToggle: (id: string) => void
 }) {
+  const menu = useMenuOpen()
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button type="button" variant="secondary" size="md" className="hidden md:inline-flex">
-          <Columns3 aria-hidden className="size-4" />
-          Columnas
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        {ids.map((id) => (
-          <DropdownMenuItem
-            key={id}
-            className="min-h-11"
-            disabled={id === locked}
-            onSelect={(event) => {
-              event.preventDefault();
-              onToggle(id);
-            }}
-          >
-            <input type="checkbox" readOnly checked={!hidden.has(id)} className="size-4" aria-hidden />
-            {labels[id]}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+    <GlassMenu
+      open={menu.open}
+      onOpenChange={menu.setOpen}
+      placement="bottom-start"
+      panelClassName="min-w-[200px]"
+      trigger={
+        <MenuChip active={menu.open} onClick={menu.toggle} title={copy.stock.columns}>
+          {copy.stock.columns}
+        </MenuChip>
+      }
+    >
+      {ids.map((id) => (
+        <MenuItem key={id} checked={!hidden.has(id)} disabled={id === locked} onClick={() => onToggle(id)}>
+          {labels[id]}
+        </MenuItem>
+      ))}
+    </GlassMenu>
+  )
 }

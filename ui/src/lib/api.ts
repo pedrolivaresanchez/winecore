@@ -110,9 +110,6 @@ async function send(path: string, init: RequestInit | undefined, retried: boolea
   }
 
   if (response.status === 401) {
-    const error = await readError(response);
-    const sessionExpired = error.code === "WC_ERROR" || error.code === "WC_UNAUTHENTICATED";
-    if (!sessionExpired) throw error;
     if (isAuthEnabled && !retried && (await refreshAccessToken())) return send(path, init, true);
     if (isAuthEnabled) {
       clearTokens();
@@ -145,12 +142,6 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
 export async function apiText(path: string, init?: RequestInit): Promise<string> {
   const response = await send(path, { ...init, headers: { Accept: "text/csv", ...headersOf(init) } }, false);
   return response.text();
-}
-
-/** Bytes tal cual (conserva el BOM del CSV; `text()` lo eliminaría al decodificar). */
-export async function apiBlob(path: string, init?: RequestInit): Promise<Blob> {
-  const response = await send(path, { ...init, headers: { Accept: "text/csv", ...headersOf(init) } }, false);
-  return response.blob();
 }
 
 function headersOf(init?: RequestInit): Record<string, string> {

@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { KeyRound } from "lucide-react";
 import { WebAuthnAbortService } from "@simplewebauthn/browser";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Key } from "@/ui/icons";
+import { copy } from "@/i18n";
 import { ApiError } from "@/lib/api";
+import { iconStroke } from "@/lib/motion";
 import { loadStepUpOptions, passkeyFailure, verifyPasskey, verifyTotp, type StepUpOptions } from "@/pages/aprobaciones/api";
-import { OverlayDialog } from "@/pages/aprobaciones/OverlayDialog";
 import { openSettings } from "@/pages/ajustes/seguridad/open-settings";
+import { Button, Dialog, DialogBody, DialogFooter, DialogHeader, Input } from "@/ui";
 
 type Phase = "loading" | "passkey" | "totp" | "none";
 
@@ -45,7 +45,7 @@ export function StepUpDialog({
       })
       .catch((err: unknown) => {
         if (!active) return;
-        setError(err instanceof ApiError ? err.message : "No se han podido comprobar tus métodos.");
+        setError(err instanceof ApiError ? err.message : copy.approvals.methodsFail);
         setPhase("none");
       });
     return () => {
@@ -72,7 +72,7 @@ export function StepUpDialog({
   async function confirmCode() {
     const digits = code.replace(/\s/g, "");
     if (!/^\d{6}$/.test(digits)) {
-      setError("El código tiene 6 cifras.");
+      setError(copy.approvals.codeShort);
       return;
     }
     setBusy(true);
@@ -82,89 +82,91 @@ export function StepUpDialog({
       setPhase("loading");
       onVerified();
     } catch (err: unknown) {
-      setError(err instanceof ApiError ? passkeyFailure(err) : "El código no es válido.");
+      setError(err instanceof ApiError ? passkeyFailure(err) : copy.approvals.codeInvalid);
     } finally {
       setBusy(false);
     }
   }
 
-  const verb = decision === "approve" ? "aprobar" : "rechazar";
+  const phrase = decision === "approve" ? copy.approvals.stepApprove : copy.approvals.stepReject;
 
   return (
-    <OverlayDialog open={open} title="Confirma que eres tú" titleId="step-up-title" screen="verificacion" onClose={onClose}>
-      <p className="text-body font-medium">Vas a {verb} exactamente lo que ves.</p>
-      {phase === "loading" ? <p className="mt-3 text-compact text-muted-foreground">Comprobando tus métodos…</p> : null}
-      {error ? (
-        <p role="alert" className="mt-3 rounded-md bg-status-danger px-3 py-2 text-compact text-status-danger-fg">
-          {error}
-        </p>
-      ) : null}
-      {phase === "passkey" ? (
-        <div className="mt-4 grid gap-2">
-          <Button type="button" data-autofocus onClick={() => void confirmPasskey()} disabled={busy} className="h-12">
-            <KeyRound aria-hidden />
-            {busy ? "Comprobando…" : "Comprobar passkey"}
-          </Button>
-          {options?.totp ? (
-            <Button type="button" variant="secondary" onClick={() => setPhase("totp")} disabled={busy}>
-              Usar código de la app
-            </Button>
+    <Dialog open={open} onClose={onClose} size="sm" labelledBy="step-up-title">
+      <div data-screen="verificacion">
+        <DialogHeader title={copy.approvals.stepTitle} titleId="step-up-title" description={phrase} onClose={onClose} />
+        <DialogBody>
+          {phase === "loading" ? <p className="text-label text-text-secondary">{copy.approvals.checking}</p> : null}
+          {error ? (
+            <p role="alert" className="rounded-2xl bg-danger-50 px-3 py-2 text-label text-danger-700">
+              {error}
+            </p>
           ) : null}
-        </div>
-      ) : null}
-      {phase === "totp" ? (
-        <form
-          className="mt-4 grid gap-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void confirmCode();
-          }}
-        >
-          <label className="grid gap-1.5 text-compact font-medium" htmlFor="totp-code">
-            Código de 6 cifras
-            <Input
-              id="totp-code"
-              data-autofocus
-              autoFocus
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              value={code}
-              spellCheck={false}
-              aria-invalid={Boolean(error)}
-              onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
-            />
-          </label>
-          <Button type="submit" disabled={busy || code.length !== 6}>
-            {busy ? "Comprobando…" : "Confirmar código"}
-          </Button>
-          {options?.passkey ? (
-            <Button type="button" variant="secondary" onClick={() => setPhase("passkey")} disabled={busy}>
-              Usar passkey
-            </Button>
+          {phase === "passkey" ? (
+            <div className="grid gap-2">
+              <Button type="button" onClick={() => void confirmPasskey()} loading={busy}>
+                <Key aria-hidden strokeWidth={iconStroke} />
+                {busy ? copy.approvals.checkingPasskey : copy.approvals.usePasskey}
+              </Button>
+              {options?.totp ? (
+                <Button type="button" variant="secondary" onClick={() => setPhase("totp")} disabled={busy}>
+                  {copy.approvals.useCode}
+                </Button>
+              ) : null}
+            </div>
           ) : null}
-        </form>
-      ) : null}
-      {phase === "none" ? (
-        <div className="mt-4 grid gap-3">
-          <p className="text-compact text-muted-foreground">
-            Aún no tienes passkey ni código de una app. Regístralos para poder decidir.
-          </p>
-          <Button
-            type="button"
-            data-autofocus
-            onClick={() => {
-              onClose();
-              openSettings("security");
-            }}
-          >
-            Ir a Seguridad
+          {phase === "totp" ? (
+            <form
+              className="grid gap-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void confirmCode();
+              }}
+            >
+              <label className="grid gap-1.5 text-label font-medium text-ink-900" htmlFor="totp-code">
+                {copy.approvals.codeLabel}
+                <Input
+                  id="totp-code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={code}
+                  spellCheck={false}
+                  invalid={Boolean(error)}
+                  onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                />
+              </label>
+              <Button type="submit" loading={busy} disabled={code.length !== 6 && !busy}>
+                {busy ? copy.approvals.checkingPasskey : copy.approvals.confirmCode}
+              </Button>
+              {options?.passkey ? (
+                <Button type="button" variant="secondary" onClick={() => setPhase("passkey")} disabled={busy}>
+                  {copy.approvals.usePasskeyAlt}
+                </Button>
+              ) : null}
+            </form>
+          ) : null}
+          {phase === "none" ? (
+            <div className="grid gap-3">
+              <p className="text-label text-text-secondary">{copy.approvals.noneMethods}</p>
+              <p className="text-caption text-text-tertiary">{copy.approvals.noneHint}</p>
+              <Button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  openSettings("security");
+                }}
+              >
+                {copy.approvals.goSecurity}
+              </Button>
+            </div>
+          ) : null}
+        </DialogBody>
+        <DialogFooter>
+          <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={busy}>
+            {copy.approvals.cancel}
           </Button>
-        </div>
-      ) : null}
-      <Button type="button" variant="ghost" className="mt-2 w-full" onClick={onClose} disabled={busy}>
-        Cancelar
-      </Button>
-    </OverlayDialog>
+        </DialogFooter>
+      </div>
+    </Dialog>
   );
 }
