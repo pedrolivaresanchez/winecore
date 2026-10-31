@@ -117,6 +117,9 @@ import {
   validateInvoiceRoute,
   voidInvoiceRoute,
 } from './routes/invoices';
+import { handleAuthenticatedMcp } from './mcp/http';
+import { RateLimiter } from './mcp/rate';
+import { createMcpClient, listMcpClients, revokeMcpClient, rotateMcpClient } from './routes/mcp-clients';
 import { me } from './routes/me';
 import { listNotifications, readAllNotifications, readNotification } from './routes/notifications';
 import { getReport } from './routes/reports';
@@ -142,6 +145,8 @@ export interface AppDeps {
   ocr?: OcrWorkforce;
   approvalHook?: SupplierInvoiceApprovalHook;
   invoiceDocuments?: InvoiceDocumentStore;
+  /** Límite de llamadas MCP por minuto y cliente. Por defecto 60. */
+  mcpRatePerMinute?: number;
 }
 
 const startedAt = new WeakMap<Request, number>();
@@ -164,6 +169,7 @@ export function createApp(deps: AppDeps) {
     documents: deps.invoiceDocuments,
   };
   const deliveryDeps = { writer: deps.writer, documents: deps.invoiceDocuments };
+  const mcpLimiter = new RateLimiter(deps.mcpRatePerMinute);
   const app = new Elysia(deps.config.apiBasePath ? { prefix: deps.config.apiBasePath } : {})
     .use(cors())
     .onRequest(({ request, set }) => {
@@ -631,6 +637,31 @@ export function createApp(deps: AppDeps) {
       return result.body;
     }, {
       beforeHandle: requirePermission(guardDeps, 'finance.manage'),
+    })
+    // MCP (Streamable HTTP, sin estado). Con API_BASE_PATH=/api queda en /api/m2m/mcp.
+    .post('/m2m/mcp', ({ request }) => handleAuthenticatedMcp({
+      config: deps.config,
+      writer: deps.writer,
+      now: http.now,
+      limiter: mcpLimiter,
+    }, request), {
+      beforeHandle: requireUserOrMachine(guardDeps),
+    })
+    .get('/v1/mcp/clients', () => listMcpClients(deps.writer), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .post('/v1/mcp/clients', async ({ request, set }) => {
+      const result = await createMcpClient(deps.writer, request, http.now());
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .post('/v1/mcp/clients/:id/rotate', ({ request, params }) => rotateMcpClient(deps.writer, request, params.id, http.now()), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .post('/v1/mcp/clients/:id/revoke', ({ request, params }) => revokeMcpClient(deps.writer, request, params.id, http.now()), {
+      beforeHandle: requireOwner(guardDeps),
     });
   return app;
 }

@@ -45,6 +45,7 @@ const CATALOG = {
   WC_VALIDATION: [422, 'Los datos no son válidos'],
   WC_IDEMPOTENCY_MISMATCH: [409, 'La clave de idempotencia ya se usó con otra petición'],
   WC_MCP_CONFIRMATION_INVALID: [409, 'La confirmación no es válida'],
+  WC_MCP_PREVIEW_STALE: [409, 'La vista previa ya no es válida'],
   WC_NOT_FOUND: [404, 'No encontrado'],
   WC_STALE_VERSION: [409, 'El registro ha cambiado; vuelve a cargarlo'],
   WC_UNAUTHENTICATED: [401, 'No autenticado'],
