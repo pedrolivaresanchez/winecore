@@ -10,7 +10,8 @@
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "screenshots": "bun e2e/screenshots.ts",
-    "e2e:flows": "bun e2e/flows/run.ts"
+    "e2e:flows": "bun e2e/flows/run.ts",
+    "e2e:real": "playwright test --config e2e/flows/playwright.config.ts 01-login 02-contactos"
   },
   "dependencies": {
     "@fontsource/inter": "5.2.8",

@@ -6,7 +6,7 @@ import { sql } from '../../src/core/db/sql';
 import { createTestApp } from '../helpers';
 import { ORGANIC_PARCEL, ORGANIC_VARIETY, insertParcel, productBody, requestGet, requestJson } from './support';
 
-const goldenPath = join(dirname(fileURLToPath(import.meta.url)), 'golden/cuaderno-2027.csv');
+const goldenPath = join(dirname(fileURLToPath(import.meta.url)), '../fixtures/synthetic/vineyard-notebook/cuaderno-2027.csv');
 
 async function json(response: Response) {
   return response.json() as Promise<{ id: string }>;
