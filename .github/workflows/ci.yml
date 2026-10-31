@@ -34,3 +34,75 @@ jobs:
       - run: bun run typecheck
       - run: bun run lint
       - run: bun run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - name: Install dependencies
+        run: |
+          bun install --frozen-lockfile --cwd api &
+          bun install --frozen-lockfile --cwd ui &
+          wait
+      - name: Install Playwright Chromium
+        working-directory: ui
+        run: bunx playwright install --with-deps chromium
+      - name: Migrate and seed
+        working-directory: api
+        env:
+          NODE_ENV: development
+          AUTH_MODE: dev
+          DB_PATH: ${{ runner.temp }}/qa.duckdb
+        run: |
+          bun run migrate
+          bun run seed
+          bun run seed:demo
+      - name: Start API
+        working-directory: api
+        env:
+          NODE_ENV: development
+          AUTH_MODE: dev
+          DB_PATH: ${{ runner.temp }}/qa.duckdb
+        run: |
+          bun run dev > "$RUNNER_TEMP/api.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/api.pid"
+          for _ in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:3000/health >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/api.log"
+          exit 1
+      - name: Start UI
+        working-directory: ui
+        env:
+          VITE_AUTH_ENABLED: "false"
+        run: |
+          bun run dev -- --host 127.0.0.1 --port 5173 --strictPort > "$RUNNER_TEMP/ui.log" 2>&1 &
+          echo $! > "$RUNNER_TEMP/ui.pid"
+          for _ in $(seq 1 60); do
+            if curl -sf http://127.0.0.1:5173/ >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/ui.log"
+          exit 1
+      - name: Contactos end to end
+        working-directory: ui
+        env:
+          E2E_BASE_URL: http://127.0.0.1:5173
+          E2E_SCREENSHOT_DIR: ${{ runner.temp }}/screenshots
+        run: bun run e2e:real
+      - name: Upload screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-contactos-screenshots
+          path: ${{ runner.temp }}/screenshots
+          if-no-files-found: ignore

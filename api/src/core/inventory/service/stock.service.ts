@@ -157,7 +157,7 @@ function stockWhere(query: BalanceQuery, owner: string | null): string {
 export async function listBalances(writer: Writer, query: BalanceQuery): Promise<Page<Balance> & { at: string; notice: string | null }> {
   const owner = await ownerId(writer, query.owner);
   const moves = await loadStockMoves(writer, stockWhere(query, owner));
-  const rows = stockAt(moves, query.at, STOCK_GROUP_KEYS);
+  const rows = await decorateBalances(writer, stockAt(moves, query.at, STOCK_GROUP_KEYS));
   return { at: query.at, notice: noticeFor(query.at), ...slicePage(rows, query.limit, query.cursor, balanceKey) };
 }
 
@@ -170,7 +170,7 @@ export async function listFiscalBalances(
   if (query.productId) parts.push(`product_id = ${uuidSql(query.productId)}`);
   if (query.lotId) parts.push(`lot_id = ${uuidSql(query.lotId)}`);
   const moves = await loadFiscalMoves(writer, and(parts));
-  const rows = fiscalBalanceAt(moves, query.at, FISCAL_LEDGER_KEYS);
+  const rows = await decorateFiscal(writer, fiscalBalanceAt(moves, query.at, FISCAL_LEDGER_KEYS));
   return { at: query.at, notice: noticeFor(query.at), ...slicePage(rows, query.limit, query.cursor, fiscalKey) };
 }
 
@@ -331,6 +331,141 @@ function encodeMoveCursor(at: string, id: string): string {
   return opaque(`${at}|${id}`);
 }
 
+function lockUntil(book: "physical" | "fiscal", locks: { ledger: string; locked_until: string }[]): string | null {
+  return locks.find((item) => item.ledger === book)?.locked_until ?? null;
+}
+
+async function rowsById(reader: Reader, table: string, columns: string, ids: readonly string[]): Promise<Map<string, Record<string, unknown>>> {
+  const unique = [...new Set(ids.filter((id) => id.length > 0))];
+  const map = new Map<string, Record<string, unknown>>();
+  if (unique.length === 0) return map;
+  const rows = await reader.read<Record<string, unknown>>(`
+    SELECT id, ${columns}
+    FROM ${table}
+    WHERE id IN (${unique.map((id) => uuidSql(id)).join(", ")})
+  `);
+  for (const row of rows) map.set(String(row.id).toLowerCase(), row);
+  return map;
+}
+
+function textOf(value: unknown): string | null {
+  if (value == null) return null;
+  const text = String(value);
+  return text.length === 0 ? null : text;
+}
+
+async function decorateBalances(reader: Reader, rows: Balance[]): Promise<Balance[]> {
+  const [locations, vessels, lots, owners, products] = await Promise.all([
+    rowsById(reader, "inventory.location", "code, name", rows.flatMap((row) => (row.location_id ? [row.location_id] : []))),
+    rowsById(reader, "cellar.vessel", "code, capacity_ml", rows.flatMap((row) => (row.vessel_id ? [row.vessel_id] : []))),
+    rowsById(reader, "inventory.lot", "code, vintage, wine_id", rows.flatMap((row) => (row.lot_id ? [row.lot_id] : []))),
+    rowsById(reader, "core.legal_entity", "code", rows.flatMap((row) => (row.owner_entity_id ? [row.owner_entity_id] : []))),
+    rowsById(reader, "catalog.product", "name, format_id", rows.flatMap((row) => (row.product_id ? [row.product_id] : []))),
+  ]);
+  const wineIds = [...lots.values()].flatMap((row) => (row.wine_id ? [String(row.wine_id)] : []));
+  const formatIds = [...products.values()].flatMap((row) => (row.format_id ? [String(row.format_id)] : []));
+  const [wines, formats] = await Promise.all([
+    rowsById(reader, "catalog.wine", "name", wineIds),
+    rowsById(reader, "catalog.format", "nominal_volume_ml", formatIds),
+  ]);
+  return rows.map((row) => {
+    const location = row.location_id ? locations.get(row.location_id) : undefined;
+    const vessel = row.vessel_id ? vessels.get(row.vessel_id) : undefined;
+    const lot = row.lot_id ? lots.get(row.lot_id) : undefined;
+    const wine = lot?.wine_id ? wines.get(String(lot.wine_id).toLowerCase()) : undefined;
+    const product = row.product_id ? products.get(row.product_id) : undefined;
+    const format = product?.format_id ? formats.get(String(product.format_id).toLowerCase()) : undefined;
+    const owner = row.owner_entity_id ? owners.get(row.owner_entity_id) : undefined;
+    return {
+      ...row,
+      location_code: textOf(location?.code),
+      location_name: textOf(location?.name),
+      vessel_code: textOf(vessel?.code),
+      vessel_capacity_ml: vessel?.capacity_ml == null ? null : Number(vessel.capacity_ml),
+      owner_code: textOf(owner?.code),
+      lot_code: textOf(lot?.code),
+      vintage: lot?.vintage == null ? null : Number(lot.vintage),
+      wine_name: textOf(wine?.name),
+      product_name: textOf(product?.name),
+      nominal_volume_ml: format?.nominal_volume_ml == null ? null : Number(format.nominal_volume_ml),
+    };
+  }) as Balance[];
+}
+
+async function decorateFiscal(reader: Reader, rows: FiscalBalance[]): Promise<FiscalBalance[]> {
+  const warehouses = await rowsById(
+    reader,
+    "inventory.tax_warehouse",
+    "name, legal_entity_id",
+    rows.flatMap((row) => (row.tax_warehouse_id ? [row.tax_warehouse_id] : [])),
+  );
+  return rows.map((row) => {
+    const warehouse = row.tax_warehouse_id ? warehouses.get(row.tax_warehouse_id) : undefined;
+    return {
+      ...row,
+      tax_warehouse_name: textOf(warehouse?.name),
+      legal_entity_id: warehouse?.legal_entity_id == null ? null : String(warehouse.legal_entity_id).toLowerCase(),
+      lot_id: null,
+      lot_code: null,
+      vintage: null,
+      product_id: null,
+      product_name: null,
+      wine_name: null,
+    };
+  }) as FiscalBalance[];
+}
+
+async function decorateMoves(
+  reader: Reader,
+  book: "physical" | "fiscal",
+  rows: Record<string, unknown>[],
+): Promise<Record<string, unknown>[]> {
+  const locations = book === "physical"
+    ? await rowsById(reader, "inventory.location", "code, name", rows.flatMap((row) => (typeof row.location_id === "string" ? [row.location_id] : [])))
+    : new Map<string, Record<string, unknown>>();
+  const vessels = book === "physical"
+    ? await rowsById(reader, "cellar.vessel", "code", rows.flatMap((row) => (typeof row.vessel_id === "string" ? [row.vessel_id] : [])))
+    : new Map<string, Record<string, unknown>>();
+  const lots = await rowsById(reader, "inventory.lot", "code, vintage, wine_id", rows.flatMap((row) => (typeof row.lot_id === "string" ? [row.lot_id] : [])));
+  const owners = book === "physical"
+    ? await rowsById(reader, "core.legal_entity", "code", rows.flatMap((row) => (typeof row.owner_entity_id === "string" ? [row.owner_entity_id] : [])))
+    : new Map<string, Record<string, unknown>>();
+  const products = await rowsById(reader, "catalog.product", "name", rows.flatMap((row) => (typeof row.product_id === "string" ? [row.product_id] : [])));
+  const warehouses = book === "fiscal"
+    ? await rowsById(reader, "inventory.tax_warehouse", "name, legal_entity_id", rows.flatMap((row) => (typeof row.tax_warehouse_id === "string" ? [row.tax_warehouse_id] : [])))
+    : new Map<string, Record<string, unknown>>();
+  const wines = await rowsById(reader, "catalog.wine", "name", [...lots.values()].flatMap((row) => (row.wine_id ? [String(row.wine_id)] : [])));
+  const operationIds = rows.flatMap((row) => (row.source_table === "cellar.operation" && typeof row.source_id === "string" ? [row.source_id] : []));
+  const operations = await rowsById(reader, "cellar.operation", "number", operationIds);
+  return rows.map((row) => {
+    const location = typeof row.location_id === "string" ? locations.get(row.location_id) : undefined;
+    const vessel = typeof row.vessel_id === "string" ? vessels.get(row.vessel_id) : undefined;
+    const lot = typeof row.lot_id === "string" ? lots.get(row.lot_id) : undefined;
+    const wine = lot?.wine_id ? wines.get(String(lot.wine_id).toLowerCase()) : undefined;
+    const product = typeof row.product_id === "string" ? products.get(row.product_id) : undefined;
+    const owner = typeof row.owner_entity_id === "string" ? owners.get(row.owner_entity_id) : undefined;
+    const warehouse = typeof row.tax_warehouse_id === "string" ? warehouses.get(row.tax_warehouse_id) : undefined;
+    const operation = row.source_table === "cellar.operation" && typeof row.source_id === "string" ? operations.get(row.source_id) : undefined;
+    const number = textOf(operation?.number);
+    return {
+      ...row,
+      location_code: textOf(location?.code),
+      location_name: textOf(location?.name),
+      vessel_code: textOf(vessel?.code),
+      owner_code: textOf(owner?.code),
+      lot_code: textOf(lot?.code),
+      vintage: lot?.vintage == null ? null : Number(lot.vintage),
+      wine_name: textOf(wine?.name),
+      product_name: textOf(product?.name),
+      tax_warehouse_name: textOf(warehouse?.name),
+      legal_entity_id: warehouse?.legal_entity_id == null ? row.legal_entity_id ?? null : String(warehouse.legal_entity_id).toLowerCase(),
+      document_ref: number,
+      justification_ref: row.justification_ref ?? null,
+      silicie_ref: null,
+    };
+  });
+}
+
 function periodClosed(book: "physical" | "fiscal", at: string, locks: { ledger: string; locked_until: string }[]): boolean {
   const lock = locks.find((item) => item.ledger === book);
   if (!lock) return false;
@@ -369,13 +504,16 @@ export async function listMoves(
   const total = Number(countRows[0]?.total ?? 0);
   const hasMore = rows.length > query.limit;
   const page = hasMore ? rows.slice(0, query.limit) : rows;
-  const items = page.map((row) => {
+  const items = await decorateMoves(writer, query.book, page.map((row) => {
     const at = query.book === "physical" ? String(row.occurred_at) : String(row.fiscal_date);
+    const closed = periodClosed(query.book, at, locks);
     return {
       ...normalizeMove(query.book, row),
-      period_closed: periodClosed(query.book, at, locks),
+      period_closed: closed,
+      period_locked: closed,
+      locked_until: lockUntil(query.book, locks),
     };
-  });
+  }));
   const last = page[page.length - 1];
   const lastAt = last
     ? query.book === "physical"

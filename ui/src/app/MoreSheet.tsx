@@ -40,6 +40,7 @@ export function MoreSheet({
                       <li key={child.id}>
                         <NavLink
                           to={child.path}
+                          end={child.end}
                           className="flex min-h-11 items-center rounded-md px-3 text-body hover:bg-accent"
                           onClick={() => onOpenChange(false)}
                         >

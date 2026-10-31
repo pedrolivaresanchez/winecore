@@ -16,6 +16,8 @@ describe('auth', () => {
       expect(body.email).toBe('owner@winecore.test');
       expect(body.permissions).toEqual([
         'audit.read',
+        'billing.read',
+        'billing.write',
         'catalog.read',
         'catalog.write',
         'cellar.manage',
@@ -25,6 +27,13 @@ describe('auth', () => {
         'contacts.write',
         'inventory.count',
         'inventory.read',
+        'purchasing.approve',
+        'purchasing.read',
+        'purchasing.write',
+        'reports.read',
+        'sales.manage',
+        'sales.read',
+        'sales.write',
         'settings.manage',
         'users.manage',
       ]);

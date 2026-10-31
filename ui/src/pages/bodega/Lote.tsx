@@ -17,7 +17,7 @@ const KIND: Record<string, string> = {
   bottled: "Envasado",
 };
 
-const STATUS: Record<Lot["status"], string> = {
+const STATUS: Record<string, string> = {
   active: "Activo",
   depleted: "Agotado",
   closed: "Cerrado",
@@ -53,6 +53,8 @@ export function LotePage({ me }: { me: Me }) {
   }
 
   const item = lot.data;
+  const places = item.positions.filter((place) => (place.vessel_code ?? "") !== "" && place.volume_ml !== 0);
+  const volumeMl = places.reduce((sum, place) => sum + place.volume_ml, 0);
 
   return (
     <div data-screen="bodega-lote" className="flex min-w-0 flex-col gap-5">
@@ -65,7 +67,7 @@ export function LotePage({ me }: { me: Me }) {
       />
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Metric label="Volumen" value={formatLitres(item.volume_ml / 1000)} />
+        <Metric label="Volumen" value={formatLitres(volumeMl / 1000)} />
         <Metric label="Estado" value={STATUS[item.status]} />
         <Metric label="Tipo" value={KIND[item.kind] ?? item.kind} />
         <Metric label="Cultivo" value={item.is_organic ? "Ecológico" : "Convencional"} />
@@ -73,13 +75,13 @@ export function LotePage({ me }: { me: Me }) {
 
       <section className="grid gap-2">
         <h2 className="text-body font-semibold">Dónde está</h2>
-        {item.vessels.length === 0 ? (
+        {places.length === 0 ? (
           <p className="text-compact text-muted-foreground">No está en ningún depósito.</p>
         ) : (
           <ul className="grid gap-2 sm:grid-cols-2">
-            {item.vessels.map((place) => (
-              <li key={place.vessel_code}>
-                <Link to={`/bodega/${encodeURIComponent(place.vessel_code)}`} className="block rounded-xl border bg-card p-3">
+            {places.map((place) => (
+              <li key={`${place.vessel_code}-${place.location_code}`}>
+                <Link to={`/bodega/${encodeURIComponent(place.vessel_code ?? "")}`} className="block rounded-xl border bg-card p-3">
                   <p className="text-body font-medium">{place.vessel_code}</p>
                   <p className="text-compact tabular-nums">{formatLitres(place.volume_ml / 1000)}</p>
                 </Link>
@@ -104,11 +106,6 @@ export function LotePage({ me }: { me: Me }) {
       <section className="grid gap-2">
         <h2 className="text-body font-semibold">Analíticas</h2>
         <div className="rounded-xl border bg-card p-4">
-          <svg viewBox="0 0 320 88" className="h-16 w-full text-muted-foreground" aria-hidden>
-            <line x1="16" y1="16" x2="16" y2="72" stroke="currentColor" strokeWidth="1" />
-            <line x1="16" y1="72" x2="304" y2="72" stroke="currentColor" strokeWidth="1" />
-            <line x1="16" y1="44" x2="304" y2="44" stroke="currentColor" strokeWidth="1" strokeDasharray="4 6" />
-          </svg>
           <p className="text-body font-medium">Sin analíticas</p>
           <p className="mt-1 text-compact text-muted-foreground">El laboratorio se conectará más adelante.</p>
         </div>
@@ -128,9 +125,20 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
+function nodeCode(trace: Traceability, lotId: string): string {
+  return trace.nodes.find((node) => node.lot_id === lotId)?.code ?? lotId;
+}
+
+function edgeEnds(trace: Traceability, edge: Traceability["edges"][number]): { parent: string; child: string } {
+  return {
+    parent: edge.parent_code ?? nodeCode(trace, edge.parent_lot_id),
+    child: edge.child_code ?? nodeCode(trace, edge.child_lot_id),
+  };
+}
+
 function Composition({ trace, current }: { trace: Traceability | null; current: string }) {
-  const parents = (trace?.edges ?? []).filter((edge) => edge.child_code === current);
   if (!trace) return <p className="text-compact text-muted-foreground">Cargando el origen…</p>;
+  const parents = trace.edges.filter((edge) => edgeEnds(trace, edge).child === current);
   if (parents.length === 0) return <p className="text-compact text-muted-foreground">Lote de origen, sin padres.</p>;
   const volumeTotal = parents.reduce((sum, edge) => sum + edge.volume_ml, 0);
   return (
@@ -138,9 +146,9 @@ function Composition({ trace, current }: { trace: Traceability | null; current: 
       {parents.map((edge) => {
         const pct = volumeTotal > 0 ? (edge.volume_ml / volumeTotal) * 100 : null;
         return (
-          <li key={edge.parent_code} className="rounded-xl border bg-card p-3 text-compact">
-            <Link to={`/lotes/${encodeURIComponent(edge.parent_code)}`} className="font-medium underline">
-              {edge.parent_code}
+          <li key={edgeEnds(trace, edge).parent} className="rounded-xl border bg-card p-3 text-compact">
+            <Link to={`/lotes/${encodeURIComponent(edgeEnds(trace, edge).parent)}`} className="font-medium underline">
+              {edgeEnds(trace, edge).parent}
             </Link>
             <span className="text-muted-foreground">
               {" "}
@@ -171,7 +179,9 @@ function Genealogy({ trace, current }: { trace: Traceability; current: string })
             )}
             <span className="text-meta text-muted-foreground">
               {" "}
-              · {KIND[node.kind] ?? node.kind} · {formatAmount(node.volume_ml, node.mass_g)}
+              · {KIND[node.kind] ?? node.kind}
+              {node.vintage ? ` · ${node.vintage}` : ""}
+              {node.volume_ml ? ` · ${formatAmount(node.volume_ml, node.mass_g)}` : ""}
             </span>
           </li>
         ))}
@@ -191,7 +201,8 @@ function Genealogy({ trace, current }: { trace: Traceability; current: string })
                     <p className="text-compact font-semibold">{node.code}</p>
                     <p className="text-meta text-muted-foreground">{KIND[node.kind] ?? node.kind}</p>
                     {node.wine_name ? <p className="truncate text-meta">{node.wine_name}</p> : null}
-                    <p className="text-meta tabular-nums">{formatAmount(node.volume_ml, node.mass_g)}</p>
+                    {node.vintage ? <p className="text-meta text-muted-foreground">{node.vintage}</p> : null}
+                    {node.volume_ml ? <p className="text-meta tabular-nums">{formatAmount(node.volume_ml, node.mass_g)}</p> : null}
                   </div>
                 ))}
               </div>
@@ -208,8 +219,9 @@ function treeRows(trace: Traceability): { node: TraceNode; depth: number }[] {
   const children = new Map<string, string[]>();
   const hasParent = new Set<string>();
   for (const edge of trace.edges) {
-    children.set(edge.parent_code, [...(children.get(edge.parent_code) ?? []), edge.child_code]);
-    hasParent.add(edge.child_code);
+    const ends = edgeEnds(trace, edge);
+    children.set(ends.parent, [...(children.get(ends.parent) ?? []), ends.child]);
+    hasParent.add(ends.child);
   }
   const roots = trace.nodes.filter((node) => !hasParent.has(node.code));
   const rows: { node: TraceNode; depth: number }[] = [];
@@ -231,8 +243,9 @@ function generations(trace: Traceability): TraceNode[][] {
   const children = new Map<string, string[]>();
   const hasParent = new Set<string>();
   for (const edge of trace.edges) {
-    children.set(edge.parent_code, [...(children.get(edge.parent_code) ?? []), edge.child_code]);
-    hasParent.add(edge.child_code);
+    const ends = edgeEnds(trace, edge);
+    children.set(ends.parent, [...(children.get(ends.parent) ?? []), ends.child]);
+    hasParent.add(ends.child);
   }
   const roots = trace.nodes.map((node) => node.code).filter((code) => !hasParent.has(code));
   const queue = (roots.length > 0 ? roots : trace.nodes.map((node) => node.code)).map((code) => ({ code, level: 0 }));

@@ -3,9 +3,15 @@ export const PERMISSIONS = [
   'contacts.write',
   'catalog.read',
   'catalog.write',
+  'reports.read',
+  'purchasing.read',
+  'purchasing.write',
+  'purchasing.approve',
   'settings.manage',
   'users.manage',
   'audit.read',
+  'billing.read',
+  'billing.write',
   // Existencias (stock): lectura del libro y aforos.
   'inventory.read',
   'inventory.count',
@@ -13,6 +19,10 @@ export const PERMISSIONS = [
   'cellar.read',
   'cellar.operate',
   'cellar.manage',
+  // Ventas (docs/07-arquitectura.md §6): lectura, operación y excepciones.
+  'sales.read',
+  'sales.write',
+  'sales.manage',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -36,11 +46,11 @@ export interface UserCtx {
 
 const MATRIX: Record<RoleCode, readonly Permission[]> = {
   owner: PERMISSIONS,
-  approver: ['contacts.read', 'catalog.read', 'audit.read', 'inventory.read', 'cellar.read'],
-  admin: ['contacts.read', 'contacts.write', 'catalog.read', 'catalog.write', 'inventory.read', 'inventory.count', 'cellar.read'],
+  approver: ['contacts.read', 'catalog.read', 'reports.read', 'audit.read', 'billing.read', 'purchasing.read', 'purchasing.approve', 'inventory.read', 'cellar.read', 'sales.read'],
+  admin: ['contacts.read', 'contacts.write', 'catalog.read', 'catalog.write', 'reports.read', 'billing.read', 'billing.write', 'purchasing.read', 'purchasing.write', 'inventory.read', 'inventory.count', 'cellar.read', 'sales.read', 'sales.write'],
   cellar: ['catalog.read', 'inventory.read', 'inventory.count', 'cellar.read', 'cellar.operate'],
   field: ['cellar.read'],
-  advisor: ['contacts.read', 'catalog.read', 'audit.read', 'inventory.read', 'cellar.read'],
+  advisor: ['contacts.read', 'catalog.read', 'reports.read', 'audit.read', 'billing.read', 'purchasing.read', 'inventory.read', 'cellar.read', 'sales.read'],
 };
 
 const PERSONAL_CONTACT_ROLES = new Set<RoleCode>(['owner', 'admin', 'approver']);

@@ -8,12 +8,13 @@ import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-field";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useApi } from "@/hooks/use-api";
-import { contentLabel, fillPercent, kindLabel, type CellarOperation, type CleaningRecord, type Vessel, type VesselLabel } from "@/lib/cellar";
+import { contentLabel, fillPercent, holding, kindLabel, type CellarOperation, type CleaningRecord, type Vessel, type VesselLabel } from "@/lib/cellar";
 import { formatDateTime, formatLitres } from "@/lib/format";
 import { allows } from "@/lib/permissions";
 import type { Me } from "@/lib/types";
 
-type Detail = Vessel & { operations?: CellarOperation[]; cleanings?: CleaningRecord[] };
+type Detail = Vessel & { cleanings?: CleaningRecord[] };
+type HistoryPage = { items: CellarOperation[] };
 
 const TABS = [
   { id: "contenido", label: "Contenido" },
@@ -47,6 +48,7 @@ export function DepositoPage({ me }: { me: Me }) {
   const { vesselId = "" } = useParams();
   const path = allows(me, "cellar.read") && vesselId ? `/v1/vessels/${encodeURIComponent(vesselId)}` : null;
   const data = useApi<Detail>(path);
+  const history = useApi<HistoryPage>(path ? `${path}/history?limit=20` : null);
   const [tab, setTab] = useState<TabId>("contenido");
   const canOperate = allows(me, "cellar.operate");
 
@@ -64,9 +66,10 @@ export function DepositoPage({ me }: { me: Me }) {
   }
 
   const vessel = data.data;
-  const operations = vessel.operations ?? [];
+  const operations = history.data?.items ?? [];
   const cleanings = vessel.cleanings ?? [];
   const pct = fillPercent(vessel);
+  const inside = holding(vessel);
   const nueva = `/bodega/operacion/nueva?tipo=racking&vessel=${encodeURIComponent(vessel.code)}`;
   const limpieza = `/bodega/operacion/nueva?tipo=cleaning&vessel=${encodeURIComponent(vessel.code)}`;
 
@@ -98,7 +101,7 @@ export function DepositoPage({ me }: { me: Me }) {
       />
 
       <div className="grid grid-cols-3 gap-2">
-        <Metric label="Litros" value={formatLitres((vessel.content?.volume_ml ?? 0) / 1000)} />
+        <Metric label="Litros" value={formatLitres((inside?.volume_ml ?? 0) / 1000)} />
         <Metric label="Capacidad" value={formatLitres(vessel.capacity_ml / 1000)} />
         <Metric label="Llenado" value={`${pct} %`} />
       </div>
@@ -133,7 +136,7 @@ export function DepositoPage({ me }: { me: Me }) {
       {tab === "contenido" ? <Content vessel={vessel} pct={pct} /> : null}
       {tab === "historial" ? <History operations={operations} /> : null}
       {tab === "limpiezas" ? <Cleanings cleanings={cleanings} /> : null}
-      {tab === "qr" ? <QrPanel code={vessel.code} fallback={vessel.qr_token} /> : null}
+      {tab === "qr" ? <QrPanel code={vessel.code} fallback={vessel.qr_token ?? null} /> : null}
     </div>
   );
 }
@@ -151,10 +154,10 @@ function Content({ vessel, pct }: { vessel: Vessel; pct: number }) {
   return (
     <section className="grid gap-3 rounded-xl border bg-card p-4">
       <p className="text-body font-medium">{contentLabel(vessel)}</p>
-      {vessel.content ? (
-        <Link to={`/lotes/${encodeURIComponent(vessel.content.lot_code)}`} className="text-compact underline">
-          {vessel.content.lot_code} · {vessel.content.wine_name}
-          {vessel.content.vintage ? ` · ${vessel.content.vintage}` : ""}
+      {holding(vessel) ? (
+        <Link to={`/lotes/${encodeURIComponent(holding(vessel)!.lot_code)}`} className="text-compact underline">
+          {holding(vessel)?.lot_code} · {holding(vessel)?.wine_name}
+          {holding(vessel)?.vintage ? ` · ${holding(vessel)?.vintage}` : ""}
         </Link>
       ) : (
         <p className="text-compact text-muted-foreground">Sin vino dentro.</p>
@@ -230,7 +233,7 @@ function Cleanings({ cleanings }: { cleanings: CleaningRecord[] }) {
 function QrPanel({ code, fallback }: { code: string; fallback: string | null }) {
   const data = useApi<VesselLabel>(`/v1/vessels/${encodeURIComponent(code)}/qr`);
   const token = data.data?.qr_token ?? fallback ?? "";
-  const url = data.data?.url ?? `${window.location.origin}/bodega/${encodeURIComponent(code)}`;
+  const url = data.data?.payload ?? `${window.location.origin}/bodega/${encodeURIComponent(code)}`;
   return (
     <div className="grid max-w-sm gap-3">
       <section className="print-area grid gap-3 rounded-xl border bg-card p-4">

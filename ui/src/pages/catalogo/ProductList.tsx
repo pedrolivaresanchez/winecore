@@ -520,6 +520,23 @@ export function ProductList({ me }: { me: Me }) {
                 onChange={(event) => setFilter("vintage", event.target.value.replace(/\D/g, "").slice(0, 4))}
               />
             </label>
+            <fieldset className="grid gap-2">
+              <legend className="text-compact font-medium">Columnas</legend>
+              <div className="flex flex-wrap gap-2">
+                {COLUMN_IDS.map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    aria-pressed={!hidden.has(id)}
+                    disabled={id === "name"}
+                    className={`h-11 rounded-full px-3 text-compact disabled:opacity-60 ${hidden.has(id) ? "bg-muted" : "bg-ink font-medium text-ink-foreground"}`}
+                    onClick={() => toggleColumn(id)}
+                  >
+                    {COLUMN_LABELS[id]}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
             <Button type="button" onClick={() => setFiltersOpen(false)}>
               Ver productos
             </Button>

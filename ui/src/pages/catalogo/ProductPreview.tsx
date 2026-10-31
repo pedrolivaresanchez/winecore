@@ -9,6 +9,7 @@ import { copy } from "@/i18n";
 import { formatAlcohol, formatQty } from "@/pages/catalogo/money";
 import {
   formatCode,
+  gtinCurrent,
   kindLabel,
   productWarnings,
   taxLabel,
@@ -94,7 +95,7 @@ function PreviewBody({
       </dl>
       <div className="flex flex-wrap gap-1.5">
         <StatusPill tone={product.is_active ? "success" : "neutral"}>{product.is_active ? "Activo" : "Inactivo"}</StatusPill>
-        {product.gtin_is_current ? <StatusPill tone="info">GTIN vigente</StatusPill> : null}
+        {gtinCurrent(product) ? <StatusPill tone="info">GTIN vigente</StatusPill> : null}
         {warnings.map((warning) => (
           <StatusPill key={warning} tone="warning">
             {warning}
