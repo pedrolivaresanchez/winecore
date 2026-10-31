@@ -89,7 +89,7 @@ export async function loadDashboard(writer: Writer, user: UserCtx, url: URL, now
   const requested = parseEntity(url.searchParams.get('entity'));
   const scope = scopeFor(user, requested);
   const today = businessDate(now);
-  const [approvals, deadlines, receivables, alerts, year, verifactu, submissions, stock] = await Promise.all([
+  const [approvals, deadlines, receivables, alerts, year, verifactu, submissions, stock, cellar] = await Promise.all([
     pendingApprovals(writer, user, scope, now),
     can(user, 'reports.read') || can(user, 'billing.read') ? deadlinesWithin(writer, scope, today) : Promise.resolve(null),
     can(user, 'billing.read') ? overdueReceivables(writer, scope, today) : Promise.resolve(null),
@@ -98,6 +98,7 @@ export async function loadDashboard(writer: Writer, user: UserCtx, url: URL, now
     can(user, 'billing.read') ? verifactuPending(writer, scope) : Promise.resolve(null),
     can(user, 'billing.read') ? failedSubmissions(writer, scope, today) : Promise.resolve(null),
     can(user, 'inventory.read') ? stockGaps(writer, scope) : Promise.resolve(null),
+    can(user, 'cellar.read') ? cellarAlerts(writer, scope, today) : Promise.resolve(null),
   ]);
   return {
     entity: scope.entity,
@@ -108,7 +109,7 @@ export async function loadDashboard(writer: Writer, user: UserCtx, url: URL, now
     year,
     verifactu_pending: verifactu,
     submissions_failed: submissions,
-    cellar_alerts: can(user, 'cellar.read') ? emptyBlock() : null,
+    cellar_alerts: cellar,
     stock_alerts: stock,
   };
 }
@@ -152,6 +153,54 @@ function entityPredicate(scope: Scope, column = 'e.code'): string {
   if (scope.po) parts.push(`${column} = 'PO'`);
   if (scope.cvpo) parts.push(`${column} = 'CVPO'`);
   return `(${parts.join(' OR ')})`;
+}
+
+const CELLAR_RULES: Record<string, string> = {
+  stuck: 'Fermentación parada',
+  temperature: 'Temperatura fuera de rango',
+  density_stall: 'Densidad estancada',
+  winter_racking: 'Trasiego de invierno',
+  post_spring_bottling: 'Embotellado tras la primavera',
+};
+
+async function cellarAlerts(writer: Writer, scope: Scope, today: string): Promise<AttentionBlock> {
+  const year = today.slice(0, 4);
+  const [ferment, reminders] = await Promise.all([
+    readOptional<Record<string, unknown>>(writer, `
+      SELECT a.id, a.rule, l.code AS lot_code
+      FROM cellar.fermentation_alert a
+      JOIN inventory.lot l ON l.id = a.lot_id
+      JOIN core.legal_entity e ON e.id = l.producer_entity_id
+      WHERE a.status = 'open' AND ${entityPredicate(scope)}
+      ORDER BY a.opened_at DESC, a.id DESC
+      LIMIT 50
+    `),
+    readOptional<Record<string, unknown>>(writer, `
+      SELECT d.id, d.rule_code AS rule, l.code AS lot_code, d.season_key
+      FROM enology.reminder_dispatch d
+      JOIN inventory.lot l ON l.id = d.lot_id
+      JOIN core.legal_entity e ON e.id = d.legal_entity_id
+      WHERE d.season_key = ${sqlQuote(year)} AND ${entityPredicate(scope)}
+      ORDER BY d.created_at DESC, d.id DESC
+      LIMIT 50
+    `),
+  ]);
+  const items: AttentionItem[] = [];
+  for (const row of [...(ferment ?? []), ...(reminders ?? [])]) {
+    const id = idOf(row.id);
+    if (!id) continue;
+    const rule = text(row.rule) ?? 'alerta';
+    const code = text(row.lot_code);
+    const season = text(row.season_key);
+    items.push({
+      id,
+      title: CELLAR_RULES[rule] ?? rule,
+      detail: season && code ? `${code} · ${season}` : code ?? season,
+      href: code ? `/bodega/lotes/${encodeURIComponent(code)}` : '/bodega/lotes',
+      days_left: null,
+    });
+  }
+  return block(items);
 }
 
 function emptyBlock(): AttentionBlock {

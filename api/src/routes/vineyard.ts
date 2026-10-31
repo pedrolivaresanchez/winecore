@@ -11,7 +11,18 @@ import {
   listHarvests,
   listMaturityChecks,
 } from '../core/vineyard/fieldwork';
-import { createParcel, getParcel, listParcels, updateParcel } from '../core/vineyard/parcels';
+import { createParcel, getParcel, listParcels, parcelSummary, updateParcel } from '../core/vineyard/parcels';
+import {
+  confirmPlan,
+  createPlan,
+  deleteCrew,
+  getPlan,
+  listCrew,
+  listPlans,
+  putCrew,
+  suggestPlan,
+  updatePlan,
+} from '../core/vineyard/planner';
 import {
   confirmReception,
   createReception,
@@ -68,6 +79,7 @@ export function vineyardRoutes(guard: GuardDeps) {
     .patch('/v1/grape-varieties/:code', async ({ request, params }) => (
       updateVariety(writer, actor(request, 'editar variedad'), params.code, await bodyOf(request))
     ), write)
+    .get('/v1/parcels/summary', () => parcelSummary(writer), read)
     .get('/v1/parcels', () => listParcels(writer), read)
     .post('/v1/parcels', async ({ request, set }) => {
       const created = await createParcel(writer, actor(request, 'alta de parcela'), await bodyOf(request));
@@ -108,6 +120,32 @@ export function vineyardRoutes(guard: GuardDeps) {
     }, write)
     .post('/v1/harvests/:id/close', async ({ request, params }) => (
       closeHarvest(writer, actor(request, 'cierre de vendimia'), params.id, await bodyOf(request))
+    ), write)
+    .get('/v1/crew-availability', ({ request }) => {
+      const url = new URL(request.url);
+      return listCrew(writer, url.searchParams.get('from'), url.searchParams.get('to'));
+    }, read)
+    .put('/v1/crew-availability/:day', async ({ request, params }) => (
+      putCrew(writer, actor(request, 'disponibilidad de cuadrilla'), params.day, await bodyOf(request))
+    ), write)
+    .delete('/v1/crew-availability/:day', ({ request, params }) => (
+      deleteCrew(writer, actor(request, 'baja de cuadrilla'), params.day)
+    ), write)
+    .get('/v1/harvest-plans', ({ request }) => listPlans(writer, campaignOf(request)), read)
+    .post('/v1/harvest-plans', async ({ request, set }) => {
+      const created = await createPlan(writer, actor(request, 'plan de vendimia'), await bodyOf(request));
+      set.status = 201;
+      return created;
+    }, write)
+    .get('/v1/harvest-plans/:id', ({ params }) => getPlan(writer, params.id), read)
+    .patch('/v1/harvest-plans/:id', async ({ request, params }) => (
+      updatePlan(writer, actor(request, 'editar plan de vendimia'), params.id, await bodyOf(request))
+    ), write)
+    .post('/v1/harvest-plans/:id/suggest', ({ request, params }) => (
+      suggestPlan(writer, actor(request, 'sugerencia de vendimia'), params.id)
+    ), write)
+    .post('/v1/harvest-plans/:id/confirm', ({ request, params }) => (
+      confirmPlan(writer, actor(request, 'confirmar fecha de vendimia'), params.id)
     ), write)
     .get('/v1/grape-receptions', () => listReceptions(writer), read)
     .post('/v1/grape-receptions', async ({ request, set }) => {

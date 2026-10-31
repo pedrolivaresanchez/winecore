@@ -4,6 +4,7 @@ import { openClient } from './core/db/open';
 import { createWriter, installWriter } from './core/db/writer';
 import { registerFermentationAlerts } from './jobs/fermentation-alerts';
 import { registerCueReminder } from './jobs/cue-reminder';
+import { registerEnologyReminders } from './jobs/enology-reminders';
 import { registerOutboxDispatch } from './jobs/outbox';
 import { registerRegulatoryDeadlines } from './jobs/regulatory-deadlines';
 import { createScheduler } from './jobs/scheduler';
@@ -32,6 +33,7 @@ async function main(): Promise<void> {
     registerRegulatoryDeadlines(scheduler, { writer });
     registerFermentationAlerts(scheduler, { writer });
     registerCueReminder(scheduler, writer);
+    registerEnologyReminders(scheduler, { writer });
     scheduler.start();
   }
   const app = createApp({ config, writer });

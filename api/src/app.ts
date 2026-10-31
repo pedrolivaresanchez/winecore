@@ -42,9 +42,14 @@ import {
   verifyPasskeyRegistration,
 } from './routes/auth-credentials';
 import { catalogRoutes } from './routes/catalog';
+import { cellarAssetRoutes } from './routes/cellar-assets';
 import { cellarRoutes } from './routes/cellar';
 import { vineyardRoutes } from './routes/vineyard';
 import { winemakingRoutes } from './routes/winemaking';
+import { enologyRoutes } from './routes/enology';
+import { lotDesignRoutes } from './routes/lot-design';
+import { tastingRoutes } from './routes/tasting';
+import { hygieneRoutes } from './routes/hygiene';
 import {
   archiveAddress,
   archiveContact,
@@ -738,6 +743,11 @@ export function createApp(deps: AppDeps) {
     })
     .use(vineyardRoutes(guardDeps))
     .use(winemakingRoutes({ writer: deps.writer, guard: guardDeps }))
-    .use(vineyardNotebookRoutes(guardDeps));
+    .use(vineyardNotebookRoutes(guardDeps))
+    .use(enologyRoutes({ writer: deps.writer, guard: guardDeps, now: deps.now }))
+    .use(cellarAssetRoutes({ writer: deps.writer, guard: guardDeps }))
+    .use(lotDesignRoutes({ writer: deps.writer, guard: guardDeps }))
+    .use(tastingRoutes({ writer: deps.writer, guard: guardDeps }))
+    .use(hygieneRoutes({ writer: deps.writer, guard: guardDeps }));
   return app;
 }
