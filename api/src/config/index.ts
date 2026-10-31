@@ -17,6 +17,8 @@ export interface Config {
   authMode: AuthMode;
   devUserEmail: string;
   gitSha: string;
+  cvbotEventsUrl: string | null;
+  cvbotEventsHmacKey: string | null;
 }
 
 function invalid(name: string): never {
@@ -106,5 +108,29 @@ export function loadConfig(env: Env): Config {
     authMode,
     devUserEmail,
     gitSha,
+    cvbotEventsUrl: readHttpUrl(env, 'CVBOT_EVENTS_URL'),
+    cvbotEventsHmacKey: readSecret(env, 'CVBOT_EVENTS_HMAC_KEY'),
   };
+}
+
+function readHttpUrl(env: Env, name: string): string | null {
+  const value = read(env, name);
+  if (value === undefined) return null;
+  if (value.length > 300) invalid(name);
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    invalid(name);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') invalid(name);
+  if (parsed.username !== '' || parsed.password !== '') invalid(name);
+  return value;
+}
+
+function readSecret(env: Env, name: string): string | null {
+  const value = read(env, name);
+  if (value === undefined) return null;
+  if (value.length > 512) invalid(name);
+  return value;
 }
