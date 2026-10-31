@@ -109,12 +109,12 @@ export async function auditInserts(
   changes: readonly AuditChange[],
   now: Date = new Date(),
 ): Promise<string[]> {
-  const last = await client.query<{ id: string; hash: string | null }>(
+  const last = await client.query<{ id: string; hash: unknown }>(
     'SELECT id, hash FROM audit.audit_log ORDER BY id DESC LIMIT 1',
   );
   const latest = last[0];
   let nextId = latest ? BigInt(latest.id) + 1n : 1n;
-  let prevHash = latest?.hash ?? null;
+  let prevHash = hexFromStored(latest?.hash);
   const occurredAt = now.toISOString();
   const statements: string[] = [];
 
@@ -138,8 +138,8 @@ export async function auditInserts(
         ${entry.action},
         ${jsonOrNull(entry.before)},
         ${jsonOrNull(entry.after)},
-        ${entry.prev_hash},
-        ${hash}
+        ${entry.prev_hash === null ? null : sql.hex(entry.prev_hash)},
+        ${sql.hex(hash)}
       )
     `);
     prevHash = hash;
@@ -169,8 +169,15 @@ export function entryFromRow(row: Record<string, unknown>): AuditRecord {
     action: String(row.action),
     before: row.before_data ?? null,
     after: row.after_data ?? null,
-    prev_hash: textOrNull(row.prev_hash),
+    prev_hash: hexFromStored(row.prev_hash),
   };
+}
+
+function hexFromStored(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length === 0) return null;
+  if (/^[0-9a-f]{64}$/.test(value)) return value;
+  const bytes = Buffer.from(value, 'base64');
+  return bytes.length === 32 ? bytes.toString('hex') : null;
 }
 
 export async function verifyAuditChain(client: KbClient): Promise<AuditChainStatus> {
@@ -183,7 +190,7 @@ export async function verifyAuditChain(client: KbClient): Promise<AuditChainStat
   let expectedPrev: string | null = null;
   for (const row of rows) {
     const entry = entryFromRow(row);
-    const stored = textOrNull(row.hash);
+    const stored = hexFromStored(row.hash);
     if ((entry.prev_hash ?? null) !== expectedPrev || stored === null || stored !== chainHash(entry)) {
       return { intact: false, firstBrokenId: entry.id };
     }

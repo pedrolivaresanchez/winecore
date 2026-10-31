@@ -1,9 +1,11 @@
 import { expect, test } from "bun:test";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DuckDBInstance } from "@duckdb/node-api";
-import { referenceObjects } from "./parse_reference.ts";
+import { migrate } from "../../db/migrate";
+import type { KbClient } from "../../src/core/db/client";
+import { referenceObjects } from "./parse_reference";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -309,13 +311,27 @@ SELECT * FROM billing.v_receivable;
 test("el esquema DuckDB reproduce tablas, vistas y columnas de la referencia", async () => {
   const instance = await DuckDBInstance.create(":memory:");
   const conn = await instance.connect();
-  await apply(conn, "stub", readFileSync(join(root, "api/test/db/core_stub.sql"), "utf8"));
+  const client: KbClient = {
+    async query<T = Record<string, unknown>>(statement: string): Promise<T[]> {
+      try {
+        const reader = await conn.runAndReadAll(statement);
+        return reader.getRowObjectsJson() as T[];
+      } catch (error) {
+        try {
+          await conn.run("ROLLBACK");
+        } catch {
+          // No había transacción abierta.
+        }
+        throw error;
+      }
+    },
+  };
   const migrations = readdirSync(join(root, "api/db/migrations")).filter((name) => name.endsWith(".sql")).sort();
-  expect(migrations[0]).toBe("0002_core_ops.sql");
+  expect(migrations[0]).toBe("0001_core.sql");
+  expect(migrations).toContain("0002_core_ops.sql");
   expect(migrations.at(-1)).toBe("0016_legacy.sql");
-  for (const file of migrations) {
-    await apply(conn, file, readFileSync(join(root, "api/db/migrations", file), "utf8"));
-  }
+  expect(migrations).toHaveLength(16);
+  await migrate(client);
 
   const refs = referenceObjects(root);
   expect(refs.length).toBe(135);

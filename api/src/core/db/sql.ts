@@ -67,4 +67,9 @@ sql.raw = (identifier: string): RawSql => {
   return new RawSql(identifier);
 };
 
+sql.hex = (hex: string): RawSql => {
+  if (!/^[0-9a-f]*$/.test(hex)) throw new Error('Hexadecimal no válido');
+  return new RawSql(`from_hex('${hex}')`);
+};
+
 sql.json = (value: unknown): JsonSql => new JsonSql(value);

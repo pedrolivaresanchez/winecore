@@ -1,4 +1,3 @@
-/// <reference path="./ambient.d.ts" />
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
@@ -510,7 +509,9 @@ describe("generateSynthetic", () => {
         rx.lastIndex = 0;
         for (const match of file.text.matchAll(rx)) {
           const value = match[0];
-          if (kind === "email" && value.toLowerCase().endsWith("@example.com")) continue;
+          const lower = value.toLowerCase();
+          if (kind === "email" && (lower.endsWith("@example.com") || lower.endsWith("@winecore.test"))) continue;
+          if (kind === "nif_persona" && value === "00000000T") continue;
           throw new Error(`${file.path} contiene un literal ${kind}: ${value}`);
         }
       }

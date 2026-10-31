@@ -74,12 +74,19 @@ function splitTopLevel(body: string): string[] {
   return parts;
 }
 
+function capture(match: RegExpExecArray, index: number): string {
+  const value = match[index];
+  if (value === undefined) throw new Error('Captura de expresión regular vacía');
+  return value;
+}
+
 function columnName(part: string): string | null {
   const text = part.trim();
   if (!text) return null;
   if (/^(constraint|primary|unique|check|exclude|foreign)\b/i.test(text)) return null;
   const match = /^"?([a-zA-Z_][a-zA-Z0-9_]*)"?\b/.exec(text);
-  return match ? match[1].toLowerCase() : null;
+  const name = match?.[1];
+  return name ? name.toLowerCase() : null;
 }
 
 function tableColumns(body: string): string[] {
@@ -98,12 +105,14 @@ function selectColumns(selectList: string): string[] {
     const text = part.trim();
     if (!text) continue;
     const asMatch = /\bas\s+"?([a-zA-Z_][a-zA-Z0-9_]*)"?\s*$/i.exec(text);
-    if (asMatch) {
-      cols.push(asMatch[1].toLowerCase());
+    const alias = asMatch?.[1];
+    if (alias) {
+      cols.push(alias.toLowerCase());
       continue;
     }
     const bare = /([a-zA-Z_][a-zA-Z0-9_]*)$/.exec(text.replace(/\s+/g, " "));
-    if (bare) cols.push(bare[1].toLowerCase());
+    const tail = bare?.[1];
+    if (tail) cols.push(tail.toLowerCase());
   }
   return cols;
 }
@@ -144,8 +153,8 @@ export function parseReferenceSql(sql: string): RefObject[] {
     const close = matchParen(clean, open);
     objects.push({
       kind: "table",
-      schema: match[1].toLowerCase(),
-      name: match[2].toLowerCase(),
+      schema: capture(match, 1).toLowerCase(),
+      name: capture(match, 2).toLowerCase(),
       columns: tableColumns(clean.slice(open + 1, close)),
     });
     tableRe.lastIndex = close + 1;
@@ -177,11 +186,11 @@ export function parseReferenceSql(sql: string): RefObject[] {
         break;
       }
     }
-    if (fromAt < 0) throw new Error(`view ${match[1]}.${match[2]} has no FROM`);
+    if (fromAt < 0) throw new Error(`view ${capture(match, 1)}.${capture(match, 2)} has no FROM`);
     objects.push({
       kind: "view",
-      schema: match[1].toLowerCase(),
-      name: match[2].toLowerCase(),
+      schema: capture(match, 1).toLowerCase(),
+      name: capture(match, 2).toLowerCase(),
       columns: selectColumns(clean.slice(selectAt, fromAt)),
     });
   }
@@ -208,7 +217,7 @@ export function wcCodesIn(sql: string): string[] {
   const found = new Set<string>();
   const re = /RAISE\s+EXCEPTION\s+'((?:WC\d{3}|WC_[A-Z0-9_]+))/g;
   let match: RegExpExecArray | null;
-  while ((match = re.exec(sql))) found.add(match[1]);
+  while ((match = re.exec(sql))) found.add(capture(match, 1));
   return [...found].sort();
 }
 
@@ -217,7 +226,9 @@ export function partialUniqueIndexNames(sql: string): string[] {
   const re = /CREATE\s+UNIQUE\s+INDEX\s+([a-zA-Z0-9_]+)\b[\s\S]*?;/gi;
   let match: RegExpExecArray | null;
   while ((match = re.exec(sql))) {
-    if (/\bWHERE\b/i.test(match[0])) names.push(match[1].toLowerCase());
+    const body = match[0];
+    const name = match[1];
+    if (body !== undefined && name !== undefined && /\bWHERE\b/i.test(body)) names.push(name.toLowerCase());
   }
   return names;
 }

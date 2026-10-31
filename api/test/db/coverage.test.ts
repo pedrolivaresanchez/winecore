@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { guards } from "../../src/core/db/guards/registry.ts";
+import { guards } from "../../src/core/db/guards/registry";
 import {
   partialUniqueIndexNames,
   readReferenceFiles,
   wcCodesIn,
-} from "./parse_reference.ts";
+} from "./parse_reference";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 
