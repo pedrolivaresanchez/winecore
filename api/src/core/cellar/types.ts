@@ -263,13 +263,35 @@ export interface CleaningRequest extends OperationHeader {
   };
 }
 
+/**
+ * Entrada de uva (`op_type = reception`). Solo salidas: un lote de uva en gramos
+ * en el recipiente destino. No hay movimiento fiscal: el asiento A02 se anota
+ * desde la operación (silicie.md §5). El prensado (mosto) es otra operación.
+ */
+export interface ReceptionRequest extends OperationHeader {
+  op_type: "reception";
+  vessel_id: string;
+  /** Net grams. Positive safe integer. */
+  mass_g: number;
+  lot_code: string;
+  vintage: number;
+  is_organic: boolean;
+  notes: string | null;
+  /**
+   * Lot already stored in the vessel by mass, when the volume model still
+   * sees the vessel as empty. Volume occupancy is `vessel.volume_ml`.
+   */
+  occupying_lot_id: string | null;
+}
+
 export type OperationRequest =
   | TransferRequest
   | BlendRequest
   | AdditionRequest
   | BottlingRequest
   | LossRequest
-  | CleaningRequest;
+  | CleaningRequest
+  | ReceptionRequest;
 
 export interface CellarState {
   vessels: ReadonlyMap<string, VesselState>;
@@ -346,7 +368,7 @@ export interface LotDraft {
   vintage: number | null;
   is_organic: boolean;
   status: "active";
-  origin: "operation";
+  origin: "operation" | "reception";
   created_by_operation_id: string;
   notes: string | null;
 }
