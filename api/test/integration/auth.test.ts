@@ -18,6 +18,7 @@ describe('auth', () => {
         'audit.read',
         'contacts.read',
         'contacts.write',
+        'reports.read',
         'settings.manage',
         'users.manage',
       ]);
