@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { Ellipsis } from "lucide-react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ErrorState } from "@/components/ErrorState";
@@ -8,6 +9,12 @@ import { PageHeader } from "@/components/PageHeader";
 import { StatTile } from "@/components/StatTile";
 import { StatusPill } from "@/components/StatusPill";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useApi } from "@/hooks/use-api";
 import { useMinWidth } from "@/hooks/use-media";
@@ -199,41 +206,49 @@ function Loaded({
         title={product.name}
         description={`${kindLabel(product.kind)} · ${product.sku}`}
         actions={
-          editing ? (
-            <>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => {
-                  setEditing(false);
-                  setErrors({});
-                  setDuplicate(null);
-                  setValue(inputFromProduct(product));
-                }}
-                disabled={saving}
-              >
-                Cancelar
-              </Button>
-              <Button type="button" onClick={() => void save()} disabled={saving}>
-                {saving ? "Guardando…" : "Guardar"}
-              </Button>
-            </>
-          ) : canWrite && desktop ? (
-            <>
-              <Button type="button" onClick={() => setEditing(true)}>
-                Editar
-              </Button>
-              <Button
-                type="button"
-                variant={product.is_active ? "danger" : "secondary"}
-                onClick={() => {
-                  if (product.is_active && hasStock) setConfirmOff(true);
-                  else void toggleActive();
-                }}
-              >
-                {product.is_active ? "Desactivar" : "Activar"}
-              </Button>
-            </>
+          canWrite ? (
+            <div className="flex flex-wrap gap-2">
+              {editing ? (
+                <>
+                  <Button type="button" onClick={() => void save()} disabled={saving}>
+                    {saving ? "Guardando…" : "Guardar"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => {
+                      setEditing(false);
+                      setErrors({});
+                      setDuplicate(null);
+                      setValue(inputFromProduct(product));
+                    }}
+                    disabled={saving}
+                  >
+                    Cancelar
+                  </Button>
+                </>
+              ) : (
+                <Button type="button" onClick={() => setEditing(true)}>
+                  Editar
+                </Button>
+              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" variant="secondary" size="icon" aria-label="Más acciones">
+                    <Ellipsis aria-hidden className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    className="min-h-11"
+                    variant={product.is_active ? "destructive" : "default"}
+                    onSelect={() => setConfirmOff(true)}
+                  >
+                    {product.is_active ? "Desactivar" : "Reactivar"}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           ) : undefined
         }
       />
@@ -387,10 +402,16 @@ function Loaded({
 
       <ConfirmDialog
         open={confirmOff}
-        title="Desactivar producto"
-        body={`${product.name} tiene existencias. Dejará de ofrecerse en pedidos, pero no se borra.`}
-        confirmLabel="Desactivar"
-        danger
+        title={product.is_active ? "Desactivar producto" : "Reactivar producto"}
+        body={
+          product.is_active
+            ? hasStock
+              ? `${product.name} tiene existencias. Dejará de ofrecerse en pedidos, pero no se borra.`
+              : `${product.name} dejará de ofrecerse en pedidos. No se borra.`
+            : `${product.name} volverá a ofrecerse en pedidos.`
+        }
+        confirmLabel={product.is_active ? "Desactivar" : "Reactivar"}
+        danger={product.is_active}
         busy={saving}
         onClose={() => setConfirmOff(false)}
         onConfirm={() => void toggleActive()}

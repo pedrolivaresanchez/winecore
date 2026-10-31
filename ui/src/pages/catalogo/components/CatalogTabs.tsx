@@ -9,7 +9,7 @@ const LINKS = [
 
 export function CatalogTabs() {
   return (
-    <nav aria-label="Catálogo" className="flex max-w-full flex-wrap gap-2">
+    <nav aria-label="Catálogo" className="flex max-w-full gap-2 overflow-x-auto lg:hidden">
       {LINKS.map((link) => (
         <NavLink
           key={link.to}

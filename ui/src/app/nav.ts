@@ -52,7 +52,7 @@ export const navigation: NavEntry[] = [
     module: "catalog",
     label: "Catálogo",
     icon: Wine,
-    mobile: "none",
+    mobile: "more",
     placement: "main",
     children: [
       {
@@ -60,7 +60,6 @@ export const navigation: NavEntry[] = [
         label: "Productos",
         path: "/catalogo",
         permission: "catalog.read",
-        mobile: "tab",
       },
       {
         id: "wines",

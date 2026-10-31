@@ -317,6 +317,14 @@ async function main() {
         await gotoReady(list.page, "/catalogo", "catalogo");
         await visibleText(list.page, "Alto del Enebro 2025 0,75 L").waitFor();
         await shot(list.page, `catalogo-lista-${width}`);
+        if (width < 768) {
+          await list.page.getByRole("button", { name: "Más", exact: true }).click();
+          await list.page.waitForSelector("[data-screen='mas']");
+          await list.page.getByRole("link", { name: "Vinos y formatos" }).waitFor();
+          await shot(list.page, `catalogo-mas-${width}`);
+          await list.page.getByRole("button", { name: "Cerrar" }).click();
+          await list.page.locator("[data-screen='mas']").waitFor({ state: "detached" });
+        }
         const target =
           width < 768
             ? list.page.locator("button", { hasText: "Alto del Enebro 2025 0,75 L" })

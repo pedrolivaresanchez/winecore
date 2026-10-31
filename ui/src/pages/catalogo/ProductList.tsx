@@ -9,7 +9,9 @@ import { PageHeader } from "@/components/PageHeader";
 import { StatusPill } from "@/components/StatusPill";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-field";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useApi } from "@/hooks/use-api";
 import { copy } from "@/i18n";
 import { ApiError, isAbortError } from "@/lib/api";
@@ -91,6 +93,7 @@ export function ProductList({ me }: { me: Me }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [hidden, setHidden] = useState(readHidden);
   const [createOpen, setCreateOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const wines = useApi<ListPage<Wine>>("/v1/wines?limit=100");
   const formats = useApi<ListPage<Format>>("/v1/formats?limit=100");
   const wineRows = useMemo(() => wines.data?.items ?? [], [wines.data]);
@@ -249,6 +252,7 @@ export function ProductList({ me }: { me: Me }) {
   }, [formatRows, hidden, wineRows]);
 
   const filtersActive = Boolean(debounced || kind || wineId || formatId || vintage || active || organic || missing);
+  const sheetFilters = [kind, wineId, formatId, vintage].filter(Boolean).length;
   const selectedIndex = items.findIndex((item) => item.id === selected);
   if (!allows(me, "catalog.read")) return <NoPermission />;
 
@@ -321,8 +325,8 @@ export function ProductList({ me }: { me: Me }) {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="hidden flex-wrap items-center gap-2 md:flex">
+      <div className="-mx-4 flex items-center gap-2 px-4 md:mx-0 md:px-0">
+        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto pb-1 md:flex-wrap md:overflow-visible">
           <Pill active={kind === ""} onClick={() => setFilter("kind", "")}>
             Todos
           </Pill>
@@ -331,106 +335,93 @@ export function ProductList({ me }: { me: Me }) {
               {option.label}
             </Pill>
           ))}
-        </div>
-        <label className="sr-only" htmlFor="tipo-movil">
-          Tipo
-        </label>
-        <select
-          id="tipo-movil"
-          className="h-11 w-full rounded-full bg-muted px-3 text-compact md:hidden"
-          value={kind}
-          onChange={(event) => setFilter("kind", event.target.value)}
-        >
-          <option value="">Todos los tipos</option>
-          {KIND_OPTIONS.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        <label className="sr-only" htmlFor="filtro-vino">
-          Vino
-        </label>
-        <select
-          id="filtro-vino"
-          className="h-11 max-w-full rounded-full bg-muted px-3 text-compact md:h-8"
-          value={wineId}
-          onChange={(event) => setFilter("wine_id", event.target.value)}
-        >
-          <option value="">Vino</option>
-          {wineRows.map((wine) => (
-            <option key={wine.id} value={wine.id}>
-              {wine.name}
-            </option>
-          ))}
-        </select>
-        <label className="sr-only" htmlFor="filtro-formato">
-          Formato
-        </label>
-        <select
-          id="filtro-formato"
-          className="h-11 max-w-full rounded-full bg-muted px-3 text-compact md:h-8"
-          value={formatId}
-          onChange={(event) => setFilter("format_id", event.target.value)}
-        >
-          <option value="">Formato</option>
-          {formatRows.map((format) => (
-            <option key={format.id} value={format.id}>
-              {format.code}
-            </option>
-          ))}
-        </select>
-        <label className="sr-only" htmlFor="filtro-anada">
-          Añada
-        </label>
-        <Input
-          id="filtro-anada"
-          inputMode="numeric"
-          value={vintage}
-          placeholder="Añada"
-          className="h-11 w-24 rounded-full md:h-8"
-          onChange={(event) => setFilter("vintage", event.target.value.replace(/\D/g, "").slice(0, 4))}
-        />
-        <Pill active={active === "true"} onClick={() => setFilter("active", active === "true" ? "" : "true")}>
-          Activos
-        </Pill>
-        <Pill active={organic} onClick={() => setFilter("organic", organic ? "" : "true")}>
-          Ecológico
-        </Pill>
-        <span className="text-meta text-muted-foreground">Faltan datos</span>
-        <Pill active={missing === "gtin"} onClick={() => setFilter("missing", missing === "gtin" ? "" : "gtin")}>
-          GTIN
-        </Pill>
-        <Pill active={missing === "nc_code"} onClick={() => setFilter("missing", missing === "nc_code" ? "" : "nc_code")}>
-          NC
-        </Pill>
-        <Pill active={missing === "silicie"} onClick={() => setFilter("missing", missing === "silicie" ? "" : "silicie")}>
-          SILICIE
-        </Pill>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button type="button" variant="secondary" size="md" className="hidden md:inline-flex">
-              <Columns3 aria-hidden className="size-4" />
-              Columnas
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {COLUMN_IDS.map((id) => (
-              <DropdownMenuItem
-                key={id}
-                className="min-h-11"
-                disabled={id === "name"}
-                onSelect={(event) => {
-                  event.preventDefault();
-                  toggleColumn(id);
-                }}
-              >
-                <input type="checkbox" readOnly checked={!hidden.has(id)} className="size-4" aria-hidden />
-                {COLUMN_LABELS[id]}
-              </DropdownMenuItem>
+          <label className="sr-only" htmlFor="filtro-vino">
+            Vino
+          </label>
+          <select
+            id="filtro-vino"
+            className="hidden h-8 shrink-0 rounded-full bg-muted px-3 text-compact whitespace-nowrap md:inline-block"
+            value={wineId}
+            onChange={(event) => setFilter("wine_id", event.target.value)}
+          >
+            <option value="">Vino</option>
+            {wineRows.map((wine) => (
+              <option key={wine.id} value={wine.id}>
+                {wine.name}
+              </option>
             ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+          </select>
+          <label className="sr-only" htmlFor="filtro-formato">
+            Formato
+          </label>
+          <select
+            id="filtro-formato"
+            className="hidden h-8 shrink-0 rounded-full bg-muted px-3 text-compact whitespace-nowrap md:inline-block"
+            value={formatId}
+            onChange={(event) => setFilter("format_id", event.target.value)}
+          >
+            <option value="">Formato</option>
+            {formatRows.map((format) => (
+              <option key={format.id} value={format.id}>
+                {format.code}
+              </option>
+            ))}
+          </select>
+          <label className="sr-only" htmlFor="filtro-anada">
+            Añada
+          </label>
+          <Input
+            id="filtro-anada"
+            inputMode="numeric"
+            value={vintage}
+            placeholder="Añada"
+            className="hidden h-8 w-24 shrink-0 rounded-full md:inline-block"
+            onChange={(event) => setFilter("vintage", event.target.value.replace(/\D/g, "").slice(0, 4))}
+          />
+          <Pill active={active === "true"} onClick={() => setFilter("active", active === "true" ? "" : "true")}>
+            Activos
+          </Pill>
+          <Pill active={organic} onClick={() => setFilter("organic", organic ? "" : "true")}>
+            Ecológico
+          </Pill>
+          <span className="shrink-0 text-meta whitespace-nowrap text-muted-foreground">Faltan datos</span>
+          <Pill active={missing === "gtin"} onClick={() => setFilter("missing", missing === "gtin" ? "" : "gtin")}>
+            GTIN
+          </Pill>
+          <Pill active={missing === "nc_code"} onClick={() => setFilter("missing", missing === "nc_code" ? "" : "nc_code")}>
+            NC
+          </Pill>
+          <Pill active={missing === "silicie"} onClick={() => setFilter("missing", missing === "silicie" ? "" : "silicie")}>
+            SILICIE
+          </Pill>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="secondary" size="md" className="hidden shrink-0 md:inline-flex">
+                <Columns3 aria-hidden className="size-4" />
+                Columnas
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {COLUMN_IDS.map((id) => (
+                <DropdownMenuItem
+                  key={id}
+                  className="min-h-11"
+                  disabled={id === "name"}
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    toggleColumn(id);
+                  }}
+                >
+                  <input type="checkbox" readOnly checked={!hidden.has(id)} className="size-4" aria-hidden />
+                  {COLUMN_LABELS[id]}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+        <Button type="button" variant={sheetFilters > 0 ? "primary" : "secondary"} size="md" className="mb-1 shrink-0 md:hidden" onClick={() => setFiltersOpen(true)}>
+          {sheetFilters > 0 ? `Filtros · ${sheetFilters}` : "Filtros"}
+        </Button>
       </div>
 
       {!loading && items.length > 0 ? <p className="text-meta text-muted-foreground">{total} productos</p> : null}
@@ -474,14 +465,67 @@ export function ProductList({ me }: { me: Me }) {
         index={selectedIndex}
         wines={wineRows}
         formats={formatRows}
-        canWrite={canWrite}
         onOpenChange={(open) => {
           if (!open) setSelected(null);
         }}
         onSelect={setSelected}
-        onChanged={() => setAttempt((value) => value + 1)}
       />
       <ProductCreateSheet open={createOpen} wines={wineRows} formats={formatRows} onOpenChange={setCreateOpen} />
+      <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+        <SheetContent side="bottom" data-screen="catalogo-filtros">
+          <SheetHeader>
+            <SheetTitle>Filtros</SheetTitle>
+          </SheetHeader>
+          <div className="grid gap-4 px-4 pb-6">
+            <label className="grid gap-1.5 text-compact" htmlFor="filtro-tipo">
+              Tipo
+              <NativeSelect id="filtro-tipo" value={kind} onChange={(event) => setFilter("kind", event.target.value)}>
+                <option value="">Todos</option>
+                {KIND_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </NativeSelect>
+            </label>
+            <label className="grid gap-1.5 text-compact" htmlFor="filtro-vino-hoja">
+              Vino
+              <NativeSelect id="filtro-vino-hoja" value={wineId} onChange={(event) => setFilter("wine_id", event.target.value)}>
+                <option value="">Todos</option>
+                {wineRows.map((wine) => (
+                  <option key={wine.id} value={wine.id}>
+                    {wine.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </label>
+            <label className="grid gap-1.5 text-compact" htmlFor="filtro-formato-hoja">
+              Formato
+              <NativeSelect id="filtro-formato-hoja" value={formatId} onChange={(event) => setFilter("format_id", event.target.value)}>
+                <option value="">Todos</option>
+                {formatRows.map((format) => (
+                  <option key={format.id} value={format.id}>
+                    {format.code}
+                  </option>
+                ))}
+              </NativeSelect>
+            </label>
+            <label className="grid gap-1.5 text-compact" htmlFor="filtro-anada-hoja">
+              Añada
+              <Input
+                id="filtro-anada-hoja"
+                inputMode="numeric"
+                value={vintage}
+                placeholder="2025"
+                onChange={(event) => setFilter("vintage", event.target.value.replace(/\D/g, "").slice(0, 4))}
+              />
+            </label>
+            <Button type="button" onClick={() => setFiltersOpen(false)}>
+              Ver productos
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
