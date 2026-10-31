@@ -77,6 +77,14 @@ export const navigation: NavEntry[] = [
     icon: ChartBar,
     path: '/informes',
     permission: 'reports.read',
+  },
+  {
+    id: 'stock',
+    module: 'inventory',
+    label: copy.nav.stock,
+    icon: Box,
+    path: '/stock',
+    permission: 'inventory.read',
     mobile: 'tab',
     placement: 'main',
   },
@@ -97,6 +105,7 @@ export const navigation: NavEntry[] = [
     ],
   },
   {
+
     id: 'settings',
     module: 'core',
     label: 'Ajustes',
