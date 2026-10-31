@@ -17,6 +17,9 @@ import { ProductList } from '@/pages/catalogo/ProductList'
 import { ProductPage } from '@/pages/catalogo/ProductPage'
 import { WinesPage } from '@/pages/catalogo/WinesPage'
 import { DepositoPage } from '@/pages/bodega/Deposito'
+import { AnadasPage } from '@/pages/lote-diseno/AnadasPage'
+import { RecetaPage } from '@/pages/lote-diseno/RecetaPage'
+import { RecetasPage } from '@/pages/lote-diseno/RecetasPage'
 import { LotePage } from '@/pages/bodega/Lote'
 import { LotesPage } from '@/pages/bodega/Lotes'
 import { MapaPage } from '@/pages/bodega/Mapa'
@@ -58,6 +61,9 @@ export function AppRoutes({ me }: { me: Me }) {
       <Route path="bodega/depositos/:vesselId" element={<DepositoPage me={me} />} />
       <Route path="bodega/lotes" element={<LotesPage me={me} />} />
       <Route path="bodega/lotes/:lotId" element={<LotePage me={me} />} />
+      <Route path="bodega/recetas" element={<RecetasPage me={me} />} />
+      <Route path="bodega/recetas/:id" element={<RecetaPage me={me} />} />
+      <Route path="bodega/anadas" element={<AnadasPage me={me} />} />
       <Route path="lotes/:lotId" element={<LotePage me={me} />} />
       <Route path="bodega/operaciones/nueva" element={<OperacionPage me={me} />} />
       <Route path="bodega/operacion/nueva" element={<OperacionPage me={me} />} />
