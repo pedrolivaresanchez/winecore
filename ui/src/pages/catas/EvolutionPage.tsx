@@ -7,14 +7,12 @@ import { formatDate } from '@/lib/format'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
 import { Badge, EmptyState, SegmentedControl, Select, Skeleton } from '@/ui'
-import { ChartEmpty } from '@/pages/informes/charts/empty'
-import { LineChart } from '@/pages/informes/charts/line-chart'
+import { CHART_INK, ChartEmpty, LineChart, chartModel } from '@/ui/charts'
 import { getEvolution, messageOf } from '@/pages/catas/api'
 import { CatasFrame } from '@/pages/catas/frame'
 import { formatScore, subjectLabel } from '@/pages/catas/labels'
 import type { EvolutionPoint, EvolutionView } from '@/pages/catas/types'
 import { useCatalog } from '@/pages/catas/use-catalog'
-import type { ChartDatum } from '@/lib/chart-scale'
 
 export function EvolutionPage({ me }: { me: Me }) {
   const [params, setParams] = useSearchParams()
@@ -78,15 +76,19 @@ export function EvolutionPage({ me }: { me: Me }) {
     setParams(query)
   }
 
-  const points = useMemo<ChartDatum[]>(() => {
+  const model = useMemo(() => {
     const rows = (view?.points ?? []).filter((point) => point.kind === 'tasting' && point.tasting?.overall_score != null)
-    return rows.map((point) => ({
-      key: point.tasting?.id ?? point.at,
-      label: formatDate(point.at),
-      axis: formatDate(point.at).slice(0, 5),
-      value: point.tasting?.overall_score ?? 0,
-      previous: null,
-    }))
+    return chartModel({
+      categoryLabel: copy.catas.chart,
+      measureType: 'number',
+      temporal: true,
+      format: (value) => formatScore(value),
+      series: [{ key: 'overall', label: copy.catas.overall, color: CHART_INK }],
+      categories: rows.map((point) => {
+        const score = point.tasting?.overall_score ?? 0
+        return { key: String(point.tasting?.id ?? point.at), label: formatDate(point.at), values: [score], total: score }
+      }),
+    })
   }, [view])
 
   const title = view?.scope.kind === 'wine' ? view.scope.wine_name : view?.scope.kind === 'lot' ? view.scope.lot_code : copy.catas.evolution
@@ -136,18 +138,7 @@ export function EvolutionPage({ me }: { me: Me }) {
               <header>
                 <h1 className="text-body font-medium text-ink-900">{title}</h1>
               </header>
-              {points.length === 0 ? (
-                <ChartEmpty title={copy.catas.emptyChart} />
-              ) : (
-                <LineChart
-                  points={points}
-                  height={220}
-                  label={copy.catas.chart}
-                  currentLabel={copy.catas.overall}
-                  previousLabel={copy.catas.score}
-                  formatValue={(value) => formatScore(value)}
-                />
-              )}
+              {model.categories.length === 0 ? <ChartEmpty height={220} message={copy.catas.emptyChart} /> : <LineChart model={model} height={220} />}
               {view.points.length === 0 ? (
                 <EmptyState size="sm" title={copy.catas.emptyPoints} />
               ) : (

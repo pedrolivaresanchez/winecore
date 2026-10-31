@@ -18,7 +18,7 @@ import {
   type IconComponent,
 } from '@/ui/icons'
 import { Dialog, Kbd } from '@/ui'
-import { tagToneClass, type TagTone } from '@/ui/tag-palette'
+import { ObjectGlyph, type GlyphTint } from '@/ui/object-glyph'
 import { visibleGroups } from '@/app/nav'
 import { useTheme } from '@/theme/theme-provider'
 import { listContacts, type ContactSummary } from '@/lib/contacts'
@@ -37,8 +37,8 @@ type Command = {
   label: string
   hint?: string
   icon: IconComponent
-  /** The rail section's hue, so a place looks the same here as in the rail. */
-  tone?: TagTone
+  /** The object's glyph tint, so a place looks the same here as in the rail. */
+  tint?: GlyphTint
   keywords?: string
   /** Offered once you type; an empty palette shows the rail's first rows only. */
   secondary?: boolean
@@ -135,7 +135,7 @@ export function CommandPalette({
         label: item.label,
         hint: group.label,
         icon: item.icon,
-        tone: group.tone,
+        tint: item.tint,
         secondary: item.tier === 'more',
         run: go(item.path),
       })),
@@ -261,13 +261,13 @@ export function CommandPalette({
                         selected ? 'bg-fill-hover text-ink-900' : 'text-control',
                       )}
                     >
-                      <Icon
-                        className={cn(
-                          'size-4 shrink-0',
-                          command.tone ? [tagToneClass(command.tone), 'text-(--tag-dot-0)'] : selected ? 'text-ink-900' : 'text-icon-muted',
+                      <span className="flex size-5 shrink-0 items-center justify-center">
+                        {command.tint ? (
+                          <ObjectGlyph icon={Icon} tint={command.tint} size="md" />
+                        ) : (
+                          <Icon className={cn('size-4 shrink-0', selected ? 'text-ink-900' : 'text-icon-muted')} strokeWidth={iconStroke} />
                         )}
-                        strokeWidth={iconStroke}
-                      />
+                      </span>
                       <span className="min-w-0 flex-1 truncate">{command.label}</span>
                       {command.hint ? <span className="max-w-[40%] shrink-0 truncate text-caption text-text-tertiary">{command.hint}</span> : null}
                     </button>

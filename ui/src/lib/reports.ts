@@ -54,7 +54,6 @@ const FILE_NAME: Record<ReportName, string> = {
   stock: 'existencias.csv',
 }
 
-const monthShort = new Intl.DateTimeFormat('es-ES', { month: 'short', timeZone: 'UTC' })
 const monthYear = new Intl.DateTimeFormat('es-ES', { month: 'short', year: 'numeric', timeZone: 'UTC' })
 
 function civil(value: string): string {
@@ -131,19 +130,6 @@ export function formatAxis(value: number): string {
   return text.replace(/[\u00a0\u202f]/g, ' ')
 }
 
-export function formatDelta(
-  current: number,
-  previous: number | null,
-): { text: string; direction: -1 | 0 | 1 } | null {
-  if (previous == null || previous === 0 || !Number.isFinite(current)) return null
-  const pct = ((current - previous) / Math.abs(previous)) * 100
-  if (!Number.isFinite(pct)) return null
-  const direction = pct > 0.05 ? 1 : pct < -0.05 ? -1 : 0
-  const digits = Math.abs(pct) >= 10 ? 0 : 1
-  const raw = pct.toFixed(digits).replace('.', ',')
-  return { text: `${pct > 0 ? '+' : ''}${raw} %`, direction }
-}
-
 export function yearToDate(now = new Date()): { from: string; to: string } {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Europe/Madrid',
@@ -160,13 +146,6 @@ export function displayLabel(groupBy: GroupBy, point: Pick<ReportPoint, 'key' | 
   const date = groupBy === 'month' ? monthDate(point.key) : null
   if (date) return civil(monthYear.format(date))
   return point.label
-}
-
-export function axisTick(groupBy: GroupBy, point: Pick<ReportPoint, 'key' | 'label'>, short: boolean): string {
-  const date = groupBy === 'month' ? monthDate(point.key) : null
-  if (date) return civil((short ? monthShort : monthYear).format(date))
-  if (groupBy === 'year') return point.key
-  return point.label.length > 14 ? `${point.label.slice(0, 13)}…` : point.label
 }
 
 export function hasMeasure(body: ReportBody, measure: Measure): boolean {

@@ -11,21 +11,6 @@ export type ChartDatum = {
 }
 
 export const SERIES_CURRENT = 'var(--color-chart-ink)'
-export const SERIES_PREVIOUS = 'var(--color-chart-4)'
-
-/**
- * One hue per subject, the same wherever that subject is drawn: sales in Comercial's
- * emerald, expenses in Gestión's amber, wine in stock in Bodega's rose. The previous year
- * stays sky on every chart so a comparison always reads the same way.
- */
-export type ChartTone = 'sales' | 'expenses' | 'stock'
-
-export const SERIES_TONE: Record<ChartTone, string> = {
-  sales: 'var(--color-chart-7)',
-  expenses: 'var(--color-chart-15)',
-  stock: 'var(--color-chart-11)',
-}
-
 export function niceScale(min: number, max: number, targetTicks = 4): { ticks: number[]; min: number; max: number } {
   if (!Number.isFinite(min) || !Number.isFinite(max) || (min === 0 && max === 0)) {
     return { ticks: [0, 1], min: 0, max: 1 }

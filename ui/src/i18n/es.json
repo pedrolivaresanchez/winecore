@@ -424,6 +424,21 @@
       "category": "Categoría"
     }
   },
+  "charts": {
+    "noData": "Todavía no hay datos suficientes.",
+    "otherCount": "{count} más",
+    "folded": "{count} grupos pequeños agrupados, {total} en total",
+    "foldedHint": "Hay demasiados grupos para dibujarlos de forma legible, así que los más pequeños se muestran como uno. Abre la tabla de datos para verlos todos.",
+    "total": "Total",
+    "goal": "Objetivo",
+    "value": "Valor",
+    "unassigned": "Sin asignar",
+    "columnLabel": "Gráfico de columnas: {dimension}",
+    "lineLabel": "Gráfico de línea: {dimension}",
+    "legendShow": "Mostrar {name}",
+    "legendHide": "Ocultar {name}",
+    "vsPrevious": "Anterior: {value}"
+  },
   "settings": {
     "title": "Ajustes",
     "search": "Buscar ajuste",
