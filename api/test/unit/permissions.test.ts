@@ -12,7 +12,7 @@ const granted: Record<RoleCode, readonly Permission[]> = {
   owner: PERMISSIONS,
   approver: ['contacts.read', 'catalog.read', 'audit.read', 'inventory.read', 'cellar.read'],
   admin: ['contacts.read', 'contacts.write', 'catalog.read', 'catalog.write', 'inventory.read', 'inventory.count', 'cellar.read'],
-  cellar: ['catalog.read', 'inventory.read', 'inventory.count', 'cellar.read', 'cellar.operate'],
+  cellar: ['catalog.read', 'inventory.read', 'inventory.count', 'cellar.read', 'cellar.operate', 'tasting.write'],
   field: ['cellar.read'],
   advisor: ['contacts.read', 'catalog.read', 'audit.read', 'inventory.read', 'cellar.read'],
 };

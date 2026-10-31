@@ -54,6 +54,12 @@ const CATALOG = {
   WC_VESSEL_NOT_IN_SERVICE: [409, 'El recipiente no está en servicio'],
   WC_ILLEGAL_TRANSITION: [409, 'La transición de estado no está permitida'],
   WC_ECO_MIX: [422, 'No se puede ensamblar un lote ecológico con uno que no lo es'],
+  WC_TASTING_TEMPLATE: [422, 'La plantilla de cata no es válida'],
+  WC_TASTING_SUBJECT: [422, 'El sujeto de la cata no cuadra con la plantilla'],
+  WC_TASTING_SCORE: [422, 'La puntuación está fuera de la escala'],
+  WC_TASTING_HIDDEN: [409, 'La correspondencia de la cata ciega sigue oculta'],
+  WC_TASTING_CLOSED: [409, 'La sesión de cata no admite más cambios'],
+  WC_TASTING_DAY: [422, 'El día no pertenece a la sesión'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;
