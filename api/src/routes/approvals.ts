@@ -10,6 +10,8 @@ import { sql } from '../core/db/sql';
 import type { Actor } from '../core/db/writer';
 import { domainError } from '../core/errors';
 import { issueIntercompanyInvoice } from '../core/intercompany/settlement';
+import { noopApprovalHook, type SupplierInvoiceApprovalHook } from '../core/purchasing/approval';
+import { consumePurchaseApproval } from '../core/purchasing/invoice';
 import { syncSubmissionFromApproval } from '../core/regulatory/submissions';
 
 const PAGE_SIZE = 50;
@@ -30,6 +32,7 @@ const TITLES: Record<ApprovalKind, string> = {
   module_toggle: 'Módulos',
   third_party_message: 'Mensaje a terceros',
   sepa_remittance: 'Remesa SEPA',
+  purchase_invoice_approval: 'Factura de proveedor',
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -99,7 +102,13 @@ export async function getApproval(deps: HttpDeps, request: Request, id: string) 
   };
 }
 
-export async function decideApproval(deps: HttpDeps, request: Request, id: string, payload: unknown) {
+export async function decideApproval(
+  deps: HttpDeps,
+  request: Request,
+  id: string,
+  payload: unknown,
+  purchaseHook: SupplierInvoiceApprovalHook = noopApprovalHook,
+) {
   if (!UUID_RE.test(id)) throw domainError('WC_NOT_FOUND');
   const body = objectBody(payload);
   const now = deps.now();
@@ -134,6 +143,11 @@ export async function decideApproval(deps: HttpDeps, request: Request, id: strin
   });
   if (row.kind === 'regulatory_submission') {
     await syncSubmissionFromApproval(deps.writer, userActor(request, user.id), row.id);
+  }
+  if (body.decision === 'approve' && row.kind === 'purchase_invoice_approval') {
+    await deps.writer.withWrite(userActor(request, user.id), async (tx) => {
+      await consumePurchaseApproval(tx, row.id, user.id, purchaseHook, now);
+    });
   }
   if (body.decision === 'approve' && row.kind === 'intercompany_invoice_issue') {
     await deps.writer.withWrite(userActor(request, user.id), async (tx) => {

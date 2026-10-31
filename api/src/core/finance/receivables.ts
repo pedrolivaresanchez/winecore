@@ -24,6 +24,7 @@ export async function listReceivables(writer: Writer, user: UserCtx, request: Re
   const contactId = contactRaw ? parseUuid(contactRaw, 'contact_id') : null;
   const agingRaw = optionalText(url.searchParams.get('aging'), 'aging', 8);
   const aging = agingRaw ? normalizeAging(agingRaw) : null;
+  const direction = directionOf(url.searchParams.get('direction'));
   const today = todayMadrid();
   const scope = entityScope(user, 'finance.read');
   let entityId: string | null = null;
@@ -36,7 +37,7 @@ export async function listReceivables(writer: Writer, user: UserCtx, request: Re
     return empty(today);
   }
   const docs = (await listOpenDocuments(writer, entityId))
-    .filter((doc) => doc.direction === 'in')
+    .filter((doc) => doc.direction === direction)
     .filter((doc) => scope === null || entityId !== null || scope.some((id) => id.toLowerCase() === doc.legalEntityId))
     .filter((doc) => !contactId || doc.counterpartyId === contactId.toLowerCase());
   const groups = new Map<string, {
@@ -114,6 +115,12 @@ function renderBuckets(amounts: Record<AgingBucket | 'total' | 'overdue', Decima
     total: moneyText(amounts.total),
     overdue: moneyText(amounts.overdue),
   };
+}
+
+function directionOf(value: string | null): 'in' | 'out' {
+  if (value == null || value === '' || value === 'receivable' || value === 'in') return 'in';
+  if (value === 'payable' || value === 'out') return 'out';
+  throw domainError('WC_VALIDATION', { direction: 'Usa receivable o payable' });
 }
 
 function empty(today: string) {

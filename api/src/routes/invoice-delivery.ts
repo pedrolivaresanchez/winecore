@@ -1,9 +1,12 @@
 import { requestIdFor, sessionOf } from '../auth/guard';
 import { can } from '../core/auth/permissions';
+import { stamp, isUuid } from '../core/billing/format';
+import { sql } from '../core/db/sql';
 import type { Writer } from '../core/db/writer';
 import { domainError } from '../core/errors';
 import {
   getDeliveryPackage,
+  listDeliveryHistory,
   listPendingDeliveries,
   markDeliveryFailed,
   markDeliverySent,
@@ -47,6 +50,31 @@ export async function listInvoiceDeliveries(deps: DeliveryRouteDeps, request: Re
       .map(({ legal_entity_id: _entity, ...item }) => item);
     return { items, next_cursor: page.nextCursor };
   });
+}
+
+export async function listInvoiceDeliveryHistory(deps: DeliveryRouteDeps, request: Request, id: string) {
+  const user = sessionOf(request);
+  if (!isUuid(id)) throw domainError('WC_NOT_FOUND');
+  const rows = await deps.writer.read<{ legal_entity_id: string }>(sql`
+    SELECT legal_entity_id FROM billing.invoice WHERE id = CAST(${id.toLowerCase()} AS UUID)
+  `);
+  const entityId = rows[0]?.legal_entity_id;
+  if (!entityId) throw domainError('WC_NOT_FOUND');
+  if (!can(user, 'billing.read', String(entityId).toLowerCase())) throw domainError('WC_FORBIDDEN');
+  const history = await listDeliveryHistory(deps.writer, id.toLowerCase());
+  return {
+    items: history.map((row) => ({
+      attempt: row.attempt,
+      channel: row.channel,
+      recipients: row.recipients,
+      status: row.status,
+      message_id: row.messageId,
+      error: row.error,
+      created_at: stamp(row.createdAt),
+      sent_at: stamp(row.sentAt),
+      marked_by: row.markedBy,
+    })),
+  };
 }
 
 export async function getInvoiceDelivery(deps: DeliveryRouteDeps, request: Request, id: string) {

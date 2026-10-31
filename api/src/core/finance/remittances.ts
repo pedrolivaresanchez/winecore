@@ -1,5 +1,5 @@
 import { Decimal } from 'decimal.js';
-import type { UserCtx } from '../auth/permissions';
+import { entityScope, type UserCtx } from '../auth/permissions';
 import { sha256Hex } from '../hash';
 import { sql } from '../db/sql';
 import type { Tx, Writer } from '../db/writer';
@@ -16,6 +16,9 @@ import { dateOnly, decimalOf, isTargetTable, moneyText, objectOf, parseAmount, p
 import { findEntity, loadDocument, loadParty, readBytes, storeBytes } from './store';
 
 const ROUTE = 'POST /v1/remittances';
+const REMITTANCE_STATUSES = new Set([
+  'draft', 'pending_approval', 'approved', 'file_generated', 'uploaded_by_user', 'settled', 'partially_rejected', 'cancelled',
+]);
 
 interface ItemInput {
   targetTable: TargetTable;
@@ -165,6 +168,59 @@ export async function markRemittanceSubmitted(writer: Writer, user: UserCtx, req
     remember(tx, user.id, key, hash, 'POST /v1/remittances/:id/submitted', 200, body, now);
     return { status: 200, body };
   });
+}
+
+export async function listRemittances(writer: Writer, user: UserCtx, request: Request) {
+  const url = new URL(request.url);
+  const entityValue = url.searchParams.get('entity')?.trim() || null;
+  const status = url.searchParams.get('status')?.trim() || null;
+  if (status && !REMITTANCE_STATUSES.has(status)) {
+    throw domainError('WC_VALIDATION', { status: 'Estado de remesa no válido' });
+  }
+  const limit = limitOf(url.searchParams.get('limit'));
+  const scope = entityScope(user, 'finance.read');
+  let entityId: string | null = null;
+  if (entityValue) {
+    const entity = await findEntity(writer, entityValue);
+    if (!entity) throw domainError('WC_VALIDATION', { entity: 'La entidad no existe' });
+    assertScope(user, 'finance.read', entity.id);
+    entityId = entity.id;
+  }
+  const filters = ['TRUE'];
+  if (entityId) filters.push(sql`r.legal_entity_id = CAST(${entityId} AS UUID)`);
+  else if (scope) {
+    if (scope.length === 0) return { items: [], next_cursor: null, total: 0 };
+    filters.push(`r.legal_entity_id IN (${scope.map((id) => sql`CAST(${id} AS UUID)`).join(', ')})`);
+  }
+  if (status) filters.push(sql`r.status = ${status}`);
+  const where = filters.join(' AND ');
+  const rows = await writer.read<Record<string, unknown>>(
+    `SELECT r.id, r.legal_entity_id, e.code AS entity_code, r.kind, r.status, r.bank_account_id,
+            r.execution_date, r.total, r.created_at
+     FROM finance.remittance r
+     JOIN core.legal_entity e ON e.id = r.legal_entity_id
+     WHERE ${where}
+     ORDER BY r.created_at DESC, r.id DESC
+     LIMIT ${limit}`,
+  );
+  const totalRows = await writer.read<{ total: number }>(
+    `SELECT count(*)::INTEGER AS total FROM finance.remittance r WHERE ${where}`,
+  );
+  return {
+    items: rows.map((row) => ({
+      id: String(row.id).toLowerCase(),
+      legal_entity_id: String(row.legal_entity_id).toLowerCase(),
+      entity_code: String(row.entity_code),
+      kind: String(row.kind),
+      status: String(row.status),
+      bank_account_id: String(row.bank_account_id).toLowerCase(),
+      execution_date: dateOnly(row.execution_date),
+      total: moneyText(decimalOf(row.total)),
+      created_at: row.created_at == null ? null : String(row.created_at),
+    })),
+    next_cursor: null,
+    total: Number(totalRows[0]?.total ?? 0),
+  };
 }
 
 export async function getRemittance(writer: Writer, user: UserCtx, remittanceId: string) {
@@ -511,10 +567,17 @@ async function view(tx: { read: Tx['read'] }, id: string) {
   const row = rows[0];
   if (!row) throw domainError('WC_NOT_FOUND');
   const items = await tx.read<Record<string, unknown>>(sql`
-    SELECT id, target_table, target_id, counterparty_id, amount, mandate_ref, end_to_end_id, status
-    FROM finance.remittance_item
-    WHERE remittance_id = CAST(${id} AS UUID)
-    ORDER BY end_to_end_id
+    SELECT i.id, i.target_table, i.target_id, i.counterparty_id, c.legal_name AS counterparty_name,
+           i.amount, i.mandate_ref, i.end_to_end_id, i.status,
+           COALESCE(inv.number, sup.supplier_invoice_number) AS document_number
+    FROM finance.remittance_item i
+    LEFT JOIN party.contact c ON c.id = i.counterparty_id
+    LEFT JOIN billing.invoice inv
+      ON i.target_table = 'billing.invoice' AND inv.id = i.target_id
+    LEFT JOIN purchasing.supplier_invoice sup
+      ON i.target_table = 'purchasing.supplier_invoice' AND sup.id = i.target_id
+    WHERE i.remittance_id = CAST(${id} AS UUID)
+    ORDER BY i.end_to_end_id
   `);
   return {
     id: String(row.id).toLowerCase(),
@@ -531,12 +594,22 @@ async function view(tx: { read: Tx['read'] }, id: string) {
       target_table: String(item.target_table),
       target_id: String(item.target_id).toLowerCase(),
       counterparty_id: String(item.counterparty_id).toLowerCase(),
+      counterparty_name: textOf(item.counterparty_name),
+      document_number: textOf(item.document_number),
       amount: moneyText(decimalOf(item.amount)),
       mandate_ref: textOf(item.mandate_ref),
       end_to_end_id: String(item.end_to_end_id),
       status: String(item.status),
     })),
   };
+}
+
+function limitOf(value: string | null): number {
+  if (!value) return 50;
+  if (!/^\d{1,3}$/.test(value) || Number(value) < 1 || Number(value) > 100) {
+    throw domainError('WC_VALIDATION', { limit: 'Debe ser un entero entre 1 y 100' });
+  }
+  return Number(value);
 }
 
 function parseCreate(raw: unknown) {
