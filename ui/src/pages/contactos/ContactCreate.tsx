@@ -33,7 +33,13 @@ export function ContactCreate({ me }: { me: Me }) {
     if (duplicate) document.getElementById("duplicate-tax")?.scrollIntoView({ block: "center" });
   }, [duplicate]);
 
-  if (!allows(me, "contacts.read")) return <NoPermission />;
+  if (!allows(me, "contacts.read")) {
+    return (
+      <div data-screen="contactos-sin-permiso">
+        <NoPermission />
+      </div>
+    );
+  }
 
   async function onSubmit() {
     const next = { ...value, tax_id: value.tax_id ? normalizeTaxId(value.tax_id) : "" };
@@ -92,7 +98,7 @@ export function ContactCreate({ me }: { me: Me }) {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
+    <div className="mx-auto flex w-full min-w-0 max-w-2xl flex-col gap-4">
       <Link to="/contactos" className="text-compact text-muted-foreground">
         ← Contactos
       </Link>

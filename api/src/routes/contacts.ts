@@ -120,7 +120,7 @@ export async function createContact(writer: Writer, request: Request) {
     if (duplicate) {
       const body = {
         code: 'WC_CONTACT_DUPLICATE_TAX_ID',
-        message: 'Ya existe un contacto con este NIF',
+        message: `Ya existe ${duplicate.existing_name} con este NIF`,
         details: duplicate,
       };
       remember(tx, user.id, key, hash, 409, body, now);

@@ -144,6 +144,12 @@ export async function apiText(path: string, init?: RequestInit): Promise<string>
   return response.text();
 }
 
+/** Bytes tal cual (conserva el BOM del CSV; `text()` lo eliminaría al decodificar). */
+export async function apiBlob(path: string, init?: RequestInit): Promise<Blob> {
+  const response = await send(path, { ...init, headers: { Accept: "text/csv", ...headersOf(init) } }, false);
+  return response.blob();
+}
+
 function headersOf(init?: RequestInit): Record<string, string> {
   const headers = new Headers(init?.headers);
   const out: Record<string, string> = {};
