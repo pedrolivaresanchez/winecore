@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "lint": "eslint .",
@@ -14,12 +14,14 @@
   "dependencies": {
     "@fontsource/inter": "5.2.8",
     "@fontsource/jetbrains-mono": "5.2.8",
+    "@simplewebauthn/browser": "14.0.0",
     "@tailwindcss/vite": "4.1.17",
     "clsx": "2.1.1",
     "i18next": "26.3.6",
     "motion": "12.23.24",
     "nucleo-core-essential-outline-24": "1.1.6",
     "nucleo-ui-essential-outline-18": "1.1.7",
+    "qrcode": "1.5.4",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "react-i18next": "17.0.10",
@@ -31,6 +33,7 @@
   "devDependencies": {
     "@eslint/js": "9.39.1",
     "@types/node": "24.10.1",
+    "@types/qrcode": "1.5.6",
     "@types/react": "19.2.4",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "4.7.0",
