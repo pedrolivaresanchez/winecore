@@ -11,7 +11,8 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react'
-import { ChevronDown, ChevronUp, ChevronsUpDown, Expand, Plus, type IconComponent } from './icons'
+import { ChevronDown, ChevronUp, ChevronsUpDown, Expand, Filter, Plus, type IconComponent } from './icons'
+import { AutoColumnMenu, FilteredEmpty, FilterStrip, useGridAuto } from './grid-auto'
 import { Checkbox } from './checkbox'
 import { Skeleton } from './skeleton'
 import { GlassMenu, useMenuOpen } from './glass-menu'
@@ -100,6 +101,13 @@ export type GridColumn<Row> = {
   wrapName?: (row: Row, name: ReactNode) => ReactNode
   /** Aggregations offered in this column's footer cell. Empty means no footer menu. */
   aggregations?: GridAggregation[]
+  /**
+   * The text this column is sorted and filtered by when the grid does it itself. Defaults to
+   * the words the cell draws; give it when the cell draws none (a meter, a mark).
+   */
+  filterValue?: (row: Row) => string
+  /** `false` keeps this column out of the grid's own value and date filters. */
+  filterable?: boolean
 }
 
 function isEditable<Row>(column: GridColumn<Row>, row: Row | undefined): boolean {
@@ -208,6 +216,87 @@ export type DataGridProps<Row> = {
    * `scroll-padding` tells keyboard focus the same number. Zero leaves the grid as it was.
    */
   endClearance?: number
+  /**
+   * The grid's own tools: a column menu that sorts (unless the page passes `onSort`) and
+   * filters the loaded rows by value or date, a strip with the conditions, and widths and
+   * sort kept per list. On by default; `false` for a grid that must stay exactly as drawn.
+   */
+  autoTools?: boolean
+  /** Where widths, sort and filters are kept. Defaults to the route and first column; `null` keeps nothing. */
+  persistKey?: string | null
+}
+
+type CoreProps<Row> = DataGridProps<Row> & {
+  /** Drawn above the scroller, inside the grid's frame. */
+  banner?: ReactNode
+  filteredColumns?: ReadonlySet<string>
+  headerMenuClassName?: string
+  hasHeaderMenu?: (column: GridColumn<Row>) => boolean
+}
+
+/**
+ * The spreadsheet, plus whatever the page left to it: see `autoTools`. A page that sorts on
+ * the server keeps its order and gains the filters; one that brings its own header menu
+ * keeps that menu.
+ */
+export function DataGrid<Row>(props: DataGridProps<Row>) {
+  const enabled = props.autoTools !== false && !props.renderHeaderMenu
+  const auto = useGridAuto({
+    columns: props.columns,
+    rows: props.rows,
+    widths: props.widths,
+    onResize: props.onResize,
+    sortBy: props.sortBy,
+    sortDir: props.sortDir,
+    onSort: props.onSort,
+    total: props.total,
+    persistKey: props.persistKey,
+    enabled,
+  })
+  if (!enabled) return <DataGridCore {...props} widths={auto.widths} onResize={auto.onResize} />
+
+  const filtered = auto.filterCount > 0
+  return (
+    <DataGridCore
+      {...props}
+      columns={auto.columns}
+      rows={auto.rows}
+      widths={auto.widths}
+      onResize={auto.onResize}
+      sortBy={auto.sort?.id ?? null}
+      sortDir={auto.sort?.dir ?? 'desc'}
+      onSort={(id, dir) => auto.applySort({ id, dir })}
+      total={auto.total}
+      empty={filtered && auto.loaded > 0 ? <FilteredEmpty onClear={auto.clearFilters} /> : props.empty}
+      filteredColumns={new Set(Object.keys(auto.filters))}
+      headerMenuClassName="w-64"
+      hasHeaderMenu={auto.hasMenu}
+      renderHeaderMenu={({ column, close }) => (
+        <AutoColumnMenu
+          column={column}
+          kind={auto.kinds.get(column.id) ?? 'none'}
+          texts={auto.texts.get(column.id) ?? []}
+          sort={auto.sort}
+          onSort={auto.applySort}
+          filter={auto.filters[column.id]}
+          onFilter={(filter) => auto.setFilter(column.id, filter)}
+          close={close}
+        />
+      )}
+      banner={
+        filtered ? (
+          <FilterStrip
+            columns={props.columns}
+            filters={auto.filters}
+            shown={auto.rows.length}
+            loaded={auto.loaded}
+            onRemove={(id) => auto.setFilter(id, null)}
+            onClear={auto.clearFilters}
+          />
+        ) : null
+      }
+    />
+  )
 }
 
 /** A body row and the sticky footer. `h-9`. The selection dock rises by this. */
@@ -271,7 +360,7 @@ type Cursor = { row: number; col: number }
  * rows. So the page length stops at 200 instead: four times the rows this grid has always
  * drawn, paid once when the page lands, and never seen as a hole in somebody's list.
  */
-export function DataGrid<Row>({
+function DataGridCore<Row>({
   columns,
   rows,
   rowKey,
@@ -300,7 +389,11 @@ export function DataGrid<Row>({
   scrollKey,
   rowAccessory,
   endClearance = 0,
-}: DataGridProps<Row>) {
+  banner,
+  filteredColumns,
+  headerMenuClassName,
+  hasHeaderMenu,
+}: CoreProps<Row>) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const headRefs = useRef(new Map<string, HTMLTableCellElement>())
   const [cursor, setCursor] = useState<Cursor | null>(null)
@@ -772,6 +865,7 @@ export function DataGrid<Row>({
 
   return (
     <div className={cn('relative flex min-h-0 flex-1 flex-col', className)}>
+      {banner}
       <div
         ref={scrollRef}
         data-grid-scroll=""
@@ -816,7 +910,9 @@ export function DataGrid<Row>({
                   sortBy={sortBy}
                   sortDir={sortDir}
                   onSort={onSort}
-                  renderHeaderMenu={renderHeaderMenu}
+                  renderHeaderMenu={hasHeaderMenu && !hasHeaderMenu(column) ? undefined : renderHeaderMenu}
+                  filtered={filteredColumns?.has(column.id) ?? false}
+                  menuClassName={headerMenuClassName}
                   onResize={onResize}
                   onReorder={onReorder}
                   headRefs={headRefs}
@@ -1268,12 +1364,17 @@ function HeaderCell<Row>({
   labels,
   selectAll,
   hasRowAccessory,
+  filtered = false,
+  menuClassName = 'w-52',
 }: {
   column: GridColumn<Row>
   index: number
   pinned: boolean
   pinnedShadow: boolean
   width: number
+  /** A grid filter holds this column: the header says so in the sort's own blue. */
+  filtered?: boolean
+  menuClassName?: string
   sortBy?: string | null
   sortDir: SortDir
   onSort?: (columnId: string, dir: SortDir) => void
@@ -1422,6 +1523,7 @@ function HeaderCell<Row>({
       >
         {column.header}
       </span>
+      {filtered ? <Filter aria-hidden className="size-3 shrink-0 text-info-500" strokeWidth={2} /> : null}
       {column.sortable && onSort ? (
         active ? (
           sortDir === 'asc' ? (
@@ -1500,7 +1602,7 @@ function HeaderCell<Row>({
             open={menu.open}
             onOpenChange={menu.setOpen}
             placement="bottom-start"
-            panelClassName="w-52"
+            panelClassName={menuClassName}
             className="min-w-0 w-full flex-1"
             fitTrigger={false}
             trigger={headerButton}

@@ -865,6 +865,31 @@
     "loadMore": "Cargar más",
     "loading": "Cargando…"
   },
+  "grid": {
+    "sortAscending": "Orden ascendente",
+    "sortDescending": "Orden descendente",
+    "clearSort": "Quitar orden",
+    "searchValues": "Buscar valor",
+    "contains": "Contiene «{q}»",
+    "empty": "(vacío)",
+    "noMatch": "Nada coincide",
+    "more": "{n} más · escribe para acotar",
+    "clearFilter": "Quitar filtro",
+    "clearFilters": "Quitar filtros",
+    "shown": "{shown} de {total}",
+    "custom": "Rango personalizado",
+    "today": "Hoy",
+    "presets": {
+      "today": "Hoy",
+      "last7": "Últimos 7 días",
+      "last30": "Últimos 30 días",
+      "thisMonth": "Este mes",
+      "lastMonth": "Mes pasado",
+      "thisQuarter": "Este trimestre",
+      "thisYear": "Este año",
+      "lastYear": "Año pasado"
+    }
+  },
   "login": {
     "title": "Entrar",
     "lead": "Usa tu cuenta de la bodega.",
