@@ -1,0 +1,45 @@
+name: guardrails
+
+# Barreras que bloquean el merge en cualquier rama (ver docs/adr/007-ci-cd-y-despliegue.md).
+# Fase 1: solo hay documentación; en Fase 2 se añaden lint, typecheck, tests, golden files y evals (docs/11-tests.md).
+
+on:
+  pull_request:
+  push:
+    branches: [main, staging, dev, "spec/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  secrets-scan:
+    name: Escaneo de secretos (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  no-real-data:
+    name: Sin datos reales ni ficheros sensibles
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bloquear data/, hojas de cálculo, CSV no sintéticos, certificados y .env
+        run: |
+          set -euo pipefail
+          bad="$(git ls-files \
+            | grep -E '^(data/|context/raw/)|\.(xlsx|xls|xlsm|zip|p12|pfx|pem|key|crt|cer|jks|keystore)$|(^|/)\.env(\..+)?$' \
+            | grep -v -E '(^|/)\.env\.example$' || true)"
+          csv="$(git ls-files '*.csv' | grep -v -E '/fixtures/synthetic/' || true)"
+          if [ -n "$bad$csv" ]; then
+            echo "::error::Ficheros prohibidos en el repo (datos reales, secretos o certificados):"
+            printf '%s\n' "$bad" "$csv" | sed '/^$/d'
+            exit 1
+          fi
+          echo "OK: no hay ficheros prohibidos."
+      - name: Detector de datos personales
+        run: python3 .github/scripts/pii_guard.py
