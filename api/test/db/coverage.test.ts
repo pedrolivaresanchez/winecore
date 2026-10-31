@@ -21,5 +21,11 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
   expect(missingCodes).toEqual([]);
   expect(missingIndexes).toEqual([]);
   expect(new Set(guards.map((guard) => guard.id)).size).toBe(guards.length);
-  expect(guards.every((guard) => guard.implemented === false)).toBe(true);
+  const implemented = guards.filter((guard) => guard.implemented).map((guard) => guard.id).sort();
+  expect(implemented).toEqual([
+    "CK:catalog.product#1",
+    "UQ:catalog.price_list_version(price_list_id,valid_from,valid_to)",
+    "UQ:catalog.product(wine_id,vintage,format_id)",
+    "WC050",
+  ]);
 });

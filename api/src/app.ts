@@ -7,6 +7,7 @@ import type { Config } from './config';
 import type { Writer } from './core/db/writer';
 import { asDomainError, domainError, errorBody } from './core/errors';
 import { listAudit, verifyAudit } from './routes/audit';
+import { catalogRoutes } from './routes/catalog';
 import { health } from './routes/health';
 import { me } from './routes/me';
 
@@ -71,6 +72,7 @@ export function createApp(deps: AppDeps) {
     })
     .post('/v1/audit/verify', ({ request }) => verifyAudit(deps.writer, request), {
       beforeHandle: requireOwner(guardDeps),
-    });
+    })
+    .use(catalogRoutes(guardDeps));
   return app;
 }
