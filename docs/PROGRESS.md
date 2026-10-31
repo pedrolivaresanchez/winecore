@@ -1,4 +1,4 @@
-# Progreso WineCore — actualizado 31-10-2026 12:30 CET (Europe/Madrid)
+# Progreso WineCore — actualizado 31-10-2026 12:27 CET (Europe/Madrid)
 Fase: 1 · Hito: especificación (antes de M0) · Estado: en curso
 
 ## Hecho desde la última actualización
@@ -35,7 +35,10 @@ Fase: 1 · Hito: especificación (antes de M0) · Estado: en curso
 - Lista completa (R1–R23) en `docs/00-triaje.md`.
 
 ## Coste y créditos (Opus/Grok usados; escalados con su motivo)
-- Fase 1 en curso con Opus (especificador) y 8 subagentes de investigación documental en paralelo. Sin escalados (aún no hay Fase 2).
+- **Agente principal**: 1 especificador con Claude Opus 5.5 (razonamiento máximo).
+- **Subagentes lanzados en total: 8**, todos con **Claude Opus 5.5** (el mismo modelo que el especificador) y todos de **investigación documental** de fuentes oficiales: Timbal, Verifactu, SILICIE/EMCS, SISV/Junta, ecológico y etiquetado, AecocEDI, Holded/Bacosoft y modelos de la AEAT. Se lanzaron a las 12:03 CET, **antes** de la instrucción de Pedro de limitar el gasto (12:25 CET).
+- **Límite aplicado desde las 12:25 CET**: máximo **2 subagentes Opus en paralelo**. Los 8 ya lanzados no se pueden detener con las herramientas disponibles, así que **no se lanzará ninguno nuevo hasta que terminen**. Después: solo si una tarea no la puedo hacer yo directamente y reutilizando el contexto de un subagente ya terminado antes que lanzar uno nuevo. Toda la redacción de la especificación la hago yo.
+- Sin escalados (aún no hay Fase 2).
 
 ## Enlaces (PRs, despliegue de staging)
 - Rama: `spec/fase-1` (el PR se abrirá al terminar la especificación).
