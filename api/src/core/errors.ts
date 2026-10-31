@@ -98,6 +98,7 @@ const CATALOG = {
   WC_FIN_APPROVAL_REQUIRED: [409, 'La remesa no está aprobada'],
   WC_FIN_MANDATE: [422, 'El cliente no tiene mandato SEPA'],
   WC_FIN_STATE: [409, 'La transición de estado no está permitida'],
+  WC_ECO_CERT_MISSING: [422, 'Falta el certificado ecológico vigente del proveedor'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;

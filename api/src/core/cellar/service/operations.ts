@@ -350,6 +350,13 @@ export async function rectifyOperation(writer: Writer, request: Request, id: str
     if (textOf(original.status) !== 'confirmed') {
       throw new DomainError('WC032', 409, 'Solo se rectifica una operación confirmada');
     }
+    if (textOf(original.op_type) === 'reception') {
+      throw new DomainError(
+        'WC_VALIDATION',
+        422,
+        'La entrada de uva se rectifica con la recepción de viñedo',
+      );
+    }
     const locks = await loadLocks(tx);
     const physical = postingInstant(textOf(original.occurred_at), locks);
     const fiscal = postingDay(businessDate(new Date(textOf(original.occurred_at))), locks);

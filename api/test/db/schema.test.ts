@@ -30,7 +30,8 @@ const MISSING_COLUMNS: Record<string, readonly string[]> = {
   // ninguna columna de la referencia se omite
 };
 const EXTRA_COLUMNS: Record<string, readonly string[]> = {
-  // ninguna columna extra
+  "vineyard.parcel": ["appellation", "organic_status", "conversion_started_on"],
+  "vineyard.maturity_check": ["sugar_gl", "ph"],
 };
 
 function splitSql(sql: string): string[] {
@@ -330,8 +331,8 @@ test("el esquema DuckDB reproduce tablas, vistas y columnas de la referencia", a
   expect(migrations[0]).toBe("0001_core.sql");
   expect(migrations).toContain("0002_core_ops.sql");
   expect(migrations).toContain("0016_legacy.sql");
-  expect(migrations.at(-1)).toBe("0018_invoice_delivery.sql");
-  expect(migrations).toHaveLength(18);
+  expect(migrations.at(-1)).toBe("0019_vineyard.sql");
+  expect(migrations).toHaveLength(19);
   await migrate(client);
 
   const refs = referenceObjects(root);

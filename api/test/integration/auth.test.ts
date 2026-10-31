@@ -45,6 +45,8 @@ describe('auth', () => {
         'sales.write',
         'settings.manage',
         'users.manage',
+        'vineyard.read',
+        'vineyard.write',
       ]);
       await new Promise((resolve) => setTimeout(resolve, 0));
       const line = logs.find((entry) => entry.includes('"/v1/me"'));
