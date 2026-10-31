@@ -153,15 +153,21 @@ export function requireOwner(deps: GuardDeps) {
 }
 
 async function rememberLogin(deps: GuardDeps, request: Request, user: UserCtx): Promise<void> {
-  await ensureLoginSession(
-    deps.writer,
-    { type: 'user', id: user.id, requestId: requestIdFor(request) },
-    {
-      userId: user.id,
-      hash: sessionHash(deps.config, request, user.id),
-      at: (deps.now ?? (() => new Date()))(),
-    },
-  );
+  try {
+    await ensureLoginSession(
+      deps.writer,
+      { type: 'user', id: user.id, requestId: requestIdFor(request) },
+      {
+        userId: user.id,
+        hash: sessionHash(deps.config, request, user.id),
+        at: (deps.now ?? (() => new Date()))(),
+      },
+    );
+  } catch (error) {
+    // During a deploy the previous instance keeps the writer lease for up to a minute; the session
+    // record is retried on the next request, so reads must not fail meanwhile.
+    if (!(error instanceof DomainError) || error.code !== 'WRITER_LEASE_LOST') throw error;
+  }
 }
 
 function reject(set: GuardState['set'], error: DomainError) {
