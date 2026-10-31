@@ -110,6 +110,9 @@ async function send(path: string, init: RequestInit | undefined, retried: boolea
   }
 
   if (response.status === 401) {
+    const error = await readError(response);
+    // La verificación reforzada también responde 401. No es una sesión caducada.
+    if (error.code === "WC_STEP_UP_REQUIRED" || error.code === "WC_VERIFY_FAILED") throw error;
     if (isAuthEnabled && !retried && (await refreshAccessToken())) return send(path, init, true);
     if (isAuthEnabled) {
       clearTokens();
