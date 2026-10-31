@@ -62,7 +62,7 @@ export function formatDateTime(value: Date | string | number): string {
 /** Litros con 3 decimales: `1.234,500 L`. */
 export function formatLitres(value: number): string {
   if (!Number.isFinite(value)) return "—";
-  return `${formatGrouped(value, 3)} L`;
+  return `${formatGrouped(value, 3)}\u00a0L`;
 }
 
 /** Puntos porcentuales: `21 %`. */

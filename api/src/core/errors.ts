@@ -20,6 +20,8 @@ const CATALOG = {
   WC041: [409, 'La decisión de aprobación es inmutable'],
   WC042: [409, 'La aprobación no está pendiente'],
   WC043: [409, 'La aprobación ha caducado'],
+  WC_ALREADY_CONSUMED: [409, 'La aprobación ya se ha ejecutado'],
+  WC_NOT_APPROVED: [409, 'La aprobación no está aprobada'],
   WC050: [409, 'Versión de tarifa no editable'],
   WC060: [409, 'Albarán no editable'],
   WC070: [409, 'Reglas de facturación no editables'],
@@ -32,19 +34,26 @@ const CATALOG = {
   WC120: [409, 'Envío congelado'],
   WC121: [409, 'Envío cerrado'],
   WC122: [409, 'La identificación de un mayor de SILICIE no se modifica'],
+  WC_REG_SILICIE_UNSPECIFIED: [422, 'Caso de SILICIE no especificado en la norma'],
   WC130: [409, 'Encadenamiento Verifactu incorrecto o registro inmutable'],
   WC131: [409, 'La hora del registro Verifactu es anterior a la del registro anterior'],
   WC_MODULE_DISABLED: [404, 'Módulo desactivado'],
   WC_FORBIDDEN: [403, 'No tienes permiso para esta operación'],
   WC_STEP_UP_REQUIRED: [401, 'Falta una verificación reforzada reciente'],
+  WC_VERIFY_FAILED: [401, 'La verificación no es válida'],
+  WC_RATE_LIMITED: [429, 'Demasiados intentos. Espera unos minutos'],
   WC_VALIDATION: [422, 'Los datos no son válidos'],
   WC_IDEMPOTENCY_MISMATCH: [409, 'La clave de idempotencia ya se usó con otra petición'],
+  WC_MCP_CONFIRMATION_INVALID: [409, 'La confirmación no es válida'],
   WC_NOT_FOUND: [404, 'No encontrado'],
   WC_STALE_VERSION: [409, 'El registro ha cambiado; vuelve a cargarlo'],
   WC_UNAUTHENTICATED: [401, 'No autenticado'],
   WC_NO_ACCESS: [403, 'No tienes acceso a WineCore'],
-  // Contactos (TASK-CONT-001)
   WC_CONTACT_DUPLICATE_TAX_ID: [409, 'Ya existe un contacto con este NIF'],
+  WC_QR_FOREIGN: [422, 'El código QR no pertenece a WineCore'],
+  WC_VESSEL_NOT_IN_SERVICE: [409, 'El recipiente no está en servicio'],
+  WC_ILLEGAL_TRANSITION: [409, 'La transición de estado no está permitida'],
+  WC_ECO_MIX: [422, 'No se puede ensamblar un lote ecológico con uno que no lo es'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;
@@ -55,14 +64,14 @@ export class DomainError extends Error {
   readonly code: string;
   readonly httpStatus: number;
   readonly fields?: Record<string, string>;
-  readonly details?: Record<string, unknown>;
+  readonly details?: unknown;
 
   constructor(
     code: string,
     httpStatus: number,
     message: string,
     fields?: Record<string, string>,
-    details?: Record<string, unknown>,
+    details?: unknown,
   ) {
     super(message);
     this.name = 'DomainError';
@@ -80,27 +89,37 @@ export function isErrorCode(code: string): code is ErrorCode {
 export function domainError(
   code: ErrorCode,
   fields?: Record<string, string>,
-  details?: Record<string, unknown>,
+  messageOrDetails?: string | Record<string, unknown>,
 ): DomainError {
   const entry = CATALOG[code];
-  return new DomainError(code, entry[0], entry[1], fields, details);
+  if (typeof messageOrDetails === 'string') {
+    return new DomainError(code, entry[0], messageOrDetails, fields);
+  }
+  return new DomainError(code, entry[0], entry[1], fields, messageOrDetails);
 }
 
 export function errorBody(error: DomainError): {
   code: string;
   message: string;
   fields?: Record<string, string>;
-  details?: Record<string, unknown>;
+  details?: unknown;
 } {
   const body: {
     code: string;
     message: string;
     fields?: Record<string, string>;
-    details?: Record<string, unknown>;
+    details?: unknown;
   } = { code: error.code, message: error.message };
   if (error.fields && Object.keys(error.fields).length > 0) body.fields = error.fields;
-  if (error.details && Object.keys(error.details).length > 0) body.details = error.details;
+  if (hasDetails(error.details)) body.details = error.details;
   return body;
+}
+
+function hasDetails(details: unknown): boolean {
+  if (details === undefined) return false;
+  if (Array.isArray(details)) return details.length > 0;
+  if (details && typeof details === 'object') return Object.keys(details).length > 0;
+  return true;
 }
 
 export function asDomainError(error: unknown): DomainError | null {

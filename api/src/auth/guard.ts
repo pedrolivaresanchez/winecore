@@ -1,15 +1,18 @@
+import { createHash } from 'node:crypto';
 import { can, isOwner, isRoleCode, type Permission, type UserCtx } from '../core/auth/permissions';
 import { domainError, DomainError, errorBody } from '../core/errors';
 import type { Writer } from '../core/db/writer';
 import { sql } from '../core/db/sql';
 import { newId } from '../core/ids';
 import type { Config } from '../config';
+import { ensureLoginSession, sessionHash } from '../core/auth/stepup/session';
 import type { TimbalAuth } from './timbal';
 
 export interface GuardDeps {
   config: Config;
   writer: Writer;
   timbalAuth: TimbalAuth;
+  now?: () => Date;
 }
 
 interface GuardState {
@@ -19,6 +22,27 @@ interface GuardState {
 
 const requestIds = new WeakMap<Request, string>();
 const sessions = new WeakMap<Request, UserCtx | DomainError>();
+
+export interface MachinePrincipal {
+  kind: 'agent' | 'machine';
+  id: string;
+  code: string;
+  roleCode: 'agent' | 'mcp_client';
+}
+
+const machines = new WeakMap<Request, MachinePrincipal>();
+
+export function machineOf(request: Request): MachinePrincipal | null {
+  return machines.get(request) ?? null;
+}
+
+function machineBearer(request: Request): string | null {
+  const header = request.headers.get('authorization');
+  if (!header?.startsWith('Bearer ')) return null;
+  const token = header.slice('Bearer '.length).trim();
+  if (!token.startsWith('wc_') || token.length > 200) return null;
+  return token;
+}
 
 export function requestIdFor(request: Request): string {
   const existing = requestIds.get(request);
@@ -36,26 +60,108 @@ export function sessionOf(request: Request): UserCtx {
 }
 
 export function requireUser(deps: GuardDeps) {
+  return async ({ request, set }: GuardState) => {
+    const blocked = await rejectMachine(deps, request, set);
+    if (blocked) return blocked;
+    const session = await loadSession(deps, request);
+    if (session instanceof DomainError) return reject(set, session);
+    await rememberLogin(deps, request, session);
+  };
+}
+
+/** Humano autenticado o cliente de máquina (`Authorization: Bearer wc_…`). */
+export function requireUserOrMachine(deps: GuardDeps) {
   return async (context: GuardState) => {
-    const session = await loadSession(deps, context.request);
-    if (session instanceof DomainError) return reject(context.set, session);
+    if (!machineBearer(context.request)) {
+      const session = await loadSession(deps, context.request);
+      if (session instanceof DomainError) return reject(context.set, session);
+      await rememberLogin(deps, context.request, session);
+      return;
+    }
+    const machine = await rememberMachine(deps, context.request);
+    if (machine instanceof DomainError) return reject(context.set, machine);
+  };
+}
+
+async function rejectMachine(
+  deps: GuardDeps,
+  request: Request,
+  set: GuardState['set'],
+): Promise<unknown> {
+  if (!machineBearer(request)) return undefined;
+  const machine = await rememberMachine(deps, request);
+  if (machine instanceof DomainError) return reject(set, machine);
+  return reject(set, domainError('WC_FORBIDDEN'));
+}
+
+async function rememberMachine(
+  deps: GuardDeps,
+  request: Request,
+): Promise<MachinePrincipal | DomainError> {
+  const existing = machines.get(request);
+  if (existing) return existing;
+  const token = machineBearer(request);
+  if (!token) return domainError('WC_UNAUTHENTICATED');
+  const found = await lookupMachine(deps.writer, token);
+  if (found instanceof DomainError) return found;
+  machines.set(request, found);
+  return found;
+}
+
+async function lookupMachine(writer: Writer, token: string): Promise<MachinePrincipal | DomainError> {
+  const hash = createHash('sha256').update(token, 'utf8').digest();
+  const rows = await writer.read<{ id: string; code: string; role_code: string }>(sql`
+    SELECT c.id, c.code, c.role_code
+    FROM core.api_token t
+    JOIN core.api_client c ON c.id = t.client_id
+    WHERE t.token_hash = ${hash}
+      AND t.revoked_at IS NULL
+      AND c.revoked_at IS NULL
+      AND t.expires_at > now()
+  `);
+  const row = rows[0];
+  if (!row) return domainError('WC_UNAUTHENTICATED');
+  if (row.role_code !== 'agent' && row.role_code !== 'mcp_client') return domainError('WC_UNAUTHENTICATED');
+  return {
+    kind: row.role_code === 'agent' ? 'agent' : 'machine',
+    id: row.id,
+    code: row.code,
+    roleCode: row.role_code,
   };
 }
 
 export function requirePermission(deps: GuardDeps, permission: Permission) {
-  return async (context: GuardState) => {
-    const session = await loadSession(deps, context.request);
-    if (session instanceof DomainError) return reject(context.set, session);
-    if (!can(session, permission)) return reject(context.set, domainError('WC_FORBIDDEN'));
+  return async ({ request, set }: GuardState) => {
+    const blocked = await rejectMachine(deps, request, set);
+    if (blocked) return blocked;
+    const session = await loadSession(deps, request);
+    if (session instanceof DomainError) return reject(set, session);
+    await rememberLogin(deps, request, session);
+    if (!can(session, permission)) return reject(set, domainError('WC_FORBIDDEN'));
   };
 }
 
 export function requireOwner(deps: GuardDeps) {
-  return async (context: GuardState) => {
-    const session = await loadSession(deps, context.request);
-    if (session instanceof DomainError) return reject(context.set, session);
-    if (!isOwner(session)) return reject(context.set, domainError('WC_FORBIDDEN'));
+  return async ({ request, set }: GuardState) => {
+    const blocked = await rejectMachine(deps, request, set);
+    if (blocked) return blocked;
+    const session = await loadSession(deps, request);
+    if (session instanceof DomainError) return reject(set, session);
+    await rememberLogin(deps, request, session);
+    if (!isOwner(session)) return reject(set, domainError('WC_FORBIDDEN'));
   };
+}
+
+async function rememberLogin(deps: GuardDeps, request: Request, user: UserCtx): Promise<void> {
+  await ensureLoginSession(
+    deps.writer,
+    { type: 'user', id: user.id, requestId: requestIdFor(request) },
+    {
+      userId: user.id,
+      hash: sessionHash(deps.config, request, user.id),
+      at: (deps.now ?? (() => new Date()))(),
+    },
+  );
 }
 
 function reject(set: GuardState['set'], error: DomainError) {

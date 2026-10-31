@@ -49,11 +49,14 @@ async function call(fetchImpl: FetchLike, url: string, headers: Record<string, s
   }
 }
 
+// Timbal's /me answers { session: { user_email, ... } }; the flat shape is still accepted.
 async function readEmail(response: Response): Promise<string | null> {
   try {
     const body: unknown = await response.json();
-    if (!body || typeof body !== 'object' || !('user_email' in body)) return null;
-    const email = body.user_email;
+    if (!body || typeof body !== 'object') return null;
+    const holder = 'session' in body && body.session && typeof body.session === 'object' ? body.session : body;
+    if (!('user_email' in holder)) return null;
+    const email = holder.user_email;
     if (typeof email !== 'string' || !email.includes('@')) return null;
     return email;
   } catch {

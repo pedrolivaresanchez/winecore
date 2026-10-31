@@ -30,6 +30,17 @@ describe('GET /health', () => {
     }
   });
 
+  it('expone /healthcheck para la sonda de Timbal sin autenticación', async () => {
+    const ctx = await createTestApp();
+    try {
+      const response = await ctx.app.handle(new Request('http://localhost/healthcheck'));
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ status: 'ok' });
+    } finally {
+      await ctx.close();
+    }
+  });
+
   it('respeta API_BASE_PATH', async () => {
     const ctx = await createTestApp({ env: { API_BASE_PATH: '/api' } });
     try {

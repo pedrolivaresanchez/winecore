@@ -11,9 +11,26 @@ import type { Me } from "@/lib/types";
 import { NoAccess } from "@/pages/NoAccess";
 import { NotFound } from "@/pages/NotFound";
 import { Panel } from "@/pages/Panel";
+import { ApprovalDetail } from "@/pages/aprobaciones/Detail";
+import { ApprovalInbox } from "@/pages/aprobaciones/Inbox";
 import { ContactCreate } from "@/pages/contactos/ContactCreate";
 import { ContactList } from "@/pages/contactos/ContactList";
 import { ContactPage } from "@/pages/contactos/ContactPage";
+import { DepositoPage } from "@/pages/bodega/Deposito";
+import { LotePage } from "@/pages/bodega/Lote";
+import { MapaPage } from "@/pages/bodega/Mapa";
+import { OperacionPage } from "@/pages/bodega/Operacion";
+import { PriceListPage } from "@/pages/catalogo/PriceListPage";
+import { PriceListsPage } from "@/pages/catalogo/PriceListsPage";
+import { ProductList } from "@/pages/catalogo/ProductList";
+import { ProductPage } from "@/pages/catalogo/ProductPage";
+import { WinesPage } from "@/pages/catalogo/WinesPage";
+import { CountCreate } from "@/pages/existencias/CountCreate";
+import { CountPage } from "@/pages/existencias/CountPage";
+import { CountsPage } from "@/pages/existencias/CountsPage";
+import { InspectionPage } from "@/pages/existencias/InspectionPage";
+import { MovesPage } from "@/pages/existencias/MovesPage";
+import { StockPage } from "@/pages/existencias/StockPage";
 
 function LoadingScreen() {
   return (
@@ -55,9 +72,26 @@ export function Workspace() {
       <Shell me={me.data}>
         <Routes>
           <Route index element={<Panel me={me.data} />} />
+          <Route path="aprobaciones" element={<ApprovalInbox />} />
+          <Route path="aprobaciones/:id" element={<ApprovalDetail me={me.data} />} />
           <Route path="contactos" element={<ContactList me={me.data} />} />
           <Route path="contactos/nuevo" element={<ContactCreate me={me.data} />} />
           <Route path="contactos/:id" element={<ContactPage me={me.data} />} />
+          <Route path="bodega" element={<MapaPage me={me.data} />} />
+          <Route path="bodega/operacion/nueva" element={<OperacionPage me={me.data} />} />
+          <Route path="bodega/:vesselId" element={<DepositoPage me={me.data} />} />
+          <Route path="lotes/:lotId" element={<LotePage me={me.data} />} />
+          <Route path="catalogo" element={<ProductList me={me.data} />} />
+          <Route path="catalogo/vinos" element={<WinesPage me={me.data} />} />
+          <Route path="catalogo/tarifas" element={<PriceListsPage me={me.data} />} />
+          <Route path="catalogo/tarifas/:id" element={<PriceListPage me={me.data} />} />
+          <Route path="catalogo/:id" element={<ProductPage me={me.data} />} />
+          <Route path="stock" element={<StockPage me={me.data} />} />
+          <Route path="stock/informe" element={<InspectionPage me={me.data} />} />
+          <Route path="stock/movimientos" element={<MovesPage me={me.data} />} />
+          <Route path="stock/aforos" element={<CountsPage me={me.data} />} />
+          <Route path="stock/aforos/nuevo" element={<CountCreate me={me.data} />} />
+          <Route path="stock/aforos/:id" element={<CountPage me={me.data} />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Shell>

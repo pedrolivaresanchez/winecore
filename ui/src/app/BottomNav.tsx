@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 import { copy } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { mobileTabs } from "@/app/nav";
+import { PendingBadge } from "@/pages/aprobaciones/PendingBadge";
 import type { Me } from "@/lib/types";
 
 export function BottomNav({ me, onOpenMore }: { me: Me; onOpenMore: () => void }) {
@@ -27,13 +28,14 @@ export function BottomNav({ me, onOpenMore }: { me: Me; onOpenMore: () => void }
               end={item.end}
               className={({ isActive }) =>
                 cn(
-                  "flex h-14 flex-col items-center justify-center gap-0.5 text-meta",
+                  "relative flex h-14 min-w-0 flex-col items-center justify-center gap-0.5 px-0.5 text-meta",
                   isActive ? "font-medium text-foreground shadow-[inset_0_2px_0_var(--ink-900)]" : "text-muted-foreground",
                 )
               }
             >
               <Icon aria-hidden className="size-5" />
-              <span>{item.label}</span>
+              <span className="max-w-full truncate">{item.label}</span>
+              {item.id === "approvals" ? <PendingBadge variant="corner" /> : null}
             </NavLink>
           );
         })}

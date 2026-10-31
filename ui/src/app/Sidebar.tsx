@@ -6,17 +6,30 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { copy } from "@/i18n";
 import { readStorage, writeStorage } from "@/lib/storage";
 import { cn } from "@/lib/utils";
-import { footerNav, mainNav, visibleChildren, type NavEntry } from "@/app/nav";
+import { footerNav, mainNav, visibleChildren, type NavChild, type NavEntry } from "@/app/nav";
+import { PendingBadge } from "@/pages/aprobaciones/PendingBadge";
 import type { Me } from "@/lib/types";
 
 const GROUPS_KEY = "winecore.nav.groups";
 
+function childIsCurrent(pathname: string, child: NavChild, siblings: NavChild[]): boolean {
+  const matches = pathname === child.path || pathname.startsWith(`${child.path}/`);
+  if (!matches) return false;
+  return !siblings.some(
+    (other) =>
+      other.path !== child.path &&
+      other.path.length > child.path.length &&
+      (pathname === other.path || pathname.startsWith(`${other.path}/`)),
+  );
+}
+
 function readGroups(): Record<string, boolean> {
   try {
     const raw = readStorage(GROUPS_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, boolean>) : { sales: true };
+    const parsed = raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    return { cellar: true, ...parsed };
   } catch {
-    return { sales: true };
+    return { cellar: true };
   }
 }
 
@@ -49,7 +62,9 @@ export function Sidebar({
   function renderEntry(entry: NavEntry) {
     const Icon = entry.icon;
     const children = visibleChildren(me, entry);
-    const childActive = children.some((child) => location.pathname === child.path || location.pathname.startsWith(`${child.path}/`));
+    const childActive = children.some(
+      (child) => location.pathname === child.path || (!child.end && location.pathname.startsWith(`${child.path}/`)),
+    );
     const open = groups[entry.id] ?? childActive;
 
     if (entry.action === "settings") {
@@ -114,10 +129,13 @@ export function Sidebar({
                 <NavLink
                   key={child.id}
                   to={child.path}
-                  className={({ isActive }) =>
+                  end={child.end}
+                  className={() =>
                     cn(
                       "flex min-h-11 items-center rounded-md px-3 text-compact",
-                      isActive ? "bg-ink font-medium text-ink-foreground" : "hover:bg-accent",
+                      childIsCurrent(location.pathname, child, children)
+                        ? "bg-ink font-medium text-ink-foreground"
+                        : "hover:bg-accent",
                     )
                   }
                 >
@@ -137,14 +155,15 @@ export function Sidebar({
         end={entry.end}
         className={({ isActive }) =>
           cn(
-            "flex min-h-11 items-center rounded-md text-body",
+            "relative flex min-h-11 items-center rounded-md text-body",
             collapsed ? "justify-center" : "gap-3 px-3",
             isActive ? "bg-ink font-medium text-ink-foreground" : "hover:bg-accent",
           )
         }
       >
         <Icon aria-hidden className="size-5 shrink-0" />
-        <span className={cn("truncate", collapsed && "sr-only")}>{entry.label}</span>
+        <span className={cn("truncate", collapsed ? "sr-only" : "min-w-0 flex-1")}>{entry.label}</span>
+        {entry.id === "approvals" ? <PendingBadge variant={collapsed ? "corner" : "inline"} /> : null}
       </NavLink>
     );
     if (!collapsed) return <div key={entry.id}>{link}</div>;
