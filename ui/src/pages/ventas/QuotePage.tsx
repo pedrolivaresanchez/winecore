@@ -30,7 +30,7 @@ import {
   type SalesPage,
 } from '@/lib/sales'
 import type { Me } from '@/lib/types'
-import { Button, DatePicker, MenuItem, SegmentedControl, Select, Skeleton, Switch, Textarea, useToast } from '@/ui'
+import { Button, DatePicker, MenuItem, SegmentedControl, Select, Switch, Textarea, useToast } from '@/ui'
 import { DocLink, FactList, LineTable, MoreMenu, RecordFrame, SalesHistory, StatusBadge, TotalsBox } from '@/pages/ventas/chrome'
 import { ReasonDialog } from '@/pages/ventas/dialogs'
 import { LineEditor } from '@/pages/ventas/lines'
