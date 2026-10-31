@@ -1,11 +1,15 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { Briefcase, CreditCard, History, Receipt, TrendUp, Users, type IconComponent } from '@/ui/icons'
+import { tagToneClass, type TagTone } from '@/ui/tag-palette'
 import { useChromeTitle } from '@/app/shell/shell-context'
 import { useEntity } from '@/app/entity-context'
 import { ErrorState } from '@/components/ErrorState'
 import { FitAmount, Skeleton } from '@/ui'
 import { copy, fill } from '@/i18n'
 import { cn } from '@/lib/cn'
+import { iconStroke } from '@/lib/motion'
+import { SERIES_TONE } from '@/lib/chart-scale'
 import { formatInteger, formatMoney } from '@/lib/format'
 import { useLegacyOverview, type LegacyInvoice, type LegacyOverview } from '@/lib/legacy'
 import { allows } from '@/lib/permissions'
@@ -91,19 +95,44 @@ function HoldedHome({ data }: { data: LegacyOverview }) {
   const chartEmpty = data.months.every((point) => Number(point.total) === 0)
   return (
     <>
-      <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
-        <MoneyTile label={copy.panel.salesYear} value={data.kpis.sales_this_year} href="/facturas" empty={copy.panel.noneYear} />
-        <MoneyTile label={copy.panel.salesLast} value={data.kpis.sales_last_year} href="/facturas" empty={copy.panel.noneYear} />
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        <MoneyTile
+          label={copy.panel.salesYear}
+          icon={TrendUp}
+          tone="emerald"
+          value={data.kpis.sales_this_year}
+          href="/facturas"
+          empty={copy.panel.noneYear}
+        />
+        <MoneyTile
+          label={copy.panel.salesLast}
+          icon={History}
+          tone="sky"
+          value={data.kpis.sales_last_year}
+          href="/facturas"
+          empty={copy.panel.noneYear}
+        />
         <MoneyTile
           label={copy.panel.receivables}
+          icon={CreditCard}
+          tone="blue"
           value={data.kpis.pending_receivables}
           href="/cobros"
           count={data.kpis.pending_receivables_count}
           empty={copy.panel.noneReceivables}
         />
-        <CountTile label={copy.panel.contacts} value={data.kpis.contacts} href="/contactos" empty={copy.panel.noneContacts} />
+        <CountTile
+          label={copy.panel.contacts}
+          icon={Users}
+          tone="violet"
+          value={data.kpis.contacts}
+          href="/contactos"
+          empty={copy.panel.noneContacts}
+        />
         <MoneyTile
           label={copy.panel.payables}
+          icon={Briefcase}
+          tone="amber"
           value={data.kpis.open_payables}
           href="/gastos"
           count={data.kpis.open_payables_count}
@@ -123,6 +152,7 @@ function HoldedHome({ data }: { data: LegacyOverview }) {
         ) : (
           <ColumnChart
             height={180}
+            color={SERIES_TONE.sales}
             label={copy.panel.chart}
             currentLabel={String(data.year)}
             previousLabel={copy.informes.previous}
@@ -140,7 +170,7 @@ function HoldedHome({ data }: { data: LegacyOverview }) {
       </section>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        <RecordCard title={copy.panel.recentInvoices} href="/facturas" empty={data.recent_invoices.length === 0 ? copy.panel.noneInvoices : null}>
+        <RecordCard title={copy.panel.recentInvoices} icon={Receipt} tone="emerald" href="/facturas" empty={data.recent_invoices.length === 0 ? copy.panel.noneInvoices : null}>
           {data.recent_invoices.map((invoice) => (
             <li key={invoice.id} className="border-t border-border-subtle">
               <Link to={`/facturas?q=${encodeURIComponent(invoice.number)}`} className="block px-4 py-2.5 outline-none hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)">
@@ -149,7 +179,7 @@ function HoldedHome({ data }: { data: LegacyOverview }) {
             </li>
           ))}
         </RecordCard>
-        <RecordCard title={copy.panel.topCustomers} href="/contactos" empty={data.top_customers.length === 0 ? copy.panel.noneCustomers : null}>
+        <RecordCard title={copy.panel.topCustomers} icon={Users} tone="violet" href="/contactos" empty={data.top_customers.length === 0 ? copy.panel.noneCustomers : null}>
           {data.top_customers.map((customer) => (
             <li key={customer.name} className="border-t border-border-subtle">
               <Link
@@ -183,8 +213,23 @@ function InvoiceLine({ invoice }: { invoice: LegacyInvoice }) {
   )
 }
 
+type Accent = { icon: IconComponent; tone: TagTone }
+
+function TileHead({ label, icon: Icon, tone }: { label: string } & Accent) {
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <span aria-hidden className={cn(tagToneClass(tone), 'tag inline-flex size-6 shrink-0 items-center justify-center rounded-lg')}>
+        <Icon className="size-3.5" strokeWidth={iconStroke} />
+      </span>
+      <span className="truncate text-caption text-text-tertiary">{label}</span>
+    </span>
+  )
+}
+
 function MoneyTile({
   label,
+  icon,
+  tone,
   value,
   href,
   count,
@@ -195,12 +240,12 @@ function MoneyTile({
   href: string
   count?: number
   empty: string
-}) {
+} & Accent) {
   const amount = Number(value)
   const quiet = !Number.isFinite(amount) || amount === 0
   return (
-    <Link to={href} className={tileClass}>
-      <span className="truncate text-caption text-text-tertiary">{label}</span>
+    <Link to={href} className={cn(tagToneClass(tone), tileClass)}>
+      <TileHead label={label} icon={icon} tone={tone} />
       <FitAmount
         full={formatMoney(Number.isFinite(amount) ? amount : 0)}
         short={formatMoney(Number.isFinite(amount) ? amount : 0)}
@@ -213,11 +258,18 @@ function MoneyTile({
   )
 }
 
-function CountTile({ label, value, href, empty }: { label: string; value: number; href: string; empty: string }) {
+function CountTile({
+  label,
+  icon,
+  tone,
+  value,
+  href,
+  empty,
+}: { label: string; value: number; href: string; empty: string } & Accent) {
   const quiet = value === 0
   return (
-    <Link to={href} className={tileClass}>
-      <span className="truncate text-caption text-text-tertiary">{label}</span>
+    <Link to={href} className={cn(tagToneClass(tone), tileClass)}>
+      <TileHead label={label} icon={icon} tone={tone} />
       <span className={cn('text-heading font-medium leading-none tabular-nums', quiet ? 'text-text-tertiary' : 'text-ink-900')}>
         {formatInteger(value)}
       </span>
@@ -228,6 +280,8 @@ function CountTile({ label, value, href, empty }: { label: string; value: number
 
 function RecordCard({
   title,
+  icon: Icon,
+  tone,
   href,
   empty,
   children,
@@ -236,12 +290,16 @@ function RecordCard({
   href: string
   empty: string | null
   children: ReactNode
-}) {
+} & Accent) {
   return (
     <section className="rounded-xl bg-surface shadow-(--shadow-surface)">
       <div className="flex items-center justify-between gap-2 px-4 py-3">
-        <Link to={href} className="min-w-0 truncate text-label font-medium text-ink-900 outline-none focus-visible:shadow-(--shadow-focus)">
-          {title}
+        <Link
+          to={href}
+          className="flex min-w-0 items-center gap-2 text-label font-medium text-ink-900 outline-none focus-visible:shadow-(--shadow-focus)"
+        >
+          <Icon aria-hidden className={cn(tagToneClass(tone), 'size-4 shrink-0 text-(--tag-dot-0)')} strokeWidth={iconStroke} />
+          <span className="truncate">{title}</span>
         </Link>
       </div>
       {empty ? <p className="border-t border-border-subtle px-4 py-3 text-label text-text-tertiary">{empty}</p> : <ul>{children}</ul>}
@@ -278,15 +336,16 @@ function formatDate(value: string): string {
 function PanelSkeleton() {
   return (
     <div className="grid gap-3" aria-busy="true">
-      <div className="grid grid-cols-2 gap-2 lg:grid-cols-3">
-        <Skeleton className="h-20 rounded-2xl" />
-        <Skeleton className="h-20 rounded-2xl" />
-        <Skeleton className="h-20 rounded-2xl" />
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        {Array.from({ length: 5 }, (_, index) => (
+          <Skeleton key={index} className="h-20 rounded-2xl" />
+        ))}
       </div>
       <Skeleton className="h-48 rounded-xl" />
     </div>
   )
 }
 
+/** A faint wash of the tile's tone from the top-left, so five figures are five subjects at a glance. */
 const tileClass =
-  'flex min-w-0 flex-col gap-1 rounded-2xl border border-border-subtle bg-surface-subtle px-3 py-2.5 outline-none transition-colors duration-(--duration-quick) ease-(--ease-smooth-out) hover:border-border hover:bg-surface focus-visible:shadow-(--shadow-focus)'
+  'flex min-w-0 flex-col gap-2 rounded-2xl border border-border-subtle bg-surface bg-linear-to-br from-(--tag-bg-0)/45 via-surface to-surface px-3 py-2.5 outline-none transition-colors duration-(--duration-quick) ease-(--ease-smooth-out) hover:border-(--tag-dot-0)/40 focus-visible:shadow-(--shadow-focus)'

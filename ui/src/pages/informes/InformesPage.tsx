@@ -53,6 +53,7 @@ import { BarList } from '@/pages/informes/charts/bar-list'
 import { ChartEmpty } from '@/pages/informes/charts/empty'
 import { ColumnChart } from '@/pages/informes/charts/column-chart'
 import { LineChart } from '@/pages/informes/charts/line-chart'
+import { SERIES_PREVIOUS, SERIES_TONE } from '@/lib/chart-scale'
 
 const TABS = [
   { id: 'ventas', report: 'sales', label: copy.informes.sales },
@@ -277,6 +278,7 @@ function ReportBody({ body, chart, measure }: { body: ReportBody; chart: 'bar' |
   const format = (value: number) => formatMeasure(value, measure)
   const alive = hasMeasure(body, measure)
   const polarity = body.report === 'expenses' ? 'down' : body.report === 'sales' ? 'up' : 'neutral'
+  const tone = SERIES_TONE[body.report]
   const stats = statsFor(body, measure)
   const rows = useMemo(() => sortedRows(body.series, sort, measure, temporal), [body.series, measure, sort, temporal])
   const columns = useMemo(() => columnsFor(body, measure), [body, measure])
@@ -294,6 +296,7 @@ function ReportBody({ body, chart, measure }: { body: ReportBody; chart: 'bar' |
             delta={stat.delta ? formatDelta(stat.value, stat.previous) : null}
             previous={stat.delta && stat.previous != null ? formatMeasure(stat.previous, stat.measure) : null}
             polarity={stat.delta ? polarity : 'neutral'}
+            accent={tone}
           />
         ))}
       </div>
@@ -302,16 +305,16 @@ function ReportBody({ body, chart, measure }: { body: ReportBody; chart: 'bar' |
         <div className="flex flex-col gap-2">
           {body.compare === 'previous_year' ? (
             <div className="flex flex-wrap items-center gap-3 text-caption text-text-secondary">
-              <LegendSwatch color="var(--color-chart-ink)" label={copy.informes.current} />
-              <LegendSwatch color="var(--color-chart-4)" label={copy.informes.previous} />
+              <LegendSwatch color={tone} label={copy.informes.current} />
+              <LegendSwatch color={SERIES_PREVIOUS} label={copy.informes.previous} />
             </div>
           ) : null}
           {chart === 'line' ? (
-            <LineChart points={datums} label={chartLabel} currentLabel={copy.informes.current} previousLabel={copy.informes.previous} formatValue={format} />
+            <LineChart points={datums} color={tone} label={chartLabel} currentLabel={copy.informes.current} previousLabel={copy.informes.previous} formatValue={format} />
           ) : temporal ? (
-            <ColumnChart points={datums} label={chartLabel} currentLabel={copy.informes.current} previousLabel={copy.informes.previous} formatValue={format} />
+            <ColumnChart points={datums} color={tone} label={chartLabel} currentLabel={copy.informes.current} previousLabel={copy.informes.previous} formatValue={format} />
           ) : (
-            <BarList points={datums} label={chartLabel} currentLabel={copy.informes.current} previousLabel={copy.informes.previous} formatValue={format} />
+            <BarList points={datums} color={tone} label={chartLabel} currentLabel={copy.informes.current} previousLabel={copy.informes.previous} formatValue={format} />
           )}
           {drawn.hidden > 0 ? (
             <p className="text-caption text-text-tertiary">
@@ -473,6 +476,7 @@ function Stat({
   delta,
   previous,
   polarity,
+  accent,
 }: {
   label: string
   value: string
@@ -480,12 +484,17 @@ function Stat({
   delta: { text: string; direction: -1 | 0 | 1 } | null
   previous: string | null
   polarity: 'up' | 'down' | 'neutral'
+  /** The report's series colour, so a figure and the chart under it are read as one. */
+  accent: string
 }) {
   const good =
     !delta || delta.direction === 0 || polarity === 'neutral' ? null : (polarity === 'up') === (delta.direction === 1)
   return (
     <div className="flex min-w-0 flex-col gap-1 rounded-2xl border border-border-subtle bg-surface-subtle px-3 py-2.5">
-      <span className="truncate text-caption text-text-tertiary">{label}</span>
+      <span className="flex min-w-0 items-center gap-1.5 truncate text-caption text-text-tertiary">
+        <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: accent }} />
+        {label}
+      </span>
       <span className="flex min-w-0 items-baseline gap-2">
         <FitAmount full={value} short={short} className="min-w-0 flex-1 text-heading font-medium leading-none tabular-nums text-ink-900" />
         {delta ? (
