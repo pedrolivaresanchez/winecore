@@ -9,6 +9,7 @@ export async function createTestApp(options?: {
   log?: (line: string) => void;
   env?: Env;
   now?: () => Date;
+  mcpRatePerMinute?: number;
 }) {
   const client = await createLocalClient(':memory:');
   await migrate(client);
@@ -32,6 +33,7 @@ export async function createTestApp(options?: {
     writer,
     log: options?.log ?? (() => undefined),
     now: options?.now,
+    mcpRatePerMinute: options?.mcpRatePerMinute,
   };
   const app = createApp(deps);
   return {

@@ -43,6 +43,9 @@ import {
   patchPerson,
 } from './routes/contacts';
 import { health } from './routes/health';
+import { handleAuthenticatedMcp } from './mcp/http';
+import { RateLimiter } from './mcp/rate';
+import { createMcpClient, listMcpClients, revokeMcpClient, rotateMcpClient } from './routes/mcp-clients';
 import { me } from './routes/me';
 import { listNotifications, readAllNotifications, readNotification } from './routes/notifications';
 import { createNumberSeries, deactivateNumberSeries, listNumberSeries } from './routes/series';
@@ -61,6 +64,8 @@ export interface AppDeps {
   fetchImpl?: FetchLike;
   /** Reloj inyectable (tests). Por defecto el reloj del sistema. */
   now?: () => Date;
+  /** Límite de llamadas MCP por minuto y cliente. Por defecto 60. */
+  mcpRatePerMinute?: number;
 }
 
 const startedAt = new WeakMap<Request, number>();
@@ -75,6 +80,7 @@ export function createApp(deps: AppDeps) {
     now: deps.now ?? (() => new Date()),
   };
   const http = { config: deps.config, writer: deps.writer, now: deps.now ?? (() => new Date()) };
+  const mcpLimiter = new RateLimiter(deps.mcpRatePerMinute);
   const app = new Elysia(deps.config.apiBasePath ? { prefix: deps.config.apiBasePath } : {})
     .use(cors())
     .onRequest(({ request, set }) => {
@@ -278,6 +284,31 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requirePermission(guardDeps, 'inventory.count'),
     })
     // Bodega: ubicaciones, recipientes, lotes y operaciones.
-    .use(cellarRoutes({ writer: deps.writer, guard: guardDeps, publicUrl: deps.config.appPublicUrl }));
+    .use(cellarRoutes({ writer: deps.writer, guard: guardDeps, publicUrl: deps.config.appPublicUrl }))
+    // MCP (Streamable HTTP, sin estado). Con API_BASE_PATH=/api queda en /api/m2m/mcp.
+    .post('/m2m/mcp', ({ request }) => handleAuthenticatedMcp({
+      config: deps.config,
+      writer: deps.writer,
+      now: http.now,
+      limiter: mcpLimiter,
+    }, request), {
+      beforeHandle: requireUserOrMachine(guardDeps),
+    })
+    .get('/v1/mcp/clients', () => listMcpClients(deps.writer), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .post('/v1/mcp/clients', async ({ request, set }) => {
+      const result = await createMcpClient(deps.writer, request, http.now());
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .post('/v1/mcp/clients/:id/rotate', ({ request, params }) => rotateMcpClient(deps.writer, request, params.id, http.now()), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .post('/v1/mcp/clients/:id/revoke', ({ request, params }) => revokeMcpClient(deps.writer, request, params.id, http.now()), {
+      beforeHandle: requireOwner(guardDeps),
+    });
   return app;
 }
