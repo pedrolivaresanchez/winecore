@@ -15,25 +15,38 @@ const PO = '11111111-1111-4111-8111-111111111111';
 const CVPO = '22222222-2222-4222-8222-222222222222';
 
 const EXPECTED: {
-  [K in ApprovalKind]: { approvals: number; roles: readonly string[]; stepUp: boolean; minutes: number };
+  [K in ApprovalKind]: {
+    approvals: number;
+    roles: readonly string[];
+    stepUp: boolean;
+    minutes: number;
+    self: boolean;
+  };
 } = {
-  invoice_batch_issue: { approvals: 1, roles: ['owner', 'approver'], stepUp: true, minutes: DAY },
-  intercompany_invoice_issue: { approvals: 1, roles: ['owner', 'approver'], stepUp: true, minutes: WEEK },
-  regulatory_submission: { approvals: 1, roles: ['owner', 'approver'], stepUp: true, minutes: DAY },
-  emcs_submission: { approvals: 1, roles: ['owner', 'approver'], stepUp: true, minutes: DAY },
-  edi_submission: { approvals: 1, roles: ['owner', 'approver'], stepUp: true, minutes: DAY },
-  organic_report: { approvals: 1, roles: ['owner'], stepUp: true, minutes: WEEK },
+  invoice_batch_issue: { approvals: 1, roles: ['owner', 'approver'], stepUp: true, minutes: DAY, self: true },
+  intercompany_invoice_issue: {
+    approvals: 1,
+    roles: ['owner', 'approver'],
+    stepUp: true,
+    minutes: WEEK,
+    self: true,
+  },
+  regulatory_submission: { approvals: 1, roles: ['owner', 'approver'], stepUp: true, minutes: DAY, self: false },
+  emcs_submission: { approvals: 1, roles: ['owner', 'approver'], stepUp: true, minutes: DAY, self: false },
+  edi_submission: { approvals: 1, roles: ['owner', 'approver'], stepUp: true, minutes: DAY, self: false },
+  organic_report: { approvals: 1, roles: ['owner'], stepUp: true, minutes: WEEK, self: false },
   third_party_message: {
     approvals: 1,
     roles: ['owner', 'approver', 'admin'],
     stepUp: false,
     minutes: DAY,
+    self: true,
   },
-  cellar_loss: { approvals: 1, roles: ['owner', 'approver'], stepUp: true, minutes: WEEK },
-  inventory_adjustment: { approvals: 1, roles: ['owner'], stepUp: true, minutes: WEEK },
-  billing_rules_activation: { approvals: 1, roles: ['owner'], stepUp: true, minutes: WEEK },
-  tariff_activation: { approvals: 1, roles: ['owner'], stepUp: true, minutes: WEEK },
-  module_toggle: { approvals: 1, roles: ['owner'], stepUp: true, minutes: DAY },
+  cellar_loss: { approvals: 1, roles: ['owner', 'approver'], stepUp: true, minutes: WEEK, self: true },
+  inventory_adjustment: { approvals: 1, roles: ['owner'], stepUp: true, minutes: WEEK, self: true },
+  billing_rules_activation: { approvals: 1, roles: ['owner'], stepUp: true, minutes: WEEK, self: true },
+  tariff_activation: { approvals: 1, roles: ['owner'], stepUp: true, minutes: WEEK, self: true },
+  module_toggle: { approvals: 1, roles: ['owner'], stepUp: true, minutes: DAY, self: true },
 };
 
 function stored(overrides: Partial<ApprovalPolicy> & Pick<ApprovalPolicy, 'id' | 'kind'>): ApprovalPolicy {
@@ -61,7 +74,7 @@ describe('resolvePolicy', () => {
       expect([...resolved.allowedRoles]).toEqual([...spec.roles]);
       expect(resolved.requiresStepUp).toBe(spec.stepUp);
       expect(resolved.validityMinutes).toBe(spec.minutes);
-      expect(resolved.allowSelfApproval).toBe(false);
+      expect(resolved.allowSelfApproval).toBe(spec.self);
       expect(resolved.stepUpWindowMs).toBe(WINDOW);
     });
   }
@@ -109,11 +122,11 @@ describe('resolvePolicy', () => {
       stored({ id: 'cccccccc-cccc-4ccc-8ccc-cccccccc0001', kind: 'module_toggle' }),
       stored({ id: 'cccccccc-cccc-4ccc-8ccc-cccccccc0002', kind: 'module_toggle' }),
     ];
-    await expectError(
+    const error = await expectError(
       Promise.resolve().then(() => resolvePolicy(policies, { kind: 'module_toggle' })),
       'WC_VALIDATION',
-      'Hay más de una política para este tipo y entidad',
     );
+    expect(error.fields?.policy).toBe('Hay más de una política para este tipo y entidad');
   });
 
   test('a policy cannot list a machine or agent as approver', async () => {
@@ -124,11 +137,11 @@ describe('resolvePolicy', () => {
         allowedRoles: ['owner', 'agent'],
       }),
     ];
-    await expectError(
+    const error = await expectError(
       Promise.resolve().then(() => resolvePolicy(policies, { kind: 'edi_submission' })),
       'WC_VALIDATION',
-      'Un cliente de máquina no puede ser aprobador',
     );
+    expect(error.fields?.policy).toBe('Un cliente de máquina no puede ser aprobador');
   });
 
   test('a policy cannot leave a kind without an approver', async () => {
@@ -139,11 +152,11 @@ describe('resolvePolicy', () => {
         allowedRoles: [],
       }),
     ];
-    await expectError(
+    const error = await expectError(
       Promise.resolve().then(() => resolvePolicy(policies, { kind: 'cellar_loss' })),
       'WC_VALIDATION',
-      'Ningún tipo puede quedar sin aprobador',
     );
+    expect(error.fields?.policy).toBe('Ningún tipo puede quedar sin aprobador');
   });
 
   test('min approvals and validity stay inside the SQL checks', async () => {
@@ -171,16 +184,20 @@ describe('resolvePolicy', () => {
     );
   });
 
-  test('a stored policy may allow self-approval', () => {
-    const policies = [
-      stored({
-        id: 'cccccccc-cccc-4ccc-8ccc-cccccccc0007',
-        kind: 'regulatory_submission',
-        allowSelfApproval: true,
-      }),
-    ];
-    const resolved = resolvePolicy(policies, { kind: 'regulatory_submission' });
-    expect(resolved.allowSelfApproval).toBe(true);
-    expect(resolved.stepUpWindowMs).toBe(WINDOW);
+  test('a stored policy overrides the self-approval default either way', () => {
+    const allowExternal = stored({
+      id: 'cccccccc-cccc-4ccc-8ccc-cccccccc0007',
+      kind: 'regulatory_submission',
+      allowSelfApproval: true,
+    });
+    const forbidInternal = stored({
+      id: 'cccccccc-cccc-4ccc-8ccc-cccccccc0008',
+      kind: 'invoice_batch_issue',
+      allowSelfApproval: false,
+    });
+    expect(resolvePolicy([allowExternal], { kind: 'regulatory_submission' }).allowSelfApproval).toBe(true);
+    expect(resolvePolicy([forbidInternal], { kind: 'invoice_batch_issue' }).allowSelfApproval).toBe(false);
+    expect(resolvePolicy([], { kind: 'invoice_batch_issue' }).allowSelfApproval).toBe(true);
+    expect(resolvePolicy([], { kind: 'edi_submission' }).allowSelfApproval).toBe(false);
   });
 });

@@ -3,23 +3,21 @@
  * State machine: docs/03-maquinas-estado.md §12. Errors: WC040–WC043,
  * WC_FORBIDDEN, WC_STEP_UP_REQUIRED (docs/02-modelo-dominio.md §5 and §20).
  */
-/// <reference path="./node-crypto.d.ts" />
-import { randomUUID } from 'node:crypto';
-
+import { domainError } from '../errors';
+import { newId } from '../ids';
 import { canonicalJson, payloadSha256 } from './canonical';
-import { resolvePolicy, type ResolvedPolicy } from './policy';
-import {
-  APPROVAL_MESSAGES,
-  type ApprovalDecision,
-  type ApprovalPolicy,
-  type ApprovalRequest,
-  type ApprovalStatus,
-  type ApproverContext,
-  type Clock,
-  type DecisionValue,
-  type JsonValue,
-  type StepUpMethod,
-  approvalError,
+import { resolvePolicy } from './policy';
+import type { ResolvedPolicy } from './policy';
+import type {
+  ApprovalDecision,
+  ApprovalPolicy,
+  ApprovalRequest,
+  ApprovalStatus,
+  ApproverContext,
+  Clock,
+  DecisionValue,
+  JsonValue,
+  StepUpMethod,
 } from './types';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -119,7 +117,7 @@ export class InMemoryApprovalStore implements ApprovalStore {
 
   async insertRequest(request: ApprovalRequest): Promise<void> {
     if (this.requests.has(request.id)) {
-      throw approvalError('WC_VALIDATION', 'La solicitud ya existe');
+      throw domainError('WC_VALIDATION', { request: 'La solicitud ya existe' });
     }
     this.requests.set(request.id, structuredClone(request));
     this.decisions.set(request.id, []);
@@ -156,12 +154,12 @@ export class InMemoryApprovalStore implements ApprovalStore {
         Promise.resolve((this.decisions.get(requestId) ?? []).map((row) => structuredClone(row))),
       insertDecision: (decision) => {
         if (!this.requests.has(requestId)) {
-          throw approvalError('WC_NOT_FOUND', APPROVAL_MESSAGES.notFound);
+          throw domainError('WC_NOT_FOUND');
         }
         const list = this.decisions.get(requestId) ?? [];
         this.decisions.set(requestId, list);
         if (list.some((row) => row.id === decision.id || row.decidedBy === decision.decidedBy)) {
-          throw approvalError('WC041', APPROVAL_MESSAGES.WC041);
+          throw domainError('WC041');
         }
         list.push(structuredClone(decision));
         return Promise.resolve();
@@ -215,23 +213,23 @@ export class ApprovalService {
 
   async requestApproval(input: RequestApprovalInput): Promise<ApprovalRequest> {
     if (typeof input.kind !== 'string') {
-      throw approvalError('WC_VALIDATION', APPROVAL_MESSAGES.kind);
+      throw domainError('WC_VALIDATION', { kind: 'El tipo de aprobación no es válido' });
     }
     const legalEntityId = input.legalEntityId ?? null;
     if (legalEntityId !== null && !UUID_RE.test(legalEntityId)) {
-      throw approvalError('WC_VALIDATION', APPROVAL_MESSAGES.entityId);
+      throw domainError('WC_VALIDATION', { legalEntityId: 'El identificador de entidad no es válido' });
     }
     if (typeof input.subjectTable !== 'string' || !SUBJECT_TABLE_RE.test(input.subjectTable)) {
-      throw approvalError('WC_VALIDATION', APPROVAL_MESSAGES.subjectTable);
+      throw domainError('WC_VALIDATION', { subjectTable: 'La tabla del asunto no es válida' });
     }
     if (typeof input.subjectId !== 'string' || !UUID_RE.test(input.subjectId)) {
-      throw approvalError('WC_VALIDATION', APPROVAL_MESSAGES.subjectId);
+      throw domainError('WC_VALIDATION', { subjectId: 'El identificador del asunto no es válido' });
     }
     if (typeof input.summary !== 'string' || input.summary.length < 5 || input.summary.length > 300) {
-      throw approvalError('WC_VALIDATION', APPROVAL_MESSAGES.summary);
+      throw domainError('WC_VALIDATION', { summary: 'El resumen debe tener entre 5 y 300 caracteres' });
     }
     if (typeof input.requestedBy !== 'string' || input.requestedBy.trim() === '') {
-      throw approvalError('WC_VALIDATION', APPROVAL_MESSAGES.requestedBy);
+      throw domainError('WC_VALIDATION', { requestedBy: 'Falta quien solicita la aprobación' });
     }
 
     const policy = resolvePolicy(this.policies, {
@@ -244,7 +242,7 @@ export class ApprovalService {
     const requestedMs = this.clock.now().getTime();
     const requester = input.requestedBy.trim();
     const request: ApprovalRequest = {
-      id: randomUUID(),
+      id: newId(),
       kind: input.kind,
       legalEntityId: legalEntityId === null ? null : legalEntityId.toLowerCase(),
       subjectTable: input.subjectTable,
@@ -267,13 +265,13 @@ export class ApprovalService {
   async decide(input: DecideInput): Promise<DecideResult> {
     const actor = assertActor(input.actor);
     if (actor.kind !== 'user') {
-      throw approvalError('WC_FORBIDDEN', APPROVAL_MESSAGES.forbiddenHuman);
+      throw domainError('WC_FORBIDDEN', { actor: 'Solo una persona puede decidir una aprobación' });
     }
     if (!UUID_RE.test(actor.userId)) {
-      throw approvalError('WC_VALIDATION', APPROVAL_MESSAGES.userId);
+      throw domainError('WC_VALIDATION', { userId: 'El identificador de usuario no es válido' });
     }
     if (input.decision !== 'approve' && input.decision !== 'reject') {
-      throw approvalError('WC_VALIDATION', APPROVAL_MESSAGES.decision);
+      throw domainError('WC_VALIDATION', { decision: 'La decisión no es válida' });
     }
     const hash = normalizeHash(input.payloadSha256);
     const stepUpMethod = normalizeStepUpMethod(input.stepUpMethod);
@@ -281,7 +279,7 @@ export class ApprovalService {
 
     return this.store.transact(input.requestId, async (tx) => {
       const request = await tx.getRequest();
-      if (!request) throw approvalError('WC_NOT_FOUND', APPROVAL_MESSAGES.notFound);
+      if (!request) throw domainError('WC_NOT_FOUND');
 
       const nowMs = this.clock.now().getTime();
       const policy = resolvePolicy(this.policies, {
@@ -289,35 +287,37 @@ export class ApprovalService {
         legalEntityId: request.legalEntityId,
       });
       if (!actorMayDecide(policy, request.legalEntityId, actor, userId)) {
-        throw approvalError('WC_FORBIDDEN', APPROVAL_MESSAGES.forbiddenRole);
+        throw domainError('WC_FORBIDDEN');
       }
       if (!policy.allowSelfApproval && userId === request.requestedBy) {
-        throw approvalError('WC_FORBIDDEN', APPROVAL_MESSAGES.forbiddenSelf);
+        throw domainError('WC_FORBIDDEN', {
+          requester: 'El solicitante no puede decidir su propia solicitud',
+        });
       }
       assertRecentStepUp(policy, actor, nowMs);
 
       if (request.status !== 'pending') {
-        throw approvalError('WC042', APPROVAL_MESSAGES.WC042);
+        throw domainError('WC042');
       }
       if (Date.parse(request.expiresAt) < nowMs) {
         await tx.compareAndSet(
           { status: 'pending', payloadSha256: request.payloadSha256 },
           { status: 'expired' },
         );
-        throw approvalError('WC043', APPROVAL_MESSAGES.WC043);
+        throw domainError('WC043');
       }
       if (hash !== request.payloadSha256) {
-        throw approvalError('WC040', APPROVAL_MESSAGES.WC040);
+        throw domainError('WC040');
       }
       const existing = await tx.decisions();
       if (existing.some((row) => row.decidedBy === userId)) {
-        throw approvalError('WC041', APPROVAL_MESSAGES.WC041);
+        throw domainError('WC041');
       }
 
       const note = resolveNote(input.decision, input.note);
       const decidedAt = new Date(nowMs).toISOString();
       const decision: ApprovalDecision = {
-        id: randomUUID(),
+        id: newId(),
         requestId: request.id,
         decidedBy: userId,
         decision: input.decision,
@@ -336,7 +336,7 @@ export class ApprovalService {
           { status: 'pending', payloadSha256: request.payloadSha256 },
           { status: 'rejected' },
         );
-        if (!updated) throw approvalError('WC042', APPROVAL_MESSAGES.WC042);
+        if (!updated) throw domainError('WC042');
         return { request: updated, decision };
       }
 
@@ -349,11 +349,11 @@ export class ApprovalService {
           { status: 'pending', payloadSha256: request.payloadSha256 },
           { status: 'approved', approvedAt: decidedAt },
         );
-        if (!updated) throw approvalError('WC042', APPROVAL_MESSAGES.WC042);
+        if (!updated) throw domainError('WC042');
         return { request: updated, decision };
       }
       const pending = await tx.getRequest();
-      if (!pending) throw approvalError('WC_NOT_FOUND', APPROVAL_MESSAGES.notFound);
+      if (!pending) throw domainError('WC_NOT_FOUND');
       return { request: pending, decision };
     });
   }
@@ -361,13 +361,13 @@ export class ApprovalService {
   async consume(input: ConsumeInput): Promise<ApprovalRequest> {
     const hash = normalizeHash(input.payloadSha256);
     const current = await this.store.getRequest(input.requestId);
-    if (!current) throw approvalError('WC_NOT_FOUND', APPROVAL_MESSAGES.notFound);
+    if (!current) throw domainError('WC_NOT_FOUND');
 
     if (current.status === 'consumed') {
-      throw approvalError('WC_ALREADY_CONSUMED', APPROVAL_MESSAGES.alreadyConsumed);
+      throw domainError('WC_ALREADY_CONSUMED');
     }
     if (current.status === 'expired') {
-      throw approvalError('WC043', APPROVAL_MESSAGES.WC043);
+      throw domainError('WC043');
     }
     const nowMs = this.clock.now().getTime();
     if (current.status === 'approved' && Date.parse(current.expiresAt) < nowMs) {
@@ -376,13 +376,13 @@ export class ApprovalService {
         { status: 'approved', payloadSha256: current.payloadSha256 },
         { status: 'expired' },
       );
-      throw approvalError('WC043', APPROVAL_MESSAGES.WC043);
+      throw domainError('WC043');
     }
     if (current.status !== 'approved') {
-      throw approvalError('WC_NOT_APPROVED', APPROVAL_MESSAGES.notApproved);
+      throw domainError('WC_NOT_APPROVED');
     }
     if (hash !== current.payloadSha256) {
-      throw approvalError('WC040', APPROVAL_MESSAGES.WC040);
+      throw domainError('WC040');
     }
 
     const updated = await this.store.compareAndSet(
@@ -393,17 +393,17 @@ export class ApprovalService {
     if (updated) return updated;
 
     const latest = await this.store.getRequest(input.requestId);
-    if (!latest) throw approvalError('WC_NOT_FOUND', APPROVAL_MESSAGES.notFound);
+    if (!latest) throw domainError('WC_NOT_FOUND');
     if (latest.status === 'consumed') {
-      throw approvalError('WC_ALREADY_CONSUMED', APPROVAL_MESSAGES.alreadyConsumed);
+      throw domainError('WC_ALREADY_CONSUMED');
     }
     if (latest.status === 'expired' || Date.parse(latest.expiresAt) < this.clock.now().getTime()) {
-      throw approvalError('WC043', APPROVAL_MESSAGES.WC043);
+      throw domainError('WC043');
     }
     if (latest.payloadSha256 !== hash) {
-      throw approvalError('WC040', APPROVAL_MESSAGES.WC040);
+      throw domainError('WC040');
     }
-    throw approvalError('WC_NOT_APPROVED', APPROVAL_MESSAGES.notApproved);
+    throw domainError('WC_NOT_APPROVED');
   }
 }
 
@@ -419,7 +419,7 @@ function assertActor(actor: ApproverContext | null | undefined): ApproverContext
     (actor.stepUpAt !== null && typeof actor.stepUpAt !== 'string') ||
     !Array.isArray(actor.roles)
   ) {
-    throw approvalError('WC002', APPROVAL_MESSAGES.WC002);
+    throw domainError('WC002');
   }
   for (const assignment of actor.roles) {
     if (
@@ -427,7 +427,7 @@ function assertActor(actor: ApproverContext | null | undefined): ApproverContext
       typeof assignment.role !== 'string' ||
       (assignment.legalEntityId !== null && typeof assignment.legalEntityId !== 'string')
     ) {
-      throw approvalError('WC002', APPROVAL_MESSAGES.WC002);
+      throw domainError('WC002');
     }
   }
   return actor;
@@ -459,42 +459,46 @@ function actorMayDecide(
 function assertRecentStepUp(policy: ResolvedPolicy, actor: ApproverContext, nowMs: number): void {
   if (!policy.requiresStepUp) return;
   if (actor.stepUpAt === null) {
-    throw approvalError('WC_STEP_UP_REQUIRED', APPROVAL_MESSAGES.stepUp);
+    throw domainError('WC_STEP_UP_REQUIRED');
   }
   const at = Date.parse(actor.stepUpAt);
   if (Number.isNaN(at)) {
-    throw approvalError('WC_STEP_UP_REQUIRED', APPROVAL_MESSAGES.stepUp);
+    throw domainError('WC_STEP_UP_REQUIRED');
   }
   const age = nowMs - at;
   if (age < 0 || age > policy.stepUpWindowMs) {
-    throw approvalError('WC_STEP_UP_REQUIRED', APPROVAL_MESSAGES.stepUp);
+    throw domainError('WC_STEP_UP_REQUIRED');
   }
 }
 
 function resolveNote(decision: DecisionValue, note: string | null | undefined): string | null {
   if (note == null || note.trim() === '') {
     if (decision === 'reject') {
-      throw approvalError('WC_VALIDATION', APPROVAL_MESSAGES.rejectNote);
+      throw domainError('WC_VALIDATION', {
+        note: 'El motivo del rechazo debe tener entre 10 y 500 caracteres',
+      });
     }
     return null;
   }
   const trimmed = note.trim();
   if (decision === 'reject' && (trimmed.length < 10 || trimmed.length > 500)) {
-    throw approvalError('WC_VALIDATION', APPROVAL_MESSAGES.rejectNote);
+    throw domainError('WC_VALIDATION', {
+      note: 'El motivo del rechazo debe tener entre 10 y 500 caracteres',
+    });
   }
   if (trimmed.length > 500) {
-    throw approvalError('WC_VALIDATION', APPROVAL_MESSAGES.noteLength);
+    throw domainError('WC_VALIDATION', { note: 'La nota no puede superar 500 caracteres' });
   }
   return trimmed;
 }
 
 function normalizeHash(value: unknown): string {
   if (typeof value !== 'string') {
-    throw approvalError('WC_VALIDATION', APPROVAL_MESSAGES.hash);
+    throw domainError('WC_VALIDATION', { payloadSha256: 'El hash del contenido no es válido' });
   }
   const normalized = value.trim().toLowerCase();
   if (!HASH_RE.test(normalized)) {
-    throw approvalError('WC_VALIDATION', APPROVAL_MESSAGES.hash);
+    throw domainError('WC_VALIDATION', { payloadSha256: 'El hash del contenido no es válido' });
   }
   return normalized;
 }
@@ -502,7 +506,7 @@ function normalizeHash(value: unknown): string {
 function normalizeStepUpMethod(value: StepUpMethod | null | undefined): StepUpMethod | null {
   if (value == null) return null;
   if (value !== 'passkey' && value !== 'totp') {
-    throw approvalError('WC_VALIDATION', APPROVAL_MESSAGES.stepUpMethod);
+    throw domainError('WC_VALIDATION', { stepUpMethod: 'El método de verificación no es válido' });
   }
   return value;
 }

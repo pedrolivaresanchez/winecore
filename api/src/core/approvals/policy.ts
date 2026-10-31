@@ -2,13 +2,8 @@
  * Default approval policies from docs/03-maquinas-estado.md §12, plus the
  * self-approval rule from UI-39 and the 5-minute step-up window from ADR 008.
  */
-import {
-  APPROVAL_KINDS,
-  APPROVAL_MESSAGES,
-  type ApprovalKind,
-  type ApprovalPolicy,
-  approvalError,
-} from './types';
+import { domainError } from '../errors';
+import { APPROVAL_KINDS, type ApprovalKind, type ApprovalPolicy } from './types';
 
 /** Passkey/TOTP must be strictly no older than this (UI-03 and TASK-APR-001: ≤ 5 min). */
 export const STEP_UP_WINDOW_MS = 5 * 60 * 1000;
@@ -23,16 +18,16 @@ interface KindDefault {
   allowedRoles: readonly string[];
   requiresStepUp: boolean;
   validityMinutes: number;
-  /** UI-39: the requester does not approve their own request unless a stored policy says so. */
+  /** UI-39. External submissions default to false; internal kinds default to true. */
   allowSelfApproval: boolean;
 }
 
 const ownerApprover = ['owner', 'approver'] as const;
 
 /**
- * Seeds described in the state machine. Every default forbids self-approval.
- * AEAT, Junta, EDI and the organic certifier are called out in UI-39; the same
- * default applies to the other kinds until a stored policy allows it.
+ * Seeds from the state machine (§12). UI-39: the requester cannot approve a
+ * submission to AEAT, the Junta, EDI or the certifier. Internal kinds allow
+ * self-approval unless a stored policy says otherwise.
  */
 export const DEFAULT_POLICIES: { readonly [K in ApprovalKind]: KindDefault } = {
   invoice_batch_issue: {
@@ -40,14 +35,14 @@ export const DEFAULT_POLICIES: { readonly [K in ApprovalKind]: KindDefault } = {
     allowedRoles: ownerApprover,
     requiresStepUp: true,
     validityMinutes: DAY_MINUTES,
-    allowSelfApproval: false,
+    allowSelfApproval: true,
   },
   intercompany_invoice_issue: {
     requiredApprovals: 1,
     allowedRoles: ownerApprover,
     requiresStepUp: true,
     validityMinutes: WEEK_MINUTES,
-    allowSelfApproval: false,
+    allowSelfApproval: true,
   },
   regulatory_submission: {
     requiredApprovals: 1,
@@ -82,42 +77,42 @@ export const DEFAULT_POLICIES: { readonly [K in ApprovalKind]: KindDefault } = {
     allowedRoles: ['owner', 'approver', 'admin'],
     requiresStepUp: false,
     validityMinutes: DAY_MINUTES,
-    allowSelfApproval: false,
+    allowSelfApproval: true,
   },
   cellar_loss: {
     requiredApprovals: 1,
     allowedRoles: ownerApprover,
     requiresStepUp: true,
     validityMinutes: WEEK_MINUTES,
-    allowSelfApproval: false,
+    allowSelfApproval: true,
   },
   inventory_adjustment: {
     requiredApprovals: 1,
     allowedRoles: ['owner'],
     requiresStepUp: true,
     validityMinutes: WEEK_MINUTES,
-    allowSelfApproval: false,
+    allowSelfApproval: true,
   },
   billing_rules_activation: {
     requiredApprovals: 1,
     allowedRoles: ['owner'],
     requiresStepUp: true,
     validityMinutes: WEEK_MINUTES,
-    allowSelfApproval: false,
+    allowSelfApproval: true,
   },
   tariff_activation: {
     requiredApprovals: 1,
     allowedRoles: ['owner'],
     requiresStepUp: true,
     validityMinutes: WEEK_MINUTES,
-    allowSelfApproval: false,
+    allowSelfApproval: true,
   },
   module_toggle: {
     requiredApprovals: 1,
     allowedRoles: ['owner'],
     requiresStepUp: true,
     validityMinutes: DAY_MINUTES,
-    allowSelfApproval: false,
+    allowSelfApproval: true,
   },
 };
 
@@ -153,7 +148,7 @@ export function resolvePolicy(
   void query.amount;
 
   if (!isApprovalKind(query.kind)) {
-    throw approvalError('WC_VALIDATION', APPROVAL_MESSAGES.kind);
+    throw domainError('WC_VALIDATION', { kind: 'El tipo de aprobación no es válido' });
   }
 
   const entityId = normalizeEntityId(query.legalEntityId);
@@ -197,7 +192,7 @@ function fromStored(policy: ApprovalPolicy): ResolvedPolicy {
     requiredApprovals: policy.minApprovals,
     allowedRoles: [...policy.allowedRoles],
     allowedUserIds: policy.allowedUserIds.map((userId) => userId.toLowerCase()),
-    allowSelfApproval: policy.allowSelfApproval ?? false,
+    allowSelfApproval: policy.allowSelfApproval ?? DEFAULT_POLICIES[policy.kind].allowSelfApproval,
     requiresStepUp: policy.requiresStepUp,
     stepUpWindowMs: STEP_UP_WINDOW_MS,
     validityMinutes: policy.validityMinutes,
@@ -209,49 +204,49 @@ function one(rows: readonly ApprovalPolicy[]): ApprovalPolicy | null {
   const first = rows[0];
   if (first === undefined) return null;
   if (rows.length > 1) {
-    throw approvalError('WC_VALIDATION', APPROVAL_MESSAGES.policyAmbiguous);
+    throw domainError('WC_VALIDATION', { policy: 'Hay más de una política para este tipo y entidad' });
   }
   return first;
 }
 
 function assertPolicy(policy: ApprovalPolicy): void {
   if (!isApprovalKind(policy.kind)) {
-    throw approvalError('WC_VALIDATION', APPROVAL_MESSAGES.kind);
+    throw domainError('WC_VALIDATION', { kind: 'El tipo de aprobación no es válido' });
   }
-  assertUuid(policy.id, APPROVAL_MESSAGES.policy);
-  if (policy.legalEntityId !== null) assertUuid(policy.legalEntityId, APPROVAL_MESSAGES.entityId);
+  assertUuid(policy.id, 'policy');
+  if (policy.legalEntityId !== null) assertUuid(policy.legalEntityId, 'legalEntityId');
   if (!Number.isInteger(policy.minApprovals) || policy.minApprovals < 1 || policy.minApprovals > 3) {
-    throw approvalError('WC_VALIDATION', APPROVAL_MESSAGES.policy);
+    throw domainError('WC_VALIDATION', { policy: 'La política de aprobación no es válida' });
   }
   if (
     !Number.isInteger(policy.validityMinutes) ||
     policy.validityMinutes < 5 ||
     policy.validityMinutes > 10080
   ) {
-    throw approvalError('WC_VALIDATION', APPROVAL_MESSAGES.policy);
+    throw domainError('WC_VALIDATION', { policy: 'La política de aprobación no es válida' });
   }
   if (typeof policy.requiresStepUp !== 'boolean') {
-    throw approvalError('WC_VALIDATION', APPROVAL_MESSAGES.policy);
+    throw domainError('WC_VALIDATION', { policy: 'La política de aprobación no es válida' });
   }
   if (policy.allowSelfApproval !== undefined && typeof policy.allowSelfApproval !== 'boolean') {
-    throw approvalError('WC_VALIDATION', APPROVAL_MESSAGES.policy);
+    throw domainError('WC_VALIDATION', { policy: 'La política de aprobación no es válida' });
   }
   if (policy.allowedRoles.length === 0) {
-    throw approvalError('WC_VALIDATION', APPROVAL_MESSAGES.policyNoApprover);
+    throw domainError('WC_VALIDATION', { policy: 'Ningún tipo puede quedar sin aprobador' });
   }
   for (const role of policy.allowedRoles) {
     if (NON_HUMAN_ROLES.has(role)) {
-      throw approvalError('WC_VALIDATION', APPROVAL_MESSAGES.policyMachine);
+      throw domainError('WC_VALIDATION', { policy: 'Un cliente de máquina no puede ser aprobador' });
     }
   }
   for (const userId of policy.allowedUserIds) {
-    assertUuid(userId, APPROVAL_MESSAGES.userId);
+    assertUuid(userId, 'userId');
   }
 }
 
 function normalizeEntityId(value: string | null | undefined): string | null {
   if (value == null) return null;
-  assertUuid(value, APPROVAL_MESSAGES.entityId);
+  assertUuid(value, 'legalEntityId');
   return value.toLowerCase();
 }
 
@@ -260,8 +255,8 @@ function sameEntity(policy: ApprovalPolicy, entityId: string | null): boolean {
   return policy.legalEntityId.toLowerCase() === entityId;
 }
 
-function assertUuid(value: string, message: string): void {
+function assertUuid(value: string, field: string): void {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
-    throw approvalError('WC_VALIDATION', message);
+    throw domainError('WC_VALIDATION', { [field]: 'El identificador no es válido' });
   }
 }

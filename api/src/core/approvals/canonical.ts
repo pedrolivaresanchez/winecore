@@ -2,21 +2,19 @@
  * Canonical JSON for approval payloads (sorted keys, no whitespace) and its SHA-256.
  * The hash is what `ops.approval_request.payload_sha256` freezes.
  */
-/// <reference path="./node-crypto.d.ts" />
-import { createHash } from 'node:crypto';
-
-import { APPROVAL_MESSAGES, approvalError } from './types';
+import { domainError } from '../errors';
+import { sha256Hex } from '../hash';
 
 export function canonicalJson(value: unknown): string {
   return serialize(value, new WeakSet());
 }
 
 export function payloadSha256(value: unknown): string {
-  return createHash('sha256').update(canonicalJson(value), 'utf8').digest('hex');
+  return sha256Hex(canonicalJson(value));
 }
 
 function fail(): never {
-  throw approvalError('WC_VALIDATION', APPROVAL_MESSAGES.canonical);
+  throw domainError('WC_VALIDATION', { payload: 'El contenido no se puede representar de forma canónica' });
 }
 
 function serialize(value: unknown, stack: WeakSet<object>): string {

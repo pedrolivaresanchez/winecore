@@ -1,8 +1,7 @@
-/// <reference path="../../src/core/approvals/node-crypto.d.ts" />
-import { createHash } from 'node:crypto';
 import { describe, expect, test } from 'bun:test';
 
 import { canonicalJson, payloadSha256 } from '../../src/core/approvals/canonical';
+import { sha256Hex } from '../../src/core/hash';
 import { expectError } from './helpers';
 
 describe('canonical JSON', () => {
@@ -30,9 +29,7 @@ describe('canonical JSON', () => {
       '015abd7f5cc57a2dd94b7590f04ad8084273905ee33ec5cebeae62276a97f862',
     );
     const body = canonicalJson({ b: 'ñ', a: 1 });
-    expect(payloadSha256({ a: 1, b: 'ñ' })).toBe(
-      createHash('sha256').update(body, 'utf8').digest('hex'),
-    );
+    expect(payloadSha256({ a: 1, b: 'ñ' })).toBe(sha256Hex(body));
     expect(payloadSha256({ a: 1, b: 'ñ' })).toHaveLength(64);
   });
 

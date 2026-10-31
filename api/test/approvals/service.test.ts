@@ -123,17 +123,18 @@ describe('requestApproval', () => {
 
   test('summary, subject and payload are validated', async () => {
     const { service } = harness();
-    await expectError(request(service, { summary: 'abc' }), 'WC_VALIDATION', 'El resumen debe tener entre 5 y 300 caracteres');
-    await expectError(
+    const summary = await expectError(request(service, { summary: 'abc' }), 'WC_VALIDATION');
+    expect(summary.fields?.summary).toBe('El resumen debe tener entre 5 y 300 caracteres');
+    const table = await expectError(
       request(service, { subjectTable: 'Regulatory.Submission' }),
       'WC_VALIDATION',
-      'La tabla del asunto no es válida',
     );
-    await expectError(
+    expect(table.fields?.subjectTable).toBe('La tabla del asunto no es válida');
+    const payloadError = await expectError(
       request(service, { payload: { ok: true, extra: undefined } }),
       'WC_VALIDATION',
-      'El contenido no se puede representar de forma canónica',
     );
+    expect(payloadError.fields?.payload).toBe('El contenido no se puede representar de forma canónica');
   });
 
   test('details are stored apart from the hashed payload', async () => {
@@ -159,7 +160,6 @@ describe('decide', () => {
         stepUpMethod: 'passkey',
       }),
       'WC040',
-      'El contenido ha cambiado; vuelve a pedir la aprobación',
     );
     expect(error.httpStatus).toBe(409);
     expect((await store.getRequest(created.id))?.status).toBe('pending');
@@ -211,7 +211,6 @@ describe('decide', () => {
         stepUpMethod: 'passkey',
       }),
       'WC041',
-      'Una decisión de aprobación no se modifica',
     );
     const rows = await store.listDecisions(created.id);
     expect(rows).toHaveLength(1);
@@ -239,7 +238,6 @@ describe('decide', () => {
         stepUpMethod: 'passkey',
       }),
       'WC042',
-      'La solicitud no está pendiente',
     );
     expect(await store.listDecisions(created.id)).toHaveLength(1);
   });
@@ -291,7 +289,6 @@ describe('decide', () => {
         stepUpMethod: 'passkey',
       }),
       'WC043',
-      'La solicitud ha caducado',
     );
     expect((await store.getRequest(pending.id))?.status).toBe('expired');
     await expectError(
@@ -321,7 +318,6 @@ describe('decide', () => {
         actor: user(APPROVER_PO, [{ role: 'approver', legalEntityId: PO }], null),
       }),
       'WC_STEP_UP_REQUIRED',
-      'Falta una verificación reforzada reciente',
     );
     const stale = new Date(Date.parse(NOW) - 5 * 60 * 1000 - 1).toISOString();
     await expectError(
@@ -385,7 +381,7 @@ describe('decide', () => {
     const created = await request(service);
     const roles = [{ role: 'owner', legalEntityId: null }] as const;
     for (const kind of ['agent', 'machine'] as const) {
-      await expectError(
+      const error = await expectError(
         service.decide({
           requestId: created.id,
           decision: 'approve',
@@ -394,8 +390,8 @@ describe('decide', () => {
           stepUpMethod: 'passkey',
         }),
         'WC_FORBIDDEN',
-        'Solo una persona puede decidir una aprobación',
       );
+      expect(error.fields?.actor).toBe('Solo una persona puede decidir una aprobación');
     }
   });
 
@@ -413,7 +409,6 @@ describe('decide', () => {
     await expectError(
       attempt(user(CELLAR, [{ role: 'cellar', legalEntityId: PO }])),
       'WC_FORBIDDEN',
-      'No tiene permiso para decidir esta aprobación',
     );
     await expectError(
       attempt(user(APPROVER_CVPO, [{ role: 'approver', legalEntityId: CVPO }])),
@@ -466,7 +461,6 @@ describe('decide', () => {
         stepUpMethod: 'passkey',
       }),
       'WC_FORBIDDEN',
-      'No tiene permiso para decidir esta aprobación',
     );
   });
 
@@ -502,7 +496,7 @@ describe('decide', () => {
   test('the requester cannot decide unless the policy allows self-approval', async () => {
     const { service } = harness();
     const created = await request(service, { requestedBy: OWNER });
-    await expectError(
+    const approve = await expectError(
       service.decide({
         requestId: created.id,
         decision: 'approve',
@@ -511,9 +505,9 @@ describe('decide', () => {
         stepUpMethod: 'passkey',
       }),
       'WC_FORBIDDEN',
-      'El solicitante no puede decidir su propia solicitud',
     );
-    await expectError(
+    expect(approve.fields?.requester).toBe('El solicitante no puede decidir su propia solicitud');
+    const reject = await expectError(
       service.decide({
         requestId: created.id,
         decision: 'reject',
@@ -523,20 +517,12 @@ describe('decide', () => {
         stepUpMethod: 'passkey',
       }),
       'WC_FORBIDDEN',
-      'El solicitante no puede decidir su propia solicitud',
     );
+    expect(reject.fields?.requester).toBe('El solicitante no puede decidir su propia solicitud');
   });
 
-  test('a stored policy can allow the requester to approve', async () => {
-    const policies = [
-      policy({
-        id: 'cccccccc-cccc-4ccc-8ccc-cccccccc0002',
-        kind: 'invoice_batch_issue',
-        legalEntityId: PO,
-        allowSelfApproval: true,
-      }),
-    ];
-    const { service } = harness(policies);
+  test('the requester may decide an internal kind', async () => {
+    const { service } = harness();
     const created = await request(service, {
       kind: 'invoice_batch_issue',
       requestedBy: OWNER,
@@ -552,6 +538,57 @@ describe('decide', () => {
     });
     expect(decided.request.status).toBe('approved');
     expect(decided.decision.decidedBy).toBe(OWNER);
+  });
+
+  test('a stored policy can allow the requester to approve', async () => {
+    const policies = [
+      policy({
+        id: 'cccccccc-cccc-4ccc-8ccc-cccccccc0002',
+        kind: 'regulatory_submission',
+        legalEntityId: PO,
+        allowSelfApproval: true,
+      }),
+    ];
+    const { service } = harness(policies);
+    const created = await request(service, { requestedBy: OWNER });
+    const decided = await service.decide({
+      requestId: created.id,
+      decision: 'approve',
+      payloadSha256: created.payloadSha256,
+      actor: owner(),
+      stepUpMethod: 'passkey',
+    });
+    expect(decided.request.status).toBe('approved');
+    expect(decided.decision.decidedBy).toBe(OWNER);
+  });
+
+  test('a stored policy can forbid self-approval of an internal kind', async () => {
+    const policies = [
+      policy({
+        id: 'cccccccc-cccc-4ccc-8ccc-cccccccc0009',
+        kind: 'cellar_loss',
+        legalEntityId: PO,
+        allowSelfApproval: false,
+      }),
+    ];
+    const { service } = harness(policies);
+    const created = await request(service, {
+      kind: 'cellar_loss',
+      requestedBy: OWNER,
+      summary: 'Destrucción de 20 litros por incidencia',
+      payload: { litres: '20.00' },
+    });
+    const error = await expectError(
+      service.decide({
+        requestId: created.id,
+        decision: 'approve',
+        payloadSha256: created.payloadSha256,
+        actor: owner(),
+        stepUpMethod: 'passkey',
+      }),
+      'WC_FORBIDDEN',
+    );
+    expect(error.fields?.requester).toBe('El solicitante no puede decidir su propia solicitud');
   });
 
   test('a non-empty allow-list restricts who may decide', async () => {
@@ -644,7 +681,7 @@ describe('decide', () => {
       actor: user(APPROVER_PO, [{ role: 'approver', legalEntityId: PO }]),
       stepUpMethod: 'passkey',
     });
-    await expectError(
+    const invalidNote = await expectError(
       service.decide({
         requestId: created.id,
         decision: 'reject',
@@ -654,8 +691,8 @@ describe('decide', () => {
         note: 'corto',
       }),
       'WC_VALIDATION',
-      'El motivo del rechazo debe tener entre 10 y 500 caracteres',
     );
+    expect(invalidNote.fields?.note).toBe('El motivo del rechazo debe tener entre 10 y 500 caracteres');
     const rejected = await service.decide({
       requestId: created.id,
       decision: 'reject',
@@ -679,7 +716,6 @@ describe('decide', () => {
     await expectError(
       service.consume({ requestId: created.id, payloadSha256: created.payloadSha256 }),
       'WC_NOT_APPROVED',
-      'La solicitud no está aprobada',
     );
     expect((await store.getRequest(created.id))?.status).toBe('rejected');
   });
@@ -695,7 +731,6 @@ describe('decide', () => {
         actor: undefined as unknown as ApproverContext,
       }),
       'WC002',
-      'Falta contexto de actor',
     );
   });
 
@@ -710,7 +745,6 @@ describe('decide', () => {
         stepUpMethod: 'passkey',
       }),
       'WC_NOT_FOUND',
-      'La solicitud no existe',
     );
   });
 
@@ -858,7 +892,6 @@ describe('happy path', () => {
     await expectError(
       service.consume({ requestId: created.id, payloadSha256: created.payloadSha256 }),
       'WC_ALREADY_CONSUMED',
-      'La solicitud ya se ha ejecutado',
     );
     const rows = await store.listDecisions(created.id);
     expect(rows).toHaveLength(1);
