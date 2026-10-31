@@ -10,8 +10,9 @@ import { referenceObjects } from "./parse_reference";
 const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 
 /**
- * Diferencias intencionadas. La comparación de columnas no omite ninguna:
- * el allowlist de abajo está vacío.
+ * Diferencias intencionadas. La comparación de columnas no omite ninguna
+ * de la referencia. EXTRA_COLUMNS solo admite columnas que una migración
+ * posterior añade sobre una tabla ya descrita en docs/02-ddl.
  *
  * - citext → VARCHAR con CHECK (col = lower(col))
  * - jsonb → JSON; bytea → BLOB; numeric(p,s) → DECIMAL(p,s); text → VARCHAR
@@ -30,7 +31,25 @@ const MISSING_COLUMNS: Record<string, readonly string[]> = {
   // ninguna columna de la referencia se omite
 };
 const EXTRA_COLUMNS: Record<string, readonly string[]> = {
-  // ninguna columna extra
+  // TASK-VIN-002 amplía vineyard.treatment sin reescribir el DDL de referencia.
+  "vineyard.treatment": [
+    "active_substances",
+    "applicator_ropo",
+    "application_timing",
+    "campaign",
+    "crop",
+    "group_id",
+    "max_dose",
+    "max_dose_unit",
+    "notebook_product_id",
+    "nutrient_npk",
+    "quantity_unit",
+    "record_kind",
+    "safety_interval_days",
+    "total_quantity",
+    "variety",
+    "weather_notes",
+  ],
 };
 
 function splitSql(sql: string): string[] {
@@ -329,8 +348,9 @@ test("el esquema DuckDB reproduce tablas, vistas y columnas de la referencia", a
   const migrations = readdirSync(join(root, "api/db/migrations")).filter((name) => name.endsWith(".sql")).sort();
   expect(migrations[0]).toBe("0001_core.sql");
   expect(migrations).toContain("0002_core_ops.sql");
-  expect(migrations.at(-1)).toBe("0016_legacy.sql");
-  expect(migrations).toHaveLength(16);
+  expect(migrations).toContain("0016_legacy.sql");
+  expect(migrations.at(-1)).toBe("0048_vineyard_notebook.sql");
+  expect(migrations).toHaveLength(17);
   await migrate(client);
 
   const refs = referenceObjects(root);
