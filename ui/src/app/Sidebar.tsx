@@ -168,10 +168,10 @@ export function Sidebar({
       </div>
       <nav aria-label={copy.nav.primary} className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto p-2">
         {items.map(renderEntry)}
-        <div className="mt-auto grid gap-1 border-t pt-2">{footer.map(renderEntry)}</div>
       </nav>
-      {showToggle ? (
-        <div className="border-t p-2">
+      <div className="shrink-0 border-t p-2">
+        <div className="grid gap-1">{footer.map(renderEntry)}</div>
+        {showToggle ? (
           <button
             type="button"
             className={cn(
@@ -185,8 +185,8 @@ export function Sidebar({
             {collapsed ? <PanelLeftOpen aria-hidden className="size-5" /> : <PanelLeftClose aria-hidden className="size-5" />}
             <span className={cn(collapsed && "sr-only")}>{collapsed ? copy.nav.expand : copy.nav.collapse}</span>
           </button>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
     </aside>
   );
 }

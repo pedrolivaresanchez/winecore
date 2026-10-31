@@ -39,6 +39,8 @@ const CATALOG = {
   WC_MODULE_DISABLED: [404, 'Módulo desactivado'],
   WC_FORBIDDEN: [403, 'No tienes permiso para esta operación'],
   WC_STEP_UP_REQUIRED: [401, 'Falta una verificación reforzada reciente'],
+  WC_VERIFY_FAILED: [401, 'La verificación no es válida'],
+  WC_RATE_LIMITED: [429, 'Demasiados intentos. Espera unos minutos'],
   WC_VALIDATION: [422, 'Los datos no son válidos'],
   WC_IDEMPOTENCY_MISMATCH: [409, 'La clave de idempotencia ya se usó con otra petición'],
   WC_NOT_FOUND: [404, 'No encontrado'],

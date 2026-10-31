@@ -53,14 +53,17 @@ async function installApi(page: Page, mode: Mode) {
     }
     if (pathname.endsWith("/v1/audit")) {
       const row = url.searchParams.get("row_id");
+      const limit = Number(url.searchParams.get("limit") ?? "20");
       const items = auditEvents
         .filter((event) => !row || event.row_id === row)
+        .slice(0, Number.isFinite(limit) ? limit : 20)
         .map((event) => ({
           id: event.id,
           occurred_at: event.occurred_at,
           actor: event.actor,
           action: event.action,
           changes: event.changes,
+          row_id: event.row_id,
         }));
       return fulfill(route, { items, next_cursor: null });
     }

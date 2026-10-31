@@ -17,6 +17,13 @@ export interface Config {
   authMode: AuthMode;
   devUserEmail: string;
   gitSha: string;
+  /** Relying party id (host, sin puerto). `localhost` en desarrollo. */
+  webauthnRpId: string;
+  /** Origen de la UI, p. ej. `http://localhost:5173`. */
+  webauthnOrigin: string;
+  webauthnRpName: string;
+  /** AES-256 para secretos TOTP. Nulo si falta en desarrollo; obligatorio en producción. */
+  dataKey: Uint8Array | null;
 }
 
 function invalid(name: string): never {
@@ -92,6 +99,23 @@ export function loadConfig(env: Env): Config {
     if (value !== '' && !/^[A-Za-z0-9._~:-]{1,128}$/.test(value)) invalid(name);
   }
 
+  const devLike = nodeEnv !== 'production';
+  const webauthnRpId = read(env, 'WEBAUTHN_RP_ID') ?? (devLike ? 'localhost' : invalid('WEBAUTHN_RP_ID'));
+  const webauthnOrigin = read(env, 'WEBAUTHN_ORIGIN') ?? (devLike ? 'http://localhost:5173' : invalid('WEBAUTHN_ORIGIN'));
+  if (!validRpId(webauthnRpId)) invalid('WEBAUTHN_RP_ID');
+  if (!validOrigin(webauthnOrigin, nodeEnv) || !originMatchesRp(webauthnOrigin, webauthnRpId)) {
+    invalid('WEBAUTHN_ORIGIN');
+  }
+
+  const dataKeyRaw = read(env, 'WINECORE_DATA_KEY');
+  let dataKey: Uint8Array | null = null;
+  if (dataKeyRaw === undefined) {
+    if (!devLike) invalid('WINECORE_DATA_KEY');
+  } else {
+    dataKey = parseAes256Key(dataKeyRaw);
+    if (!dataKey) invalid('WINECORE_DATA_KEY');
+  }
+
   return {
     port,
     nodeEnv,
@@ -106,5 +130,47 @@ export function loadConfig(env: Env): Config {
     authMode,
     devUserEmail,
     gitSha,
+    webauthnRpId,
+    webauthnOrigin,
+    webauthnRpName: 'WineCore',
+    dataKey,
   };
+}
+
+function validRpId(value: string): boolean {
+  if (value.length > 253 || value.includes('..')) return false;
+  if (value === 'localhost') return true;
+  return /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/.test(value);
+}
+
+function validOrigin(value: string, nodeEnv: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (url.username || url.password || url.search || url.hash) return false;
+  if (url.pathname !== '/' && url.pathname !== '') return false;
+  if (nodeEnv === 'production' && url.protocol !== 'https:') return false;
+  return url.protocol === 'https:' || url.protocol === 'http:';
+}
+
+function originMatchesRp(origin: string, rpId: string): boolean {
+  const host = new URL(origin).hostname;
+  return host === rpId || host.endsWith(`.${rpId}`);
+}
+
+function parseAes256Key(value: string): Uint8Array | null {
+  if (/^[0-9a-fA-F]{64}$/.test(value)) {
+    const out = new Uint8Array(32);
+    for (let index = 0; index < 32; index += 1) {
+      out[index] = Number.parseInt(value.slice(index * 2, index * 2 + 2), 16);
+    }
+    return out;
+  }
+  if (!/^[A-Za-z0-9+/_=-]{43,48}$/.test(value)) return null;
+  const encoding = value.includes('+') || value.includes('/') ? 'base64' : 'base64url';
+  const bytes = Buffer.from(value, encoding);
+  return bytes.length === 32 ? new Uint8Array(bytes) : null;
 }
