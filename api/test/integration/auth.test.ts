@@ -26,6 +26,9 @@ describe('auth', () => {
         'inventory.count',
         'inventory.read',
         'reports.read',
+        'sales.manage',
+        'sales.read',
+        'sales.write',
         'settings.manage',
         'users.manage',
       ]);

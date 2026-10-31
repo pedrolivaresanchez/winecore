@@ -61,6 +61,7 @@ import {
   putInventoryCountLinesRoute,
   submitInventoryCountRoute,
 } from './routes/stock-counts';
+import { salesRoutes } from './routes/sales';
 import { stockBalances, stockFiscalBalances, stockInspection, stockMoves } from './routes/stock';
 
 export interface AppDeps {
@@ -320,6 +321,8 @@ export function createApp(deps: AppDeps) {
     .post('/v1/export/documents', ({ request }) => postExportDocuments(deps.writer, request), {
       beforeHandle: requireOwner(guardDeps),
     })
-    .use(materialRoutes(guardDeps));
+    .use(materialRoutes(guardDeps))
+    // Ventas: reglas D3, presupuestos, pedidos y albaranes.
+    .use(salesRoutes(deps.writer, guardDeps));
   return app;
 }

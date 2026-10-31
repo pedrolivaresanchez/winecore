@@ -57,6 +57,8 @@ const CATALOG = {
   // Exportación (TASK-FACT-013)
   WC_INV_ENTITY_EORI_REQUIRED: [422, 'La factura de exportación no se emite: falta el EORI de la entidad.'],
   WC_EXPORT_NOT_READY: [422, 'La factura de exportación no está lista'],
+  WC_REG_EAD_REQUIRED: [409, 'Hace falta el ARC (e-DA) antes de expedir'],
+  WC_IC_NO_TARIFF: [422, 'No hay tarifa intercompañía vigente'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;
@@ -119,9 +121,9 @@ export function errorBody(error: DomainError): {
 }
 
 function hasDetails(details: unknown): boolean {
-  if (details === undefined) return false;
+  if (details === undefined || details === null) return false;
   if (Array.isArray(details)) return details.length > 0;
-  if (details && typeof details === 'object') return Object.keys(details).length > 0;
+  if (typeof details === 'object') return Object.keys(details).length > 0;
   return true;
 }
 
