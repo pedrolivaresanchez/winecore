@@ -1,3 +1,4 @@
+import { noteBarrelFills } from '../../cellar-assets/barrel-fills';
 import { planOperation } from '../engine';
 import type {
   AdditionRequest,
@@ -723,6 +724,7 @@ async function persistConfirmed(
   `);
   for (const edge of plan.lotEdges) insertEdge(tx, edge);
   for (const move of plan.stockMoves) insertStock(tx, move);
+  await noteBarrelFills(tx, plan.stockMoves, current.id, actorId);
   for (const move of plan.fiscalMoves) insertFiscal(tx, move);
   if (current.draft.addition && current.header.op_type === 'addition') {
     insertAddition(tx, current.id, current.draft.addition);

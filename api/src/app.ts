@@ -42,6 +42,7 @@ import {
   verifyPasskeyRegistration,
 } from './routes/auth-credentials';
 import { catalogRoutes } from './routes/catalog';
+import { cellarAssetRoutes } from './routes/cellar-assets';
 import { cellarRoutes } from './routes/cellar';
 import { vineyardRoutes } from './routes/vineyard';
 import { winemakingRoutes } from './routes/winemaking';
@@ -728,6 +729,7 @@ export function createApp(deps: AppDeps) {
     .use(vineyardRoutes(guardDeps))
     .use(winemakingRoutes({ writer: deps.writer, guard: guardDeps }))
     .use(vineyardNotebookRoutes(guardDeps))
-    .use(enologyRoutes({ writer: deps.writer, guard: guardDeps, now: deps.now }));
+    .use(enologyRoutes({ writer: deps.writer, guard: guardDeps, now: deps.now }))
+    .use(cellarAssetRoutes({ writer: deps.writer, guard: guardDeps }));
   return app;
 }
