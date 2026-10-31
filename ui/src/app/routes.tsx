@@ -44,6 +44,7 @@ import { SettlementList } from '@/pages/intercompania/SettlementList'
 import { SettlementPage } from '@/pages/intercompania/SettlementPage'
 import { TariffList } from '@/pages/intercompania/TariffList'
 import { TariffPage } from '@/pages/intercompania/TariffPage'
+import { Higiene } from '@/pages/higiene/Higiene'
 
 /** Authenticated routes. The shell, auth and the entity switcher stay outside. */
 export function AppRoutes({ me }: { me: Me }) {
@@ -74,6 +75,7 @@ export function AppRoutes({ me }: { me: Me }) {
       <Route path="bodega/operaciones/nueva" element={<OperacionPage me={me} />} />
       <Route path="bodega/operacion/nueva" element={<OperacionPage me={me} />} />
       <Route path="bodega/operaciones/:id" element={<OperacionPage me={me} />} />
+      <Route path="bodega/higiene/*" element={<Higiene me={me} />} />
       <Route path="bodega/:vesselId" element={<DepositoPage me={me} />} />
       <Route path="q/:token" element={<QrOpen me={me} />} />
       <Route path="stock" element={<StockPage me={me} />} />
