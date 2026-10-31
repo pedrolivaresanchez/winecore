@@ -392,19 +392,23 @@ async function assertRefs(tx: Tx, state: ProductState, current: Product | null, 
 
 async function assertUnique(tx: Tx, id: string, state: ProductState): Promise<void> {
   if (state.kind !== 'wine' || !state.wine_id || state.vintage == null || !state.format_id) return;
-  const rows = await tx.read<{ id: string }>(sql`
-    SELECT id FROM catalog.product
+  const rows = await tx.read<{ id: string; name: string }>(sql`
+    SELECT id, name FROM catalog.product
     WHERE kind = 'wine'
       AND wine_id = CAST(${state.wine_id} AS UUID)
       AND vintage = ${state.vintage}
       AND format_id = CAST(${state.format_id} AS UUID)
       AND id <> CAST(${id} AS UUID)
   `);
-  if (rows.length > 0) {
+  const existing = rows[0];
+  if (existing) {
     throw domainError('WC_VALIDATION', {
       wine_id: 'Ya existe',
       vintage: 'Ya existe',
       format_id: 'Ya existe',
+    }, {
+      existing_id: String(existing.id),
+      existing_name: String(existing.name),
     });
   }
 }
@@ -704,6 +708,8 @@ function toPrice(row: Record<string, unknown>) {
     price_list_id: asString(row.price_list_id),
     code: asString(row.code),
     name: asString(row.name),
+    price_list_code: asString(row.code),
+    price_list_name: asString(row.name),
     currency: asString(row.currency),
     tax_included: asBool(row.tax_included),
   };

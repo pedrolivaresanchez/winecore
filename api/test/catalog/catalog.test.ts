@@ -162,6 +162,9 @@ describe('catálogo HTTP', () => {
     });
     expect(duplicate.status).toBe(422);
     expect((duplicate.json?.fields as Record<string, string>).wine_id).toBe('Ya existe');
+    const duplicateDetails = duplicate.json?.details as { existing_id?: string; existing_name?: string };
+    expect(duplicateDetails.existing_id).toBe(productId);
+    expect(duplicateDetails.existing_name).toBe('Tinto Ejemplo 2024 0,75 L');
 
     const listed = await call(`/v1/products?kind=wine&wine_id=${wineId}&vintage=2024&format_id=${formatId}&active=true&organic=true`);
     expect(listed.status).toBe(200);

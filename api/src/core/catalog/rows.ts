@@ -1,9 +1,11 @@
 export function asString(value: unknown): string {
+  if (value instanceof Date) return value.toISOString();
   return String(value);
 }
 
 export function asNullableString(value: unknown): string | null {
-  return value == null ? null : String(value);
+  if (value == null) return null;
+  return asString(value);
 }
 
 export function asBool(value: unknown): boolean {
