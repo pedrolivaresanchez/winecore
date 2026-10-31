@@ -87,6 +87,8 @@ export type ContactQuery = {
   kind?: ContactKind | "";
   role?: ContactRole | "";
   country?: string;
+  /** P.O o CVPO. Vacío: ambas sociedades, incluidos los contactos sin ficha. */
+  entity?: "" | "PO" | "CVPO";
   archived?: boolean;
   cursor?: string;
   limit?: number;
@@ -166,6 +168,7 @@ export function contactQuery(query: ContactQuery): string {
   if (query.kind) params.set("kind", query.kind);
   if (query.role) params.set("role", query.role);
   if (query.country) params.set("country", query.country);
+  if (query.entity === "PO" || query.entity === "CVPO") params.set("entity", query.entity);
   params.set("archived", query.archived ? "true" : "false");
   if (query.cursor) params.set("cursor", query.cursor);
   params.set("limit", String(query.limit ?? 50));

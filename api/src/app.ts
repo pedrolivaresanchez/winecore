@@ -1,6 +1,6 @@
 import { cors } from '@elysiajs/cors';
 import { Elysia } from 'elysia';
-import { requestIdFor, requireOwner, requireOwnerOrAdmin, requirePermission, requireUser, requireUserOrMachine } from './auth/guard';
+import { requestIdFor, requireAnyPermission, requireOwner, requireOwnerOrAdmin, requirePermission, requireUser, requireUserOrMachine } from './auth/guard';
 import { isAllowedOrigin, securityHeaders } from './auth/policy';
 import { createTimbalAuth } from './auth/timbal';
 import type { FetchLike } from './core/db/timbal';
@@ -134,6 +134,7 @@ import { handleAuthenticatedMcp } from './mcp/http';
 import { RateLimiter } from './mcp/rate';
 import { createMcpClient, listMcpClients, revokeMcpClient, rotateMcpClient } from './routes/mcp-clients';
 import { getDashboard } from './routes/dashboard';
+import { getLegacyInvoices, getLegacyOverview, getLegacyProducts } from './routes/legacy';
 import { me } from './routes/me';
 import { getUsers, patchUserRoute, postUser } from './routes/users';
 import { listNotifications, readAllNotifications, readNotification } from './routes/notifications';
@@ -280,6 +281,15 @@ export function createApp(deps: AppDeps) {
     })
     .get('/v1/dashboard', ({ request }) => getDashboard(deps.writer, request, guardDeps.now?.() ?? new Date()), {
       beforeHandle: requireUser(guardDeps),
+    })
+    .get('/v1/legacy/overview', ({ request }) => getLegacyOverview(deps.writer, request, guardDeps.now?.() ?? new Date()), {
+      beforeHandle: requireAnyPermission(guardDeps, ['reports.read', 'finance.read', 'sales.read', 'billing.read']),
+    })
+    .get('/v1/legacy/invoices', ({ request }) => getLegacyInvoices(deps.writer, request), {
+      beforeHandle: requireAnyPermission(guardDeps, ['reports.read', 'finance.read', 'sales.read', 'billing.read']),
+    })
+    .get('/v1/legacy/products', ({ request }) => getLegacyProducts(deps.writer, request), {
+      beforeHandle: requireAnyPermission(guardDeps, ['catalog.read', 'reports.read', 'finance.read', 'sales.read']),
     })
     .get('/v1/reports/sales.csv', ({ request }) => getReport(deps.writer, request, 'sales'), {
       beforeHandle: requirePermission(guardDeps, 'reports.read'),

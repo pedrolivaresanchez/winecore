@@ -62,12 +62,14 @@ export async function armarPasskey(page: Page): Promise<void> {
 }
 
 export async function registrarPasskey(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Ajustes" }).click();
+  await page.getByRole("button", { name: /Cuenta de/ }).click();
+  await page.getByRole("menuitem", { name: "Ajustes" }).click();
   await page.getByRole("button", { name: "Seguridad" }).click();
   await pantalla(page, "seguridad");
   await page.getByRole("button", { name: "Añadir passkey" }).click();
   await page.locator("#passkey-label").fill("Llave de prueba");
   await page.getByRole("button", { name: "Registrar passkey" }).click();
   await page.getByText("Passkey registrada").waitFor();
-  await page.getByRole("button", { name: "Ajustes" }).click();
+  await page.getByRole("button", { name: /Cuenta de/ }).click();
+  await page.getByRole("menuitem", { name: "Ajustes" }).click();
 }

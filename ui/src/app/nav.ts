@@ -1,239 +1,128 @@
-import { Archive, Box, Calendar, ChartBar, Check, CreditCard, FileText, Home, Layers, MapPin, Receipt, Settings2, ShareNetwork, Users, type IconComponent } from '@/ui/icons'
+import {
+  Archive,
+  Box,
+  Briefcase,
+  Calendar,
+  ChartBar,
+  Check,
+  CreditCard,
+  FileText,
+  FlaskConical,
+  Home,
+  Layers,
+  List,
+  MapPin,
+  Plus,
+  Receipt,
+  ShareNetwork,
+  Tag,
+  Users,
+  type IconComponent,
+} from '@/ui/icons'
 import { copy } from '@/i18n'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
 
-export type NavChild = {
-  id: string
-  label: string
-  path: string
-  permission?: string
-  mobile?: 'tab'
-}
+export type RailGroupId = 'inicio' | 'comercial' | 'bodega' | 'gestion'
+export type RailTier = 'primary' | 'more'
 
-/** Menu groups from docs/08-ui/01-navegacion.md, in that order. */
-export type NavGroup = 'inicio' | 'ventas' | 'facturacion' | 'catalogo' | 'compras' | 'stock' | 'bodega' | 'vinedo' | 'regulatorio' | 'informes'
-
-export type NavEntry = {
+export type RailItem = {
   id: string
-  module: string
   label: string
   icon: IconComponent
-  path?: string
-  end?: boolean
-  children?: NavChild[]
+  path: string
+  /** Extra paths that light the row without being the click target. */
+  exact?: string[]
   permission?: string
-  /** tab = barra inferior; more = hoja Más; none = solo escritorio. */
-  mobile: 'tab' | 'more' | 'none'
-  action?: 'settings'
-  placement: 'main' | 'footer'
-  /** One rail entry per area. Sub-routes stay on `children`. */
-  group?: NavGroup
+  tier: RailTier
 }
 
-export const navigation: NavEntry[] = [
+export type RailGroup = {
+  id: RailGroupId
+  label: string
+  items: RailItem[]
+}
+
+/**
+ * Short rail. Secondary pages stay on `tier: 'more'` and open from the section,
+ * not as another row beside Panel.
+ */
+export const railGroups: RailGroup[] = [
   {
-    id: 'panel',
-    module: 'core',
-    label: copy.nav.panel,
-    icon: Home,
-    path: '/',
-    end: true,
-    mobile: 'tab',
-    placement: 'main',
-    group: 'inicio',
-  },
-  {
-    id: 'approvals',
-    module: 'core',
-    label: copy.nav.approvals,
-    icon: Check,
-    path: '/aprobaciones',
-    mobile: 'more',
-    placement: 'main',
-    group: 'inicio',
-  },
-  {
-    id: 'contacts',
-    module: 'contacts',
-    label: copy.nav.contacts,
-    icon: Users,
-    path: '/contactos',
-    permission: 'contacts.read',
-    mobile: 'tab',
-    placement: 'main',
-    group: 'ventas',
-  },
-  {
-    id: 'sales',
-    module: 'sales',
-    label: copy.nav.sales,
-    icon: Receipt,
-    path: '/ventas',
-    permission: 'sales.read',
-    mobile: 'more',
-    placement: 'main',
-    group: 'ventas',
-  },
-  {
-    id: 'invoices',
-    module: 'billing',
-    label: copy.nav.invoices,
-    icon: FileText,
-    path: '/facturas',
-    permission: 'billing.read',
-    mobile: 'tab',
-    placement: 'main',
-    group: 'facturacion',
-  },
-  {
-    id: 'collections',
-    module: 'finance',
-    label: copy.nav.collections,
-    icon: CreditCard,
-    path: '/cobros',
-    permission: 'finance.read',
-    mobile: 'tab',
-    placement: 'main',
-    group: 'facturacion',
-  },
-  {
-    id: 'intercompany',
-    module: 'billing',
-    label: copy.nav.intercompany,
-    icon: ShareNetwork,
-    path: '/intercompania',
-    permission: 'billing.read',
-    mobile: 'tab',
-    placement: 'main',
-    group: 'facturacion',
-  },
-  {
-    id: 'catalog',
-    module: 'catalog',
-    label: copy.nav.catalog,
-    icon: Box,
-    path: '/catalogo',
-    end: true,
-    permission: 'catalog.read',
-    mobile: 'more',
-    placement: 'main',
-    group: 'catalogo',
-    children: [
-      { id: 'wines', label: copy.catalog.wines, path: '/catalogo/vinos', permission: 'catalog.read' },
-      { id: 'formats', label: copy.catalog.formats, path: '/catalogo/formatos', permission: 'catalog.read' },
-      { id: 'tariffs', label: copy.catalog.tariffs, path: '/catalogo/tarifas', permission: 'catalog.read' },
+    id: 'inicio',
+    label: copy.nav.groups.inicio,
+    items: [
+      { id: 'panel', label: copy.nav.panel, icon: Home, path: '/', exact: ['/'], tier: 'primary' },
+      { id: 'approvals', label: copy.nav.approvals, icon: Check, path: '/aprobaciones', tier: 'more' },
     ],
   },
   {
-    id: 'expenses',
-    module: 'purchasing',
-    label: copy.gastos.title,
-    icon: FileText,
-    path: '/gastos',
-    permission: 'purchasing.read',
-    mobile: 'tab',
-    placement: 'main',
-    group: 'compras',
-  },
-  {
-    id: 'stock',
-    module: 'inventory',
-    label: copy.nav.stock,
-    icon: Archive,
-    path: '/stock',
-    permission: 'inventory.read',
-    mobile: 'more',
-    placement: 'main',
-    group: 'stock',
-  },
-  {
-    id: 'cellar',
-    module: 'cellar',
-    label: copy.nav.cellar,
-    icon: Layers,
-    permission: 'cellar.read',
-    mobile: 'tab',
-    placement: 'main',
-    group: 'bodega',
-    children: [
-      { id: 'vessels', label: copy.nav.vessels, path: '/bodega/depositos', permission: 'cellar.read' },
-      { id: 'plan', label: copy.nav.plan, path: '/bodega/plano', permission: 'cellar.read' },
-      { id: 'lots', label: copy.nav.lots, path: '/bodega/lotes', permission: 'cellar.read' },
-      { id: 'new-operation', label: copy.nav.newOperation, path: '/bodega/operaciones/nueva', permission: 'cellar.operate' },
-      { id: 'readings', label: copy.nav.readings, path: '/bodega/lecturas', permission: 'cellar.read' },
-      { id: 'phases', label: copy.nav.phases, path: '/bodega/fases', permission: 'cellar.read' },
-      { id: 'analyses', label: copy.nav.analyses, path: '/bodega/analiticas', permission: 'cellar.read' },
-      { id: 'tastings', label: copy.nav.tastings, path: '/bodega/catas', permission: 'cellar.read' },
-      { id: 'recipes', label: copy.nav.recipes, path: '/bodega/recetas', permission: 'cellar.read' },
-      { id: 'vintages', label: copy.nav.vintages, path: '/bodega/anadas', permission: 'cellar.read' },
-      { id: 'calculators', label: copy.nav.calculators, path: '/bodega/calculadoras', permission: 'cellar.read' },
-      { id: 'hygiene', label: copy.nav.hygiene, path: '/bodega/higiene', permission: 'cellar.read' },
-      { id: 'holders', label: copy.nav.holders, path: '/bodega/contenedores', permission: 'cellar.read' },
+    id: 'comercial',
+    label: copy.nav.groups.comercial,
+    items: [
+      { id: 'contacts', label: copy.nav.contacts, icon: Users, path: '/contactos', permission: 'contacts.read', tier: 'primary' },
+      { id: 'sales', label: copy.nav.sales, icon: Receipt, path: '/ventas', permission: 'sales.read', tier: 'primary' },
+      { id: 'invoices', label: copy.nav.invoices, icon: FileText, path: '/facturas', permission: 'billing.read', tier: 'primary' },
+      { id: 'collections', label: copy.nav.collections, icon: CreditCard, path: '/cobros', permission: 'finance.read', tier: 'primary' },
+      { id: 'intercompany', label: copy.nav.intercompany, icon: ShareNetwork, path: '/intercompania', permission: 'billing.read', tier: 'more' },
     ],
   },
   {
-    id: 'vineyard',
-    module: 'vineyard',
-    label: copy.nav.vineyard,
-    icon: MapPin,
-    path: '/vinedo',
-    permission: 'vineyard.read',
-    mobile: 'tab',
-    placement: 'main',
-    group: 'vinedo',
+    id: 'bodega',
+    label: copy.nav.groups.bodega,
+    items: [
+      { id: 'deposits', label: copy.nav.vessels, icon: Layers, path: '/bodega/plano', permission: 'cellar.read', tier: 'primary' },
+      { id: 'vineyard', label: copy.nav.vineyard, icon: MapPin, path: '/vinedo', permission: 'vineyard.read', tier: 'primary' },
+      { id: 'map', label: copy.nav.map, icon: List, path: '/bodega/depositos', exact: ['/bodega'], permission: 'cellar.read', tier: 'more' },
+      { id: 'lots', label: copy.nav.lots, icon: Archive, path: '/bodega/lotes', permission: 'cellar.read', tier: 'more' },
+      { id: 'operation', label: copy.nav.newOperation, icon: Plus, path: '/bodega/operaciones/nueva', permission: 'cellar.operate', tier: 'more' },
+      { id: 'readings', label: copy.nav.readings, icon: ChartBar, path: '/bodega/lecturas', permission: 'cellar.read', tier: 'more' },
+      { id: 'phases', label: copy.nav.phases, icon: Calendar, path: '/bodega/fases', permission: 'cellar.read', tier: 'more' },
+      { id: 'analyses', label: copy.nav.analyses, icon: FlaskConical, path: '/bodega/analiticas', permission: 'cellar.read', tier: 'more' },
+      { id: 'tastings', label: copy.nav.tastings, icon: Tag, path: '/bodega/catas', permission: 'cellar.read', tier: 'more' },
+      { id: 'recipes', label: copy.nav.recipes, icon: FileText, path: '/bodega/recetas', permission: 'cellar.read', tier: 'more' },
+      { id: 'vintages', label: copy.nav.vintages, icon: Calendar, path: '/bodega/anadas', permission: 'cellar.read', tier: 'more' },
+      { id: 'calculators', label: copy.nav.calculators, icon: ChartBar, path: '/bodega/calculadoras', permission: 'cellar.read', tier: 'more' },
+      { id: 'hygiene', label: copy.nav.hygiene, icon: List, path: '/bodega/higiene', permission: 'cellar.read', tier: 'more' },
+      { id: 'holders', label: copy.nav.holders, icon: Box, path: '/bodega/contenedores', permission: 'cellar.read', tier: 'more' },
+    ],
   },
   {
-    id: 'regulatory',
-    module: 'regulatory',
-    label: copy.nav.regulatory,
-    icon: Calendar,
-    path: '/regulatorio',
-    permission: 'regulatory.read',
-    mobile: 'more',
-    placement: 'main',
-    group: 'regulatorio',
-  },
-  {
-    id: 'reports',
-    module: 'core',
-    label: copy.nav.reports,
-    icon: ChartBar,
-    path: '/informes',
-    permission: 'reports.read',
-    mobile: 'more',
-    placement: 'main',
-    group: 'informes',
-  },
-  {
-    id: 'settings',
-    module: 'core',
-    label: 'Ajustes',
-    icon: Settings2,
-    action: 'settings',
-    mobile: 'more',
-    placement: 'footer',
+    id: 'gestion',
+    label: copy.nav.groups.gestion,
+    items: [
+      { id: 'catalog', label: copy.nav.catalog, icon: Box, path: '/catalogo', permission: 'catalog.read', tier: 'primary' },
+      { id: 'expenses', label: copy.gastos.title, icon: Briefcase, path: '/gastos', permission: 'purchasing.read', tier: 'primary' },
+      { id: 'stock', label: copy.nav.stock, icon: Archive, path: '/stock', permission: 'inventory.read', tier: 'primary' },
+      { id: 'reports', label: copy.nav.reports, icon: ChartBar, path: '/informes', permission: 'reports.read', tier: 'primary' },
+      { id: 'wines', label: copy.catalog.wines, icon: Tag, path: '/catalogo/vinos', permission: 'catalog.read', tier: 'more' },
+      { id: 'formats', label: copy.catalog.formats, icon: Box, path: '/catalogo/formatos', permission: 'catalog.read', tier: 'more' },
+      { id: 'tariffs', label: copy.catalog.tariffs, icon: Receipt, path: '/catalogo/tarifas', permission: 'catalog.read', tier: 'more' },
+      { id: 'regulatory', label: copy.nav.regulatory, icon: Calendar, path: '/regulatorio', permission: 'regulatory.read', tier: 'more' },
+    ],
   },
 ]
 
-export function canSeeChild(me: Me, child: NavChild): boolean {
-  return allows(me, child.permission)
+export function canSeeItem(me: Me, item: RailItem): boolean {
+  return allows(me, item.permission)
 }
 
-export function visibleChildren(me: Me, entry: NavEntry): NavChild[] {
-  return (entry.children ?? []).filter((child) => canSeeChild(me, child))
+export function visibleGroups(me: Me): RailGroup[] {
+  return railGroups
+    .map((group) => ({ ...group, items: group.items.filter((item) => canSeeItem(me, item)) }))
+    .filter((group) => group.items.some((item) => item.tier === 'primary') || group.items.length > 0)
 }
 
-export function canSeeEntry(me: Me, entry: NavEntry): boolean {
-  if (entry.permission && !allows(me, entry.permission)) return false
-  if (entry.children && visibleChildren(me, entry).length === 0 && !entry.path && !entry.action) return false
-  return true
+export function itemMatches(pathname: string, item: RailItem): boolean {
+  if (item.exact?.includes(pathname)) return true
+  if (item.exact?.includes(item.path) && item.exact.length === 1 && item.path === '/') return pathname === '/'
+  if (item.path === '/') return pathname === '/'
+  return pathname === item.path || pathname.startsWith(`${item.path}/`)
 }
 
-export function mainNav(me: Me): NavEntry[] {
-  return navigation.filter((entry) => entry.placement === 'main' && canSeeEntry(me, entry))
-}
-
-export function footerNav(me: Me): NavEntry[] {
-  return navigation.filter((entry) => entry.placement === 'footer' && canSeeEntry(me, entry))
+/** The longest matching path wins, so Catálogo does not stay lit on Vinos. */
+export function activeRailId(pathname: string, groups: RailGroup[]): string | null {
+  const hits = groups.flatMap((group) => group.items).filter((item) => itemMatches(pathname, item))
+  hits.sort((left, right) => right.path.length - left.path.length)
+  return hits[0]?.id ?? null
 }
