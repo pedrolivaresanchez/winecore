@@ -6,6 +6,15 @@ import type { FetchLike } from './core/db/timbal';
 import type { Config } from './config';
 import type { Writer } from './core/db/writer';
 import { asDomainError, domainError, errorBody } from './core/errors';
+import type { InvoiceDocumentStore } from './core/billing/pdf/documents';
+import { downloadInvoicePdf } from './routes/invoice-documents';
+import {
+  getInvoiceDelivery,
+  listInvoiceDeliveries,
+  markInvoiceDeliveryFailed,
+  markInvoiceDeliverySent,
+  resendInvoiceDelivery,
+} from './routes/invoice-delivery';
 import { listAudit, verifyAudit } from './routes/audit';
 import {
   archiveAddress,
@@ -29,6 +38,7 @@ export interface AppDeps {
   writer: Writer;
   log?: (line: string) => void;
   fetchImpl?: FetchLike;
+  invoiceDocuments?: InvoiceDocumentStore;
 }
 
 const startedAt = new WeakMap<Request, number>();
@@ -37,6 +47,12 @@ export function createApp(deps: AppDeps) {
   const log = deps.log ?? ((line: string) => console.log(line));
   const timbalAuth = createTimbalAuth(deps.config, deps.fetchImpl);
   const guardDeps = { config: deps.config, writer: deps.writer, timbalAuth };
+  const invoiceDeps = {
+    writer: deps.writer,
+    config: deps.config,
+    documents: deps.invoiceDocuments,
+  };
+  const deliveryDeps = { writer: deps.writer, documents: deps.invoiceDocuments };
   const app = new Elysia(deps.config.apiBasePath ? { prefix: deps.config.apiBasePath } : {})
     .use(cors())
     .onRequest(({ request, set }) => {
@@ -129,6 +145,24 @@ export function createApp(deps: AppDeps) {
     })
     .post('/v1/contacts/:id/persons/:pid/archive', ({ request, params }) => archivePerson(deps.writer, request, params.id, params.pid), {
       beforeHandle: requirePermission(guardDeps, 'contacts.write'),
+    })
+    .get('/v1/invoices/deliveries/pending', ({ request }) => listInvoiceDeliveries(deliveryDeps, request), {
+      beforeHandle: requirePermission(guardDeps, 'billing.deliver'),
+    })
+    .get('/v1/invoices/:id/pdf', ({ request, params }) => downloadInvoicePdf(invoiceDeps, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.read'),
+    })
+    .get('/v1/invoices/:id/delivery', ({ request, params }) => getInvoiceDelivery(deliveryDeps, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.deliver'),
+    })
+    .post('/v1/invoices/:id/delivery/sent', ({ request, params }) => markInvoiceDeliverySent(deliveryDeps, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.deliver'),
+    })
+    .post('/v1/invoices/:id/delivery/failed', ({ request, params }) => markInvoiceDeliveryFailed(deliveryDeps, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.deliver'),
+    })
+    .post('/v1/invoices/:id/delivery/resend', ({ request, params }) => resendInvoiceDelivery(deliveryDeps, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.deliver'),
     });
   return app;
 }

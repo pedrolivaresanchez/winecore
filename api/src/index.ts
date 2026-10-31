@@ -3,6 +3,7 @@ import { loadConfig } from './config';
 import { openClient } from './core/db/open';
 import { createWriter, installWriter } from './core/db/writer';
 import { migrate } from '../db/migrate';
+import { startDeliveryAlertJob } from './jobs/delivery-alerts';
 
 async function main(): Promise<void> {
   const config = loadConfig(process.env);
@@ -17,10 +18,12 @@ async function main(): Promise<void> {
   }
   writer.startMaintenance();
   const app = createApp({ config, writer });
+  const stopDeliveryAlerts = startDeliveryAlertJob(writer, config.deliveryAlertHours);
   app.listen(config.port);
   console.log(JSON.stringify({ level: 'info', event: 'listen', port: config.port }));
 
   const shutdown = async () => {
+    stopDeliveryAlerts();
     writer.stopMaintenance();
     await client.close?.();
     process.exit(0);

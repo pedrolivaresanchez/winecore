@@ -17,6 +17,8 @@ export interface Config {
   authMode: AuthMode;
   devUserEmail: string;
   gitSha: string;
+  /** Hours before a pending CVBOT delivery raises a notification. Default 24. */
+  deliveryAlertHours: number;
 }
 
 function invalid(name: string): never {
@@ -106,5 +108,15 @@ export function loadConfig(env: Env): Config {
     authMode,
     devUserEmail,
     gitSha,
+    deliveryAlertHours: deliveryAlertHours(env),
   };
+}
+
+function deliveryAlertHours(env: Env): number {
+  const raw = read(env, 'WINECORE_DELIVERY_ALERT_HOURS');
+  if (raw === undefined) return 24;
+  if (!/^\d+$/.test(raw)) invalid('WINECORE_DELIVERY_ALERT_HOURS');
+  const hours = Number(raw);
+  if (hours < 1 || hours > 24 * 14) invalid('WINECORE_DELIVERY_ALERT_HOURS');
+  return hours;
 }
