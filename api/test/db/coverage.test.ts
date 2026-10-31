@@ -21,5 +21,19 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
   expect(missingCodes).toEqual([]);
   expect(missingIndexes).toEqual([]);
   expect(new Set(guards.map((guard) => guard.id)).size).toBe(guards.length);
-  expect(guards.every((guard) => guard.implemented === false)).toBe(true);
+  const implemented = guards.filter((guard) => guard.implemented).map((guard) => guard.id).sort();
+  expect(implemented).toEqual([
+    "UQ:cellar.operation(legal_entity_id,number)",
+    "UQ:cellar.vessel(qr_token)",
+    "WC020",
+    "WC021",
+    "WC024",
+    "WC025",
+    "WC026",
+    "WC027",
+    "WC028",
+    "WC030",
+    "WC031",
+    "WC032",
+  ].sort());
 });

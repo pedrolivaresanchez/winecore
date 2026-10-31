@@ -4,10 +4,26 @@ export type GuardSpec = {
   table: string;
   description: string;
   ownerTask: string;
-  implemented: false;
+  implemented: boolean;
 };
 
-export const guards: readonly GuardSpec[] = [
+/** Guards this cellar API enforces in application code. */
+const CELLAR_GUARDS = new Set<string>([
+  "WC020",
+  "WC021",
+  "WC024",
+  "WC025",
+  "WC026",
+  "WC027",
+  "WC028",
+  "WC030",
+  "WC031",
+  "WC032",
+  "UQ:cellar.operation(legal_entity_id,number)",
+  "UQ:cellar.vessel(qr_token)",
+]);
+
+const guardSpecs: readonly GuardSpec[] = [
   { id: "WC001", kind: "core", table: "*", description: "Prohibido borrar filas de negocio; el contenido de un adjunto y los enlaces de evidencia no se sustituyen ni se borran.", ownerTask: "TASK-CORE-001", implemented: false },
   { id: "WC002", kind: "core", table: "*", description: "Toda escritura exige un actor (user, agent, system o migration).", ownerTask: "TASK-CORE-001", implemented: false },
   { id: "WC003", kind: "core", table: "audit.audit_log", description: "El registro de auditoría no se modifica ni se borra.", ownerTask: "TASK-CORE-001", implemented: false },
@@ -273,3 +289,7 @@ export const guards: readonly GuardSpec[] = [
   { id: "FK:legacy.document_file.entity_id", kind: "core", table: "legacy.document_file", description: "FK legacy.document_file.entity_id hacia core.legal_entity; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-MIG-001", implemented: false },
   { id: "FK:legacy.document_file.attachment_id", kind: "core", table: "legacy.document_file", description: "FK legacy.document_file.attachment_id hacia core.attachment; DuckDB no admite claves foráneas entre esquemas.", ownerTask: "TASK-MIG-001", implemented: false },
 ];
+
+export const guards: readonly GuardSpec[] = guardSpecs.map((guard) =>
+  CELLAR_GUARDS.has(guard.id) ? { ...guard, implemented: true } : guard,
+);
