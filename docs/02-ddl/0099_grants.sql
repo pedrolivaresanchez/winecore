@@ -5,7 +5,7 @@
 DO $$
 DECLARE s text;
 BEGIN
-  FOREACH s IN ARRAY ARRAY['core','audit','ops','party','catalog','inventory','cellar','sales','billing',
+  FOREACH s IN ARRAY ARRAY['core','audit','ops','party','catalog','inventory','cellar','sales','billing','legacy',
                            'purchasing','finance','regulatory','vineyard','accounting','knowledge'] LOOP
     EXECUTE format('GRANT USAGE ON SCHEMA %I TO winecore_app, winecore_readonly', s);
     EXECUTE format('GRANT SELECT ON ALL TABLES IN SCHEMA %I TO winecore_app, winecore_readonly', s);

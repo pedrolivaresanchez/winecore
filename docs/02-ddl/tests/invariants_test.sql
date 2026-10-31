@@ -292,6 +292,31 @@ SELECT pg_temp.expect_error($q$ INSERT INTO billing.billing_rule(rule_set_id, sc
   VALUES ('00000000-0000-0000-0000-0000000018d1','channel','web','00000000-0000-0000-0000-0000000000a2') $q$, 'WC070');
 ROLLBACK;
 
+-- 16) Histórico importado: solo lectura salvo para la migración; las partidas abiertas se cobran
+BEGIN;
+SELECT core.set_actor('migration', 'loader', NULL, 'test', NULL);
+INSERT INTO legacy.import_batch(id, source, entity_id, dataset, file_name, file_sha256, mode, run_by)
+VALUES ('00000000-0000-0000-0000-0000000019a1','holded','00000000-0000-0000-0000-0000000000a2','sales_invoices','sintetico.xlsx', repeat('d',64),'load','loader');
+INSERT INTO legacy.holded_invoice(id, batch_id, entity_id, kind, number, issue_date, counterparty_name, subtotal, vat, total, status_holded, raw)
+VALUES ('00000000-0000-0000-0000-0000000019b1','00000000-0000-0000-0000-0000000019a1','00000000-0000-0000-0000-0000000000a2','sale','F260001','2026-10-01','Cliente Sintético S.L.',100.00,21.00,121.00,'Pendiente','{}');
+INSERT INTO legacy.open_item(id, entity_id, direction, holded_invoice_id, counterparty_contact_id, document_number, document_date, amount)
+VALUES ('00000000-0000-0000-0000-0000000019c1','00000000-0000-0000-0000-0000000000a2','receivable','00000000-0000-0000-0000-0000000019b1',
+        '00000000-0000-0000-0000-0000000003c1','F260001','2026-10-01',121.00);
+COMMIT;
+
+BEGIN;
+SELECT core.set_actor('user', 'tester', NULL, 'test', NULL);
+SELECT pg_temp.expect_error($q$ UPDATE legacy.holded_invoice SET total = 1 $q$, 'WC140');
+SELECT pg_temp.expect_error($q$ DELETE FROM legacy.holded_invoice $q$, 'WC140');
+INSERT INTO finance.payment(id, legal_entity_id, direction, method, amount, value_date, counterparty_id, source, created_by)
+VALUES ('00000000-0000-0000-0000-0000000019d1','00000000-0000-0000-0000-0000000000a2','in','transfer',121.00,'2027-01-05','00000000-0000-0000-0000-0000000003c1','manual','test');
+INSERT INTO finance.payment_allocation(payment_id, target_table, target_id, amount, allocated_by)
+VALUES ('00000000-0000-0000-0000-0000000019d1','legacy.open_item','00000000-0000-0000-0000-0000000019c1',121.00,'test');
+DO $$ BEGIN
+  IF (SELECT status FROM legacy.open_item WHERE id='00000000-0000-0000-0000-0000000019c1') <> 'paid' THEN RAISE EXCEPTION 'partida abierta no cobrada'; END IF;
+END $$;
+COMMIT;
+
 -- 15) La cadena de auditoría sigue íntegra tras todo lo anterior
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM audit.verify_chain()) THEN RAISE EXCEPTION 'cadena de auditoría rota al final'; END IF;
