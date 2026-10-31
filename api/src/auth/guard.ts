@@ -60,12 +60,12 @@ export function sessionOf(request: Request): UserCtx {
 }
 
 export function requireUser(deps: GuardDeps) {
-  return async (context: GuardState) => {
-    const blocked = await rejectMachine(deps, context);
+  return async ({ request, set }: GuardState) => {
+    const blocked = await rejectMachine(deps, request, set);
     if (blocked) return blocked;
-    const session = await loadSession(deps, context.request);
-    if (session instanceof DomainError) return reject(context.set, session);
-    await rememberLogin(deps, context.request, session);
+    const session = await loadSession(deps, request);
+    if (session instanceof DomainError) return reject(set, session);
+    await rememberLogin(deps, request, session);
   };
 }
 
@@ -83,11 +83,15 @@ export function requireUserOrMachine(deps: GuardDeps) {
   };
 }
 
-async function rejectMachine(deps: GuardDeps, context: GuardState): Promise<unknown> {
-  if (!machineBearer(context.request)) return undefined;
-  const machine = await rememberMachine(deps, context.request);
-  if (machine instanceof DomainError) return reject(context.set, machine);
-  return reject(context.set, domainError('WC_FORBIDDEN'));
+async function rejectMachine(
+  deps: GuardDeps,
+  request: Request,
+  set: GuardState['set'],
+): Promise<unknown> {
+  if (!machineBearer(request)) return undefined;
+  const machine = await rememberMachine(deps, request);
+  if (machine instanceof DomainError) return reject(set, machine);
+  return reject(set, domainError('WC_FORBIDDEN'));
 }
 
 async function rememberMachine(
@@ -127,24 +131,24 @@ async function lookupMachine(writer: Writer, token: string): Promise<MachinePrin
 }
 
 export function requirePermission(deps: GuardDeps, permission: Permission) {
-  return async (context: GuardState) => {
-    const blocked = await rejectMachine(deps, context);
+  return async ({ request, set }: GuardState) => {
+    const blocked = await rejectMachine(deps, request, set);
     if (blocked) return blocked;
-    const session = await loadSession(deps, context.request);
-    if (session instanceof DomainError) return reject(context.set, session);
-    await rememberLogin(deps, context.request, session);
-    if (!can(session, permission)) return reject(context.set, domainError('WC_FORBIDDEN'));
+    const session = await loadSession(deps, request);
+    if (session instanceof DomainError) return reject(set, session);
+    await rememberLogin(deps, request, session);
+    if (!can(session, permission)) return reject(set, domainError('WC_FORBIDDEN'));
   };
 }
 
 export function requireOwner(deps: GuardDeps) {
-  return async (context: GuardState) => {
-    const blocked = await rejectMachine(deps, context);
+  return async ({ request, set }: GuardState) => {
+    const blocked = await rejectMachine(deps, request, set);
     if (blocked) return blocked;
-    const session = await loadSession(deps, context.request);
-    if (session instanceof DomainError) return reject(context.set, session);
-    await rememberLogin(deps, context.request, session);
-    if (!isOwner(session)) return reject(context.set, domainError('WC_FORBIDDEN'));
+    const session = await loadSession(deps, request);
+    if (session instanceof DomainError) return reject(set, session);
+    await rememberLogin(deps, request, session);
+    if (!isOwner(session)) return reject(set, domainError('WC_FORBIDDEN'));
   };
 }
 
