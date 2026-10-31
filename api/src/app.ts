@@ -40,6 +40,7 @@ import {
   patchContact,
   patchPerson,
 } from './routes/contacts';
+import { catalogRoutes } from './routes/catalog';
 import { health } from './routes/health';
 import { me } from './routes/me';
 import { listNotifications, readAllNotifications, readNotification } from './routes/notifications';
@@ -239,6 +240,7 @@ export function createApp(deps: AppDeps) {
     })
     .put('/v1/approval-policies/:kind', ({ request, params, body }) => putApprovalPolicy(http, request, params.kind, body), {
       beforeHandle: requireOwner(guardDeps),
-    });
+    })
+    .use(catalogRoutes(guardDeps));
   return app;
 }
