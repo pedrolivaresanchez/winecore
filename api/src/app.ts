@@ -45,6 +45,7 @@ import {
 import { health } from './routes/health';
 import { me } from './routes/me';
 import { listNotifications, readAllNotifications, readNotification } from './routes/notifications';
+import { getReport } from './routes/reports';
 import { createNumberSeries, deactivateNumberSeries, listNumberSeries } from './routes/series';
 import {
   closeInventoryCountRoute,
@@ -117,6 +118,24 @@ export function createApp(deps: AppDeps) {
     .get('/health', () => health(deps.config, deps.writer))
     .get('/v1/me', ({ request }) => me(deps.writer, request), {
       beforeHandle: requireUser(guardDeps),
+    })
+    .get('/v1/reports/sales.csv', ({ request }) => getReport(deps.writer, request, 'sales'), {
+      beforeHandle: requirePermission(guardDeps, 'reports.read'),
+    })
+    .get('/v1/reports/expenses.csv', ({ request }) => getReport(deps.writer, request, 'expenses'), {
+      beforeHandle: requirePermission(guardDeps, 'reports.read'),
+    })
+    .get('/v1/reports/stock.csv', ({ request }) => getReport(deps.writer, request, 'stock'), {
+      beforeHandle: requirePermission(guardDeps, 'reports.read'),
+    })
+    .get('/v1/reports/sales', ({ request }) => getReport(deps.writer, request, 'sales'), {
+      beforeHandle: requirePermission(guardDeps, 'reports.read'),
+    })
+    .get('/v1/reports/expenses', ({ request }) => getReport(deps.writer, request, 'expenses'), {
+      beforeHandle: requirePermission(guardDeps, 'reports.read'),
+    })
+    .get('/v1/reports/stock', ({ request }) => getReport(deps.writer, request, 'stock'), {
+      beforeHandle: requirePermission(guardDeps, 'reports.read'),
     })
     .get('/v1/audit', ({ request }) => listAudit(deps.writer, request), {
       beforeHandle: requirePermission(guardDeps, 'audit.read'),
