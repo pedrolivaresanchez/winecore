@@ -40,6 +40,7 @@
 | Q-029 | Cómo recibe CVBOT los eventos de WineCore (URL y firma) | M1 | 13-11-2026 | ABIERTA |
 | Q-030 | Devoluciones de clientes y "zona fuera de fábrica" autorizada | M3 | 15-01-2027 | ABIERTA |
 | Q-031 | INFOVI: números REOVI/NIDPB y acceso al portal | M3 | 15-02-2027 | ABIERTA |
+| Q-032 | Factura electrónica B2B (RD 238/2026): recibir cargos de ECI desde 06-10-2027 y emitir desde 06-10-2028 | M8 (planificación) | 30-06-2027 | ABIERTA |
 
 ---
 
@@ -261,3 +262,10 @@
 - **Hecho** (RD 739/2015, arts. 3.2 y 5.3, https://www.boe.es/buscar/act.php?id=BOE-A-2015-8647, consultado el 31-10-2026): con menos de 1.000 hl de media, P.O debe presentar la declaración de existencias/producción en **diciembre y agosto** (hasta el día 20) y la **declaración de cosecha** hasta el **10 de diciembre**.
 - **Preguntas**: ¿quién la presenta hoy? ¿Cuáles son los números REOVI y NIDPB de la bodega? ¿Acceso al portal (certificado)?
 - **Fecha límite**: 15-02-2027.
+
+## Q-032 · Factura electrónica B2B obligatoria — planificación (no bloquea el MVP)
+
+- **Hecho** (BOE, consultado el 31-10-2026): el RD 238/2026 y la Orden HAC/1028/2026 (en vigor el 06-10-2026) obligan a emitir y recibir facturas electrónicas estructuradas entre empresas: quienes facturan más de 8 M€ (ECI) desde el **06-10-2027**; el resto (P.O y CVPO) desde el **06-10-2028**; P.O, como persona física, informa de estados desde el **06-10-2029**. Vía gratuita: la solución pública de la AEAT (UBL). Fuentes: https://www.boe.es/eli/es/rd/2026/03/25/238 · https://www.boe.es/eli/es/o/2026/10/02/hac1028/con.
+- **Preguntas para el asesor**: ¿desde el 06-10-2027 P.O debe poder **recibir** las facturas de cargo/abono de ECI como factura electrónica? ¿Qué volumen de facturación computa cada entidad (art. 121 LIVA)?
+- **Recomendación**: hito **M8** (antes del 2T-2028): emisión UBL con copia a la solución pública o por sus servicios web, recepción de facturas recibidas y comunicación de estados; decidir entonces con ECI el canal (ADR 006).
+- **Fecha límite**: 30-06-2027.

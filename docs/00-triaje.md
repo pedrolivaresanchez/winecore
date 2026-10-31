@@ -96,7 +96,7 @@ Los R1–R12 son los del plan (§9), revisados; R13–R23 son nuevos de este tri
 | **R19** | Capacidades de Timbal no documentadas (base de datos transaccional, *computer use*, autenticación de la app, conexión con GitHub) | Media | Alto | ADR 002/005/007/008 con alternativas mínimas; preguntas en Q-004. | Nuevo |
 | **R20** | Plazo de M1 (4 semanas con infraestructura) y latencia de aprobación de esta especificación | Alta | Crítico | Backlog de M0/M1 paralelizable sin ficheros solapados; aprobación de la especificación en 48–72 h. | Nuevo |
 | **R21** | Aprobaciones desde el chat vulnerables a inyección de instrucciones | Media | Alto | Aprobación solo en la web con passkey/TOTP (Q-005); el MCP no expone herramientas de aprobación. | Nuevo |
-| **R22** | Factura electrónica B2B obligatoria (Ley "Crea y Crece") | Media | Medio | Formato estructurado preparado en el modelo (ver `04-regulatorio/verifactu.md` §10). | Nuevo (en verificación) |
+| **R22** | Factura electrónica B2B obligatoria (RD 238/2026 y Orden HAC/1028/2026, en vigor el 06-10-2026): ECI desde 06-10-2027; P.O y CVPO desde 06-10-2028 (estados de P.O desde 06-10-2029) | **Alta (hecho)** | Medio | Hito M8 (UBL por la solución pública de la AEAT o plataforma conforme); recepción de cargos de ECI a confirmar con el asesor (Q-032). | Abierto (verificado) |
 | **R23** | Un único aprobador disponible (vacaciones, enfermedad) | Media | Medio | Al menos dos aprobadores por entidad (Q-005). | Nuevo |
 
 ## 5. Supuestos del plan (§9) revisados

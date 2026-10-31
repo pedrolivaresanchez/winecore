@@ -102,6 +102,19 @@ CREATE TABLE party.contact_entity_terms (
   PRIMARY KEY (contact_id, legal_entity_id)
 );
 
+-- GLN del cliente por función (EDI: comprador, facturar a, pagador, receptor del mensaje, punto de entrega)
+CREATE TABLE party.contact_gln (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  contact_id  uuid NOT NULL REFERENCES party.contact(id),
+  role        text NOT NULL CHECK (role IN ('buyer','invoicee','payer','message_receiver','delivery','supplier_assigned')),
+  gln         char(13) NOT NULL CHECK (gln ~ '^[0-9]{13}$'),
+  label       text,                                              -- p. ej. "Centro X", "Departamento 209"
+  address_id  uuid REFERENCES party.contact_address(id),
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  archived_at timestamptz,
+  UNIQUE (contact_id, role, gln)
+);
+
 -- Registro de fusiones de duplicados (deduplicación manual o asistida)
 CREATE TABLE party.contact_merge (
   id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -119,3 +132,4 @@ CREATE TRIGGER contact_address_audit AFTER INSERT OR UPDATE ON party.contact_add
 CREATE TRIGGER contact_person_audit AFTER INSERT OR UPDATE ON party.contact_person FOR EACH ROW EXECUTE FUNCTION audit.capture();
 CREATE TRIGGER contact_entity_terms_audit AFTER INSERT OR UPDATE ON party.contact_entity_terms FOR EACH ROW EXECUTE FUNCTION audit.capture();
 CREATE TRIGGER contact_merge_audit AFTER INSERT ON party.contact_merge FOR EACH ROW EXECUTE FUNCTION audit.capture();
+CREATE TRIGGER contact_gln_audit AFTER INSERT OR UPDATE ON party.contact_gln FOR EACH ROW EXECUTE FUNCTION audit.capture();

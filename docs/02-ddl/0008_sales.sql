@@ -75,6 +75,8 @@ CREATE TABLE sales.sales_order (
   channel              text NOT NULL REFERENCES sales.channel(code),
   customer_id          uuid NOT NULL REFERENCES party.contact(id),
   customer_order_ref   text,                                          -- nº de pedido del cliente (ORDERS BGM, confirmación del importador)
+  customer_department  text,                                          -- departamento/sección del cliente (EDI)
+  customer_cost_center text,                                          -- centro de coste del cliente (INVOIC RFF+API)
   external_ref         text,                                          -- id externo (EDI, Stripe)
   order_date           date NOT NULL,
   requested_date       date,
@@ -204,6 +206,18 @@ END $$;
 CREATE TRIGGER delivery_note_line_guard BEFORE INSERT OR UPDATE OR DELETE ON sales.delivery_note_line
   FOR EACH ROW EXECUTE FUNCTION sales.delivery_note_line_guard();
 
+-- Unidades logísticas con SSCC (solo si un cliente exige albarán EDI/etiqueta GS1-128; posterior)
+CREATE TABLE sales.handling_unit (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  delivery_note_id uuid NOT NULL REFERENCES sales.delivery_note(id),
+  kind             text NOT NULL CHECK (kind IN ('pallet','case')),
+  sscc             char(18) NOT NULL UNIQUE CHECK (sscc ~ '^[0-9]{18}$'),
+  gtin_pallet      text,
+  cases            smallint,
+  contents         jsonb NOT NULL,                                   -- [{product_id, lot_id, qty}]
+  created_at       timestamptz NOT NULL DEFAULT now()
+);
+
 -- ---------------------------------------------------------------------
 -- Incidencias de transporte (roturas, pérdidas, rechazos)
 -- ---------------------------------------------------------------------
@@ -230,3 +244,5 @@ CREATE TRIGGER sales_order_line_audit AFTER INSERT OR UPDATE OR DELETE ON sales.
 CREATE TRIGGER delivery_note_audit AFTER INSERT OR UPDATE ON sales.delivery_note FOR EACH ROW EXECUTE FUNCTION audit.capture();
 CREATE TRIGGER delivery_note_line_audit AFTER INSERT OR UPDATE OR DELETE ON sales.delivery_note_line FOR EACH ROW EXECUTE FUNCTION audit.capture();
 CREATE TRIGGER shipping_incident_audit AFTER INSERT OR UPDATE ON sales.shipping_incident FOR EACH ROW EXECUTE FUNCTION audit.capture();
+CREATE TRIGGER handling_unit_audit AFTER INSERT OR UPDATE ON sales.handling_unit FOR EACH ROW EXECUTE FUNCTION audit.capture();
+CREATE TRIGGER handling_unit_no_delete BEFORE DELETE ON sales.handling_unit FOR EACH ROW EXECUTE FUNCTION core.forbid_delete();

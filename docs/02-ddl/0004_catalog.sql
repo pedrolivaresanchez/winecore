@@ -61,7 +61,26 @@ CREATE TABLE catalog.product (
 );
 CREATE UNIQUE INDEX product_wine_vintage_format_uq ON catalog.product(wine_id, coalesce(vintage, 0), format_id)
   WHERE kind = 'wine';
-CREATE UNIQUE INDEX product_gtin_uq ON catalog.product(gtin) WHERE gtin IS NOT NULL;
+-- Regla GS1: el GTIN se mantiene entre añadas si la añada no afecta a pedidos ni facturas,
+-- así que varios productos (añadas) pueden compartir GTIN. El EDI resuelve con catalog.gtin_current.
+CREATE INDEX product_gtin_idx ON catalog.product(gtin) WHERE gtin IS NOT NULL;
+
+CREATE TABLE catalog.gtin_current (
+  gtin        text PRIMARY KEY CHECK (gtin ~ '^[0-9]{8}$|^[0-9]{12,14}$'),
+  product_id  uuid NOT NULL REFERENCES catalog.product(id),
+  updated_by  text NOT NULL,
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);
+
+-- Código de artículo que asigna cada cliente (p. ej. "departamento + referencia" de un gran almacén)
+CREATE TABLE catalog.customer_item_code (
+  contact_id  uuid NOT NULL REFERENCES party.contact(id),
+  product_id  uuid NOT NULL REFERENCES catalog.product(id),
+  code        text NOT NULL,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (contact_id, product_id),
+  UNIQUE (contact_id, code)
+);
 CREATE TRIGGER product_touch BEFORE UPDATE ON catalog.product FOR EACH ROW EXECUTE FUNCTION core.touch_updated_at();
 CREATE TRIGGER product_no_delete BEFORE DELETE ON catalog.product FOR EACH ROW EXECUTE FUNCTION core.forbid_delete();
 
@@ -164,3 +183,5 @@ CREATE TRIGGER price_list_version_audit AFTER INSERT OR UPDATE ON catalog.price_
 CREATE TRIGGER price_list_item_audit AFTER INSERT OR UPDATE OR DELETE ON catalog.price_list_item FOR EACH ROW EXECUTE FUNCTION audit.capture();
 CREATE TRIGGER intercompany_tariff_audit AFTER INSERT OR UPDATE ON catalog.intercompany_tariff FOR EACH ROW EXECUTE FUNCTION audit.capture();
 CREATE TRIGGER standard_cost_audit AFTER INSERT OR UPDATE ON catalog.standard_cost FOR EACH ROW EXECUTE FUNCTION audit.capture();
+CREATE TRIGGER gtin_current_audit AFTER INSERT OR UPDATE OR DELETE ON catalog.gtin_current FOR EACH ROW EXECUTE FUNCTION audit.capture();
+CREATE TRIGGER customer_item_code_audit AFTER INSERT OR UPDATE OR DELETE ON catalog.customer_item_code FOR EACH ROW EXECUTE FUNCTION audit.capture();

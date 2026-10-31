@@ -78,6 +78,9 @@ CREATE TABLE core.legal_entity (
   income_tax       text NOT NULL CHECK (income_tax IN ('IRPF','IS')),
   vat_id           text CHECK (vat_id ~ '^ES[A-Z0-9]{9}$'),
   eori             text,
+  gln              char(13) CHECK (gln ~ '^[0-9]{13}$'),          -- punto operacional GS1 (usuario de AecocEDI)
+  gs1_company_prefix text CHECK (gs1_company_prefix ~ '^[0-9]{7,12}$'),
+  registry_data    text,                                          -- datos registrales (sociedades) para documentos
   address_line     text NOT NULL,
   postal_code      text NOT NULL CHECK (postal_code ~ '^[0-9]{5}$'),
   city             text NOT NULL,
