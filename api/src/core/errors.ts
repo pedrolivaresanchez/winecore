@@ -39,6 +39,7 @@ const CATALOG = {
   WC_STEP_UP_REQUIRED: [401, 'Falta una verificación reforzada reciente'],
   WC_VALIDATION: [422, 'Los datos no son válidos'],
   WC_IDEMPOTENCY_MISMATCH: [409, 'La clave de idempotencia ya se usó con otra petición'],
+  WC_MCP_CONFIRMATION_INVALID: [409, 'La confirmación no es válida'],
   WC_NOT_FOUND: [404, 'No encontrado'],
   WC_STALE_VERSION: [409, 'El registro ha cambiado; vuelve a cargarlo'],
   WC_UNAUTHENTICATED: [401, 'No autenticado'],
@@ -72,9 +73,13 @@ export function isErrorCode(code: string): code is ErrorCode {
   return Object.prototype.hasOwnProperty.call(CATALOG, code);
 }
 
-export function domainError(code: ErrorCode, fields?: Record<string, string>): DomainError {
+export function domainError(
+  code: ErrorCode,
+  fields?: Record<string, string>,
+  message?: string,
+): DomainError {
   const entry = CATALOG[code];
-  return new DomainError(code, entry[0], entry[1], fields);
+  return new DomainError(code, entry[0], message ?? entry[1], fields);
 }
 
 export function errorBody(error: DomainError): {
