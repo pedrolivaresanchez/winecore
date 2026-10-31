@@ -24,6 +24,7 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
   const implemented = guards.filter((guard) => guard.implemented).map((guard) => guard.id).sort();
   expect(implemented).toEqual([
     "CK:catalog.product#1",
+    "CK:ops.mcp_confirmation#ttl",
     "FK:cellar.addition.additive_product_id",
     "FK:cellar.addition.lot_id",
     "FK:cellar.cleaning_record.location_id",
@@ -38,6 +39,7 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
     "FK:ops.approval_decision.decided_by",
     "FK:ops.approval_policy.legal_entity_id",
     "FK:ops.approval_request.legal_entity_id",
+    "FK:ops.mcp_confirmation.on_behalf_of_user_id",
     "UQ:catalog.price_list_version(price_list_id,valid_from,valid_to)",
     "UQ:catalog.product(wine_id,vintage,format_id)",
     "UQ:cellar.operation(legal_entity_id,number)",
