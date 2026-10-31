@@ -184,6 +184,12 @@ export async function createAnalysis(writer: Writer, request: Request, code: str
     ? null
     : uuidOf(body.vesselId ?? body.vessel_id, 'vessel_id');
   const attachmentId = attachmentOf(body);
+  const resultAt = optionalInstantField(body.result_at ?? body.resultAt, 'result_at');
+  if (resultAt && Date.parse(resultAt) < Date.parse(sampledAt)) {
+    invalid({ result_at: 'El resultado no puede ser anterior a la muestra' });
+  }
+  const labContactId = optionalUuidField(body.lab_contact_id ?? body.labContactId, 'lab_contact_id');
+  const sampleOperationId = optionalUuidField(body.sample_operation_id ?? body.sampleOperationId, 'sample_operation_id');
   const results = parseResults(body.results);
   const actor = actorFor(request, 'analítica');
   const id = newId();
@@ -203,6 +209,20 @@ export async function createAnalysis(writer: Writer, request: Request, code: str
     if (attachmentId) {
       const found = await tx.read(sql`SELECT id FROM core.attachment WHERE id = CAST(${attachmentId} AS UUID)`);
       if (found.length === 0) invalid({ pdf: 'El informe adjunto no existe' });
+    }
+    if (labContactId) {
+      const contact = await tx.read<{ is_supplier: boolean }>(sql`
+        SELECT is_supplier FROM party.contact WHERE id = CAST(${labContactId} AS UUID)
+      `);
+      if (!contact[0]) invalid({ lab_contact_id: 'El laboratorio no existe' });
+      if (contact[0].is_supplier !== true) invalid({ lab_contact_id: 'El laboratorio tiene que ser un proveedor' });
+    }
+    if (sampleOperationId) {
+      const operation = await tx.read<{ op_type: string }>(sql`
+        SELECT op_type FROM cellar.operation WHERE id = CAST(${sampleOperationId} AS UUID)
+      `);
+      if (!operation[0]) invalid({ sample_operation_id: 'La muestra no existe' });
+      if (operation[0].op_type !== 'sampling') invalid({ sample_operation_id: 'La muestra tiene que ser una toma de muestras' });
     }
     const parameters = await tx.read<{ code: string; unit: string; min_value: string | null; max_value: string | null }>(`
       SELECT code, unit, min_value::VARCHAR AS min_value, max_value::VARCHAR AS max_value
@@ -246,6 +266,17 @@ export async function createAnalysis(writer: Writer, request: Request, code: str
       before: null,
       after: { lot_id: lot.id, sampled_at: sampledAt, lab },
     });
+    if (labContactId || sampleOperationId || resultAt) {
+      tx.write(sql`
+        INSERT INTO cellar.analysis_extra (analysis_id, lab_contact_id, sample_operation_id, result_at)
+        VALUES (
+          CAST(${id} AS UUID),
+          CAST(${labContactId} AS UUID),
+          CAST(${sampleOperationId} AS UUID),
+          CAST(${resultAt} AS TIMESTAMPTZ)
+        )
+      `);
+    }
     const limits = categories.length === 0
       ? []
       : await tx.read<{ category: string; parameter_code: string; min_value: string | null; max_value: string | null }>(`
@@ -284,6 +315,12 @@ export async function createAnalysis(writer: Writer, request: Request, code: str
         `);
       }
     }
+    await applyAssumptionMarks(tx, {
+      analysisId: id,
+      lotId: lot.id,
+      sampledAt,
+      results,
+    });
   });
   return analysisById(writer, id);
 }
@@ -352,6 +389,95 @@ export async function createTasting(writer: Writer, request: Request, code: stri
     });
   });
   return tastingById(writer, id);
+}
+
+export async function lotEvolution(writer: Writer, request: Request, code: string) {
+  sessionOf(request);
+  const lot = await lotByCode(writer, code);
+  const [analyses, readings, phases] = await Promise.all([
+    listAnalyses(writer, request, code),
+    fermentationCurve(writer, request, code),
+    writer.read<Record<string, unknown>>(sql`
+      SELECT id::VARCHAR AS id, phase, status, started_at, ended_at, inoculation,
+             target_temp_c::VARCHAR AS target_temp_c, aging_method, end_evidence, observations
+      FROM cellar.lot_phase
+      WHERE lot_id = CAST(${lot.id} AS UUID)
+      ORDER BY coalesce(started_at, created_at)
+    `),
+  ]);
+  return {
+    lot_id: lot.id,
+    analyses: analyses.items,
+    readings: readings.points,
+    phases,
+  };
+}
+
+export async function createParcelAnalysis(writer: Writer, request: Request, code: string): Promise<Record<string, unknown>> {
+  const parcel = await parcelByCode(writer, code);
+  const body = await readJson(request);
+  const sampledAt = requireText(body.at ?? body.sampled_at, 'at', 40);
+  if (!isInstant(sampledAt)) invalid({ at: 'Debe ser un instante ISO-8601 con zona horaria' });
+  const resultAt = optionalInstantField(body.result_at ?? body.resultAt, 'result_at');
+  if (resultAt && Date.parse(resultAt) < Date.parse(sampledAt)) {
+    invalid({ result_at: 'El resultado no puede ser anterior a la muestra' });
+  }
+  const labRaw = requireText(body.lab, 'lab', 120);
+  const lab = LABS.has(labRaw) ? labRaw : 'external';
+  const labName = LABS.has(labRaw) ? optionalText(body.lab_name, 'lab_name', 120) : labRaw;
+  const results = parseResults(body.results);
+  const actor = actorFor(request, 'analítica de parcela');
+  const id = newId();
+  await writer.withWrite(actor, async (tx) => {
+    const parameters = await tx.read<{ code: string; unit: string; min_value: string | null; max_value: string | null }>(`
+      SELECT code, unit, min_value::VARCHAR AS min_value, max_value::VARCHAR AS max_value
+      FROM cellar.analysis_parameter
+    `);
+    const byCode = new Map(parameters.map((row) => [row.code, row]));
+    for (const result of results) {
+      const parameter = byCode.get(result.parameter);
+      if (!parameter) invalid({ [`results.${result.parameter}`]: 'Parámetro desconocido' });
+      if (parameter.unit !== result.unit) invalid({ [`results.${result.parameter}`]: `La unidad debe ser ${parameter.unit}` });
+      if (outsidePhysical(result.value, { min: parameter.min_value, max: parameter.max_value })) {
+        throw domainError('WC_ANALYSIS_RANGE', { [`results.${result.parameter}`]: 'Fuera del rango físico' });
+      }
+    }
+    tx.write(sql`
+      INSERT INTO cellar.parcel_analysis (
+        id, parcel_id, kind, sampled_at, result_at, lab, lab_name, created_by
+      ) VALUES (
+        CAST(${id} AS UUID),
+        CAST(${parcel.id} AS UUID),
+        'grape',
+        CAST(${sampledAt} AS TIMESTAMPTZ),
+        CAST(${resultAt} AS TIMESTAMPTZ),
+        ${lab},
+        ${labName},
+        ${actor.id}
+      )
+    `);
+    for (const result of results) {
+      tx.write(sql`
+        INSERT INTO cellar.parcel_analysis_result (id, analysis_id, parameter_code, value)
+        VALUES (
+          CAST(${newId()} AS UUID),
+          CAST(${id} AS UUID),
+          ${result.parameter},
+          CAST(${result.value} AS DECIMAL(12,4))
+        )
+      `);
+    }
+  });
+  const rows = await writer.read<Record<string, unknown>>(sql`
+    SELECT a.id::VARCHAR AS id, a.parcel_id::VARCHAR AS parcel_id, a.kind, a.sampled_at, a.result_at,
+           a.lab, a.lab_name, a.created_by
+    FROM cellar.parcel_analysis a WHERE a.id = CAST(${id} AS UUID)
+  `);
+  const resultsRows = await writer.read<Record<string, unknown>>(sql`
+    SELECT parameter_code, value::VARCHAR AS value FROM cellar.parcel_analysis_result
+    WHERE analysis_id = CAST(${id} AS UUID)
+  `);
+  return { ...rows[0], lot_id: null, results: resultsRows };
 }
 
 export async function listTastings(writer: Writer, _request: Request, code: string): Promise<{
@@ -504,10 +630,15 @@ function categoriesFor(color: string | null, organic: boolean, sugar: string | n
 
 async function analysisById(writer: Writer, id: string): Promise<Record<string, unknown>> {
   const rows = await writer.read<Record<string, unknown>>(sql`
-    SELECT id::VARCHAR AS id, lot_id::VARCHAR AS lot_id, vessel_id::VARCHAR AS vessel_id,
-           kind, sampled_at, lab, lab_name, report_attachment_id::VARCHAR AS report_attachment_id,
-           notes, created_by, created_at
-    FROM cellar.analysis WHERE id = CAST(${id} AS UUID)
+    SELECT a.id::VARCHAR AS id, a.lot_id::VARCHAR AS lot_id, a.vessel_id::VARCHAR AS vessel_id,
+           a.kind, a.sampled_at, a.lab, a.lab_name, a.report_attachment_id::VARCHAR AS report_attachment_id,
+           a.notes, a.created_by, a.created_at,
+           e.lab_contact_id::VARCHAR AS lab_contact_id,
+           e.sample_operation_id::VARCHAR AS sample_operation_id,
+           e.result_at
+    FROM cellar.analysis a
+    LEFT JOIN cellar.analysis_extra e ON e.analysis_id = a.id
+    WHERE a.id = CAST(${id} AS UUID)
   `);
   const row = rows[0];
   if (!row) throw domainError('WC_NOT_FOUND');
@@ -523,10 +654,13 @@ async function analysisById(writer: Writer, id: string): Promise<Record<string, 
     FROM cellar.analysis_flag
     WHERE analysis_id = CAST(${id} AS UUID)
   `);
-  const flagged = new Set(flags.map((flag) => String(flag.parameter_code)));
+  const flagged = new Set(
+    flags.filter((flag) => !String(flag.category).startsWith('assumption_ok_')).map((flag) => String(flag.parameter_code)),
+  );
+  const categories = new Set(flags.map((flag) => String(flag.category)));
   return {
     ...row,
-    out_of_spec: flags.length > 0,
+    out_of_spec: flagged.size > 0,
     results: results.map((result) => ({
       parameter: result.parameter_code,
       value: result.value,
@@ -535,6 +669,13 @@ async function analysisById(writer: Writer, id: string): Promise<Record<string, 
       out_of_spec: flagged.has(String(result.parameter_code)),
     })),
     flags,
+    marks: {
+      volatile: categories.has('assumption_volatile'),
+      volatile_overlap: categories.has('assumption_overlap'),
+      dry: categories.has('assumption_ok_dry'),
+      malolactic_finished: categories.has('assumption_ok_fml'),
+      assumptions: true,
+    },
   };
 }
 
@@ -658,6 +799,163 @@ function optionalText(value: unknown, field: string, max: number): string | null
 function isInstant(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)
     && Number.isFinite(Date.parse(value));
+}
+
+function optionalInstantField(value: unknown, field: string): string | null {
+  if (value === undefined || value === null || value === '') return null;
+  const text = requireText(value, field, 40);
+  if (!isInstant(text)) invalid({ [field]: 'Debe ser un instante ISO-8601 con zona horaria' });
+  return text;
+}
+
+function optionalUuidField(value: unknown, field: string): string | null {
+  if (value === undefined || value === null || value === '') return null;
+  return uuidOf(value, field);
+}
+
+async function parcelByCode(writer: Writer, code: string): Promise<{ id: string }> {
+  if (!/^[A-Z0-9-]{2,20}$/.test(code)) throw domainError('WC_NOT_FOUND');
+  const rows = await writer.read<{ id: string }>(sql`
+    SELECT id::VARCHAR AS id FROM vineyard.parcel WHERE code = ${code} AND is_active
+  `);
+  const row = rows[0];
+  if (!row) throw domainError('WC_NOT_FOUND');
+  return row;
+}
+
+const ASSUMPTION_DEFAULTS = { volatile: '0.6', dry: '2', malic: '0.3' };
+
+async function enologyThresholds(tx: Tx, entityId: string | null): Promise<{ volatile: string; dry: string; malic: string }> {
+  const tables = await tx.read<{ name: string }>(`
+    SELECT table_name AS name FROM information_schema.tables
+    WHERE table_schema = 'cellar' AND table_name = 'enology_setting'
+  `);
+  const found = { ...ASSUMPTION_DEFAULTS };
+  if (tables.length > 0) {
+    const rows = entityId
+      ? await tx.read<{ key: string; value: string }>(sql`
+        SELECT key, value::VARCHAR AS value FROM cellar.enology_setting
+        WHERE legal_entity_id = CAST(${entityId} AS UUID)
+          AND key IN ('volatile_acidity_alert','dry_sugars_max','fml_malic_max')
+      `)
+      : await tx.read<{ key: string; value: string }>(`
+        SELECT key, value::VARCHAR AS value FROM cellar.enology_setting
+        WHERE key IN ('volatile_acidity_alert','dry_sugars_max','fml_malic_max')
+      `);
+    for (const row of rows) {
+      if (row.key === 'volatile_acidity_alert') found.volatile = row.value;
+      if (row.key === 'dry_sugars_max') found.dry = row.value;
+      if (row.key === 'fml_malic_max') found.malic = row.value;
+    }
+  }
+  const settings = await tx.read<{ key: string; value: unknown }>(sql`
+    SELECT key, value FROM core.setting
+    WHERE key IN (
+      'cellar.alerts.volatile_acidity_alert',
+      'cellar.alerts.dry_sugars_max',
+      'cellar.alerts.fml_malic_max'
+    )
+  `);
+  for (const row of settings) {
+    const raw = unwrapJson(row.value);
+    const text = typeof raw === 'number' ? String(raw) : typeof raw === 'string' ? raw : null;
+    if (!text) continue;
+    if (row.key.endsWith('volatile_acidity_alert') && tables.length === 0) found.volatile = text;
+    if (row.key.endsWith('dry_sugars_max') && tables.length === 0) found.dry = text;
+    if (row.key.endsWith('fml_malic_max') && tables.length === 0) found.malic = text;
+  }
+  return found;
+}
+
+async function applyAssumptionMarks(
+  tx: Tx,
+  input: { analysisId: string; lotId: string; sampledAt: string; results: { parameter: string; value: string }[] },
+): Promise<void> {
+  const entity = await tx.read<{ producer_entity_id: string }>(sql`
+    SELECT producer_entity_id::VARCHAR AS producer_entity_id FROM inventory.lot WHERE id = CAST(${input.lotId} AS UUID)
+  `);
+  const thresholds = await enologyThresholds(tx, entity[0]?.producer_entity_id ?? null);
+  const valueOf = (parameter: string) => input.results.find((row) => row.parameter === parameter)?.value ?? null;
+  const volatile = valueOf('volatile_acidity');
+  const sugars = valueOf('glucose_fructose');
+  const malic = valueOf('malic_acid');
+  if (volatile && !money.fromString(volatile).lt(money.fromString(thresholds.volatile))) {
+    await insertFlag(tx, input.analysisId, 'volatile_acidity', 'assumption_volatile', 'max', thresholds.volatile, volatile);
+    emitEvent(tx, {
+      type: 'cellar.fermentation.alert',
+      aggregate: 'cellar.analysis',
+      aggregateId: input.analysisId,
+      payload: {
+        lot_id: input.lotId,
+        rule: 'volatile',
+        legal_entity_id: entity[0]?.producer_entity_id ?? null,
+        link: '/bodega/lotes',
+      },
+    });
+  }
+  if (sugars && !money.fromString(sugars).gt(money.fromString(thresholds.dry))) {
+    await insertFlag(tx, input.analysisId, 'glucose_fructose', 'assumption_ok_dry', 'max', thresholds.dry, sugars);
+  }
+  if (malic && !money.fromString(malic).gt(money.fromString(thresholds.malic))) {
+    await insertFlag(tx, input.analysisId, 'malic_acid', 'assumption_ok_fml', 'max', thresholds.malic, malic);
+  }
+  if (!volatile) return;
+  const phases = await tx.read<{ phase: string }>(sql`
+    SELECT phase FROM cellar.lot_phase
+    WHERE lot_id = CAST(${input.lotId} AS UUID)
+      AND status = 'in_progress'
+      AND phase IN ('alcoholic_fermentation','malolactic_fermentation')
+  `);
+  const names = new Set(phases.map((row) => row.phase));
+  if (!names.has('alcoholic_fermentation') || !names.has('malolactic_fermentation')) return;
+  const previous = await tx.read<{ value: string }>(sql`
+    SELECT r.value::VARCHAR AS value
+    FROM cellar.analysis_result r
+    JOIN cellar.analysis a ON a.id = r.analysis_id
+    WHERE a.lot_id = CAST(${input.lotId} AS UUID)
+      AND a.id <> CAST(${input.analysisId} AS UUID)
+      AND r.parameter_code = 'volatile_acidity'
+      AND a.sampled_at <= CAST(${input.sampledAt} AS TIMESTAMPTZ)
+    ORDER BY a.sampled_at DESC
+    LIMIT 1
+  `);
+  const prior = previous[0]?.value;
+  if (!prior || !money.fromString(volatile).gt(money.fromString(prior))) return;
+  await insertFlag(tx, input.analysisId, 'volatile_acidity', 'assumption_overlap', 'max', prior, volatile);
+  emitEvent(tx, {
+    type: 'cellar.fermentation.alert',
+    aggregate: 'cellar.analysis',
+    aggregateId: input.analysisId,
+    payload: {
+      lot_id: input.lotId,
+      rule: 'volatile_overlap',
+      legal_entity_id: entity[0]?.producer_entity_id ?? null,
+      link: '/bodega/lotes',
+    },
+  });
+}
+
+async function insertFlag(
+  tx: Tx,
+  analysisId: string,
+  parameter: string,
+  category: string,
+  bound: 'min' | 'max',
+  limitValue: string,
+  value: string,
+): Promise<void> {
+  tx.write(sql`
+    INSERT INTO cellar.analysis_flag (id, analysis_id, parameter_code, category, bound, limit_value, value)
+    VALUES (
+      CAST(${newId()} AS UUID),
+      CAST(${analysisId} AS UUID),
+      ${parameter},
+      ${category},
+      ${bound},
+      CAST(${limitValue} AS DECIMAL(12,4)),
+      CAST(${value} AS DECIMAL(12,4))
+    )
+  `);
 }
 
 function unwrapJson(value: unknown): unknown {
