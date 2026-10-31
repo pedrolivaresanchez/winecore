@@ -1,4 +1,4 @@
-import { Archive, Box, ChartBar, Check, CreditCard, FileText, Home, Layers, Receipt, Settings2, ShareNetwork, Users, type IconComponent } from '@/ui/icons'
+import { Archive, Box, ChartBar, Check, CreditCard, FileText, Home, Layers, MapPin, Receipt, Settings2, ShareNetwork, Users, type IconComponent } from '@/ui/icons'
 import { copy } from '@/i18n'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
@@ -12,7 +12,7 @@ export type NavChild = {
 }
 
 /** Menu groups from docs/08-ui/01-navegacion.md, in that order. */
-export type NavGroup = 'inicio' | 'ventas' | 'facturacion' | 'catalogo' | 'compras' | 'stock' | 'bodega' | 'informes'
+export type NavGroup = 'inicio' | 'ventas' | 'facturacion' | 'catalogo' | 'compras' | 'stock' | 'bodega' | 'vinedo' | 'regulatorio' | 'informes'
 
 export type NavEntry = {
   id: string
@@ -168,6 +168,17 @@ export const navigation: NavEntry[] = [
       { id: 'hygiene', label: copy.nav.hygiene, path: '/bodega/higiene', permission: 'cellar.read' },
       { id: 'holders', label: copy.nav.holders, path: '/bodega/contenedores', permission: 'cellar.read' },
     ],
+  },
+  {
+    id: 'vineyard',
+    module: 'vineyard',
+    label: copy.nav.vineyard,
+    icon: MapPin,
+    path: '/vinedo',
+    permission: 'vineyard.read',
+    mobile: 'tab',
+    placement: 'main',
+    group: 'vinedo',
   },
   {
     id: 'reports',
