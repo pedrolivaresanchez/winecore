@@ -1,4 +1,4 @@
-import { Home, Settings2, Users, type IconComponent } from '@/ui/icons'
+import { Check, Home, Settings2, Users, type IconComponent } from '@/ui/icons'
 import { copy } from '@/i18n'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
@@ -35,6 +35,15 @@ export const navigation: NavEntry[] = [
     path: '/',
     end: true,
     mobile: 'tab',
+    placement: 'main',
+  },
+  {
+    id: 'approvals',
+    module: 'core',
+    label: copy.nav.approvals,
+    icon: Check,
+    path: '/aprobaciones',
+    mobile: 'more',
     placement: 'main',
   },
   {

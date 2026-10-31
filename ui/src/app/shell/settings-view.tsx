@@ -1,49 +1,75 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Building, Search, Sliders } from '@/ui/icons'
+import { ArrowLeft, Building, List, Lock, Search, Sliders, type IconComponent } from '@/ui/icons'
 import { Input } from '@/ui'
 import { EntityRoles } from '@/components/EntityRoles'
 import { SystemStatus } from '@/components/SystemStatus'
 import { copy } from '@/i18n'
+import { isOwner } from '@/pages/aprobaciones/model'
+import { PoliciesPanel } from '@/pages/aprobaciones/PoliciesPanel'
+import { SecurityPanel } from '@/pages/ajustes/seguridad/SecurityPanel'
 import { cn } from '@/lib/cn'
 import { iconStroke, pressClass } from '@/lib/motion'
 import { useShell } from '@/app/shell/shell-context'
 import type { Me } from '@/lib/types'
 
-export type SettingsArea = 'entities' | 'system'
+export type SettingsArea = 'entities' | 'security' | 'policies' | 'system'
 
-const AREAS: { id: SettingsArea; title: string; hint: string; keywords: string }[] = [
+const AREAS: { id: SettingsArea; title: string; hint: string; keywords: string; icon: IconComponent; ownerOnly?: boolean }[] = [
   {
     id: 'entities',
     title: copy.settings.entities,
     hint: copy.settings.entitiesHint,
-    keywords: 'entidades usuarios roles bodega',
+    keywords: 'entidades usuarios roles bodega personas',
+    icon: Building,
+  },
+  {
+    id: 'security',
+    title: copy.settings.security,
+    hint: copy.settings.securityHint,
+    keywords: 'seguridad passkey totp verificacion codigo',
+    icon: Lock,
+  },
+  {
+    id: 'policies',
+    title: copy.settings.policies,
+    hint: copy.settings.policiesHint,
+    keywords: 'aprobaciones politicas quorum caducidad',
+    icon: List,
+    ownerOnly: true,
   },
   {
     id: 'system',
     title: copy.settings.system,
     hint: copy.settings.systemHint,
     keywords: 'sistema version esquema base datos escritor',
+    icon: Sliders,
   },
 ]
 
-export function settingsAreas(query: string) {
+export function settingsAreas(query: string, owner = true) {
   const needle = query.trim().toLocaleLowerCase('es')
-  if (!needle) return AREAS
-  return AREAS.filter((area) => `${area.title} ${area.hint} ${area.keywords}`.toLocaleLowerCase('es').includes(needle))
+  return AREAS.filter((area) => {
+    if (area.ownerOnly && !owner) return false
+    if (!needle) return true
+    return `${area.title} ${area.hint} ${area.keywords}`.toLocaleLowerCase('es').includes(needle)
+  })
 }
 
 export function SettingsSidebar({
+  me,
   area,
   onArea,
   onBack,
 }: {
+  me: Me
   area: SettingsArea
   onArea: (area: SettingsArea) => void
   onBack: () => void
 }) {
   const { mobile, setSidebarOpen } = useShell()
   const [query, setQuery] = useState('')
-  const areas = useMemo(() => settingsAreas(query), [query])
+  const owner = isOwner(me)
+  const areas = useMemo(() => settingsAreas(query, owner), [owner, query])
 
   function choose(next: SettingsArea) {
     onArea(next)
@@ -84,7 +110,7 @@ export function SettingsSidebar({
           <p className="px-2 py-1.5 text-caption text-text-tertiary">{copy.settings.empty}</p>
         ) : (
           areas.map((item) => {
-            const Icon = item.id === 'entities' ? Building : Sliders
+            const Icon = item.icon
             const active = item.id === area
             return (
               <button
@@ -119,7 +145,7 @@ export function SettingsView({ me, area }: { me: Me; area: SettingsArea }) {
   }, [setChromeTitle])
 
   return (
-    <div data-screen="ajustes" className="min-h-0 flex-1 overflow-y-auto">
+    <div data-screen="ajustes" data-area={area} className="min-h-0 flex-1 overflow-y-auto">
       <div className="mx-auto flex w-full max-w-[640px] flex-col gap-6 px-4 py-6 md:px-8">
         <header className="flex items-start justify-between gap-4">
           <div className="min-w-0">
@@ -127,7 +153,10 @@ export function SettingsView({ me, area }: { me: Me; area: SettingsArea }) {
             <p className="mt-1 text-label text-text-secondary">{current?.hint}</p>
           </div>
         </header>
-        {area === 'entities' ? <EntityRoles me={me} /> : <SystemStatus />}
+        {area === 'entities' ? <EntityRoles me={me} /> : null}
+        {area === 'security' ? <SecurityPanel /> : null}
+        {area === 'policies' ? <PoliciesPanel me={me} /> : null}
+        {area === 'system' ? <SystemStatus /> : null}
       </div>
     </div>
   )

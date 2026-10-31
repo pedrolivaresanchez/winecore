@@ -4,6 +4,7 @@ import { GlassMenu, MenuItem, Tooltip, useMenuOpen } from '@/ui'
 import { textureSecondary } from '@/ui/button'
 import { EntitySwitcher } from '@/app/EntitySwitcher'
 import { footerNav, mainNav, visibleChildren, type NavEntry } from '@/app/nav'
+import { PendingBadge } from '@/pages/aprobaciones/PendingBadge'
 import { RailRow } from '@/app/shell/rail-row'
 import { useShell } from '@/app/shell/shell-context'
 import { SettingsSidebar, type SettingsArea } from '@/app/shell/settings-view'
@@ -36,7 +37,7 @@ export function AppSidebar({
   if (settings) {
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <SettingsSidebar area={area} onArea={onArea} onBack={onBack} />
+        <SettingsSidebar me={me} area={area} onArea={onArea} onBack={onBack} />
         <div className="mt-auto shrink-0 px-2 pb-2">
           <UserMenu me={me} collapsed={false} />
         </div>
@@ -181,7 +182,13 @@ function WorkspaceRail({ me, collapsed }: { me: Me; collapsed: boolean }) {
                   active={active(entry)}
                   label={entry.label}
                   collapsed={collapsed}
-                  glyph={<Icon className="size-3.5 shrink-0" strokeWidth={iconStroke} />}
+                  glyph={
+                    <span className="relative inline-flex">
+                      <Icon className="size-3.5 shrink-0" strokeWidth={iconStroke} />
+                      {collapsed && entry.id === 'approvals' ? <PendingBadge size="sm" /> : null}
+                    </span>
+                  }
+                  trailing={!collapsed && entry.id === 'approvals' ? <PendingBadge inline /> : undefined}
                   onNavigate={() => go(entry.path ?? '/')}
                 />
               ) : null}
