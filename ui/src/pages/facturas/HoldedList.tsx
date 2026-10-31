@@ -51,13 +51,13 @@ function statusTone(status: string): BadgeTone {
   return 'neutral'
 }
 
-export function HoldedList({ me }: { me: Me }) {
-  useChromeTitle(copy.facturas.holdedTitle)
+export function HoldedList({ me, book = 'both' }: { me: Me; book?: 'both' | 'purchases' }) {
+  useChromeTitle(book === 'purchases' ? copy.gastos.title : copy.facturas.holdedTitle)
   const navigate = useNavigate()
   const { filter } = useEntity()
   const entity = entityFilter(filter)
   const [params, setParams] = useSearchParams()
-  const kind = params.get('tipo') === 'compra' ? 'purchase' : 'sale'
+  const kind = book === 'purchases' || params.get('tipo') === 'compra' ? 'purchase' : 'sale'
   const [q, setQ] = useState(params.get('q') ?? '')
   const [debounced, setDebounced] = useState(q.trim())
   const [items, setItems] = useState<LegacyInvoice[]>([])
@@ -147,7 +147,13 @@ export function HoldedList({ me }: { me: Me }) {
     [],
   )
 
-  if (!allows(me, 'billing.read') && !allows(me, 'reports.read') && !allows(me, 'finance.read') && !allows(me, 'sales.read')) {
+  if (
+    !allows(me, 'billing.read')
+    && !allows(me, 'reports.read')
+    && !allows(me, 'finance.read')
+    && !allows(me, 'sales.read')
+    && !allows(me, 'purchasing.read')
+  ) {
     return <NoPermission />
   }
 
@@ -158,10 +164,15 @@ export function HoldedList({ me }: { me: Me }) {
       <header className={cn('hidden h-12 shrink-0 items-center gap-2 border-b border-border-subtle md:flex', FRAME_GUTTER)}>
         <FileText className="size-4 shrink-0 text-icon" strokeWidth={iconStroke} />
         <div className="min-w-0">
-          <h1 className="truncate text-label font-medium text-ink-900">{copy.facturas.holdedTitle}</h1>
+          <h1 className="truncate text-label font-medium text-ink-900">{book === 'purchases' ? copy.gastos.title : copy.facturas.holdedTitle}</h1>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
-          <Button type="button" variant="secondary" size="sm" onClick={() => navigate('/facturas?libro=emitidas')}>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => navigate(book === 'purchases' ? '/gastos?libro=nuevos' : '/facturas?libro=emitidas')}
+          >
             {copy.facturas.winecoreBook}
           </Button>
         </div>
@@ -169,16 +180,18 @@ export function HoldedList({ me }: { me: Me }) {
 
       <div className={cn('flex h-11 shrink-0 items-center gap-1.5 border-b border-border-subtle', FRAME_GUTTER)}>
         <div className={FRAME_STRIP_SCROLL}>
-          <SegmentedControl
-            size="sm"
-            aria-label={copy.facturas.holdedTitle}
-            value={kind}
-            onChange={setKind}
-            options={[
-              { value: 'sale', content: copy.facturas.salesBook },
-              { value: 'purchase', content: copy.facturas.purchaseBook },
-            ]}
-          />
+          {book === 'both' ? (
+            <SegmentedControl
+              size="sm"
+              aria-label={copy.facturas.holdedTitle}
+              value={kind}
+              onChange={setKind}
+              options={[
+                { value: 'sale', content: copy.facturas.salesBook },
+                { value: 'purchase', content: copy.facturas.purchaseBook },
+              ]}
+            />
+          ) : null}
           <Input
             id="buscar-facturas-holded"
             size="sm"

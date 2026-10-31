@@ -1,4 +1,5 @@
 import { sessionOf } from '../auth/guard';
+import { listLegacyDocuments } from '../core/legacy/documents';
 import { listLegacyInvoices } from '../core/legacy/invoices';
 import { loadLegacyOverview } from '../core/legacy/overview';
 import { listLegacyProducts } from '../core/legacy/products';
@@ -14,4 +15,8 @@ export function getLegacyInvoices(writer: Writer, request: Request) {
 
 export function getLegacyProducts(writer: Writer, request: Request) {
   return listLegacyProducts(writer, sessionOf(request), new URL(request.url));
+}
+
+export function getLegacyDocuments(writer: Writer, request: Request) {
+  return listLegacyDocuments(writer, sessionOf(request), new URL(request.url));
 }

@@ -21,8 +21,8 @@ Los 149 puntos de la reunión siguen en `docs/10-backlog/` y en `docs/04-regulat
 
 | Rama | Commit | Qué es |
 |---|---|---|
-| `cursor/importar-holded-2060` | `1bbe16c` | Carga del histórico de Holded a las listas. Sin terminar. No desplegado. |
-| `cursor/importar-depositos-2060` | `05c45db` | Importar depósitos por CSV. Probado por el autor. Pendiente de entrar en `main` si aún no está. |
+| `cursor/importar-holded-2060` | `1bbe16c` | Borrador anterior. No está en `main` y no se despliega. La carga que sí se usa está en `main`: líneas, albaranes y presupuestos en las tablas históricas, visibles en Facturas, Gastos y Ventas. |
+| `cursor/importar-depositos-2060` | `05c45db` | Importar depósitos por CSV. Ya está en `main`. |
 | `cursor/infovi-2060` | `9540bab` | INFOVI. Aplazado. |
 | `cursor/puesta-en-marcha-2060` | `4d4593e` | CAE, ejercicio y reglas desde Ajustes. Aplazado. |
 | `cursor/modelos-aeat-2060` | `c307e3e` | Libros de IVA y borradores. Aplazado. |

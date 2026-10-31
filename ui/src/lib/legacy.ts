@@ -80,6 +80,38 @@ export function listLegacyInvoices(
   return api<LegacyInvoicePage>(`/v1/legacy/invoices?${params.toString()}`, { signal })
 }
 
+export type LegacyDocument = {
+  id: string
+  number: string
+  issue_date: string
+  counterparty_name: string
+  total: string
+  status_holded: string
+  kind: 'delivery_note' | 'quote'
+  entity_code: string
+}
+
+export type LegacyDocumentPage = {
+  items: LegacyDocument[]
+  next_cursor: string | null
+  total: number
+  kind: 'delivery_note' | 'quote'
+  entity: EntityFilter
+}
+
+export function listLegacyDocuments(
+  query: { kind: 'delivery_note' | 'quote'; entity: EntityFilter; q?: string; cursor?: string | null; limit?: number },
+  signal?: AbortSignal,
+) {
+  const params = new URLSearchParams()
+  params.set('kind', query.kind)
+  params.set('entity', query.entity)
+  if (query.q) params.set('q', query.q)
+  if (query.cursor) params.set('cursor', query.cursor)
+  params.set('limit', String(query.limit ?? 50))
+  return api<LegacyDocumentPage>(`/v1/legacy/documents?${params.toString()}`, { signal })
+}
+
 export function listLegacyProducts(
   query: { entity: EntityFilter; q?: string; cursor?: string | null; limit?: number },
   signal?: AbortSignal,

@@ -122,7 +122,7 @@ describe('histórico Holded', () => {
     expect(kpis.sales_last_year).toBe('25.00');
     expect(kpis.pending_receivables).toBe('90.00');
     expect(kpis.pending_receivables_count).toBe(2);
-    expect(kpis.contacts).toBe(3);
+    expect(kpis.contacts).toBe(4);
     expect(kpis.open_payables).toBe('15.00');
     expect(kpis.open_payables_count).toBe(1);
     expect(both.has_imported).toBe(true);
@@ -146,14 +146,14 @@ describe('histórico Holded', () => {
     const poKpis = poOnly.kpis as Record<string, unknown>;
     expect(poKpis.sales_this_year).toBe('140.00');
     expect(poKpis.pending_receivables).toBe('40.00');
-    expect(poKpis.contacts).toBe(2);
+    expect(poKpis.contacts).toBe(3);
     expect(poKpis.open_payables).toBe('15.00');
 
     const cvpoView = await json(await ctx.app.handle(new Request('http://localhost/v1/legacy/overview?entity=CVPO')));
     const cvpoKpis = cvpoView.kpis as Record<string, unknown>;
     expect(cvpoKpis.sales_this_year).toBe('70.00');
     expect(cvpoKpis.sales_last_year).toBe('0.00');
-    expect(cvpoKpis.contacts).toBe(2);
+    expect(cvpoKpis.contacts).toBe(3);
 
     const denied = await ctx.app.handle(new Request('http://localhost/v1/legacy/overview', {
       headers: { 'X-Dev-User': 'bodega@winecore.test' },
@@ -198,6 +198,6 @@ describe('histórico Holded', () => {
     expect(allNames).toContain('Cliente Solo PO');
     expect(allNames).toContain('Cliente Solo CVPO');
     expect(allNames).not.toContain('Contacto Archivado');
-    expect(all.total).toBe(3);
+    expect(all.total).toBe(4);
   });
 });

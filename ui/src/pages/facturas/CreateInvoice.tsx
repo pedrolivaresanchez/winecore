@@ -34,7 +34,10 @@ export function CreateInvoice({ me }: { me: Me }) {
     return me.entities.find((item) => item.code === filter)?.id ?? me.entities[0]?.id ?? ''
   })
   const [customerId, setCustomerId] = useState('')
+  const [customerName, setCustomerName] = useState('')
+  const [customerQuery, setCustomerQuery] = useState('')
   const [customers, setCustomers] = useState<ContactSummary[]>([])
+  const [customerOpen, setCustomerOpen] = useState(false)
   const [description, setDescription] = useState('')
   const [language, setLanguage] = useState<'es' | 'en'>('es')
   const [noteIds, setNoteIds] = useState('')
@@ -45,14 +48,26 @@ export function CreateInvoice({ me }: { me: Me }) {
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
+    const query = customerQuery.trim()
+    if (customerId || query.length < 2) {
+      setCustomers([])
+      return
+    }
     const controller = new AbortController()
-    listContacts({ role: 'customer', limit: 100 }, controller.signal)
-      .then((page) => setCustomers(page.items))
-      .catch((err: unknown) => {
-        if (!isAbortError(err)) setCustomers([])
-      })
-    return () => controller.abort()
-  }, [])
+    const timer = window.setTimeout(() => {
+      listContacts({ role: 'customer', q: query, limit: 20 }, controller.signal)
+        .then((page) => {
+          if (!controller.signal.aborted) setCustomers(page.items)
+        })
+        .catch((err: unknown) => {
+          if (!isAbortError(err)) setCustomers([])
+        })
+    }, 250)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [customerId, customerQuery])
 
   if (!allows(me, 'billing.write')) return <NoPermission />
 
@@ -124,14 +139,44 @@ export function CreateInvoice({ me }: { me: Me }) {
             </Select>
           </Field>
           <Field id="cliente-factura" label={copy.facturas.customer}>
-            <Select id="cliente-factura" size="sm" value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
-              <option value="">{copy.facturas.customer}</option>
-              {customers.map((customer) => (
-                <option key={customer.id} value={customer.id}>
-                  {customer.legal_name}
-                </option>
-              ))}
-            </Select>
+            <div className="relative">
+              <Input
+                id="cliente-factura"
+                size="sm"
+                value={customerId ? customerName : customerQuery}
+                placeholder={copy.facturas.search}
+                autoComplete="off"
+                role="combobox"
+                aria-expanded={customerOpen}
+                aria-controls="clientes-factura"
+                onChange={(event) => {
+                  setCustomerId('')
+                  setCustomerName('')
+                  setCustomerQuery(event.target.value)
+                  setCustomerOpen(true)
+                }}
+                onFocus={() => setCustomerOpen(true)}
+              />
+              {customerOpen && !customerId && customers.length > 0 ? (
+                <ul id="clientes-factura" className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-md border border-border-subtle bg-surface shadow-(--shadow-float)">
+                  {customers.map((customer) => (
+                    <li key={customer.id}>
+                      <button
+                        type="button"
+                        className="w-full px-2 py-1.5 text-left text-label text-ink-900 hover:bg-fill-hover"
+                        onClick={() => {
+                          setCustomerId(customer.id)
+                          setCustomerName(customer.legal_name)
+                          setCustomerOpen(false)
+                        }}
+                      >
+                        {customer.legal_name}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
           </Field>
         </>
       ) : null}

@@ -1,14 +1,16 @@
 import { useEffect } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { NoPermission } from '@/components/NoPermission'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
+import { HoldedList } from '@/pages/facturas/HoldedList'
 import { ExpenseCapture } from '@/pages/gastos/ExpenseCapture'
 import { ExpenseList } from '@/pages/gastos/ExpenseList'
 import { ExpenseReview } from '@/pages/gastos/ExpenseReview'
 
 export function Gastos({ me }: { me: Me }) {
   const params = useParams()
+  const [search] = useSearchParams()
   const rest = params['*'] ?? ''
 
   useEffect(() => {
@@ -19,5 +21,6 @@ export function Gastos({ me }: { me: Me }) {
   if (!allows(me, 'purchasing.read')) return <NoPermission />
   if (rest === 'capturar') return <ExpenseCapture me={me} />
   if (rest) return <ExpenseReview me={me} id={decodeURIComponent(rest)} />
-  return <ExpenseList me={me} />
+  if (search.get('libro') === 'nuevos') return <ExpenseList me={me} />
+  return <HoldedList me={me} book="purchases" />
 }

@@ -138,7 +138,7 @@ import { handleAuthenticatedMcp } from './mcp/http';
 import { RateLimiter } from './mcp/rate';
 import { createMcpClient, listMcpClients, revokeMcpClient, rotateMcpClient } from './routes/mcp-clients';
 import { getDashboard } from './routes/dashboard';
-import { getLegacyInvoices, getLegacyOverview, getLegacyProducts } from './routes/legacy';
+import { getLegacyDocuments, getLegacyInvoices, getLegacyOverview, getLegacyProducts } from './routes/legacy';
 import { me } from './routes/me';
 import { getUsers, patchUserRoute, postUser } from './routes/users';
 import { listNotifications, readAllNotifications, readNotification } from './routes/notifications';
@@ -290,6 +290,9 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requireAnyPermission(guardDeps, ['reports.read', 'finance.read', 'sales.read', 'billing.read']),
     })
     .get('/v1/legacy/invoices', ({ request }) => getLegacyInvoices(deps.writer, request), {
+      beforeHandle: requireAnyPermission(guardDeps, ['reports.read', 'finance.read', 'sales.read', 'billing.read', 'purchasing.read']),
+    })
+    .get('/v1/legacy/documents', ({ request }) => getLegacyDocuments(deps.writer, request), {
       beforeHandle: requireAnyPermission(guardDeps, ['reports.read', 'finance.read', 'sales.read', 'billing.read']),
     })
     .get('/v1/legacy/products', ({ request }) => getLegacyProducts(deps.writer, request), {

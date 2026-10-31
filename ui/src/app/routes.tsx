@@ -43,6 +43,7 @@ import { StockPage } from '@/pages/existencias/StockPage'
 import { DeliveryPage } from '@/pages/ventas/DeliveryPage'
 import { OrderPage } from '@/pages/ventas/OrderPage'
 import { QuotePage } from '@/pages/ventas/QuotePage'
+import { SalesHome } from '@/pages/ventas/SalesHome'
 import { VentasList } from '@/pages/ventas/VentasList'
 import { Gastos } from '@/pages/gastos/Gastos'
 import { CreateInvoice } from '@/pages/facturas/CreateInvoice'
@@ -109,13 +110,13 @@ export function AppRoutes({ me }: { me: Me }) {
       <Route path="stock/aforos/nuevo" element={<CountCreate me={me} />} />
       <Route path="stock/aforos/:id" element={<CountPage me={me} />} />
       <Route path="ventas" element={<Navigate to="/ventas/presupuestos" replace />} />
-      <Route path="ventas/presupuestos" element={<VentasList me={me} doc="quote" />} />
+      <Route path="ventas/presupuestos" element={<SalesHome me={me} doc="quote" />} />
       <Route path="ventas/presupuestos/nuevo" element={<VentasList me={me} doc="quote" creating />} />
       <Route path="ventas/presupuestos/:id" element={<QuotePage me={me} />} />
       <Route path="ventas/pedidos" element={<VentasList me={me} doc="order" />} />
       <Route path="ventas/pedidos/nuevo" element={<VentasList me={me} doc="order" creating />} />
       <Route path="ventas/pedidos/:id" element={<OrderPage me={me} />} />
-      <Route path="ventas/albaranes" element={<VentasList me={me} doc="delivery" />} />
+      <Route path="ventas/albaranes" element={<SalesHome me={me} doc="delivery" />} />
       <Route path="ventas/albaranes/nuevo" element={<VentasList me={me} doc="delivery" creating />} />
       <Route path="ventas/albaranes/:id" element={<DeliveryPage me={me} />} />
       <Route path="gastos/*" element={<Gastos me={me} />} />

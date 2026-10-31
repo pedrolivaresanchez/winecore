@@ -38,13 +38,22 @@ export function roleOf(headers: readonly string[]): FileRole {
   return 'unknown';
 }
 
-export function datasetForRole(role: FileRole): 'contacts' | 'catalog' | 'open_items' | null {
+export function datasetForRole(role: FileRole): 'contacts' | 'catalog' | 'open_items' | 'history' | null {
   if (role === 'contacts' || role === 'shopify_customers') return 'contacts';
   if (role === 'product' || role === 'shopify_products' || role === 'lines' || role === 'shopify_orders' || role === 'proposal') {
     return 'catalog';
   }
   if (role === 'sales_invoice' || role === 'purchase_invoice') return 'open_items';
+  if (role === 'delivery_note' || role === 'quote') return 'history';
   return null;
+}
+
+const HISTORY_ROLES: ReadonlySet<FileRole> = new Set(['lines', 'delivery_note', 'quote', 'product']);
+
+/** Líneas de venta, albarán, presupuesto y compra comparten columnas: el histórico las acepta además del catálogo. */
+export function acceptsDataset(role: FileRole, dataset: string): boolean {
+  if (dataset === 'history') return HISTORY_ROLES.has(role);
+  return datasetForRole(role) === dataset;
 }
 
 export function entityFromPath(filePath: string): string {
