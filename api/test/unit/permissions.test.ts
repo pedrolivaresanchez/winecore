@@ -10,11 +10,11 @@ import {
 
 const granted: Record<RoleCode, readonly Permission[]> = {
   owner: PERMISSIONS,
-  approver: ['contacts.read', 'audit.read', 'cellar.read'],
-  admin: ['contacts.read', 'contacts.write', 'cellar.read'],
-  cellar: ['cellar.read', 'cellar.operate'],
+  approver: ['contacts.read', 'catalog.read', 'audit.read', 'cellar.read'],
+  admin: ['contacts.read', 'contacts.write', 'catalog.read', 'catalog.write', 'cellar.read'],
+  cellar: ['catalog.read', 'cellar.read', 'cellar.operate'],
   field: ['cellar.read'],
-  advisor: ['contacts.read', 'audit.read', 'cellar.read'],
+  advisor: ['contacts.read', 'catalog.read', 'audit.read', 'cellar.read'],
 };
 
 function user(role: RoleCode, legalEntityId: string | null = null): UserCtx {

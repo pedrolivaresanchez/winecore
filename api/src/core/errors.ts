@@ -49,6 +49,8 @@ const CATALOG = {
   WC_VESSEL_NOT_IN_SERVICE: [409, 'El recipiente no está en servicio'],
   WC_ILLEGAL_TRANSITION: [409, 'La transición de estado no está permitida'],
   WC_ECO_MIX: [422, 'No se puede ensamblar un lote ecológico con uno que no lo es'],
+  // Contactos (TASK-CONT-001)
+  WC_CONTACT_DUPLICATE_TAX_ID: [409, 'Ya existe un contacto con este NIF'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;
@@ -81,9 +83,13 @@ export function isErrorCode(code: string): code is ErrorCode {
   return Object.prototype.hasOwnProperty.call(CATALOG, code);
 }
 
-export function domainError(code: ErrorCode, fields?: Record<string, string>): DomainError {
+export function domainError(
+  code: ErrorCode,
+  fields?: Record<string, string>,
+  details?: Record<string, unknown>,
+): DomainError {
   const entry = CATALOG[code];
-  return new DomainError(code, entry[0], entry[1], fields);
+  return new DomainError(code, entry[0], entry[1], fields, details);
 }
 
 export function errorBody(error: DomainError): {
