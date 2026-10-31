@@ -6,11 +6,14 @@ import { AuthGuard } from '@/auth/AuthGuard'
 import { isAuthEnabled, SessionProvider } from '@/auth/provider'
 import { Workspace } from '@/app/Workspace'
 import { LoginPage } from '@/pages/Login'
+import { copy } from '@/i18n'
+
+const UI_LABELS = { close: 'Cerrar', moreInfo: 'Más información', why: '¿Por qué?', grid: copy.grid }
 
 export default function App() {
   return (
     <ThemeProvider>
-      <UiLabelsProvider labels={{ close: 'Cerrar', moreInfo: 'Más información', why: '¿Por qué?' }}>
+      <UiLabelsProvider labels={UI_LABELS}>
         <ToastProvider
           labels={{
             dismiss: 'Cerrar aviso',
