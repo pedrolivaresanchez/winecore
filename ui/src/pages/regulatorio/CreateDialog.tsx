@@ -6,7 +6,7 @@ import { ApiError } from '@/lib/api'
 import { entityName } from '@/lib/labels'
 import type { Me } from '@/lib/types'
 import { createSubmission } from '@/pages/regulatorio/api'
-import { DATE_LABELS, type WarehouseOption } from '@/pages/regulatorio/model'
+import { DATE_LABELS, warehouseOptionLabel, type WarehouseOption } from '@/pages/regulatorio/model'
 import { Alert, Button, DatePicker, Dialog, DialogBody, DialogFooter, DialogHeader, SegmentedControl, Select, useToast } from '@/ui'
 
 export function CreateDialog({
@@ -20,7 +20,7 @@ export function CreateDialog({
   onClose: () => void
   me: Me
   warehouses: WarehouseOption[]
-  initial?: { entityId?: string; periodStart?: string; periodEnd?: string }
+  initial?: { entityId?: string; warehouseId?: string; periodStart?: string; periodEnd?: string }
 }) {
   const navigate = useNavigate()
   const toast = useToast()
@@ -35,14 +35,16 @@ export function CreateDialog({
 
   useEffect(() => {
     if (!open) return
-    setEntityId(initial?.entityId ?? me.entities[0]?.id ?? '')
-    setWarehouseId('')
+    const housed = me.entities.find((entity) => warehouses.some((item) => item.entityId === entity.id))
+    const preferred = initial?.entityId && me.entities.some((entity) => entity.id === initial.entityId) ? initial.entityId : null
+    setEntityId(preferred ?? housed?.id ?? me.entities[0]?.id ?? '')
+    setWarehouseId(initial?.warehouseId ?? '')
     setStart(initial?.periodStart ?? null)
     setEnd(initial?.periodEnd ?? null)
     setAggregation('monthly')
     setErrors({})
     setBanner(null)
-  }, [initial?.entityId, initial?.periodEnd, initial?.periodStart, me.entities, open])
+  }, [initial?.entityId, initial?.periodEnd, initial?.periodStart, initial?.warehouseId, me.entities, open, warehouses])
 
   const options = useMemo(
     () => warehouses.filter((item) => item.entityId === entityId),
@@ -51,8 +53,12 @@ export function CreateDialog({
 
   useEffect(() => {
     if (!open) return
+    if (initial?.warehouseId && options.some((item) => item.id === initial.warehouseId)) {
+      setWarehouseId(initial.warehouseId)
+      return
+    }
     if (options.length === 1 && options[0]) setWarehouseId(options[0].id)
-  }, [open, options])
+  }, [initial?.warehouseId, open, options])
 
   async function submit() {
     const next: Record<string, string> = {}
@@ -122,7 +128,7 @@ export function CreateDialog({
               <option value="">{copy.regulatorio.warehouse}</option>
               {options.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {item.name}
+                  {warehouseOptionLabel(item)}
                 </option>
               ))}
             </Select>

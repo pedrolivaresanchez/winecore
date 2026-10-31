@@ -1,4 +1,5 @@
 import { copy, fill } from '@/i18n'
+import { ApiError } from '@/lib/api'
 import { formatDate, formatLitres } from '@/lib/format'
 import { entityName } from '@/lib/labels'
 import { allows } from '@/lib/permissions'
@@ -21,11 +22,26 @@ export type DeadlineBand = 'd30' | 'd7' | 'd1' | 'overdue'
 export type WarehouseOption = {
   id: string
   name: string
+  cae: string
   entityId: string
 }
 
 const REF = /^[A-Za-z0-9][A-Za-z0-9./_-]{3,39}$/
 const ADVISOR = /^[A-Za-z0-9 .:_-]{3,80}$/
+
+export function exerciseBlocked(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false
+  const text = [error.message, error.fields?.fiscal_date].filter(Boolean).join(' ')
+  return text.includes('ejercicio SILICIE')
+}
+
+export function canOpenExercise(me: Me, entityId: string): boolean {
+  const code = me.entities.find((entity) => entity.id === entityId)?.code ?? null
+  return me.roles.some((role) => {
+    if (role.role !== 'owner' && role.role !== 'advisor') return false
+    return role.legal_entity_code == null || role.legal_entity_code === code
+  })
+}
 
 export function canPrepare(me: Me): boolean {
   return allows(me, 'regulatory.prepare')
@@ -152,10 +168,14 @@ export function caeOf(files: { filename: string }[]): string | null {
   return null
 }
 
+export function warehouseOptionLabel(item: Pick<WarehouseOption, 'name' | 'cae'>): string {
+  return item.cae ? `${item.name} · ${item.cae}` : item.name
+}
+
 export function warehouseLabel(warehouses: WarehouseOption[], id: string | null, files: { filename: string }[]): string {
   if (!id) return '—'
   const found = warehouses.find((item) => item.id === id)
-  if (found) return found.name
+  if (found) return warehouseOptionLabel(found)
   return caeOf(files) ?? '—'
 }
 

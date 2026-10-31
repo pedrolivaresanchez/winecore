@@ -10,16 +10,26 @@ import { formatDate } from '@/lib/format'
 import { ApiError } from '@/lib/api'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
+import { MoreVertical } from '@/ui/icons'
+import { iconStroke } from '@/lib/motion'
 import {
   Alert,
   Badge,
   Button,
   Checkbox,
+  Dialog,
+  DialogBody,
+  DialogFooter,
+  DialogHeader,
   EmptyState,
+  GlassMenu,
   InfoTip,
   Input,
+  MenuItem,
   Select,
   Skeleton,
+  Textarea,
+  useMenuOpen,
   useToast,
 } from '@/ui'
 import {
@@ -100,6 +110,10 @@ export function EnvioPage({ me, id }: { me: Me; id: string }) {
   const [numberErrors, setNumberErrors] = useState<Record<string, string>>({})
   const [motive, setMotive] = useState<'1' | '2' | '3'>('1')
   const [picked, setPicked] = useState<Set<string> | null>(null)
+  const more = useMenuOpen()
+  const [cancelOpen, setCancelOpen] = useState(false)
+  const [cancelReason, setCancelReason] = useState('')
+  const [cancelError, setCancelError] = useState<string | null>(null)
 
   function setTab(next: TabId) {
     const query = new URLSearchParams(params)
@@ -240,6 +254,29 @@ export function EnvioPage({ me, id }: { me: Me; id: string }) {
     else if (action === 'correct') setTab('correccion')
   }
 
+  const cancellable = prepare && ['draft', 'validated', 'pending_approval'].includes(submission.status)
+
+  async function cancelSend() {
+    const reason = cancelReason.trim()
+    if (reason.length < 3 || reason.length > 500) {
+      setCancelError(copy.regulatorio.cancelHint)
+      return
+    }
+    setCancelError(null)
+    setBusy(true)
+    try {
+      await postAction(submission!.id, 'cancel', { reason })
+      toast(copy.regulatorio.cancelled, { tone: 'success' })
+      setCancelOpen(false)
+      setCancelReason('')
+      record.reload()
+    } catch (error: unknown) {
+      setCancelError(error instanceof ApiError ? (error.fields?.reason ?? error.message) : copy.regulatorio.saveFail)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const primary =
     showAction && action ? (
       action === 'register' && tab === 'presentacion' && submission.status !== 'submitted' ? (
@@ -263,7 +300,36 @@ export function EnvioPage({ me, id }: { me: Me; id: string }) {
 
   return (
     <div data-screen="regulatorio-envio" data-tab={tab} data-status={submission.status} className="flex min-h-0 min-w-0 flex-1 flex-col bg-surface">
-      <RecordBar actions={primary} />
+      <RecordBar
+        actions={
+          <>
+            {cancellable ? (
+              <GlassMenu
+                open={more.open}
+                onOpenChange={more.setOpen}
+                placement="bottom-end"
+                trigger={
+                  <Button type="button" variant="secondary" size="sm" iconOnly aria-label={copy.regulatorio.more} onClick={more.toggle}>
+                    <MoreVertical strokeWidth={iconStroke} />
+                  </Button>
+                }
+              >
+                <MenuItem
+                  tone="danger"
+                  onClick={() => {
+                    more.close()
+                    setCancelError(null)
+                    setCancelOpen(true)
+                  }}
+                >
+                  {copy.regulatorio.cancelSend}
+                </MenuItem>
+              </GlassMenu>
+            ) : null}
+            {primary}
+          </>
+        }
+      />
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-5 sm:px-8">
           <header>
@@ -277,6 +343,11 @@ export function EnvioPage({ me, id }: { me: Me; id: string }) {
             {submission.rectifies_submission_id ? (
               <Link to={`/regulatorio/envios/${submission.rectifies_submission_id}`} className="text-label text-ink-900 underline-offset-2 hover:underline">
                 {copy.regulatorio.original}
+              </Link>
+            ) : null}
+            {submission.successor_id ? (
+              <Link to={`/regulatorio/envios/${submission.successor_id}`} className="text-label text-ink-900 underline-offset-2 hover:underline">
+                {copy.regulatorio.successor}
               </Link>
             ) : null}
           </div>
@@ -352,6 +423,29 @@ export function EnvioPage({ me, id }: { me: Me; id: string }) {
           </div>
         </div>
       </div>
+      <Dialog open={cancelOpen} onClose={() => { if (!busy) setCancelOpen(false) }} size="sm" labelledBy="cancelar-envio">
+        <DialogHeader title={copy.regulatorio.cancelTitle} titleId="cancelar-envio" onClose={() => { if (!busy) setCancelOpen(false) }} />
+        <DialogBody>
+          <form
+            id="cancelar-envio-form"
+            className="grid gap-3"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void cancelSend()
+            }}
+          >
+            <label className="grid gap-1.5 text-label font-medium text-ink-900" htmlFor="motivo-cancelar">
+              {copy.regulatorio.cancelReason}
+              <Textarea id="motivo-cancelar" value={cancelReason} invalid={Boolean(cancelError)} onChange={(event) => setCancelReason(event.target.value)} />
+            </label>
+            {cancelError ? <p role="alert" className="text-caption text-danger-600">{cancelError}</p> : null}
+          </form>
+        </DialogBody>
+        <DialogFooter>
+          <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => setCancelOpen(false)}>{copy.regulatorio.cancel}</Button>
+          <Button type="submit" form="cancelar-envio-form" variant="danger" size="sm" loading={busy}>{copy.regulatorio.cancelSend}</Button>
+        </DialogFooter>
+      </Dialog>
     </div>
   )
 }
@@ -672,8 +766,20 @@ function CorrectionPanel({
     () => submission.entries.filter((entry) => entry.aeat_entry_number),
     [submission.entries],
   )
-  if (submission.phase === 'corrected') {
-    return <EmptyState size="sm" title={copy.regulatorio.correctedDone} />
+  if (submission.phase === 'corrected' || submission.successor_id) {
+    return (
+      <EmptyState
+        size="sm"
+        title={copy.regulatorio.correctedDone}
+        action={
+          submission.successor_id ? (
+            <Link to={`/regulatorio/envios/${submission.successor_id}`} className="text-label text-ink-900 underline-offset-2 hover:underline">
+              {copy.regulatorio.successor}
+            </Link>
+          ) : undefined
+        }
+      />
+    )
   }
   if (!correctable) {
     return <EmptyState size="sm" title={copy.regulatorio.noCorrection} description={copy.regulatorio.noCorrectionHint} />

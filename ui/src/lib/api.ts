@@ -110,13 +110,15 @@ async function send(path: string, init: RequestInit | undefined, retried: boolea
   }
 
   if (response.status === 401) {
+    const denied = await readError(response.clone());
+    if (denied.code === "WC_STEP_UP_REQUIRED" || denied.code === "WC_VERIFY_FAILED") throw denied;
     if (isAuthEnabled && !retried && (await refreshAccessToken())) return send(path, init, true);
     if (isAuthEnabled) {
       clearTokens();
       redirectToLogin();
       throw new ApiError(401, "WC_UNAUTHENTICATED", copy.api.expired);
     }
-    throw new ApiError(401, "WC_UNAUTHENTICATED", copy.api.authOff);
+    throw new ApiError(401, denied.code === "WC_ERROR" ? "WC_UNAUTHENTICATED" : denied.code, denied.code === "WC_ERROR" ? copy.api.authOff : denied.message, denied.fields);
   }
 
   if (!response.ok) {

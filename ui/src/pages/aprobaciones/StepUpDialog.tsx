@@ -12,12 +12,19 @@ type Phase = "loading" | "passkey" | "totp" | "none";
 
 export function StepUpDialog({
   open,
-  decision,
+  decision = "approve",
+  description,
+  passkeyOnly = false,
+  screen = "verificacion",
   onClose,
   onVerified,
 }: {
   open: boolean;
-  decision: "approve" | "reject";
+  decision?: "approve" | "reject";
+  description?: string;
+  /** Personas only accepts a passkey, the same factor the API checks. */
+  passkeyOnly?: boolean;
+  screen?: string;
   onClose: () => void;
   onVerified: () => void;
 }) {
@@ -40,7 +47,7 @@ export function StepUpDialog({
         if (!active) return;
         setOptions(next);
         if (next.passkey) setPhase("passkey");
-        else if (next.totp) setPhase("totp");
+        else if (next.totp && !passkeyOnly) setPhase("totp");
         else setPhase("none");
       })
       .catch((err: unknown) => {
@@ -52,7 +59,7 @@ export function StepUpDialog({
       active = false;
       WebAuthnAbortService.cancelCeremony();
     };
-  }, [open]);
+  }, [open, passkeyOnly]);
 
   async function confirmPasskey() {
     if (!options?.passkey) return;
@@ -88,11 +95,11 @@ export function StepUpDialog({
     }
   }
 
-  const phrase = decision === "approve" ? copy.approvals.stepApprove : copy.approvals.stepReject;
+  const phrase = description ?? (decision === "approve" ? copy.approvals.stepApprove : copy.approvals.stepReject);
 
   return (
     <Dialog open={open} onClose={onClose} size="sm" labelledBy="step-up-title">
-      <div data-screen="verificacion">
+      <div data-screen={screen}>
         <DialogHeader title={copy.approvals.stepTitle} titleId="step-up-title" description={phrase} onClose={onClose} />
         <DialogBody>
           {phase === "loading" ? <p className="text-label text-text-secondary">{copy.approvals.checking}</p> : null}
@@ -107,7 +114,7 @@ export function StepUpDialog({
                 <Key aria-hidden strokeWidth={iconStroke} />
                 {busy ? copy.approvals.checkingPasskey : copy.approvals.usePasskey}
               </Button>
-              {options?.totp ? (
+              {options?.totp && !passkeyOnly ? (
                 <Button type="button" variant="secondary" onClick={() => setPhase("totp")} disabled={busy}>
                   {copy.approvals.useCode}
                 </Button>
