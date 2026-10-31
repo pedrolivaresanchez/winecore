@@ -23,22 +23,28 @@ export async function listAudit(writer: Writer, request: Request) {
     ORDER BY id DESC
     LIMIT ${limit + 1}
   `);
+  const users = await writer.read<{ id: string; display_name: string }>(
+    'SELECT id, display_name FROM core.app_user',
+  );
+  const names = new Map(users.map((row) => [row.id, row.display_name]));
   const hasMore = listed.length > limit;
   const page = hasMore ? listed.slice(0, limit) : listed;
   const last = page[page.length - 1];
   return {
-    items: page.map(toItem),
+    items: page.map((row) => toItem(row, names)),
     next_cursor: hasMore && last ? String(last.id) : null,
   };
 }
 
-function toItem(row: Record<string, unknown>) {
+function toItem(row: Record<string, unknown>, names: Map<string, string>) {
+  const actorId = String(row.actor_id);
   return {
     id: Number(row.id),
     occurred_at: String(row.occurred_at),
     actor: {
       type: String(row.actor_type),
-      id: String(row.actor_id),
+      id: actorId,
+      display_name: names.get(actorId) ?? actorId,
       on_behalf_of: row.on_behalf_of == null ? null : String(row.on_behalf_of),
     },
     action: String(row.action),

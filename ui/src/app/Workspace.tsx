@@ -11,9 +11,20 @@ import type { Me } from "@/lib/types";
 import { NoAccess } from "@/pages/NoAccess";
 import { NotFound } from "@/pages/NotFound";
 import { Panel } from "@/pages/Panel";
+import { DepositoPage } from "@/pages/bodega/Deposito";
+import { LotePage } from "@/pages/bodega/Lote";
+import { MapaPage } from "@/pages/bodega/Mapa";
+import { OperacionPage } from "@/pages/bodega/Operacion";
+import { QrOpen } from "@/pages/bodega/QrOpen";
 import { ContactCreate } from "@/pages/contactos/ContactCreate";
 import { ContactList } from "@/pages/contactos/ContactList";
 import { ContactPage } from "@/pages/contactos/ContactPage";
+import { CountCreate } from "@/pages/existencias/CountCreate";
+import { CountPage } from "@/pages/existencias/CountPage";
+import { CountsPage } from "@/pages/existencias/CountsPage";
+import { InspectionPage } from "@/pages/existencias/InspectionPage";
+import { MovesPage } from "@/pages/existencias/MovesPage";
+import { StockPage } from "@/pages/existencias/StockPage";
 
 function LoadingScreen() {
   return (
@@ -58,6 +69,17 @@ export function Workspace() {
           <Route path="contactos" element={<ContactList me={me.data} />} />
           <Route path="contactos/nuevo" element={<ContactCreate me={me.data} />} />
           <Route path="contactos/:id" element={<ContactPage me={me.data} />} />
+          <Route path="q/:token" element={<QrOpen me={me.data} />} />
+          <Route path="bodega" element={<MapaPage me={me.data} />} />
+          <Route path="bodega/operacion/nueva" element={<OperacionPage me={me.data} />} />
+          <Route path="bodega/:vesselId" element={<DepositoPage me={me.data} />} />
+          <Route path="lotes/:lotId" element={<LotePage me={me.data} />} />
+          <Route path="stock" element={<StockPage me={me.data} />} />
+          <Route path="stock/informe" element={<InspectionPage me={me.data} />} />
+          <Route path="stock/movimientos" element={<MovesPage me={me.data} />} />
+          <Route path="stock/aforos" element={<CountsPage me={me.data} />} />
+          <Route path="stock/aforos/nuevo" element={<CountCreate me={me.data} />} />
+          <Route path="stock/aforos/:id" element={<CountPage me={me.data} />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Shell>

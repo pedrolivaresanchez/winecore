@@ -21,6 +21,8 @@ describe('auth', () => {
         'cellar.read',
         'contacts.read',
         'contacts.write',
+        'inventory.count',
+        'inventory.read',
         'settings.manage',
         'users.manage',
       ]);

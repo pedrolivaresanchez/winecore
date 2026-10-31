@@ -14,9 +14,10 @@ const GROUPS_KEY = "winecore.nav.groups";
 function readGroups(): Record<string, boolean> {
   try {
     const raw = readStorage(GROUPS_KEY);
-    return raw ? (JSON.parse(raw) as Record<string, boolean>) : { sales: true };
+    const parsed = raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    return { cellar: true, stock: true, ...parsed };
   } catch {
-    return { sales: true };
+    return { cellar: true };
   }
 }
 
@@ -49,7 +50,9 @@ export function Sidebar({
   function renderEntry(entry: NavEntry) {
     const Icon = entry.icon;
     const children = visibleChildren(me, entry);
-    const childActive = children.some((child) => location.pathname === child.path || location.pathname.startsWith(`${child.path}/`));
+    const childActive = children.some(
+      (child) => location.pathname === child.path || (!child.end && location.pathname.startsWith(`${child.path}/`)),
+    );
     const open = groups[entry.id] ?? childActive;
 
     if (entry.action === "settings") {
@@ -114,6 +117,7 @@ export function Sidebar({
                 <NavLink
                   key={child.id}
                   to={child.path}
+                  end={child.end}
                   className={({ isActive }) =>
                     cn(
                       "flex min-h-11 items-center rounded-md px-3 text-compact",

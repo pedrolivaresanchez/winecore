@@ -43,6 +43,8 @@ const CATALOG = {
   WC_STALE_VERSION: [409, 'El registro ha cambiado; vuelve a cargarlo'],
   WC_UNAUTHENTICATED: [401, 'No autenticado'],
   WC_NO_ACCESS: [403, 'No tienes acceso a WineCore'],
+  // Contactos (TASK-CONT-001)
+  WC_CONTACT_DUPLICATE_TAX_ID: [409, 'Ya existe un contacto con este NIF'],
   // --- Bodega ---
   WC_NOT_APPROVED: [409, 'La destrucción y la merma por incidencia exigen una aprobación (cellar_loss). El módulo de aprobaciones no está disponible y la operación no se registra'],
   WC_QR_FOREIGN: [422, 'El código QR no pertenece a WineCore'],
@@ -81,9 +83,13 @@ export function isErrorCode(code: string): code is ErrorCode {
   return Object.prototype.hasOwnProperty.call(CATALOG, code);
 }
 
-export function domainError(code: ErrorCode, fields?: Record<string, string>): DomainError {
+export function domainError(
+  code: ErrorCode,
+  fields?: Record<string, string>,
+  details?: unknown,
+): DomainError {
   const entry = CATALOG[code];
-  return new DomainError(code, entry[0], entry[1], fields);
+  return new DomainError(code, entry[0], entry[1], fields, details);
 }
 
 export function errorBody(error: DomainError): {

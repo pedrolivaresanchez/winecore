@@ -36,8 +36,11 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
     "FK:inventory.stock_move.vessel_id",
     "UQ:cellar.operation(legal_entity_id,number)",
     "UQ:cellar.vessel(qr_token)",
+    "UQ:party.contact(tax_id)",
+    "UQ:party.contact_address(contact_id,kind)",
     "WC020",
     "WC021",
+    "WC023",
     "WC024",
     "WC025",
     "WC026",
@@ -46,5 +49,5 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
     "WC030",
     "WC031",
     "WC032",
-  ].sort());
+  ]);
 });

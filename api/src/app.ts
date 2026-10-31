@@ -8,8 +8,31 @@ import type { Writer } from './core/db/writer';
 import { asDomainError, domainError, errorBody } from './core/errors';
 import { listAudit, verifyAudit } from './routes/audit';
 import { cellarRoutes } from './routes/cellar';
+import {
+  archiveAddress,
+  archiveContact,
+  archivePerson,
+  createAddress,
+  createContact,
+  createPerson,
+  exportContacts,
+  getContact,
+  listContacts,
+  patchAddress,
+  patchContact,
+  patchPerson,
+} from './routes/contacts';
 import { health } from './routes/health';
 import { me } from './routes/me';
+import {
+  closeInventoryCountRoute,
+  getInventoryCountRoute,
+  listInventoryCountsRoute,
+  postInventoryCountRoute,
+  putInventoryCountLinesRoute,
+  submitInventoryCountRoute,
+} from './routes/stock-counts';
+import { stockBalances, stockFiscalBalances, stockInspection, stockMoves } from './routes/stock';
 
 export interface AppDeps {
   config: Config;
@@ -59,6 +82,7 @@ export function createApp(deps: AppDeps) {
         request_id: requestIdFor(request),
         code: 'WC_INTERNAL',
         level: 'error',
+        message: error instanceof Error ? error.message : 'Error interno',
       }));
       set.status = 500;
       return { code: 'WC_INTERNAL', message: 'Error interno' };
@@ -73,7 +97,82 @@ export function createApp(deps: AppDeps) {
     .post('/v1/audit/verify', ({ request }) => verifyAudit(deps.writer, request), {
       beforeHandle: requireOwner(guardDeps),
     })
+    // Contactos (TASK-CONT-001). export.csv va antes de /:id.
+    .get('/v1/contacts', ({ request }) => listContacts(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'contacts.read'),
+    })
+    .get('/v1/contacts/export.csv', ({ request }) => exportContacts(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'contacts.read'),
+    })
+    .post('/v1/contacts', async ({ request, set }) => {
+      const result = await createContact(deps.writer, request);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'contacts.write'),
+    })
+    .get('/v1/contacts/:id', ({ request, params }) => getContact(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'contacts.read'),
+    })
+    .patch('/v1/contacts/:id', ({ request, params }) => patchContact(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'contacts.write'),
+    })
+    .post('/v1/contacts/:id/archive', ({ request, params }) => archiveContact(deps.writer, request, params.id, false), {
+      beforeHandle: requirePermission(guardDeps, 'contacts.write'),
+    })
+    .post('/v1/contacts/:id/unarchive', ({ request, params }) => archiveContact(deps.writer, request, params.id, true), {
+      beforeHandle: requirePermission(guardDeps, 'contacts.write'),
+    })
+    .post('/v1/contacts/:id/addresses', ({ request, params }) => createAddress(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'contacts.write'),
+    })
+    .patch('/v1/contacts/:id/addresses/:aid', ({ request, params }) => patchAddress(deps.writer, request, params.id, params.aid), {
+      beforeHandle: requirePermission(guardDeps, 'contacts.write'),
+    })
+    .post('/v1/contacts/:id/addresses/:aid/archive', ({ request, params }) => archiveAddress(deps.writer, request, params.id, params.aid), {
+      beforeHandle: requirePermission(guardDeps, 'contacts.write'),
+    })
+    .post('/v1/contacts/:id/persons', ({ request, params }) => createPerson(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'contacts.write'),
+    })
+    .patch('/v1/contacts/:id/persons/:pid', ({ request, params }) => patchPerson(deps.writer, request, params.id, params.pid), {
+      beforeHandle: requirePermission(guardDeps, 'contacts.write'),
+    })
+    .post('/v1/contacts/:id/persons/:pid/archive', ({ request, params }) => archivePerson(deps.writer, request, params.id, params.pid), {
+      beforeHandle: requirePermission(guardDeps, 'contacts.write'),
+    })
     // --- Bodega: ubicaciones, recipientes, lotes y operaciones ---
-    .use(cellarRoutes({ writer: deps.writer, guard: guardDeps, publicUrl: deps.config.appPublicUrl }));
+    .use(cellarRoutes({ writer: deps.writer, guard: guardDeps, publicUrl: deps.config.appPublicUrl }))
+    // Existencias (stock): saldos, informe, movimientos y aforos.
+    .get('/v1/stock/balances', ({ request }) => stockBalances(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.read'),
+    })
+    .get('/v1/stock/fiscal-balances', ({ request }) => stockFiscalBalances(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.read'),
+    })
+    .get('/v1/stock/inspection-report', ({ request }) => stockInspection(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.read'),
+    })
+    .get('/v1/stock/moves', ({ request }) => stockMoves(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.read'),
+    })
+    .get('/v1/inventory-counts', ({ request }) => listInventoryCountsRoute(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.read'),
+    })
+    .get('/v1/inventory-counts/:id', ({ params }) => getInventoryCountRoute(deps.writer, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.read'),
+    })
+    .post('/v1/inventory-counts', ({ request }) => postInventoryCountRoute(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.count'),
+    })
+    .put('/v1/inventory-counts/:id/lines', ({ request, params }) => putInventoryCountLinesRoute(deps.writer, request, params), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.count'),
+    })
+    .post('/v1/inventory-counts/:id/close', ({ request, params }) => closeInventoryCountRoute(deps.writer, request, params), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.count'),
+    })
+    .post('/v1/inventory-counts/:id/post-request', ({ request, params }) => submitInventoryCountRoute(deps.writer, request, params), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.count'),
+    });
   return app;
 }

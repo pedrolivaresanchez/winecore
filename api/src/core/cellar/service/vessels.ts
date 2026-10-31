@@ -56,6 +56,8 @@ export interface VesselView {
   state: string;
   lot_id: string | null;
   lot_code: string | null;
+  wine_name: string | null;
+  vintage: number | null;
   volume_ml: number;
   product_state: string | null;
   fill_pct: string;
@@ -86,6 +88,8 @@ interface VesselRow {
 interface Content {
   lot_id: string | null;
   lot_code: string | null;
+  wine_name: string | null;
+  vintage: number | null;
   volume_ml: number;
   product_state: string | null;
   owner_entity_id: string | null;
@@ -94,6 +98,8 @@ interface Content {
 const EMPTY: Content = {
   lot_id: null,
   lot_code: null,
+  wine_name: null,
+  vintage: null,
   volume_ml: 0,
   product_state: null,
   owner_entity_id: null,
@@ -506,6 +512,8 @@ function toView(row: VesselRow, content: Content, includeQr: boolean): VesselVie
     state: mapState(row, content),
     lot_id: content.lot_id,
     lot_code: content.lot_code,
+    wine_name: content.wine_name,
+    vintage: content.vintage,
     volume_ml: content.volume_ml,
     product_state: content.product_state,
     fill_pct: fillPct(content.volume_ml, row.capacity_ml),
@@ -544,21 +552,33 @@ async function contentsFor(source: Writer | Tx, vesselIds: readonly string[]): P
     grouped.set(id, list);
   }
   const lotIds = [...new Set(rows.map((row) => textOrNull(row.lot_id)).filter((id): id is string => id !== null))];
-  const codes = new Map<string, string>();
+  const codes = new Map<string, { code: string; wine_name: string | null; vintage: number | null }>();
   if (lotIds.length > 0) {
-    const lots = await source.read<{ id: string; code: string }>(`
-      SELECT id::VARCHAR AS id, code FROM inventory.lot WHERE id IN (${uuidList(lotIds)})
+    const lots = await source.read<{ id: string; code: string; wine_name: string | null; vintage: number | null }>(`
+      SELECT l.id::VARCHAR AS id, l.code, w.name AS wine_name, l.vintage
+      FROM inventory.lot l
+      LEFT JOIN catalog.wine w ON w.id = l.wine_id
+      WHERE l.id IN (${uuidList(lotIds)})
     `);
-    for (const lot of lots) codes.set(lot.id, lot.code);
+    for (const lot of lots) {
+      codes.set(lot.id, {
+        code: lot.code,
+        wine_name: lot.wine_name,
+        vintage: lot.vintage == null ? null : intOf(lot.vintage),
+      });
+    }
   }
   for (const [vesselId, list] of grouped) {
     if (list.length === 1) {
       const row = list[0];
       if (!row) continue;
       const lotId = textOrNull(row.lot_id);
+      const lot = lotId ? codes.get(lotId) : undefined;
       map.set(vesselId, {
         lot_id: lotId,
-        lot_code: lotId ? codes.get(lotId) ?? null : null,
+        lot_code: lot?.code ?? null,
+        wine_name: lot?.wine_name ?? null,
+        vintage: lot?.vintage ?? null,
         volume_ml: intOf(row.volume_ml),
         product_state: textOrNull(row.product_state),
         owner_entity_id: textOrNull(row.owner_entity_id),

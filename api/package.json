@@ -9,7 +9,8 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "migrate": "bun run db/migrate.ts",
-    "seed": "bun run db/seed.ts"
+    "seed": "bun run db/seed.ts",
+    "seed:demo": "bun run db/seed-demo.ts"
   },
   "dependencies": {
     "@date-fns/tz": "1.5.0",
