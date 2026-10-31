@@ -163,11 +163,17 @@ export function GlassMenu({
       focusedField.current = true
       return
     }
-    /* A hidden input cannot take focus; the paint after `visibility: visible` can. */
-    const frame = requestAnimationFrame(() => {
+    /* A hidden input cannot take focus; the paint after `visibility: visible` can.
+       Under reduced motion the global 0.01ms transition also covers the inherited
+       `visibility`, which lands a frame or two later — hence retries for a short window. */
+    let frame = 0
+    const until = performance.now() + 250
+    const retry = () => {
       if (focusedField.current) return
       if (focusFirstMenuField(panelRef.current)) focusedField.current = true
-    })
+      else if (performance.now() < until) frame = requestAnimationFrame(retry)
+    }
+    frame = requestAnimationFrame(retry)
     return () => cancelAnimationFrame(frame)
   }, [open, coords])
 
