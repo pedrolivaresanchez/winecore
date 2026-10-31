@@ -45,6 +45,11 @@ const CATALOG = {
   WC_NO_ACCESS: [403, 'No tienes acceso a WineCore'],
   // Contactos (TASK-CONT-001)
   WC_CONTACT_DUPLICATE_TAX_ID: [409, 'Ya existe un contacto con este NIF'],
+  // Finanzas (cobros, extractos y remesas)
+  WC_FIN_DUPLICATE_FILE: [409, 'Este extracto ya se ha importado'],
+  WC_FIN_APPROVAL_REQUIRED: [409, 'La remesa no está aprobada'],
+  WC_FIN_MANDATE: [422, 'El cliente no tiene mandato SEPA'],
+  WC_FIN_STATE: [409, 'La transición de estado no está permitida'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;

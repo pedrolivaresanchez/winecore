@@ -1,6 +1,8 @@
 -- WineCore · 0010_purchasing · dialecto DuckDB (ADR 002).
 -- Referencia: docs/02-ddl/0010_purchasing.sql
 -- Disparadores, funciones e índices únicos parciales: api/src/core/db/guards/registry.ts
+-- Sin FK hacia purchasing.supplier_invoice: el pago actualiza amount_paid y DuckDB
+-- no puede hacer UPDATE de una fila referenciada.
 
 -- =====================================================================
 -- WineCore · Migración 0010 · compras y gastos (purchasing)
@@ -63,7 +65,7 @@ CREATE TABLE purchasing.supplier_invoice (id                      uuid PRIMARY K
   approved_by             uuid,
   approved_at             TIMESTAMPTZ,
   rejection_reason        VARCHAR,
-  duplicate_of_id         uuid REFERENCES purchasing.supplier_invoice(id),
+  duplicate_of_id         uuid,
   is_intercompany         boolean NOT NULL DEFAULT false,
   notes                   VARCHAR,
   legacy_refs             JSON NOT NULL DEFAULT '{}'::JSON,
@@ -79,7 +81,7 @@ CREATE TABLE purchasing.supplier_invoice (id                      uuid PRIMARY K
 
 CREATE TABLE purchasing.supplier_invoice_line (
   id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  supplier_invoice_id uuid NOT NULL REFERENCES purchasing.supplier_invoice(id),
+  supplier_invoice_id uuid NOT NULL,
   line_no             smallint NOT NULL CHECK (line_no > 0),
   description         VARCHAR NOT NULL,
   product_id          uuid,                  -- compras con stock (enológicos, envases, mercaderías)
