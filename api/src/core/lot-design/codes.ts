@@ -1,9 +1,14 @@
+/** Catálogo único. `settling` es el alias de `desfangado`. El carbón activo está prohibido en casa. */
 export const PRACTICES = [
   { code: 'desfangado', name_es: 'Desfangado', intervention: true },
+  { code: 'settling', name_es: 'Desfangado', intervention: true },
   { code: 'centrifugado', name_es: 'Centrifugado', intervention: true },
+  { code: 'levaduras_comerciales', name_es: 'Levaduras comerciales', intervention: true },
   { code: 'estabilizacion_proteica', name_es: 'Estabilización proteica', intervention: true },
-  { code: 'filtracion', name_es: 'Filtración', intervention: true },
   { code: 'clarificacion', name_es: 'Clarificación', intervention: true },
+  { code: 'filtracion', name_es: 'Filtración', intervention: true },
+  { code: 'sulfitado', name_es: 'Sulfitado', intervention: true },
+  { code: 'carbon_activo', name_es: 'Carbón activo', intervention: true },
   { code: 'sin_sulfitos_anadidos', name_es: 'Sin sulfitos añadidos', intervention: false },
   { code: 'sin_intervencion', name_es: 'Sin intervención', intervention: false },
 ] as const;

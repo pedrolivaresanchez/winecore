@@ -48,6 +48,8 @@ import { newId } from '../../ids';
 import { sql } from '../../db/sql';
 import type { Tx, Writer } from '../../db/writer';
 import { DomainError, domainError } from '../../errors';
+import type { CheckResult } from '../../enology/checks';
+import { runChecks, type ReadDb } from '../../enology/service';
 import { businessDate } from '../../time';
 import { planBottlingMaterials, type MaterialUseLine } from './materials';
 import { applyWinemakingEffects, loadPhase, recordAdditionTrace, restoreWinemaking } from '../../winemaking/effects';
@@ -277,6 +279,7 @@ export interface OperationPreview {
   pressing_yield: PlanSuccess['pressingYield'];
   fermentation_phase: PlanSuccess['fermentationPhase'];
   notes: readonly string[];
+  enology_checks: CheckResult;
 }
 
 export async function listOperations(writer: Writer, request: Request): Promise<ListBody<OperationHeader>> {
@@ -359,6 +362,52 @@ export async function updateOperation(writer: Writer, request: Request, id: stri
   return readOperation(writer, id);
 }
 
+const CHECK_STATES = new Set(['grape', 'must', 'wine', 'packaged_unlabeled', 'packaged_labeled']);
+
+async function enologyChecks(tx: ReadDb, current: LoadedDraft, now: Date): Promise<CheckResult> {
+  const lines = current.draft.lines;
+  const state = lines.find((line) => CHECK_STATES.has(line.product_state))?.product_state ?? 'wine';
+  const sum = (role: string) => lines
+    .filter((line) => line.role === role)
+    .reduce((total, line) => total + line.volume_ml, 0);
+  const lotId = lines.find((line) => line.role === 'input' && line.lot_id)?.lot_id
+    ?? current.draft.focus_lot_id
+    ?? current.draft.addition?.lot_id
+    ?? null;
+  const additions: { name: string; purpose: string | null; is_so2: boolean }[] = [];
+  if (current.draft.addition) {
+    const products = await tx.read<{ name: string }>(sql`
+      SELECT name FROM catalog.product WHERE id = CAST(${current.draft.addition.additive_product_id} AS UUID)
+    `);
+    additions.push({
+      name: products[0]?.name ?? 'adición',
+      purpose: current.draft.addition.purpose,
+      is_so2: current.draft.addition.purpose === 'sulphiting',
+    });
+  }
+  const fiscal = current.header.fiscal_date;
+  return runChecks(tx, {
+    legal_entity_id: current.header.legal_entity_id,
+    as_of: /^\d{4}-\d{2}-\d{2}/u.test(fiscal) ? fiscal.slice(0, 10) : undefined,
+    operation: {
+      op_type: current.header.op_type,
+      product_state: state,
+      input_volume_ml: String(sum('input')),
+      loss_volume_ml: String(sum('loss')),
+      reason: current.header.reason,
+      additions,
+      practices: [],
+    },
+    lot: lotId ? { id: lotId } : {},
+  }, now);
+}
+
+function assertEnologyAllows(checks: CheckResult): void {
+  const block = checks.findings.find((finding) => finding.blocks);
+  if (!block) return;
+  throw new DomainError('WC_ENOLOGY_PROHIBITED', 422, block.message, undefined, { findings: checks.findings });
+}
+
 export async function previewOperation(writer: Writer, request: Request, id: string): Promise<OperationPreview> {
   if (!isUuid(id)) throw domainError('WC_NOT_FOUND');
   sessionOf(request);
@@ -368,6 +417,7 @@ export async function previewOperation(writer: Writer, request: Request, id: str
     const actorId = sessionOf(request).id;
     const plan = await planStored(tx, current, actorId);
     const materials = await materialsFor(tx, current, plan, actorId);
+    const checks = await enologyChecks(tx, current, new Date(current.header.occurred_at));
     return {
       stock_moves: materials.short ? plan.stockMoves : [...plan.stockMoves, ...materials.exits],
       fiscal_moves: plan.fiscalMoves,
@@ -378,7 +428,11 @@ export async function previewOperation(writer: Writer, request: Request, id: str
       silicie_entries: describeSilicie(plan),
       pressing_yield: plan.pressingYield,
       fermentation_phase: plan.fermentationPhase,
-      notes: plan.notes,
+      notes: [
+        ...plan.notes,
+        ...checks.findings.filter((finding) => finding.severity !== 'info').map((finding) => finding.message),
+      ],
+      enology_checks: checks,
     };
   });
 }
@@ -394,6 +448,8 @@ export async function confirmOperation(writer: Writer, request: Request, id: str
     }
     await consumeLossApproval(tx, policies, current);
     const plan = await planStored(tx, current, actor.id);
+    const checks = await enologyChecks(tx, current, new Date(current.header.occurred_at));
+    assertEnologyAllows(checks);
     const materials = await materialsFor(tx, current, plan, actor.id);
     if (materials.short) {
       throw new DomainError('WC024', 422, 'Saldo negativo', undefined, {

@@ -179,6 +179,7 @@ describe('comparación de añadas', () => {
 
   test('tolera la ausencia de catas y de analíticas', async () => {
     await lab.ctx.client.query('DROP TABLE knowledge.tasting_note');
+    await lab.ctx.client.query('DROP TABLE tasting.note');
     const withoutScores = await lab.ctx.app.handle(new Request('http://localhost/v1/vintage-comparison', {
       headers: { 'x-dev-user': 'asesor@winecore.test' },
     }));
@@ -189,6 +190,9 @@ describe('comparación de añadas', () => {
     expect(year25?.analyses?.abv).toBe(14);
     expect(year25?.kg).toBe(3500);
 
+    await lab.ctx.client.query('DROP TABLE cellar.analysis_flag');
+    await lab.ctx.client.query('DROP TABLE cellar.analysis_extra');
+    await lab.ctx.client.query('DROP TABLE cellar.lot_phase');
     await lab.ctx.client.query('DROP TABLE cellar.analysis_result');
     await lab.ctx.client.query('DROP TABLE cellar.analysis');
     const withoutAnalyses = await lab.ctx.app.handle(new Request('http://localhost/v1/vintage-comparison', {

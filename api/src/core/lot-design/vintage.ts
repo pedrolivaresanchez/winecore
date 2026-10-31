@@ -26,7 +26,7 @@ const ANALYSIS_KEYS = [
   'total_polyphenol_index',
 ] as const;
 
-const SCORE_COLUMNS = ['score', 'points', 'rating', 'overall', 'puntuacion'];
+const SCORE_COLUMNS = ['score', 'overall_score', 'points', 'rating', 'overall', 'puntuacion'];
 
 type AnalysisKey = (typeof ANALYSIS_KEYS)[number];
 type Analyses = Record<AnalysisKey, number | null>;

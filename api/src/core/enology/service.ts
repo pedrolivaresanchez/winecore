@@ -1,4 +1,9 @@
 import type { Writer } from '../db/writer';
+
+/** Lectura compatible con Writer y con la transacción abierta. */
+export interface ReadDb {
+  read<T = Record<string, unknown>>(statement: string): Promise<T[]>;
+}
 import { sql } from '../db/sql';
 import { domainError } from '../errors';
 import { businessDate } from '../time';
@@ -75,7 +80,7 @@ export async function runBlend(writer: Writer, body: unknown) {
   return calculateBlend(components, target);
 }
 
-export async function runChecks(writer: Writer, body: unknown, now: Date) {
+export async function runChecks(writer: ReadDb, body: unknown, now: Date) {
   const record = objectOf(body);
   const entityId = requiredUuid(record.legal_entity_id, 'legal_entity_id');
   const settings = await readSettings(writer, entityId);
@@ -89,7 +94,7 @@ export async function runChecks(writer: Writer, body: unknown, now: Date) {
 }
 
 async function resolveLot(
-  writer: Writer,
+  writer: ReadDb,
   raw: unknown,
   entityId: string,
   asOf: string,
@@ -176,7 +181,7 @@ async function availableMl(writer: Writer, vesselId: string | null, lotId: strin
   return rows[0]?.volume_ml ?? '0';
 }
 
-async function lotHasVolume(writer: Writer, lotId: string): Promise<boolean> {
+async function lotHasVolume(writer: ReadDb, lotId: string): Promise<boolean> {
   const rows = await writer.read<{ volume_ml: string }>(sql`
     SELECT COALESCE(SUM(volume_ml), 0)::VARCHAR AS volume_ml
     FROM inventory.v_stock_balance
@@ -186,7 +191,7 @@ async function lotHasVolume(writer: Writer, lotId: string): Promise<boolean> {
 }
 
 async function lotRacked(
-  writer: Writer,
+  writer: ReadDb,
   lotId: string,
   asOf: string,
   settings: Awaited<ReturnType<typeof readSettings>>,
@@ -212,7 +217,7 @@ async function lotRacked(
   });
 }
 
-async function lotAnalyses(writer: Writer, lotId: string): Promise<{
+async function lotAnalyses(writer: ReadDb, lotId: string): Promise<{
   analyses: CheckAnalysis[];
   malic: string | null;
   volatile: string | null;

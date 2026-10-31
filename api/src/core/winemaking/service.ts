@@ -365,27 +365,37 @@ export async function createTasting(writer: Writer, request: Request, code: stri
   }
   const actor = actorFor(request, 'cata');
   const id = newId();
+  const templateId = '019a5400-0000-7000-8000-000000000003';
   await writer.withWrite(actor, async (tx) => {
     if (vesselId) await assertVessel(tx, vesselId);
     tx.write(sql`
-      INSERT INTO cellar.tasting (id, lot_id, vessel_id, tasted_at, author, notes, decision, source)
-      VALUES (
+      INSERT INTO tasting.note (
+        id, template_id, tasted_at, taster_name, subject, lot_id, vessel_id,
+        score_scale, descriptors, defects, decision, notes, answers, source, created_by
+      ) VALUES (
         CAST(${id} AS UUID),
-        CAST(${lot.id} AS UUID),
-        CAST(${vesselId} AS UUID),
+        CAST(${templateId} AS UUID),
         CAST(${tastedAt} AS TIMESTAMPTZ),
         ${author},
-        ${notes},
+        'wine_aging',
+        CAST(${lot.id} AS UUID),
+        CAST(${vesselId} AS UUID),
+        '0-10',
+        '[]'::JSON,
+        '[]'::JSON,
         ${decision},
-        ${sourceRaw}
+        ${notes},
+        '{}'::JSON,
+        ${sourceRaw},
+        ${actor.id}
       )
     `);
     tx.audit({
-      table: 'cellar.tasting',
+      table: 'tasting.note',
       rowId: id,
       action: 'INSERT',
       before: null,
-      after: { lot_id: lot.id, tasted_at: tastedAt },
+      after: { lot_id: lot.id, tasted_at: tastedAt, taster_name: author },
     });
   });
   return tastingById(writer, id);
@@ -488,8 +498,8 @@ export async function listTastings(writer: Writer, _request: Request, code: stri
   const lot = await lotByCode(writer, code);
   const rows = await writer.read<Record<string, unknown>>(sql`
     SELECT id::VARCHAR AS id, lot_id::VARCHAR AS lot_id, vessel_id::VARCHAR AS vessel_id,
-           tasted_at, author, notes, decision, source, created_at
-    FROM cellar.tasting
+           tasted_at, taster_name AS author, coalesce(notes, '') AS notes, decision, source, created_at
+    FROM tasting.note
     WHERE lot_id = CAST(${lot.id} AS UUID)
     ORDER BY tasted_at DESC
   `);
@@ -696,8 +706,8 @@ async function readingById(writer: Writer, id: string): Promise<Record<string, u
 async function tastingById(writer: Writer, id: string): Promise<Record<string, unknown>> {
   const rows = await writer.read<Record<string, unknown>>(sql`
     SELECT id::VARCHAR AS id, lot_id::VARCHAR AS lot_id, vessel_id::VARCHAR AS vessel_id,
-           tasted_at, author, notes, decision, source, created_at
-    FROM cellar.tasting WHERE id = CAST(${id} AS UUID)
+           tasted_at, taster_name AS author, coalesce(notes, '') AS notes, decision, source, created_at
+    FROM tasting.note WHERE id = CAST(${id} AS UUID)
   `);
   const row = rows[0];
   if (!row) throw domainError('WC_NOT_FOUND');
@@ -824,46 +834,29 @@ async function parcelByCode(writer: Writer, code: string): Promise<{ id: string 
 }
 
 const ASSUMPTION_DEFAULTS = { volatile: '0.6', dry: '2', malic: '0.3' };
+const ENOLOGY_TEMPLATE = '00000000-0000-0000-0000-000000000000';
+const THRESHOLD_KEYS = ['volatile_acidity_alert', 'dry_sugars_max', 'fml_malic_max'] as const;
 
+/** Lee cellar.enology_setting (alias de enology.parameter). Si falta una clave, queda el supuesto. */
 async function enologyThresholds(tx: Tx, entityId: string | null): Promise<{ volatile: string; dry: string; malic: string }> {
-  const tables = await tx.read<{ name: string }>(`
-    SELECT table_name AS name FROM information_schema.tables
-    WHERE table_schema = 'cellar' AND table_name = 'enology_setting'
-  `);
   const found = { ...ASSUMPTION_DEFAULTS };
-  if (tables.length > 0) {
-    const rows = entityId
-      ? await tx.read<{ key: string; value: string }>(sql`
-        SELECT key, value::VARCHAR AS value FROM cellar.enology_setting
-        WHERE legal_entity_id = CAST(${entityId} AS UUID)
-          AND key IN ('volatile_acidity_alert','dry_sugars_max','fml_malic_max')
-      `)
-      : await tx.read<{ key: string; value: string }>(`
-        SELECT key, value::VARCHAR AS value FROM cellar.enology_setting
-        WHERE key IN ('volatile_acidity_alert','dry_sugars_max','fml_malic_max')
-      `);
-    for (const row of rows) {
-      if (row.key === 'volatile_acidity_alert') found.volatile = row.value;
-      if (row.key === 'dry_sugars_max') found.dry = row.value;
-      if (row.key === 'fml_malic_max') found.malic = row.value;
-    }
-  }
-  const settings = await tx.read<{ key: string; value: unknown }>(sql`
-    SELECT key, value FROM core.setting
-    WHERE key IN (
-      'cellar.alerts.volatile_acidity_alert',
-      'cellar.alerts.dry_sugars_max',
-      'cellar.alerts.fml_malic_max'
-    )
+  const rows = await tx.read<{ key: string; value: string | null; entity_key: string }>(sql`
+    SELECT key, value::VARCHAR AS value, entity_key
+    FROM cellar.enology_setting
+    WHERE key IN ('volatile_acidity_alert', 'dry_sugars_max', 'fml_malic_max')
   `);
-  for (const row of settings) {
-    const raw = unwrapJson(row.value);
-    const text = typeof raw === 'number' ? String(raw) : typeof raw === 'string' ? raw : null;
-    if (!text) continue;
-    if (row.key.endsWith('volatile_acidity_alert') && tables.length === 0) found.volatile = text;
-    if (row.key.endsWith('dry_sugars_max') && tables.length === 0) found.dry = text;
-    if (row.key.endsWith('fml_malic_max') && tables.length === 0) found.malic = text;
-  }
+  const pick = (key: (typeof THRESHOLD_KEYS)[number]) => {
+    const mine = entityId
+      ? rows.find((row) => row.key === key && row.entity_key === entityId && row.value)
+      : undefined;
+    return mine ?? rows.find((row) => row.key === key && row.entity_key === ENOLOGY_TEMPLATE && row.value);
+  };
+  const volatile = pick('volatile_acidity_alert');
+  const dry = pick('dry_sugars_max');
+  const malic = pick('fml_malic_max');
+  if (volatile?.value) found.volatile = volatile.value;
+  if (dry?.value) found.dry = dry.value;
+  if (malic?.value) found.malic = malic.value;
   return found;
 }
 
