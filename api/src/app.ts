@@ -53,6 +53,7 @@ import {
   submitInventoryCountRoute,
 } from './routes/stock-counts';
 import { stockBalances, stockFiscalBalances, stockInspection, stockMoves } from './routes/stock';
+import { vineyardNotebookRoutes } from './routes/vineyard-notebook';
 
 export interface AppDeps {
   config: Config;
@@ -278,6 +279,7 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requirePermission(guardDeps, 'inventory.count'),
     })
     // Bodega: ubicaciones, recipientes, lotes y operaciones.
-    .use(cellarRoutes({ writer: deps.writer, guard: guardDeps, publicUrl: deps.config.appPublicUrl }));
+    .use(cellarRoutes({ writer: deps.writer, guard: guardDeps, publicUrl: deps.config.appPublicUrl }))
+    .use(vineyardNotebookRoutes(guardDeps));
   return app;
 }
