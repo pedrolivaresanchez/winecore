@@ -69,6 +69,7 @@ const CATALOG = {
   WC_IC_PERIOD: [422, 'El periodo no es un mes válido'],
   WC_IC_PERIOD_OVERLAP: [409, 'El periodo se solapa con otra liquidación'],
   WC_INV_LOT_REQUIRED: [422, 'Indica el lote de la línea'],
+  WC_OCR_UNAVAILABLE: [503, 'La extracción de la factura no está disponible'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;
