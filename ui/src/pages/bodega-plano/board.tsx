@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type RefObject } from 'react'
 import { copy } from '@/i18n'
 import { cn } from '@/lib/cn'
 import { attachmentUrl } from '@/pages/bodega-plano/api'
-import { clampGeom } from '@/pages/bodega-plano/geom'
+import { bandOf, faceClass, shapeClass, type ColourMode } from '@/pages/bodega-plano/colours'
+import { clampGeom, NUDGE_STEP } from '@/pages/bodega-plano/geom'
 import type { Geom, PlanMarker } from '@/pages/bodega-plano/types'
 
 function boxStyle(geom: Geom, board: { w: number; h: number }): CSSProperties {
@@ -16,16 +16,6 @@ function boxStyle(geom: Geom, board: { w: number; h: number }): CSSProperties {
   }
 }
 
-function face(): string {
-  return 'rounded-2xl'
-}
-
-function caption(marker: PlanMarker): string {
-  if (marker.lot) return marker.lot
-  if (marker.outdoor) return copy.plano.intemperie
-  return copy.plano.empty
-}
-
 export function PlanBoard({
   imageId,
   markers,
@@ -33,9 +23,11 @@ export function PlanBoard({
   editing,
   selected,
   highlight,
+  colourMode,
+  boardRef,
   onSelect,
+  onOpen,
   onChange,
-  fit = false,
 }: {
   imageId: string | null
   markers: PlanMarker[]
@@ -43,12 +35,12 @@ export function PlanBoard({
   editing: boolean
   selected: string | null
   highlight: string | null
+  colourMode: ColourMode
+  boardRef: RefObject<HTMLDivElement | null>
   onSelect: (key: string | null) => void
+  onOpen: (marker: PlanMarker) => void
   onChange: (positionId: string, geom: Geom) => void
-  /** Fill the remaining column while a strip sits under the plan. */
-  fit?: boolean
 }) {
-  const root = useRef<HTMLDivElement>(null)
   const drag = useRef<(() => void) | null>(null)
 
   useEffect(() => () => drag.current?.(), [])
@@ -57,7 +49,7 @@ export function PlanBoard({
     if (!editing) return
     event.preventDefault()
     event.stopPropagation()
-    const el = root.current
+    const el = boardRef.current
     if (!el) return
     onSelect(marker.key)
     const rect = el.getBoundingClientRect()
@@ -65,7 +57,7 @@ export function PlanBoard({
     const origin = marker.geom
     const startX = event.clientX
     const startY = event.clientY
-    function move(ev: PointerEvent) {
+    function movePointer(ev: PointerEvent) {
       const dx = ((ev.clientX - startX) / rect.width) * board.w
       const dy = ((ev.clientY - startY) / rect.height) * board.h
       const next =
@@ -75,24 +67,29 @@ export function PlanBoard({
       onChange(marker.positionId, clampGeom(next, board.w, board.h))
     }
     function end() {
-      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointermove', movePointer)
       window.removeEventListener('pointerup', end)
       drag.current = null
     }
     drag.current = end
-    window.addEventListener('pointermove', move)
+    window.addEventListener('pointermove', movePointer)
     window.addEventListener('pointerup', end)
+  }
+
+  function nudge(marker: PlanMarker, dx: number, dy: number) {
+    onSelect(marker.key)
+    onChange(
+      marker.positionId,
+      clampGeom({ ...marker.geom, x: marker.geom.x + dx, y: marker.geom.y + dy }, board.w, board.h),
+    )
   }
 
   return (
     <div
-      ref={root}
-      className={cn(
-        'relative overflow-hidden rounded-2xl border border-border-subtle bg-surface-subtle',
-        editing && 'touch-none',
-        fit ? 'mx-auto h-full w-auto max-w-full' : 'w-full',
-      )}
-      style={{ aspectRatio: `${board.w} / ${board.h}` }}
+      ref={boardRef}
+      data-plan-board=""
+      className="relative mx-auto rounded-2xl border border-border-subtle bg-surface-subtle"
+      style={{ width: board.w, height: board.h }}
       onPointerDown={() => {
         if (editing) onSelect(null)
       }}
@@ -100,42 +97,37 @@ export function PlanBoard({
       <PlanBackdrop imageId={imageId} />
       {markers.map((marker) => {
         const active = selected === marker.key || highlight === marker.code
-        const label = `${marker.code}, ${Math.round(marker.fill)} %, ${caption(marker)}`
+        const kind = marker.subject === 'holder' ? marker.holderKind : marker.vesselKind
+        const band = bandOf(colourMode, marker)
+        const label = `${marker.code}, ${Math.round(marker.fill)} %`
         const style = boxStyle(marker.geom, board)
-        const card = (
+        const face = (
           <span
             className={cn(
-              'flex h-full w-full min-w-0 flex-col gap-1 overflow-hidden border bg-surface px-2 py-1.5 text-left shadow-(--shadow-card)',
-              face(),
-              active ? 'border-ink-900' : 'border-border',
+              'flex h-full w-full items-center justify-center overflow-hidden border-2 px-1 text-center shadow-(--shadow-card)',
+              shapeClass(marker.subject, kind),
+              faceClass(colourMode, marker),
+              active && 'outline-2 outline-offset-2 outline-ink-900',
             )}
           >
-            <span className="truncate text-label font-medium leading-none text-ink-900">{marker.code}</span>
-            <span className="truncate text-caption leading-none text-text-tertiary">{caption(marker)}</span>
-            <span
-              className="mt-auto h-1 w-full overflow-hidden rounded-full bg-ink-100"
-              role="meter"
-              aria-valuenow={Math.round(marker.fill)}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-label={`${copy.plano.fill} ${Math.round(marker.fill)} %`}
-            >
-              <span className="block h-full bg-ink-900" style={{ width: `${marker.fill}%` }} />
-            </span>
+            <span className="max-w-full truncate text-label font-medium leading-none">{marker.code}</span>
           </span>
         )
         if (!editing) {
           return (
-            <Link
+            <button
               key={marker.key}
-              to={marker.href}
+              type="button"
               data-code={marker.code}
+              data-kind={kind ?? ''}
+              data-band={band}
               aria-label={label}
-              className="absolute hover:z-sticky"
+              className="absolute p-0 hover:z-sticky"
               style={style}
+              onClick={() => onOpen(marker)}
             >
-              {card}
-            </Link>
+              {face}
+            </button>
           )
         }
         return (
@@ -144,24 +136,41 @@ export function PlanBoard({
             role="button"
             tabIndex={0}
             data-code={marker.code}
+            data-kind={kind ?? ''}
+            data-band={band}
             aria-label={label}
             aria-pressed={selected === marker.key}
-            className="absolute cursor-grab outline-none focus-visible:shadow-(--shadow-focus) active:cursor-grabbing"
+            className="absolute cursor-grab touch-none p-0 outline-none focus-visible:shadow-(--shadow-focus) active:cursor-grabbing"
             style={style}
             onPointerDown={(event) => begin(event, 'move', marker)}
             onKeyDown={(event) => {
               if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault()
                 onSelect(marker.key)
+                return
+              }
+              const step = event.shiftKey ? 1 : NUDGE_STEP
+              if (event.key === 'ArrowUp') {
+                event.preventDefault()
+                nudge(marker, 0, -step)
+              } else if (event.key === 'ArrowDown') {
+                event.preventDefault()
+                nudge(marker, 0, step)
+              } else if (event.key === 'ArrowLeft') {
+                event.preventDefault()
+                nudge(marker, -step, 0)
+              } else if (event.key === 'ArrowRight') {
+                event.preventDefault()
+                nudge(marker, step, 0)
               }
             }}
           >
-            {card}
+            {face}
             <span
               role="button"
               aria-label={copy.plano.resize}
               tabIndex={-1}
-              className="absolute -right-1 -bottom-1 size-3.5 cursor-nwse-resize rounded-full border border-ink-900 bg-surface shadow-(--shadow-card)"
+              className="absolute right-1 bottom-1 z-sticky size-7 cursor-nwse-resize rounded-full border-2 border-ink-900 bg-surface shadow-(--shadow-card)"
               onPointerDown={(event) => begin(event, 'resize', marker)}
             />
           </div>
@@ -196,9 +205,9 @@ function PlanBackdrop({ imageId }: { imageId: string | null }) {
     }
   }, [imageId])
 
-  if (url) return <img src={url} alt="" className="absolute inset-0 size-full object-fill" />
+  if (url) return <img src={url} alt="" className="pointer-events-none absolute inset-0 size-full object-fill" />
   return (
-    <svg className="absolute inset-0 size-full text-border-subtle" aria-hidden="true">
+    <svg className="pointer-events-none absolute inset-0 size-full text-border-subtle" aria-hidden="true">
       <defs>
         <pattern id="plano-rejilla" width="48" height="48" patternUnits="userSpaceOnUse">
           <path d="M 48 0 L 0 0 0 48" fill="none" stroke="currentColor" strokeWidth="1" />

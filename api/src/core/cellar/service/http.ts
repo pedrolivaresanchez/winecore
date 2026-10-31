@@ -209,6 +209,11 @@ export function auditUpdate(
   tx.audit({ table, rowId, action: 'UPDATE', before, after });
 }
 
+export function auditDelete(tx: Tx, table: string, rowId: string, before: unknown, statement: string): void {
+  tx.write(statement);
+  tx.audit({ table, rowId, action: 'DELETE', before, after: null });
+}
+
 export function spanishPlanMessage(code: string, message: string): string {
   const stripped = message.replace(new RegExp(`^${code}:\\s*`), '');
   if (stripped.length === 0) return message;

@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { cn } from '../lib/cn'
@@ -22,6 +22,20 @@ const sizes: Record<DrawerSize, string> = {
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+/** Below Tailwind's `sm`: a phone held upright. Same query the dialog uses for its sheet. */
+const SHEET_QUERY = '(max-width: 639px)'
+
+function subscribeSheet(onChange: () => void) {
+  if (typeof window.matchMedia !== 'function') return () => {}
+  const query = window.matchMedia(SHEET_QUERY)
+  query.addEventListener('change', onChange)
+  return () => query.removeEventListener('change', onChange)
+}
+
+function sheetLayout(): boolean {
+  return typeof window.matchMedia === 'function' && window.matchMedia(SHEET_QUERY).matches
+}
 
 /**
  * Side drawer — same chrome as Dialog (scrim wash, 5px ink-900/20 ring,
@@ -47,6 +61,7 @@ export function Drawer({
   children,
   className,
   panelWidth,
+  mobileSheet = false,
 }: {
   open: boolean
   onClose: () => void
@@ -57,6 +72,8 @@ export function Drawer({
   children: ReactNode
   className?: string
   panelWidth?: number
+  /** On a phone, dock to the bottom instead of covering the screen. */
+  mobileSheet?: boolean
 }) {
   const reduce = useReducedMotion()
   const panelRef = useRef<HTMLDivElement>(null)
@@ -122,8 +139,10 @@ export function Drawer({
   }
 
   const fade = reduce ? { duration: 0 } : drawerFade
-  const sheet = sheetMotion(reduce, { edge: side })
-  const sized = panelWidth != null
+  const narrow = useSyncExternalStore(subscribeSheet, sheetLayout, () => false)
+  const dockBottom = mobileSheet && narrow
+  const sheet = sheetMotion(reduce, { edge: dockBottom ? 'bottom' : side })
+  const sized = panelWidth != null && !dockBottom
 
   return createPortal(
     <AnimatePresence onExitComplete={onExitComplete}>
@@ -148,23 +167,29 @@ export function Drawer({
             aria-modal={modal ? 'true' : 'false'}
             aria-labelledby={labelledBy}
             tabIndex={-1}
+            data-sheet={dockBottom ? '' : undefined}
             variants={{
               open: sheet.animate,
               closed: sheet.exit ?? sheet.initial,
             }}
             style={sized ? { width: panelWidth } : undefined}
             className={cn(
-              'absolute inset-y-0 flex h-full flex-col overflow-hidden',
+              'absolute flex flex-col overflow-hidden',
               'border-[5px] border-ink-900/20 bg-surface shadow-(--shadow-float) outline-none',
               !modal && 'pointer-events-auto',
-              side === 'left'
-                ? 'left-0 rounded-tr-2xl rounded-br-2xl'
-                : 'right-0 rounded-tl-2xl rounded-bl-2xl',
-              sized ? null : 'w-full',
-              sized ? null : sizes[size],
-              /* On a phone the drawer is the screen: a rounded edge 6px off the glass reads
-                 as a card that slipped, not as a place. */
-              sized ? null : 'max-sm:max-w-none max-sm:rounded-none max-sm:border-0 max-sm:pt-[env(safe-area-inset-top)]',
+              dockBottom
+                ? 'inset-x-0 bottom-0 h-auto max-h-[92dvh] w-full rounded-t-2xl border-b-0 pb-[env(safe-area-inset-bottom)]'
+                : [
+                    'inset-y-0 h-full',
+                    side === 'left'
+                      ? 'left-0 rounded-tr-2xl rounded-br-2xl'
+                      : 'right-0 rounded-tl-2xl rounded-bl-2xl',
+                    sized ? null : 'w-full',
+                    sized ? null : sizes[size],
+                    /* On a phone the drawer is the screen: a rounded edge 6px off the glass reads
+                       as a card that slipped, not as a place. */
+                    sized ? null : 'max-sm:max-w-none max-sm:rounded-none max-sm:border-0 max-sm:pt-[env(safe-area-inset-top)]',
+                  ],
               className,
             )}
           >

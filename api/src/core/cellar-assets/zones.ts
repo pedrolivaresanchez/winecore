@@ -1,5 +1,6 @@
 import {
   actorFor,
+  auditDelete,
   auditInsert,
   auditUpdate,
   countOf,
@@ -250,6 +251,26 @@ export async function patchPosition(
     `);
   });
   return positionById(writer, positionId);
+}
+
+export async function deletePosition(
+  writer: Writer,
+  request: Request,
+  zoneCode: string,
+  positionId: string,
+): Promise<{ id: string; deleted: true; vessel_code: string | null; holder_code: string | null }> {
+  if (!isUuid(positionId)) throw domainError('WC_NOT_FOUND');
+  const actor = actorFor(request, 'quitar del plano');
+  const removed = await writer.withWrite(actor, async (tx) => {
+    const zone = await zoneByCode(tx, zoneCode);
+    const current = await positionById(tx, positionId);
+    if (current.zone_id !== zone.id) throw domainError('WC_NOT_FOUND');
+    auditDelete(tx, 'cellar.plan_position', positionId, current, sql`
+      DELETE FROM cellar.plan_position WHERE id = CAST(${positionId} AS UUID)
+    `);
+    return { vessel_code: current.vessel_code, holder_code: current.holder_code };
+  });
+  return { id: positionId, deleted: true, ...removed };
 }
 
 function toZone(row: ZoneRow, positions: PositionView[]): ZoneView {

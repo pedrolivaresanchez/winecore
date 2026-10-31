@@ -8,6 +8,20 @@ export function patchPosition(zoneCode: string, positionId: string, geom: Geom) 
   })
 }
 
+export function deletePosition(zoneCode: string, positionId: string) {
+  return api<{ id: string; deleted: true; vessel_code: string | null; holder_code: string | null }>(
+    `/v1/cellar-zones/${encodeURIComponent(zoneCode)}/positions/${encodeURIComponent(positionId)}`,
+    { method: 'DELETE' },
+  )
+}
+
+export function createZone(body: { location_id: string; code: string; name: string; kind: string }) {
+  return api<unknown>('/v1/cellar-zones', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
 export function createPosition(
   zoneCode: string,
   subject: { vessel_code?: string; holder_code?: string },

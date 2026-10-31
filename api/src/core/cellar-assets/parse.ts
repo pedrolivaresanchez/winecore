@@ -16,6 +16,14 @@ export function requireSpan(value: unknown, field: string): number {
   return parsed;
 }
 
+/** Litros con un decimal, a partir de mililitros. `225000` → `225.0`. */
+export function litresOf(volumeMl: number): string {
+  const tenths = Math.round(volumeMl / 100);
+  const negative = tenths < 0;
+  const abs = Math.abs(tenths);
+  return `${negative ? '-' : ''}${Math.trunc(abs / 10)}.${abs % 10}`;
+}
+
 export function requireRotation(value: unknown): number {
   const parsed = requireFinite(value, 'rotation');
   if (parsed < -360 || parsed > 360) invalid({ rotation: 'Debe estar entre -360 y 360' });

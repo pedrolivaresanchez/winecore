@@ -17,6 +17,7 @@ export type MapVessel = {
   has_cooling_jacket: boolean
   capacity_ml: number
   volume_ml: number
+  litres: string
   fill_pct: string
   lot_id: string | null
   lot_code: string | null
@@ -45,6 +46,7 @@ export type MapHolder = {
   nominal_volume_ml: number | null
   format: string | null
   count: number
+  litres: string | null
   fill_pct: string | null
   lot_id: string | null
   lot_code: string | null
@@ -170,6 +172,50 @@ export type AuditItem = {
   changes: AuditChange[]
 }
 
+export type PlanCardMetric = {
+  parameter_code: string
+  name: string
+  value: string
+  unit: string
+}
+
+export type PlanCard = {
+  code: string
+  name: string
+  kind: string
+  kind_label: string
+  capacity_ml: number
+  capacity_litres: string
+  volume_ml: number
+  litres: string
+  fill_pct: string
+  status: string
+  status_label: string
+  state: string
+  state_label: string
+  lot_code: string | null
+  wine_name: string | null
+  last_operation: { op_type: string; op_type_label: string; occurred_at: string; status: string } | null
+  last_analysis: { sampled_at: string; kind: string; results: PlanCardMetric[] } | null
+}
+
+export type CardTarget = {
+  subject: 'vessel' | 'holder'
+  code: string
+  name: string
+  zoneCode: string
+  positionId: string
+}
+
+export type LooseItem = {
+  id: string
+  code: string
+  name: string
+  subject: 'vessel' | 'holder'
+  kind: string
+  label: string
+}
+
 export type PlanMarker = {
   key: string
   positionId: string
@@ -181,6 +227,9 @@ export type PlanMarker = {
   holderKind: HolderKind | null
   lot: string | null
   fill: number
+  status: string
+  state: string
+  litres: string
   href: string
   outdoor: boolean
   geom: Geom

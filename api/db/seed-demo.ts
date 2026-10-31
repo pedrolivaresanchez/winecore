@@ -156,6 +156,7 @@ export async function seedDemo(
       `);
       for (const statement of cellarOperationSeriesStatements()) tx.write(statement);
       for (const statement of syntheticParcelStatements()) tx.write(statement);
+      for (const statement of planLayoutStatements()) tx.write(statement);
     },
   );
   const counted = await writer.read<{ total: number }>('SELECT count(*)::INTEGER AS total FROM party.contact');
@@ -263,6 +264,166 @@ function sqlValue(column: string, value: unknown): string {
   if (TIME_COLUMNS.has(column) && typeof value === 'string') return sql`CAST(${value} AS TIMESTAMPTZ)`;
   if (DECIMAL_COLUMNS.has(column) && typeof value === 'string') return sql`CAST(${value} AS DECIMAL)`;
   return sql`${value}`;
+}
+
+const UNPLACED = `('INOX-002', 'INOX-012', 'FERM-006', 'BAR-002', 'DAM-002')`;
+
+/** Nave, sala de barricas y exterior. Unos pocos recipientes y un nicho quedan sin colocar. */
+function planLayoutStatements(): string[] {
+  return [
+    zoneSql('ELAB', 'Nave de elaboración', 'elaboration'),
+    zoneSql('SALA', 'Sala de barricas', 'barrel_room'),
+    zoneSql('EXT', 'Exterior', 'outdoor'),
+    zoneSql('BOT', 'Almacén de botellas', 'bottle_store'),
+    sql`
+      INSERT INTO cellar.holder (
+        id, location_id, code, kind, name, cage_number, capacity_units, nominal_volume_ml, format_code
+      )
+      SELECT gen_random_uuid(), loc.id, 'JAUL-01', 'jaulon', 'Jaulón 1', 1, 600, 750, 'B075'
+      FROM inventory.location loc
+      WHERE loc.code = 'BOD'
+        AND NOT EXISTS (SELECT 1 FROM cellar.holder WHERE code = 'JAUL-01')
+    `,
+    sql`
+      INSERT INTO cellar.holder (id, location_id, code, kind, name, capacity_units)
+      SELECT gen_random_uuid(), loc.id, 'NICH-01', 'nicho', 'Nicho 1', 120
+      FROM inventory.location loc
+      WHERE loc.code = 'BOD'
+        AND NOT EXISTS (SELECT 1 FROM cellar.holder WHERE code = 'NICH-01')
+    `,
+    placeVesselsSql(
+      'ELAB',
+      `v.kind IN ('tank_storage', 'tank_fermenter', 'ibc')`,
+      `CASE v.kind WHEN 'tank_fermenter' THEN 0 WHEN 'tank_storage' THEN 1 ELSE 2 END, v.code`,
+      6,
+      156,
+      136,
+      `CASE ranked.kind WHEN 'tank_fermenter' THEN 108 WHEN 'ibc' THEN 96 ELSE 136 END`,
+      `CASE ranked.kind WHEN 'tank_fermenter' THEN 118 WHEN 'ibc' THEN 96 ELSE 88 END`,
+    ),
+    placeVesselsSql(
+      'SALA',
+      `v.kind = 'barrel'`,
+      'v.code',
+      4,
+      128,
+      88,
+      '108',
+      '64',
+    ),
+    placeVesselsSql(
+      'EXT',
+      `v.kind = 'demijohn'`,
+      'v.code',
+      4,
+      112,
+      112,
+      '92',
+      '92',
+    ),
+    sql`
+      INSERT INTO cellar.plan_position (id, zone_id, holder_id, x, y, width, height, rotation)
+      SELECT gen_random_uuid(), z.id, h.id, 36, 36, 168, 104, 0
+      FROM cellar.holder h
+      JOIN cellar.zone z ON z.code = 'BOT' AND z.location_id = h.location_id
+      WHERE h.code = 'JAUL-01'
+        AND NOT EXISTS (SELECT 1 FROM cellar.plan_position p WHERE p.holder_id = h.id)
+    `,
+    sql`
+      INSERT INTO cellar.operation (
+        id, legal_entity_id, number, op_type, occurred_at, status, confirmed_at, performed_by, created_by, reason
+      )
+      SELECT
+        gen_random_uuid(), e.id, 'OB26-PLANO', 'racking',
+        CAST('2026-09-12T08:30:00Z' AS TIMESTAMPTZ), 'confirmed',
+        CAST('2026-09-12T08:35:00Z' AS TIMESTAMPTZ), 'Bodega', 'seed-demo', 'seed-plano'
+      FROM core.legal_entity e
+      WHERE e.code = 'PO'
+        AND EXISTS (SELECT 1 FROM cellar.vessel WHERE code = 'INOX-001')
+        AND NOT EXISTS (SELECT 1 FROM cellar.operation WHERE number = 'OB26-PLANO')
+    `,
+    sql`
+      INSERT INTO cellar.operation_line (id, operation_id, role, lot_id, vessel_id, product_state, volume_ml)
+      SELECT gen_random_uuid(), o.id, 'output', m.lot_id, v.id, 'wine', 1000
+      FROM cellar.operation o
+      JOIN cellar.vessel v ON v.code = 'INOX-001'
+      JOIN inventory.stock_move m ON m.vessel_id = v.id AND m.volume_ml > 0
+      WHERE o.number = 'OB26-PLANO'
+        AND NOT EXISTS (SELECT 1 FROM cellar.operation_line l WHERE l.operation_id = o.id)
+      LIMIT 1
+    `,
+    sql`
+      INSERT INTO cellar.analysis (id, lot_id, vessel_id, kind, sampled_at, lab, created_by, notes)
+      SELECT
+        gen_random_uuid(), m.lot_id, v.id, 'control',
+        CAST('2026-09-10T07:00:00Z' AS TIMESTAMPTZ), 'internal', 'seed-demo', 'seed-plano'
+      FROM cellar.vessel v
+      JOIN inventory.stock_move m ON m.vessel_id = v.id AND m.volume_ml > 0
+      WHERE v.code = 'INOX-001'
+        AND NOT EXISTS (
+          SELECT 1 FROM cellar.analysis a WHERE a.vessel_id = v.id AND a.notes = 'seed-plano'
+        )
+      LIMIT 1
+    `,
+    ...([
+      ['ph', '3.4500'],
+      ['free_so2', '28.0000'],
+      ['abv', '13.8000'],
+    ] as const).map(([code, value]) => sql`
+      INSERT INTO cellar.analysis_result (id, analysis_id, parameter_code, value)
+      SELECT gen_random_uuid(), a.id, ${code}, CAST(${value} AS DECIMAL(12,4))
+      FROM cellar.analysis a
+      JOIN cellar.vessel v ON v.id = a.vessel_id AND v.code = 'INOX-001'
+      WHERE a.notes = 'seed-plano'
+        AND NOT EXISTS (
+          SELECT 1 FROM cellar.analysis_result r
+          WHERE r.analysis_id = a.id AND r.parameter_code = ${code}
+        )
+    `),
+  ];
+}
+
+function zoneSql(code: string, name: string, kind: string): string {
+  return sql`
+    INSERT INTO cellar.zone (id, location_id, code, name, kind, is_active)
+    SELECT gen_random_uuid(), loc.id, ${code}, ${name}, ${kind}, TRUE
+    FROM inventory.location loc
+    WHERE loc.code = 'BOD'
+      AND NOT EXISTS (SELECT 1 FROM cellar.zone WHERE code = ${code})
+  `;
+}
+
+function placeVesselsSql(
+  zoneCode: string,
+  whereKind: string,
+  orderBy: string,
+  columns: number,
+  pitchX: number,
+  pitchY: number,
+  widthSql: string,
+  heightSql: string,
+): string {
+  return `
+    INSERT INTO cellar.plan_position (id, zone_id, vessel_id, x, y, width, height, rotation)
+    SELECT
+      gen_random_uuid(),
+      z.id,
+      ranked.id,
+      28 + ((ranked.n - 1) % ${columns}) * ${pitchX},
+      28 + CAST(floor((ranked.n - 1) / ${columns}.0) AS INTEGER) * ${pitchY},
+      ${widthSql},
+      ${heightSql},
+      0
+    FROM (
+      SELECT v.id, v.kind, row_number() OVER (ORDER BY ${orderBy}) AS n
+      FROM cellar.vessel v
+      JOIN inventory.location loc ON loc.id = v.location_id AND loc.code = 'BOD'
+      WHERE ${whereKind}
+        AND v.code NOT IN ${UNPLACED}
+        AND NOT EXISTS (SELECT 1 FROM cellar.plan_position p WHERE p.vessel_id = v.id)
+    ) ranked
+    JOIN cellar.zone z ON z.code = '${zoneCode}' AND z.location_id = (SELECT id FROM inventory.location WHERE code = 'BOD')
+  `;
 }
 
 function syntheticParcelStatements(): string[] {
