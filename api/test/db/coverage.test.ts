@@ -38,6 +38,8 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
     "FK:ops.approval_decision.decided_by",
     "FK:ops.approval_policy.legal_entity_id",
     "FK:ops.approval_request.legal_entity_id",
+    "FK:vineyard.harvest.reception_operation_id",
+    "FK:vineyard.parcel.supplier_contact_id",
     "UQ:catalog.price_list_version(price_list_id,valid_from,valid_to)",
     "UQ:catalog.product(wine_id,vintage,format_id)",
     "UQ:cellar.operation(legal_entity_id,number)",
@@ -64,5 +66,6 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
     "WC042",
     "WC043",
     "WC050",
+    "WC_ECO_CERT_MISSING",
   ]);
 });

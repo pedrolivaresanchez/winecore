@@ -28,6 +28,7 @@ import {
 } from './routes/auth-credentials';
 import { catalogRoutes } from './routes/catalog';
 import { cellarRoutes } from './routes/cellar';
+import { vineyardRoutes } from './routes/vineyard';
 import {
   archiveAddress,
   archiveContact,
@@ -278,6 +279,7 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requirePermission(guardDeps, 'inventory.count'),
     })
     // Bodega: ubicaciones, recipientes, lotes y operaciones.
-    .use(cellarRoutes({ writer: deps.writer, guard: guardDeps, publicUrl: deps.config.appPublicUrl }));
+    .use(cellarRoutes({ writer: deps.writer, guard: guardDeps, publicUrl: deps.config.appPublicUrl }))
+    .use(vineyardRoutes(guardDeps));
   return app;
 }
