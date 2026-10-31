@@ -4,6 +4,11 @@ export const PERMISSIONS = [
   'settings.manage',
   'users.manage',
   'audit.read',
+  // Facturación (docs/07-arquitectura.md §6). billing.void del aprobador es por entidad.
+  'billing.read',
+  'billing.write',
+  'billing.issue',
+  'billing.void',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -27,11 +32,11 @@ export interface UserCtx {
 
 const MATRIX: Record<RoleCode, readonly Permission[]> = {
   owner: PERMISSIONS,
-  approver: ['contacts.read', 'audit.read'],
-  admin: ['contacts.read', 'contacts.write'],
+  approver: ['contacts.read', 'audit.read', 'billing.read', 'billing.write', 'billing.issue', 'billing.void'],
+  admin: ['contacts.read', 'contacts.write', 'billing.read', 'billing.write', 'billing.issue'],
   cellar: [],
   field: [],
-  advisor: ['contacts.read', 'audit.read'],
+  advisor: ['contacts.read', 'audit.read', 'billing.read'],
 };
 
 const PERSONAL_CONTACT_ROLES = new Set<RoleCode>(['owner', 'admin', 'approver']);
