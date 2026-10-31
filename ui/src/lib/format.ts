@@ -45,6 +45,26 @@ export function formatMoney(value: number): string {
   return `${formatGrouped(value, 2)} €`;
 }
 
+/**
+ * A figure that no longer fits a tile: `176,1 mil €`, `1,2 mill. L`.
+ * The full `formatMoney` / `formatInteger` stays for the tooltip.
+ */
+export function formatCompact(value: number, unit = ""): string {
+  if (!Number.isFinite(value)) return "—";
+  const abs = Math.abs(value);
+  if (abs < 1000) {
+    if (unit === "€") return formatMoney(value);
+    if (unit === "L") return `${formatGrouped(value, 0)} L`;
+    return formatInteger(value);
+  }
+  const scale = abs >= 1_000_000_000 ? 1_000_000_000 : abs >= 1_000_000 ? 1_000_000 : 1000;
+  const suffix = abs >= 1_000_000_000 ? "mil mill." : abs >= 1_000_000 ? "mill." : "mil";
+  const scaled = value / scale;
+  const rounded = Number(scaled.toFixed(1));
+  const text = formatGrouped(rounded, 1).replace(/,0$/, "");
+  return unit ? `${text} ${suffix} ${unit}` : `${text} ${suffix}`;
+}
+
 /** `31/10/2026` en Europe/Madrid. */
 export function formatDate(value: Date | string | number): string {
   const date = asDate(value);

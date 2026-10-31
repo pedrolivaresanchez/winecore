@@ -1,5 +1,5 @@
 import { Elysia } from 'elysia';
-import { requestIdFor, requirePermission, sessionOf, type GuardDeps } from '../auth/guard';
+import { requestIdFor, requireAnyPermission, requirePermission, sessionOf, type GuardDeps } from '../auth/guard';
 import { domainError } from '../core/errors';
 import {
   closeHarvest,
@@ -11,7 +11,7 @@ import {
   listHarvests,
   listMaturityChecks,
 } from '../core/vineyard/fieldwork';
-import { createParcel, getParcel, listParcels, parcelSummary, updateParcel } from '../core/vineyard/parcels';
+import { createParcel, getParcel, listParcelOptions, listParcels, parcelSummary, updateParcel } from '../core/vineyard/parcels';
 import {
   confirmPlan,
   createPlan,
@@ -81,6 +81,9 @@ export function vineyardRoutes(guard: GuardDeps) {
     ), write)
     .get('/v1/parcels/summary', () => parcelSummary(writer), read)
     .get('/v1/parcels', () => listParcels(writer), read)
+    .get('/v1/parcels/options', () => listParcelOptions(writer), {
+      beforeHandle: requireAnyPermission(guard, ['vineyard.read', 'cellar.read', 'catalog.read']),
+    })
     .post('/v1/parcels', async ({ request, set }) => {
       const created = await createParcel(writer, actor(request, 'alta de parcela'), await bodyOf(request));
       set.status = 201;

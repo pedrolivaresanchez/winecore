@@ -30,10 +30,11 @@ import {
   type SalesPage,
 } from '@/lib/sales'
 import type { Me } from '@/lib/types'
-import { Button, DatePicker, MenuItem, SegmentedControl, Select, Skeleton, Switch, Textarea, useToast } from '@/ui'
+import { Button, DatePicker, MenuItem, SegmentedControl, Select, Switch, Textarea, useToast } from '@/ui'
 import { DocLink, FactList, LineTable, MoreMenu, RecordFrame, SalesHistory, StatusBadge, TotalsBox } from '@/pages/ventas/chrome'
 import { ReasonDialog } from '@/pages/ventas/dialogs'
 import { LineEditor } from '@/pages/ventas/lines'
+import { RecordSkeleton } from '@/components/RecordSkeleton'
 
 const DATE_LABELS = { clear: 'Quitar', today: 'Hoy' }
 
@@ -377,10 +378,5 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
 }
 
 function Loading() {
-  return (
-    <div aria-busy="true" className="grid gap-3 p-6">
-      <Skeleton className="h-8 w-48" />
-      <Skeleton className="h-40 w-full" />
-    </div>
-  )
+  return <RecordSkeleton />
 }

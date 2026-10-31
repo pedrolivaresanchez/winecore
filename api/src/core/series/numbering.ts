@@ -418,6 +418,174 @@ async function clearDefault(tx: Tx, legalEntityId: string, docType: string, year
   }
 }
 
+export type EnsureSeriesInput = {
+  legalEntityId: string;
+  docType: DocType;
+  code: string;
+  year: number;
+  prefix: string;
+  padding: number;
+  isDefault: boolean;
+  verifactu: boolean;
+};
+
+export type EnsuredSeries = {
+  id: string;
+  status: 'created' | 'reactivated' | 'skipped';
+  legal_entity_id: string;
+  doc_type: DocType;
+  code: string;
+  year: number;
+  prefix: string;
+};
+
+/**
+ * Deja activa la serie de un año concreto. Si ya hay una activa para la entidad,
+ * el tipo y el año, no crea otra. Sirve para la puesta en marcha, que abre el año
+ * en curso y el siguiente a la vez.
+ */
+export async function ensureSeriesForYear(tx: Tx, input: EnsureSeriesInput): Promise<EnsuredSeries> {
+  if (!UUID.test(input.legalEntityId)) {
+    throw domainError('WC_VALIDATION', { legal_entity_id: 'Identificador no válido' });
+  }
+  if (!isDocType(input.docType)) {
+    throw domainError('WC_VALIDATION', { doc_type: 'Tipo de documento no válido' });
+  }
+  if (!/^[A-Z]{1,4}$/.test(input.code)) {
+    throw domainError('WC_VALIDATION', { code: 'El código debe tener de 1 a 4 letras mayúsculas' });
+  }
+  if (!Number.isInteger(input.year) || input.year < 2020 || input.year > 2100) {
+    throw domainError('WC_VALIDATION', { year: 'El año debe estar entre 2020 y 2100' });
+  }
+  if (!Number.isInteger(input.padding) || input.padding < 3 || input.padding > 8) {
+    throw domainError('WC_VALIDATION', { padding: 'El relleno debe estar entre 3 y 8' });
+  }
+  const problem = seriesPrefixError(input.prefix, input.padding);
+  if (problem) throw domainError('WC_VALIDATION', { prefix: problem });
+
+  const entities = await tx.read<{ id: string }>(sql`
+    SELECT id FROM core.legal_entity
+    WHERE id = CAST(${input.legalEntityId} AS UUID) AND is_active
+    LIMIT 1
+  `);
+  if (!entities[0]) throw domainError('WC_VALIDATION', { legal_entity_id: 'La entidad no existe' });
+
+  const active = await tx.read<{ id: string; code: unknown; prefix: unknown }>(sql`
+    SELECT id, code, prefix
+    FROM core.number_series
+    WHERE legal_entity_id = CAST(${input.legalEntityId} AS UUID)
+      AND doc_type = ${input.docType}
+      AND "year" = ${input.year}
+      AND is_active
+    LIMIT 1
+  `);
+  const current = active[0];
+  if (current) {
+    return {
+      id: String(current.id).toLowerCase(),
+      status: 'skipped',
+      legal_entity_id: input.legalEntityId,
+      doc_type: input.docType,
+      code: String(current.code),
+      year: input.year,
+      prefix: String(current.prefix),
+    };
+  }
+
+  const sameCode = await tx.read<{ id: string; prefix: unknown }>(sql`
+    SELECT id, prefix
+    FROM core.number_series
+    WHERE legal_entity_id = CAST(${input.legalEntityId} AS UUID)
+      AND doc_type = ${input.docType}
+      AND code = ${input.code}
+      AND "year" = ${input.year}
+    LIMIT 1
+  `);
+  const prior = sameCode[0];
+  if (prior) {
+    const id = String(prior.id).toLowerCase();
+    if (input.isDefault) await clearDefault(tx, input.legalEntityId, input.docType, input.year);
+    tx.write(sql`
+      UPDATE core.number_series
+      SET is_active = TRUE, is_default = ${input.isDefault}, verifactu = ${input.verifactu}
+      WHERE id = CAST(${id} AS UUID)
+    `);
+    tx.audit({
+      table: 'core.number_series',
+      rowId: id,
+      action: 'UPDATE',
+      before: { is_active: false },
+      after: { is_active: true, is_default: input.isDefault, verifactu: input.verifactu },
+    });
+    return {
+      id,
+      status: 'reactivated',
+      legal_entity_id: input.legalEntityId,
+      doc_type: input.docType,
+      code: input.code,
+      year: input.year,
+      prefix: String(prior.prefix),
+    };
+  }
+
+  const samePrefix = await tx.read<{ id: string }>(sql`
+    SELECT id FROM core.number_series
+    WHERE legal_entity_id = CAST(${input.legalEntityId} AS UUID) AND prefix = ${input.prefix}
+    LIMIT 1
+  `);
+  if (samePrefix[0]) {
+    throw domainError('WC_VALIDATION', { prefix: 'Ya existe una serie con este prefijo en la entidad' });
+  }
+
+  if (input.isDefault) await clearDefault(tx, input.legalEntityId, input.docType, input.year);
+  const id = newId();
+  tx.write(sql`
+    INSERT INTO core.number_series (
+      id, legal_entity_id, doc_type, code, year, prefix, padding,
+      next_value, is_default, verifactu, is_active
+    ) VALUES (
+      CAST(${id} AS UUID),
+      CAST(${input.legalEntityId} AS UUID),
+      ${input.docType},
+      ${input.code},
+      ${input.year},
+      ${input.prefix},
+      ${input.padding},
+      1,
+      ${input.isDefault},
+      ${input.verifactu},
+      TRUE
+    )
+  `);
+  tx.audit({
+    table: 'core.number_series',
+    rowId: id,
+    action: 'INSERT',
+    before: null,
+    after: {
+      legal_entity_id: input.legalEntityId,
+      doc_type: input.docType,
+      code: input.code,
+      year: input.year,
+      prefix: input.prefix,
+      padding: input.padding,
+      next_value: 1,
+      is_default: input.isDefault,
+      verifactu: input.verifactu,
+      is_active: true,
+    },
+  });
+  return {
+    id,
+    status: 'created',
+    legal_entity_id: input.legalEntityId,
+    doc_type: input.docType,
+    code: input.code,
+    year: input.year,
+    prefix: input.prefix,
+  };
+}
+
 export async function deactivateSeries(tx: Tx, id: string): Promise<void> {
   if (!UUID.test(id)) throw domainError('WC_NOT_FOUND');
   const rows = await tx.read<{ is_active: unknown; is_default: unknown }>(sql`

@@ -7,10 +7,11 @@ import {
   succeed,
 } from '../cellar/common';
 import { money } from '../money';
-import type { CellarState, DelestageRequest, IdSource, PlanResult, TemperatureControlRequest } from '../cellar/types';
+import type { CellarState, DelestageRequest, IdSource, PlanResult, SamplingRequest, TemperatureControlRequest } from '../cellar/types';
 import { assertElaborationBalance } from './balance';
 
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/;
+const SAMPLE_CODE = /^[A-Z0-9][A-Z0-9./-]{0,31}$/;
 
 /** Délestage: vaciado y retorno al mismo depósito. No mueve volumen. */
 export function planDelestage(req: DelestageRequest, state: CellarState, _ids: IdSource): PlanResult {
@@ -53,6 +54,32 @@ export function planTemperatureControl(
   if (typeof next !== 'string') return next;
   if (previous === next) {
     return fail('WC_VALIDATION', 'WC_VALIDATION: la consigna nueva es igual que la anterior.', { field: 'new_setpoint_c' });
+  }
+  return succeed({ stockMoves: [], fiscalMoves: [], newLots: [], lotEdges: [], vesselsAfter: [] });
+}
+
+/** Toma de muestras. El volumen del depósito no cambia. */
+export function planSampling(req: SamplingRequest, state: CellarState, _ids: IdSource): PlanResult {
+  const header = assertHeader(req);
+  if (header !== null) return header;
+  const balance = assertElaborationBalance('sampling', []);
+  if (balance !== null) return balance;
+  const held = hold(req.vessel_id, req.lot, state, 'sampling');
+  if (held !== true) return held;
+  if (!INSTANT.test(req.sampled_at)) {
+    return fail('WC_VALIDATION', 'WC_VALIDATION: la toma de muestras necesita fecha.', { field: 'sampled_at' });
+  }
+  if (!SAMPLE_CODE.test(req.sample_code)) {
+    return fail('WC_VALIDATION', 'WC_VALIDATION: el código de muestra no es válido.', { field: 'sample_code' });
+  }
+  if (req.destination !== 'internal' && req.destination !== 'lab') {
+    return fail('WC_VALIDATION', 'WC_VALIDATION: el destino es interno o un laboratorio.', { field: 'destination' });
+  }
+  if (req.destination === 'lab' && (req.lab_contact_id === null || req.lab_contact_id.trim() === '')) {
+    return fail('WC_VALIDATION', 'WC_VALIDATION: el laboratorio de destino no está indicado.', { field: 'destination' });
+  }
+  if (req.destination === 'internal' && req.lab_contact_id !== null) {
+    return fail('WC_VALIDATION', 'WC_VALIDATION: el destino interno no lleva laboratorio.', { field: 'destination' });
   }
   return succeed({ stockMoves: [], fiscalMoves: [], newLots: [], lotEdges: [], vesselsAfter: [] });
 }

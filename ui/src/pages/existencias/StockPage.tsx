@@ -392,7 +392,6 @@ export function StockPage({ me }: { me: Me }) {
               </Select>
             </>
           ) : null}
-          <span className="hidden whitespace-nowrap text-caption text-text-tertiary md:inline">{copy.stock.booksLine}</span>
           {summary && visibleCount > 0 ? <span className="ml-auto hidden shrink-0 text-caption text-text-tertiary tabular-nums xl:inline">{summary}</span> : null}
         </div>
       }

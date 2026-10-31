@@ -1,6 +1,6 @@
 import { cors } from '@elysiajs/cors';
 import { Elysia } from 'elysia';
-import { requestIdFor, requireOwner, requirePermission, requireUser, requireUserOrMachine } from './auth/guard';
+import { requestIdFor, requireOwner, requireOwnerOrAdmin, requirePermission, requireUser, requireUserOrMachine } from './auth/guard';
 import { isAllowedOrigin, securityHeaders } from './auth/policy';
 import { createTimbalAuth } from './auth/timbal';
 import type { FetchLike } from './core/db/timbal';
@@ -135,9 +135,12 @@ import { RateLimiter } from './mcp/rate';
 import { createMcpClient, listMcpClients, revokeMcpClient, rotateMcpClient } from './routes/mcp-clients';
 import { getDashboard } from './routes/dashboard';
 import { me } from './routes/me';
+import { getUsers, patchUserRoute, postUser } from './routes/users';
 import { listNotifications, readAllNotifications, readNotification } from './routes/notifications';
 import { getReport } from './routes/reports';
-import { createNumberSeries, deactivateNumberSeries, listNumberSeries } from './routes/series';
+import { patchLegalEntityRoute } from './routes/legal-entities';
+import { getReadiness } from './routes/setup';
+import { createNumberSeries, createNumberSeriesBulk, deactivateNumberSeries, listNumberSeries } from './routes/series';
 import {
   closeInventoryCountRoute,
   getInventoryCountRoute,
@@ -153,6 +156,7 @@ import {
   getRegulatorySubmission,
   getSubmissionFile,
   listRegulatorySubmissions,
+  postCancelSubmission,
   postCorrectSubmission,
   postMarkResult,
   postMarkSubmitted,
@@ -160,7 +164,8 @@ import {
   postRequestApproval,
   postValidateSubmission,
 } from './routes/regulatory-submissions';
-import { listSilicieLedgers, postSilicieLedger, postValidateLedger } from './routes/silicie-ledgers';
+import { listSilicieLedgers, postOpenExercise, postSilicieLedger, postValidateLedger } from './routes/silicie-ledgers';
+import { getTaxWarehouses } from './routes/tax-warehouses';
 import { vineyardNotebookRoutes } from './routes/vineyard-notebook';
 
 export interface AppDeps {
@@ -259,6 +264,19 @@ export function createApp(deps: AppDeps) {
     .post('/auth/callback', ({ request }) => authCallback(request))
     .get('/v1/me', ({ request }) => me(deps.writer, request), {
       beforeHandle: requireUser(guardDeps),
+    })
+    .get('/v1/users', ({ request }) => getUsers(deps.writer, request), {
+      beforeHandle: requireUser(guardDeps),
+    })
+    .post('/v1/users', async ({ request, set }) => {
+      const created = await postUser(deps.writer, deps.config, request, http.now());
+      set.status = 201;
+      return created;
+    }, {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .patch('/v1/users/:id', ({ request, params }) => patchUserRoute(deps.writer, deps.config, request, params.id, http.now()), {
+      beforeHandle: requireOwner(guardDeps),
     })
     .get('/v1/dashboard', ({ request }) => getDashboard(deps.writer, request, guardDeps.now?.() ?? new Date()), {
       beforeHandle: requireUser(guardDeps),
@@ -406,6 +424,20 @@ export function createApp(deps: AppDeps) {
     }, {
       beforeHandle: requirePermission(guardDeps, 'settings.manage'),
     })
+    .post('/v1/number-series/bulk', async ({ request, set }) => {
+      const body = await createNumberSeriesBulk(deps.writer, request);
+      const created = body.items.some((item) => item.status !== 'skipped');
+      set.status = created ? 201 : 200;
+      return body;
+    }, {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .get('/v1/setup/readiness', ({ request }) => getReadiness(deps.writer, request, http.now(), deps.config.deliveryAlertHours), {
+      beforeHandle: requireOwnerOrAdmin(guardDeps),
+    })
+    .patch('/v1/legal-entities/:code', ({ request, params }) => patchLegalEntityRoute(deps.writer, request, params.code), {
+      beforeHandle: requireOwner(guardDeps),
+    })
     .post('/v1/number-series/:id/deactivate', ({ request, params }) => deactivateNumberSeries(deps.writer, request, params.id), {
       beforeHandle: requirePermission(guardDeps, 'settings.manage'),
     })
@@ -477,6 +509,9 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requireOwner(guardDeps),
     })
     // SILICIE y calendario regulatorio. El fichero se descarga; no se envía a la AEAT.
+    .get('/v1/tax-warehouses', ({ request }) => getTaxWarehouses(http, request), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
+    })
     .get('/v1/regulatory/obligations', ({ request }) => listRegulatoryObligations(http, request), {
       beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
     })
@@ -507,6 +542,9 @@ export function createApp(deps: AppDeps) {
     .post('/v1/regulatory/submissions/:id/correct', ({ request, params }) => postCorrectSubmission(http, request, params.id), {
       beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
     })
+    .post('/v1/regulatory/submissions/:id/cancel', ({ request, params }) => postCancelSubmission(http, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
+    })
     .get('/v1/regulatory/submissions/:id', ({ request, params }) => getRegulatorySubmission(http, request, params.id), {
       beforeHandle: requirePermission(guardDeps, 'regulatory.read'),
     })
@@ -517,6 +555,13 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requirePermission(guardDeps, 'regulatory.prepare'),
     })
     .post('/v1/silicie-ledgers/:id/validate', ({ request, params }) => postValidateLedger(http, request, params.id), {
+      beforeHandle: requireUser(guardDeps),
+    })
+    .post('/v1/silicie-exercises', async ({ request, set }) => {
+      const opened = await postOpenExercise(http, request);
+      set.status = opened.created ? 201 : 200;
+      return opened;
+    }, {
       beforeHandle: requireUser(guardDeps),
     })
     .use(catalogRoutes(guardDeps))

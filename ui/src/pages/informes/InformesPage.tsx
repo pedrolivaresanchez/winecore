@@ -11,6 +11,7 @@ import {
   Button,
   Chip,
   DateRangePicker,
+  FitAmount,
   SegmentedControl,
   Select,
   Skeleton,
@@ -29,6 +30,7 @@ import {
   GROUP_BY,
   axisTick,
   chartPoints,
+  compactMeasure,
   displayLabel,
   downloadReportCsv,
   entityFilter,
@@ -182,7 +184,7 @@ export function InformesPage({ me }: { me: Me }) {
             from={from}
             to={to}
             size="sm"
-            className="w-44"
+            className="w-64 shrink-0"
             ariaLabel={copy.informes.range}
             placeholder={copy.informes.range}
             labels={{ clear: copy.informes.clear, today: copy.informes.today }}
@@ -288,6 +290,7 @@ function ReportBody({ body, chart, measure }: { body: ReportBody; chart: 'bar' |
             key={stat.label}
             label={stat.label}
             value={formatMeasure(stat.value, stat.measure)}
+            short={compactMeasure(stat.value, stat.measure)}
             delta={stat.delta ? formatDelta(stat.value, stat.previous) : null}
             previous={stat.delta && stat.previous != null ? formatMeasure(stat.previous, stat.measure) : null}
             polarity={stat.delta ? polarity : 'neutral'}
@@ -466,12 +469,14 @@ function LegendSwatch({ color, label }: { color: string; label: string }) {
 function Stat({
   label,
   value,
+  short,
   delta,
   previous,
   polarity,
 }: {
   label: string
   value: string
+  short: string
   delta: { text: string; direction: -1 | 0 | 1 } | null
   previous: string | null
   polarity: 'up' | 'down' | 'neutral'
@@ -479,12 +484,10 @@ function Stat({
   const good =
     !delta || delta.direction === 0 || polarity === 'neutral' ? null : (polarity === 'up') === (delta.direction === 1)
   return (
-    <div className="flex min-w-0 flex-col gap-1 rounded-[10px] border border-border-subtle bg-surface-subtle px-3 py-2.5">
+    <div className="flex min-w-0 flex-col gap-1 rounded-2xl border border-border-subtle bg-surface-subtle px-3 py-2.5">
       <span className="truncate text-caption text-text-tertiary">{label}</span>
       <span className="flex min-w-0 items-baseline gap-2">
-        <span className="truncate text-heading font-medium leading-none tabular-nums text-ink-900" title={value}>
-          {value}
-        </span>
+        <FitAmount full={value} short={short} className="min-w-0 flex-1 text-heading font-medium leading-none tabular-nums text-ink-900" />
         {delta ? (
           <span
             className={cn(

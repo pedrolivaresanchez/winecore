@@ -189,7 +189,13 @@ describe('fases, evolución y analíticas de la reunión', () => {
         ],
       }, 'bodega@winecore.test');
       expect(rising.status).toBe(201);
-      expect(rising.body.out_of_spec).toBe(true);
+      expect(rising.body.out_of_spec).toBe(false);
+      expect(rising.body.flags).toEqual({
+        volatile_alert: false,
+        dry: true,
+        fml_done: true,
+        fa_fml_overlap: true,
+      });
       expect(rising.body.marks).toMatchObject({
         volatile: false,
         volatile_overlap: true,
@@ -203,6 +209,8 @@ describe('fases, evolución y analíticas de la reunión', () => {
         results: [{ parameter: 'volatile_acidity', value: 0.6, unit: 'g/L' }],
       }, 'bodega@winecore.test');
       expect((hot.body.marks as { volatile: boolean }).volatile).toBe(true);
+      expect(hot.body.out_of_spec).toBe(false);
+      expect((hot.body.flags as { volatile_alert: boolean }).volatile_alert).toBe(true);
 
       const evolution = await call(ctx, 'GET', '/v1/lots/L-REU-26/evolution', undefined, 'asesor@winecore.test');
       expect(evolution.status).toBe(200);

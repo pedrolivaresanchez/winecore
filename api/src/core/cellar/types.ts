@@ -402,6 +402,17 @@ export interface TemperatureControlRequest extends OperationHeader {
   new_setpoint_c: string;
 }
 
+/** Toma de muestras. No mueve volumen: el depósito y el lote se quedan igual. */
+export interface SamplingRequest extends OperationHeader {
+  op_type: "sampling";
+  vessel_id: string;
+  lot: LotRef;
+  sampled_at: string;
+  sample_code: string;
+  destination: "internal" | "lab";
+  lab_contact_id: string | null;
+}
+
 export type OperationRequest =
   | TransferRequest
   | BlendRequest
@@ -416,7 +427,8 @@ export type OperationRequest =
   | BleedingRequest
   | PressingOffRequest
   | DelestageRequest
-  | TemperatureControlRequest;
+  | TemperatureControlRequest
+  | SamplingRequest;
 
 /** Hecho de SILICIE que no es una fila de inventory.fiscal_move (A14 uva, A32 elaboración). */
 export interface SilicieFactDraft {

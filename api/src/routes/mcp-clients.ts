@@ -25,11 +25,20 @@ export async function listMcpClients(writer: Writer) {
   const rows = await writer.read<Record<string, unknown>>(`
     SELECT c.id::VARCHAR AS id, c.code, c.role_code, c.description, c.scopes,
            c.on_behalf_of_user_id::VARCHAR AS on_behalf_of_user_id,
+           u.display_name AS on_behalf_of_display_name,
            c.created_at, c.revoked_at,
-           t.prefix, t.expires_at AS token_expires_at
+           t.prefix, t.expires_at AS token_expires_at,
+           used.last_used_at
     FROM core.api_client c
+    LEFT JOIN core.app_user u ON u.id = c.on_behalf_of_user_id
     LEFT JOIN core.api_token t
       ON t.client_id = c.id AND t.revoked_at IS NULL AND t.expires_at > now()
+    LEFT JOIN (
+      SELECT lower(row_id) AS client_id, max(occurred_at) AS last_used_at
+      FROM audit.audit_log
+      WHERE table_name = 'mcp.call' AND row_id IS NOT NULL
+      GROUP BY lower(row_id)
+    ) used ON used.client_id = lower(c.id::VARCHAR)
     ORDER BY c.created_at, c.code
   `);
   return {
@@ -40,7 +49,9 @@ export async function listMcpClients(writer: Writer) {
       description: String(row.description),
       scopes: asScopes(row.scopes),
       on_behalf_of_user_id: row.on_behalf_of_user_id ? String(row.on_behalf_of_user_id) : null,
+      on_behalf_of_display_name: row.on_behalf_of_display_name == null ? null : String(row.on_behalf_of_display_name),
       created_at: iso(row.created_at),
+      last_used_at: row.last_used_at == null ? null : iso(row.last_used_at),
       revoked_at: row.revoked_at == null ? null : iso(row.revoked_at),
       token_prefix: row.prefix == null ? null : String(row.prefix),
       token_expires_at: row.token_expires_at == null ? null : iso(row.token_expires_at),

@@ -106,7 +106,7 @@ export function ExpenseCapture({ me }: { me: Me }) {
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-xl flex-col gap-5 px-4 py-5">
           <header>
-            <h1 className="text-body font-medium text-ink-900">{copy.gastos.add}</h1>
+            <h1 className="text-heading font-medium tracking-tight text-ink-900">{copy.gastos.add}</h1>
             <p className="mt-0.5 text-label text-text-secondary">{copy.gastos.captureHint}</p>
           </header>
           {entities.length > 1 ? (

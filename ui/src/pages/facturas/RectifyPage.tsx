@@ -10,13 +10,14 @@ import { copy } from '@/i18n'
 import { ApiError } from '@/lib/api'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
-import { Button, Checkbox, EmptyState, InfoTip, Input, Skeleton } from '@/ui'
+import { Button, Checkbox, EmptyState, InfoTip, Input } from '@/ui'
 import { cn } from '@/lib/cn'
 import { createInvoice } from '@/pages/facturas/api'
 import { BackLink } from '@/pages/facturas/chrome'
 import { draftsFrom, invoiceTitle, linePayload, stepLabel } from '@/pages/facturas/format'
 import { LineEditor } from '@/pages/facturas/lines'
 import type { Invoice, LineDraft } from '@/pages/facturas/types'
+import { RecordSkeleton } from '@/components/RecordSkeleton'
 
 const CAUSES = [
   { id: 'R4', label: copy.facturas.r4 },
@@ -48,12 +49,7 @@ export function RectifyPage({ me }: { me: Me }) {
     )
   }
   if (invoice.loading && !invoice.data) {
-    return (
-      <div aria-busy="true" className="grid gap-3 p-6">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-40 w-full" />
-      </div>
-    )
+    return <RecordSkeleton />
   }
   if (invoice.error || !invoice.data || invoice.data.status !== 'issued') {
     return (
