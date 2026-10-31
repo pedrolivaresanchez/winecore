@@ -15,7 +15,7 @@ function readGroups(): Record<string, boolean> {
   try {
     const raw = readStorage(GROUPS_KEY);
     const parsed = raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
-    return { cellar: true, ...parsed };
+    return { cellar: true, stock: true, ...parsed };
   } catch {
     return { cellar: true };
   }

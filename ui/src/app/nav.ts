@@ -9,6 +9,7 @@ export type NavChild = {
   path: string;
   permission?: string;
   mobile?: "tab";
+  /** Evita que `/stock` quede activo dentro de `/stock/movimientos`. */
   end?: boolean;
 };
 
@@ -50,6 +51,21 @@ export const navigation: NavEntry[] = [
     children: [
       { id: "vessels", label: "Depósitos", path: "/bodega", permission: "cellar.read", end: true },
       { id: "new-operation", label: "Nueva operación", path: "/bodega/operacion/nueva", permission: "cellar.operate" },
+    ],
+  },
+  {
+    id: "stock",
+    module: "inventory",
+    label: copy.nav.stock,
+    icon: Warehouse,
+    path: "/stock",
+    permission: "inventory.read",
+    mobile: "more",
+    placement: "main",
+    children: [
+      { id: "stock-at", label: "Existencias a fecha", path: "/stock", end: true, permission: "inventory.read" },
+      { id: "stock-moves", label: "Movimientos", path: "/stock/movimientos", permission: "inventory.read" },
+      { id: "stock-counts", label: "Aforos", path: "/stock/aforos", permission: "inventory.read" },
     ],
   },
   {
