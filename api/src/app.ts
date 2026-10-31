@@ -23,6 +23,7 @@ import {
   patchPerson,
 } from './routes/contacts';
 import { catalogRoutes } from './routes/catalog';
+import { materialRoutes } from './routes/materials';
 import { health } from './routes/health';
 import { me } from './routes/me';
 
@@ -134,6 +135,7 @@ export function createApp(deps: AppDeps) {
     .post('/v1/contacts/:id/persons/:pid/archive', ({ request, params }) => archivePerson(deps.writer, request, params.id, params.pid), {
       beforeHandle: requirePermission(guardDeps, 'contacts.write'),
     })
-    .use(catalogRoutes(guardDeps));
+    .use(catalogRoutes(guardDeps))
+    .use(materialRoutes(guardDeps));
   return app;
 }
