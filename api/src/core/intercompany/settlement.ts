@@ -135,6 +135,59 @@ interface StoredSettlement {
   periodEnd: string;
 }
 
+export interface SettlementIndexItem {
+  id: string;
+  period: string;
+  status: string;
+  seller_entity_id: string;
+  buyer_entity_id: string;
+  totals: { units: string; liters: string | null; amount: string };
+  deadline: string;
+}
+
+export async function listSettlementIndex(tx: Tx): Promise<{ items: SettlementIndexItem[] }> {
+  const rows = await tx.read<Record<string, unknown>>(`
+    SELECT s.id, s.status, s.period_start, s.seller_entity_id, s.buyer_entity_id,
+           coalesce(sum(l.quantity), 0) AS units,
+           coalesce(sum(round(l.quantity * l.unit_price, 2)), 0) AS amount,
+           sum(l.quantity * f.nominal_volume_ml) AS volume_ml
+    FROM billing.intercompany_settlement s
+    LEFT JOIN billing.intercompany_settlement_line l ON l.settlement_id = s.id
+    LEFT JOIN catalog.product p ON p.id = l.product_id
+    LEFT JOIN catalog.format f ON f.id = p.format_id
+    GROUP BY s.id, s.status, s.period_start, s.seller_entity_id, s.buyer_entity_id
+    ORDER BY s.period_start DESC, s.id DESC
+  `);
+  return {
+    items: rows.flatMap((row) => {
+      const start = dateTextSafe(row.period_start);
+      const id = uuidText(String(row.id ?? ''));
+      if (!start || !id) return [];
+      const period = monthPeriod(start.slice(0, 7));
+      return [{
+        id,
+        period: period.period,
+        status: String(row.status),
+        seller_entity_id: uuidText(String(row.seller_entity_id)),
+        buyer_entity_id: uuidText(String(row.buyer_entity_id)),
+        totals: {
+          units: money.fromString(String(row.units ?? '0')).toDecimalPlaces(3).toFixed(3),
+          liters: row.volume_ml == null
+            ? null
+            : money.fromString(String(row.volume_ml)).div(1000).toDecimalPlaces(3).toFixed(3),
+          amount: euros(money.fromString(String(row.amount ?? '0'))),
+        },
+        deadline: period.issueDeadline,
+      }];
+    }),
+  };
+}
+
+function dateTextSafe(value: unknown): string | null {
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(String(value ?? ''));
+  return match?.[1] ?? null;
+}
+
 export async function readSettlement(tx: Tx, periodText: string, today: string): Promise<SettlementView> {
   assertToday(today);
   const period = monthPeriod(periodText);
