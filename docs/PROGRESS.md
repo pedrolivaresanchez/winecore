@@ -1,4 +1,4 @@
-# Progreso WineCore — actualizado 31-10-2026 14:39 CET (Europe/Madrid)
+# Progreso WineCore — actualizado 31-10-2026 14:40 CET (Europe/Madrid)
 Fase: 1 · Hito: especificación (antes de M0) · Estado: en revisión de Pedro
 
 ## Hecho desde la última actualización
@@ -16,8 +16,9 @@ Fase: 1 · Hito: especificación (antes de M0) · Estado: en revisión de Pedro
   - La factura mensual P.O → CVPO no puede llevar fecha de expedición del día 31: lleva **fecha de operación** fin de mes y se expide antes del día 16.
 
 ## Siguiente
-- Esperar la revisión de Pedro del PR y responder a sus comentarios.
-- Con las respuestas urgentes (Q-002, Q-003, Q-004, Q-005, Q-027) y la especificación aprobada, empezar M0: repositorio, integración continua, AWS y Timbal.
+- **Fase 1**: terminada a falta de la revisión de Pedro del PR #1. Responder a sus comentarios: medio día o un día de trabajo, según lo que pida.
+- **Fase 2 (M0)**: empieza en cuanto estén el PR aprobado, GitHub conectado en Timbal (Q-004) y la cuenta de AWS (Q-027). Objetivo de la hoja de ruta: **04-11-2026**. Cada día de retraso se resta del margen antes del control de Verifactu del 01-12-2026.
+- Prototipo visual: **cancelado por Pedro** antes de empezar; no se ha gastado nada en él.
 
 ## Bloqueos
 - Para empezar M0 hacen falta: aprobación de esta especificación, GitHub conectado en Timbal con los entornos `dev` y `staging` (Q-004) y la cuenta de AWS (Q-027).
