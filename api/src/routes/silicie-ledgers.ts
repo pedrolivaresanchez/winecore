@@ -2,6 +2,7 @@ import { requestIdFor, sessionOf } from "../auth/guard";
 import { can } from "../core/auth/permissions";
 import { sql } from "../core/db/sql";
 import { domainError } from "../core/errors";
+import { openSilicieExercise, warehouseEntityId } from "../core/regulatory/exercises";
 import { createLedger, listLedgerRows, validateLedger } from "../core/regulatory/silicie/ledger-store";
 import type { LedgerProductClass, LedgerSituation, WineColor } from "../core/regulatory/silicie/types";
 import type { RegulatoryDeps } from "./regulatory-submissions";
@@ -42,6 +43,38 @@ export async function postSilicieLedger(deps: RegulatoryDeps, request: Request) 
     createdAt: deps.now().toISOString(),
   }));
   return ledger;
+}
+
+export async function postOpenExercise(deps: RegulatoryDeps, request: Request) {
+  const user = sessionOf(request);
+  const body = asRecord(await request.json().catch(() => {
+    throw domainError("WC_VALIDATION", { body: "El cuerpo no es JSON" });
+  }));
+  const taxWarehouseId = typeof body.tax_warehouse_id === "string" ? body.tax_warehouse_id.toLowerCase() : "";
+  if (!UUID.test(taxWarehouseId)) throw domainError("WC_VALIDATION", { tax_warehouse_id: "Identificador no válido" });
+  const year = yearOf(body.year);
+  const entityId = await warehouseEntityId(deps.writer, taxWarehouseId);
+  if (!entityId) throw domainError("WC_NOT_FOUND");
+  if (!canOpenExercise(user, entityId)) throw domainError("WC_FORBIDDEN");
+  return openSilicieExercise(deps.writer, {
+    type: "user",
+    id: user.id,
+    requestId: requestIdFor(request),
+    reason: "apertura de ejercicio SILICIE",
+  }, { taxWarehouseId, year });
+}
+
+function canOpenExercise(user: { roles: { role: string; legalEntityId: string | null }[] }, entityId: string): boolean {
+  return user.roles.some((role) =>
+    (role.role === "owner" || role.role === "advisor")
+    && (role.legalEntityId === null || role.legalEntityId.toLowerCase() === entityId),
+  );
+}
+
+function yearOf(value: unknown): number {
+  const year = typeof value === "number" ? value : typeof value === "string" && /^\d{4}$/.test(value) ? Number(value) : Number.NaN;
+  if (!Number.isInteger(year)) throw domainError("WC_VALIDATION", { year: "El ejercicio es un año" });
+  return year;
 }
 
 export async function postValidateLedger(deps: RegulatoryDeps, request: Request, id: string) {

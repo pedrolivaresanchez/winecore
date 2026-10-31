@@ -240,6 +240,10 @@ describe("presentación SILICIE", () => {
       expect(correction.status).toBe(200);
       expect(correction.body.rectifies_submission_id).toBe(submissionId);
       expect(correction.body.id).not.toBe(submissionId);
+      expect(correction.body.successor_id).toBe(correction.body.id);
+      const linked = await call(ctx.app, "GET", `/v1/regulatory/submissions/${submissionId}`, undefined, "admin@winecore.test");
+      expect(linked.body.successor_id).toBe(correction.body.id);
+      expect(linked.body.phase).toBe("accepted");
       const anulacion = await download(
         ctx.app,
         `/v1/regulatory/submissions/${String(correction.body.id)}/file?part=anulaciones`,
