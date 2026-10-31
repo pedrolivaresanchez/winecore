@@ -3,9 +3,12 @@ import {
   auditInsert,
   auditUpdate,
   countOf,
+  decodeOpCursor,
+  encodeOpCursor,
   fillPct,
   intOf,
   invalid,
+  isUuid,
   oneOf,
   optionalText,
   optionalUuid,
@@ -255,6 +258,69 @@ export async function postHolderMove(writer: Writer, request: Request, code: str
   return getHolder(writer, request, code);
 }
 
+export interface HolderMoveView {
+  id: string;
+  occurred_at: string;
+  holder_id: string;
+  holder_code: string;
+  location_id: string;
+  owner_entity_id: string;
+  lot_id: string;
+  lot_code: string;
+  product_id: string;
+  product_state: PackagedState;
+  qty_units: number;
+  created_by: string;
+}
+
+/** Movimientos del soporte. `ref` es el código o el UUID. Lectura cellar.read. */
+export async function listHolderMoves(writer: Writer, request: Request, ref: string): Promise<ListBody<HolderMoveView>> {
+  const holder = await holderByRef(writer, ref);
+  const url = new URL(request.url);
+  const limit = parseLimit(url.searchParams.get('limit'));
+  const cursor = decodeOpCursor(url.searchParams.get('cursor'));
+  const filters = [sql`m.holder_id = CAST(${holder.id} AS UUID)`];
+  if (cursor) {
+    filters.push(sql`(
+      m.occurred_at < CAST(${cursor.occurredAt} AS TIMESTAMPTZ)
+      OR (m.occurred_at = CAST(${cursor.occurredAt} AS TIMESTAMPTZ) AND m.id < CAST(${cursor.id} AS UUID))
+    )`);
+  }
+  const where = filters.join(' AND ');
+  const total = await countOf(writer, sql`
+    SELECT count(*)::VARCHAR AS total FROM cellar.holder_move m
+    WHERE m.holder_id = CAST(${holder.id} AS UUID)
+  `);
+  const rows = await writer.read<Record<string, unknown>>(`
+    SELECT m.id::VARCHAR AS id, m.occurred_at::VARCHAR AS occurred_at,
+           m.holder_id::VARCHAR AS holder_id, h.code AS holder_code,
+           m.location_id::VARCHAR AS location_id, m.owner_entity_id::VARCHAR AS owner_entity_id,
+           m.lot_id::VARCHAR AS lot_id, l.code AS lot_code, m.product_id::VARCHAR AS product_id,
+           m.product_state, m.qty_units::VARCHAR AS qty_units, m.created_by
+    FROM cellar.holder_move m
+    JOIN cellar.holder h ON h.id = m.holder_id
+    JOIN inventory.lot l ON l.id = m.lot_id
+    WHERE ${where}
+    ORDER BY m.occurred_at DESC, m.id DESC
+    LIMIT ${limit + 1}
+  `);
+  const items = rows.map((row) => ({
+    id: idOf(row.id),
+    occurred_at: textOf(row.occurred_at),
+    holder_id: idOf(row.holder_id),
+    holder_code: textOf(row.holder_code),
+    location_id: idOf(row.location_id),
+    owner_entity_id: idOf(row.owner_entity_id),
+    lot_id: idOf(row.lot_id),
+    lot_code: textOf(row.lot_code),
+    product_id: idOf(row.product_id),
+    product_state: textOf(row.product_state) as PackagedState,
+    qty_units: intOf(row.qty_units),
+    created_by: textOf(row.created_by),
+  }));
+  return slicePage(items, limit, total, (row) => encodeOpCursor(row.occurred_at, row.id));
+}
+
 export async function listHolderStock(writer: Writer, request: Request): Promise<ListBody<HolderBalance>> {
   const url = new URL(request.url);
   const limit = parseLimit(url.searchParams.get('limit'));
@@ -296,6 +362,21 @@ export async function listHolderStock(writer: Writer, request: Request): Promise
   `);
   const items = rows.map(balanceOf);
   return slicePage(items, limit, intOf(totalRows[0]?.total ?? 0), (row) => row.holder_code);
+}
+
+export async function holderByRef(source: Reader, ref: string): Promise<HolderRow> {
+  if (isUuid(ref)) {
+    const rows = await source.read<Record<string, unknown>>(sql`
+      SELECT id::VARCHAR AS id, location_id::VARCHAR AS location_id, zone_id::VARCHAR AS zone_id,
+             code, name, kind, cage_number, capacity_units, nominal_volume_ml, format_code, notes, is_active
+      FROM cellar.holder
+      WHERE id = CAST(${ref.toLowerCase()} AS UUID)
+    `);
+    const row = rows[0];
+    if (!row) throw domainError('WC_NOT_FOUND');
+    return holderOf(row);
+  }
+  return holderByCode(source, ref);
 }
 
 export async function holderByCode(source: Reader, code: string): Promise<HolderRow> {

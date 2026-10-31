@@ -11,6 +11,7 @@ import {
   flag,
   idOf,
   isUuid,
+  mergeRectification,
   pick,
   scale,
   seriesDocType,
@@ -80,6 +81,8 @@ interface CreateInput {
   lines: ManualLine[] | null;
   rectifies: RectSource[] | null;
   reason: string | null;
+  noPhysicalReturn: boolean | null;
+  returnDeliveryNote: string | null;
 }
 
 interface BuiltLine {
@@ -277,7 +280,10 @@ async function buildNew(tx: Tx, input: CreateInput, now: Date): Promise<Built> {
     ruleSetId: rule && rule.entityId === entity.id ? rule.ruleSetId : null,
     ruleId: rule && rule.entityId === entity.id ? rule.ruleId : null,
     ruleTrace: rule ? { scope: rule.scope, rule_id: rule.ruleId, explicit: input.legalEntityId != null } : null,
-    legacyRefs: holdedRefs(input.rectifies),
+    legacyRefs: mergeRectification(holdedRefs(input.rectifies), {
+      noPhysicalReturn: input.noPhysicalReturn,
+      returnDeliveryNote: input.returnDeliveryNote,
+    }),
   };
 }
 
@@ -327,6 +333,7 @@ async function buildUpdate(
   }
   const enriched = await enrichLines(tx, sourceLines.filter((line) => isUuid(line.productId)), customer, priceOn, current.rectificationKind);
   const priced = applyTotals(enriched, await loadTaxCodes(tx), terms, priceOn, language);
+  const physical = physicalReturnOf(current, patch);
   const keptIds = patch.lines ? null : await loadLines(tx, current.id);
   if (keptIds) {
     priced.lines.forEach((line, index) => {
@@ -363,7 +370,7 @@ async function buildUpdate(
     ruleSetId: null,
     ruleId: null,
     ruleTrace: null,
-    legacyRefs: current.legacyRefs,
+    legacyRefs: mergeRectification(current.legacyRefs, physical),
   };
 }
 
@@ -937,6 +944,7 @@ function updateHeader(tx: Tx, before: Awaited<ReturnType<typeof loadHeader>>, bu
       total = ${built.total == null ? null : decimalOf(built.total)},
       payment_method = ${built.paymentMethod},
       payment_terms_days = ${built.paymentTermsDays},
+      legacy_refs = ${sql.json(built.legacyRefs)},
       updated_at = ${now}
     WHERE id = CAST(${built.id} AS UUID)
   `);
@@ -963,6 +971,8 @@ interface Patch {
   notes?: string | null;
   incoterm?: string | null;
   lines?: ManualLine[];
+  noPhysicalReturn?: boolean | null;
+  returnDeliveryNote?: string | null;
 }
 
 function parseCreate(raw: unknown): CreateInput {
@@ -987,6 +997,7 @@ function parseCreate(raw: unknown): CreateInput {
   const fromNotes = uuidList(pick(body, 'from_delivery_notes', 'fromDeliveryNotes'), 'from_delivery_notes');
   const fromOrderRaw = text(pick(body, 'from_order', 'fromOrder'));
   if (fromOrderRaw && !isUuid(fromOrderRaw)) throw domainError('WC_VALIDATION', { from_order: 'Identificador no válido' });
+  const physical = physicalReturnInput(body, rectificationKind != null, null);
   return {
     legalEntityId: optionalUuid(pick(body, 'legal_entity_id', 'legalEntityId'), 'legal_entity_id'),
     customerId: optionalUuid(pick(body, 'customer_id', 'customerId'), 'customer_id'),
@@ -1007,6 +1018,8 @@ function parseCreate(raw: unknown): CreateInput {
     lines: parseLines(pick(body, 'lines')),
     rectifies,
     reason: optionalShort(pick(body, 'reason'), 'reason'),
+    noPhysicalReturn: physical.noPhysicalReturn,
+    returnDeliveryNote: physical.returnDeliveryNote,
   };
 }
 
@@ -1057,7 +1070,77 @@ function parsePatch(raw: unknown): Patch {
     const lines = parseLines(pick(body, 'lines'));
     patch.lines = lines ?? [];
   }
+  if (pick(body, 'no_physical_return', 'noPhysicalReturn') !== undefined) {
+    patch.noPhysicalReturn = optionalBool(pick(body, 'no_physical_return', 'noPhysicalReturn'), 'no_physical_return');
+  }
+  if (pick(body, 'return_delivery_note', 'returnDeliveryNote') !== undefined) {
+    patch.returnDeliveryNote = optionalReturnNote(pick(body, 'return_delivery_note', 'returnDeliveryNote'));
+  }
   return patch;
+}
+
+function physicalReturnOf(
+  current: { invoiceType: string; noPhysicalReturn: boolean | null; returnDeliveryNote: string | null },
+  patch: Patch,
+): { noPhysicalReturn: boolean | null; returnDeliveryNote: string | null } {
+  const touched = patch.noPhysicalReturn !== undefined || patch.returnDeliveryNote !== undefined;
+  if (!isRectificationType(current.invoiceType)) {
+    if (touched) {
+      throw domainError('WC_VALIDATION', { no_physical_return: 'Solo una rectificativa indica si hay devolución física' });
+    }
+    return { noPhysicalReturn: null, returnDeliveryNote: null };
+  }
+  return combinePhysicalReturn(
+    patch.noPhysicalReturn === undefined ? current.noPhysicalReturn : patch.noPhysicalReturn,
+    patch.returnDeliveryNote === undefined ? current.returnDeliveryNote : patch.returnDeliveryNote,
+  );
+}
+
+function physicalReturnInput(
+  body: Record<string, unknown>,
+  rectification: boolean,
+  current: { noPhysicalReturn: boolean | null; returnDeliveryNote: string | null } | null,
+): { noPhysicalReturn: boolean | null; returnDeliveryNote: string | null } {
+  const flagValue = pick(body, 'no_physical_return', 'noPhysicalReturn');
+  const noteValue = pick(body, 'return_delivery_note', 'returnDeliveryNote');
+  const touched = flagValue !== undefined || noteValue !== undefined;
+  if (!rectification) {
+    if (touched) {
+      throw domainError('WC_VALIDATION', { no_physical_return: 'Solo una rectificativa indica si hay devolución física' });
+    }
+    return { noPhysicalReturn: null, returnDeliveryNote: null };
+  }
+  const flag = flagValue === undefined ? current?.noPhysicalReturn ?? null : optionalBool(flagValue, 'no_physical_return');
+  const note = noteValue === undefined ? current?.returnDeliveryNote ?? null : optionalReturnNote(noteValue);
+  return combinePhysicalReturn(flag, note);
+}
+
+function combinePhysicalReturn(
+  flag: boolean | null,
+  note: string | null,
+): { noPhysicalReturn: boolean | null; returnDeliveryNote: string | null } {
+  if (flag === true && note) {
+    throw domainError('WC_VALIDATION', { return_delivery_note: 'Sin devolución física no admite albarán de devolución' });
+  }
+  const noPhysicalReturn = note && flag == null ? false : flag;
+  return { noPhysicalReturn, returnDeliveryNote: note };
+}
+
+function optionalBool(value: unknown, field: string): boolean | null {
+  if (value === null) return null;
+  if (typeof value === 'boolean') return value;
+  throw domainError('WC_VALIDATION', { [field]: 'Debe ser sí o no' });
+}
+
+function optionalReturnNote(value: unknown): string | null {
+  if (value == null || value === '') return null;
+  if (typeof value !== 'string') throw domainError('WC_VALIDATION', { return_delivery_note: 'Debe ser texto' });
+  const trimmed = value.trim();
+  if (trimmed.length > 80) throw domainError('WC_VALIDATION', { return_delivery_note: 'El albarán de devolución es demasiado largo' });
+  if (trimmed.includes('\n') || trimmed.includes('\r')) {
+    throw domainError('WC_VALIDATION', { return_delivery_note: 'No puede contener saltos de línea' });
+  }
+  return trimmed;
 }
 
 function parseLines(value: unknown): ManualLine[] | null {

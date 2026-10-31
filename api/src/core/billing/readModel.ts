@@ -12,6 +12,7 @@ import {
   isUuid,
   jsonObject,
   moneyText,
+  rectificationDetail,
   stamp,
   text,
 } from './format';
@@ -52,6 +53,8 @@ export interface HeaderView {
   voidedAt: string | null;
   voidReason: string | null;
   legacyRefs: Record<string, unknown>;
+  noPhysicalReturn: boolean | null;
+  returnDeliveryNote: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -185,6 +188,8 @@ function intOf(value: unknown): number | null {
 
 export function headerOf(row: Record<string, unknown>): HeaderView {
   const kind = text(row.rectification_kind);
+  const legacyRefs = jsonObject(row.legacy_refs) ?? {};
+  const physical = rectificationDetail(legacyRefs);
   return {
     id: idOf(row.id),
     legalEntityId: idOf(row.legal_entity_id),
@@ -218,7 +223,9 @@ export function headerOf(row: Record<string, unknown>): HeaderView {
     verifactuRecordId: row.verifactu_record_id == null ? null : idOf(row.verifactu_record_id),
     voidedAt: stamp(row.voided_at),
     voidReason: text(row.void_reason),
-    legacyRefs: jsonObject(row.legacy_refs) ?? {},
+    legacyRefs,
+    noPhysicalReturn: physical.noPhysicalReturn,
+    returnDeliveryNote: physical.returnDeliveryNote,
     createdAt: stamp(row.created_at) ?? '',
     updatedAt: stamp(row.updated_at) ?? '',
   };
@@ -518,6 +525,8 @@ export function presentInvoice(
     language: header.language,
     description: header.description,
     notes: header.notes,
+    no_physical_return: header.noPhysicalReturn,
+    return_delivery_note: header.returnDeliveryNote,
     incoterm: header.incoterm,
     subtotal: header.subtotal,
     tax_total: header.taxTotal,

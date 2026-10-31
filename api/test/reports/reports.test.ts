@@ -402,7 +402,7 @@ describe('informes · escala x10', () => {
     const app = await createTestApp();
     try {
       const loaded = await seedDemo(app.writer, { nodeEnv: 'test', dbMode: 'local' }, 'x10');
-      expect(loaded.contacts).toBe(1500);
+      expect(loaded.contacts).toBe(1501);
       await app.client.query(`
         INSERT INTO core.number_series (id, legal_entity_id, doc_type, code, year, prefix)
         SELECT '019b1000-0000-7000-8000-00000000c001', id, 'invoice', 'PF', 2026, 'PF26-'

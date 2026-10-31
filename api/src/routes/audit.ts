@@ -3,9 +3,10 @@ import { changedFields } from '../core/db/audit';
 import { sql } from '../core/db/sql';
 import type { Writer } from '../core/db/writer';
 import { domainError } from '../core/errors';
+import { redactBlindAuditRows } from '../core/tasting/blind-read';
 
 export async function listAudit(writer: Writer, request: Request) {
-  sessionOf(request);
+  const user = sessionOf(request);
   const url = new URL(request.url);
   const table = optional(url.searchParams.get('table'), 'table');
   const rowId = optional(url.searchParams.get('row_id'), 'row_id');
@@ -27,6 +28,7 @@ export async function listAudit(writer: Writer, request: Request) {
     'SELECT id, display_name FROM core.app_user',
   );
   const names = new Map(users.map((row) => [row.id, row.display_name]));
+  await redactBlindAuditRows(writer, user.id, listed as Record<string, unknown>[]);
   const hasMore = listed.length > limit;
   const page = hasMore ? listed.slice(0, limit) : listed;
   const last = page[page.length - 1];

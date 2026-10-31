@@ -106,6 +106,7 @@ export async function createTastingNoteFromDictation(
     taster_user_id: parsedInput.taster_user_id ?? null,
     taster_name: parsedInput.taster_name ?? null,
     parcel_id: links.parcel_id,
+    parcel_code: null,
     lot_id: links.lot_id,
     vessel_id: links.vessel_id,
     product_id: null,

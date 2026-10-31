@@ -16,6 +16,15 @@ import { createFiltration } from '../core/hygiene/filtration';
 import { getHygienePolicy, putHygienePolicy } from '../core/hygiene/policy';
 import { createProcedure, getProcedure, listProcedures, updateProcedure } from '../core/hygiene/procedures';
 import { createReceipt, listConsumables, registerConsumable } from '../core/hygiene/stock';
+import {
+  listBottlingChecks,
+  listCleaningLogs,
+  listConsumableBalances,
+  listEquipmentLinks,
+  listFiltrations,
+  listMaintenance,
+  listReceipts,
+} from '../core/hygiene/lists';
 
 /** Higiene, APPCC y control de envasado. Lectura cellar.read, operación cellar.operate, procedimientos owner. */
 export function hygieneRoutes(deps: { writer: Writer; guard: GuardDeps }) {
@@ -71,21 +80,28 @@ export function hygieneRoutes(deps: { writer: Writer; guard: GuardDeps }) {
       set.status = 201;
       return created;
     }, operate)
+    .get('/v1/hygiene/consumable-balances', ({ request }) => listConsumableBalances(writer, request), read)
+    .get('/v1/hygiene/consumable-receipts', ({ request }) => listReceipts(writer, request), read)
     .post('/v1/hygiene/consumable-receipts', async ({ request, set }) => {
       const created = await createReceipt(writer, request);
       set.status = 201;
       return created;
     }, operate)
+    .get('/v1/hygiene/cleaning-logs', ({ request }) => listCleaningLogs(writer, request), read)
     .post('/v1/hygiene/cleaning-logs', async ({ request, set }) => {
       const created = await createCleaningLog(writer, request);
       set.status = 201;
       return created;
     }, operate)
+    .get('/v1/hygiene/filtrations', ({ request }) => listFiltrations(writer, request), read)
     .post('/v1/hygiene/filtrations', async ({ request, set }) => {
       const created = await createFiltration(writer, request);
       set.status = 201;
       return created;
     }, operate)
+    .get('/v1/hygiene/bottling-checks', ({ request }) => listBottlingChecks(writer, request), read)
+    .get('/v1/hygiene/maintenance', ({ request }) => listMaintenance(writer, request), read)
+    .get('/v1/hygiene/equipment-links', ({ request }) => listEquipmentLinks(writer, request), read)
     .get('/v1/hygiene/bottling-checks/:operationId', ({ params }) => getBottlingCheck(writer, params.operationId), read)
     .put('/v1/hygiene/bottling-checks/:operationId', ({ request, params }) => putBottlingCheck(writer, request, params.operationId), operate);
 }

@@ -121,6 +121,13 @@ export const DEFAULT_POLICIES: { readonly [K in ApprovalKind]: KindDefault } = {
     validityMinutes: DAY_MINUTES,
     allowSelfApproval: true,
   },
+  purchase_invoice_approval: {
+    requiredApprovals: 1,
+    allowedRoles: ownerApprover,
+    requiresStepUp: true,
+    validityMinutes: DAY_MINUTES,
+    allowSelfApproval: true,
+  },
 };
 
 export interface PolicyQuery {

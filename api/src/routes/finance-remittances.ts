@@ -5,12 +5,17 @@ import {
   downloadRemittanceFile,
   generateRemittanceFile,
   getRemittance,
+  listRemittances,
   markRemittanceSubmitted,
   requestRemittanceApproval,
 } from '../core/finance/remittances';
 
 export function postRemittance(writer: Writer, request: Request) {
   return createRemittance(writer, sessionOf(request), request);
+}
+
+export function getRemittances(writer: Writer, request: Request) {
+  return listRemittances(writer, sessionOf(request), request);
 }
 
 export function getRemittanceById(writer: Writer, request: Request, id: string) {

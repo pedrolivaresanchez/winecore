@@ -47,9 +47,11 @@ export interface NoteView {
   subject: Subject;
   parcel_id: string | null;
   lot_id: string | null;
+  lot_code: string | null;
   vessel_id: string | null;
   product_id: string | null;
   wine_id: string | null;
+  wine_code: string | null;
   vintage: number | null;
   score_scale: ScoreScale;
   visual_score: number | null;
@@ -81,6 +83,7 @@ export interface NoteCommand {
   taster_user_id: string | null;
   taster_name: string | null;
   parcel_id: string | null;
+  parcel_code: string | null;
   lot_id: string | null;
   vessel_id: string | null;
   product_id: string | null;
@@ -104,7 +107,7 @@ export interface NoteCommand {
 
 const CREATE_KEYS = [
   'template_id', 'template_code', 'tasted_at', 'taster_user_id', 'taster_name',
-  'parcel_id', 'lot_id', 'vessel_id', 'product_id', 'wine_id', 'vintage',
+  'parcel_id', 'parcel_code', 'lot_id', 'vessel_id', 'product_id', 'wine_id', 'vintage',
   'visual_score', 'nose_score', 'mouth_score', 'overall_score',
   'descriptors', 'descriptors_text', 'defects', 'decision', 'notes', 'voice_transcript',
   'values', 'place', 'glass', 'context', 'evolution',
@@ -122,7 +125,7 @@ export async function listNotes(writer: Writer, request: Request): Promise<{ ite
   const where = ['TRUE'];
   const lotId = optionalQueryUuid(url, 'lot_id');
   const wineId = optionalQueryUuid(url, 'wine_id');
-  const parcelId = optionalQueryUuid(url, 'parcel_id');
+  const parcelId = await parcelFilter(writer, url);
   const subject = url.searchParams.get('subject');
   const code = url.searchParams.get('template_code');
   if (lotId) where.push(sql`n.lot_id = CAST(${lotId} AS UUID)`);
@@ -222,6 +225,54 @@ export async function insertNote(writer: Writer, actor: Actor, command: NoteComm
   return getNote(writer, id);
 }
 
+/** Una nota es borrador mientras no tiene decisión. */
+export async function deleteNote(writer: Writer, actor: Actor, id: string): Promise<{ id: string; deleted: true }> {
+  const current = await getNote(writer, id);
+  if (current.decision !== null) {
+    throw domainError('WC_TASTING_CLOSED', { id: 'La nota ya no es un borrador' }, 'La nota ya no es un borrador');
+  }
+  await writer.withWrite(actor, async (tx) => {
+    const links = await tx.read<{ id: string; attachment_id: string; role: string }>(sql`
+      SELECT id::VARCHAR AS id, attachment_id::VARCHAR AS attachment_id, role
+      FROM core.attachment_link
+      WHERE entity_table = ${'tasting.note'} AND entity_id = CAST(${current.id} AS UUID)
+    `);
+    for (const link of links) {
+      const linkId = asId(link.id);
+      tx.audit({
+        table: 'core.attachment_link',
+        rowId: linkId,
+        action: 'DELETE',
+        before: {
+          attachment_id: asId(link.attachment_id),
+          entity_table: 'tasting.note',
+          entity_id: current.id,
+          role: asText(link.role),
+        },
+        after: null,
+      });
+      tx.write(sql`DELETE FROM core.attachment_link WHERE id = CAST(${linkId} AS UUID)`);
+    }
+    tx.audit({
+      table: 'tasting.note',
+      rowId: current.id,
+      action: 'DELETE',
+      before: {
+        template_id: current.template_id,
+        subject: current.subject,
+        tasted_at: current.tasted_at,
+        taster_name: current.taster_name,
+        lot_id: current.lot_id,
+        wine_id: current.wine_id,
+        parcel_id: current.parcel_id,
+      },
+      after: null,
+    });
+    tx.write(sql`DELETE FROM tasting.note WHERE id = CAST(${current.id} AS UUID)`);
+  });
+  return { id: current.id, deleted: true };
+}
+
 export async function patchNote(writer: Writer, actor: Actor, id: string, body: unknown): Promise<NoteView> {
   const record = requireObject(body);
   rejectUnknown(record, PATCH_KEYS);
@@ -300,7 +351,7 @@ export function commandFromBody(body: unknown): NoteCommand {
     tasted_at: requireInstant(record.tasted_at, 'tasted_at'),
     taster_user_id: optionalUuid(record.taster_user_id, 'taster_user_id'),
     taster_name: optionalText(record.taster_name, 'taster_name', 120),
-    parcel_id: optionalUuid(record.parcel_id, 'parcel_id'),
+    ...readParcel(record),
     lot_id: optionalUuid(record.lot_id, 'lot_id'),
     vessel_id: optionalUuid(record.vessel_id, 'vessel_id'),
     product_id: optionalUuid(record.product_id, 'product_id'),
@@ -339,7 +390,14 @@ async function resolveLinks(tx: Tx, subject: Subject, command: NoteCommand): Pro
     wine_id: command.wine_id,
     vintage: command.vintage,
   };
-  if (link.parcel_id) await requireRow(tx, 'vineyard.parcel', link.parcel_id, 'parcel_id');
+  if (command.parcel_code) {
+    const found = await findByCode(tx, 'vineyard.parcel', command.parcel_code, 'parcel_id');
+    if (!found) invalid({ parcel_id: 'La parcela no existe' });
+    if (link.parcel_id && link.parcel_id !== found) invalid({ parcel_code: 'No coincide con parcel_id' });
+    link.parcel_id = found;
+  } else if (link.parcel_id) {
+    await requireRow(tx, 'vineyard.parcel', link.parcel_id, 'parcel_id');
+  }
   if (link.lot_id) {
     const lot = await loadLot(tx, link.lot_id);
     if (!lot) invalid({ lot_id: 'El lote no existe' });
@@ -464,6 +522,49 @@ function mergeAnswers(current: Record<string, unknown>, record: Record<string, u
   return next;
 }
 
+function readParcel(record: Record<string, unknown>): { parcel_id: string | null; parcel_code: string | null } {
+  const explicit = record.parcel_code === undefined || record.parcel_code === null || record.parcel_code === ''
+    ? null
+    : parcelCode(record.parcel_code, 'parcel_code');
+  if (record.parcel_id === undefined || record.parcel_id === null || record.parcel_id === '') {
+    return { parcel_id: null, parcel_code: explicit };
+  }
+  if (typeof record.parcel_id !== 'string') invalid({ parcel_id: 'Debe ser un UUID o un código de parcela' });
+  const raw = record.parcel_id.trim();
+  if (isUuid(raw)) return { parcel_id: raw.toLowerCase(), parcel_code: explicit };
+  const code = parcelCode(raw, 'parcel_id');
+  if (explicit && explicit !== code) invalid({ parcel_id: 'El código no coincide con parcel_code' });
+  return { parcel_id: null, parcel_code: code };
+}
+
+function parcelCode(value: unknown, field: string): string {
+  if (typeof value !== 'string') invalid({ [field]: 'Debe ser un código de parcela' });
+  const code = value.trim().toUpperCase();
+  if (!/^[A-Z0-9-]{2,20}$/.test(code)) invalid({ [field]: 'Debe ser un UUID o un código de parcela' });
+  return code;
+}
+
+async function parcelFilter(writer: Writer, url: URL): Promise<string | null> {
+  const rawId = url.searchParams.get('parcel_id');
+  const rawCode = url.searchParams.get('parcel_code');
+  let parcelId: string | null = null;
+  if (rawId !== null && rawId.trim() !== '') {
+    if (isUuid(rawId)) parcelId = rawId.toLowerCase();
+    else {
+      const found = await findByCode(writer, 'vineyard.parcel', rawId.trim().toUpperCase(), 'parcel_id');
+      if (!found) invalid({ parcel_id: 'La parcela no existe' });
+      parcelId = found;
+    }
+  }
+  if (rawCode !== null && rawCode.trim() !== '') {
+    const found = await findByCode(writer, 'vineyard.parcel', rawCode.trim().toUpperCase(), 'parcel_code');
+    if (!found) invalid({ parcel_code: 'La parcela no existe' });
+    if (parcelId && parcelId !== found) invalid({ parcel_code: 'No coincide con parcel_id' });
+    parcelId = found;
+  }
+  return parcelId;
+}
+
 function optionalQueryUuid(url: URL, field: string): string | null {
   const raw = url.searchParams.get(field);
   if (raw === null || raw.trim() === '') return null;
@@ -482,14 +583,17 @@ function noteSelect(): string {
   return `
     SELECT n.id::VARCHAR AS id, n.template_id::VARCHAR AS template_id, t.code AS template_code,
            n.tasted_at, n.taster_user_id::VARCHAR AS taster_user_id, n.taster_name, n.subject,
-           n.parcel_id::VARCHAR AS parcel_id, n.lot_id::VARCHAR AS lot_id, n.vessel_id::VARCHAR AS vessel_id,
-           n.product_id::VARCHAR AS product_id, n.wine_id::VARCHAR AS wine_id, n.vintage,
+           n.parcel_id::VARCHAR AS parcel_id, n.lot_id::VARCHAR AS lot_id, lot.code AS lot_code,
+           n.vessel_id::VARCHAR AS vessel_id, n.product_id::VARCHAR AS product_id,
+           n.wine_id::VARCHAR AS wine_id, wine.code AS wine_code, n.vintage,
            n.score_scale, n.visual_score, n.nose_score, n.mouth_score, n.overall_score,
            n.descriptors, n.descriptors_text, n.defects, n.decision, n.notes, n.voice_transcript,
            n.place, n.glass, n.context, n.evolution, n.answers, n.source,
            n.created_by, n.created_at, n.updated_at
     FROM tasting.note n
     JOIN tasting.template t ON t.id = n.template_id
+    LEFT JOIN inventory.lot lot ON lot.id = n.lot_id
+    LEFT JOIN catalog.wine wine ON wine.id = COALESCE(n.wine_id, lot.wine_id)
   `;
 }
 
@@ -512,9 +616,11 @@ async function noteOf(writer: Writer, row: Record<string, unknown>): Promise<Not
     subject,
     parcel_id: row.parcel_id == null ? null : asId(row.parcel_id),
     lot_id: row.lot_id == null ? null : asId(row.lot_id),
+    lot_code: row.lot_code == null ? null : asText(row.lot_code),
     vessel_id: row.vessel_id == null ? null : asId(row.vessel_id),
     product_id: row.product_id == null ? null : asId(row.product_id),
     wine_id: row.wine_id == null ? null : asId(row.wine_id),
+    wine_code: row.wine_code == null ? null : asText(row.wine_code),
     vintage: asInt(row.vintage),
     score_scale: scale,
     visual_score: asNumber(row.visual_score),

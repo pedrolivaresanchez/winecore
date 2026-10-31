@@ -154,6 +154,18 @@ export async function listPendingDeliveries(
   };
 }
 
+export async function listDeliveryHistory(tx: { read: Tx['read'] }, invoiceId: string): Promise<DeliveryRecord[]> {
+  if (!UUID.test(invoiceId)) return [];
+  const rows = await tx.read<Record<string, unknown>>(sql`
+    SELECT id, invoice_id, attempt, channel, recipients, status, message_id, error,
+           requested_by, marked_by, created_at, sent_at
+    FROM billing.invoice_delivery
+    WHERE invoice_id = CAST(${invoiceId} AS UUID)
+    ORDER BY attempt
+  `);
+  return rows.map(deliveryFrom);
+}
+
 export async function getDeliveryPackage(
   tx: Tx,
   invoice: LoadedInvoice,

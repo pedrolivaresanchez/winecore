@@ -20,6 +20,7 @@ export const APPROVAL_KINDS = [
   'module_toggle',
   'third_party_message',
   'sepa_remittance',
+  'purchase_invoice_approval',
 ] as const;
 
 export type ApprovalKind = (typeof APPROVAL_KINDS)[number];
