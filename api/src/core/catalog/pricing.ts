@@ -6,6 +6,7 @@ import { newId } from '../ids';
 import { businessDate } from '../time';
 import {
   FieldBag,
+  PriceDecimal,
   boolValue,
   dateValue,
   decimalValue,
@@ -157,8 +158,8 @@ export async function priceFor(
   const item = items[0];
   if (!item) throw domainError('WC_VALIDATION', { product_id: 'No hay un precio vigente para este producto' });
   return {
-    unitPrice: new Decimal(item.unit_price_text),
-    minQty: new Decimal(item.min_qty_text),
+    unitPrice: new PriceDecimal(item.unit_price_text),
+    minQty: new PriceDecimal(item.min_qty_text),
     priceListVersionId: versionId,
     priceListId: list.id,
     priceListCode: list.code,
@@ -384,8 +385,8 @@ export async function createVersion(writer: Writer, actor: Actor, priceListId: s
       `);
       for (const item of items) {
         const itemId = newId();
-        const minQty = new Decimal(String(item.min_qty));
-        const unitPrice = new Decimal(String(item.unit_price));
+        const minQty = new PriceDecimal(String(item.min_qty));
+        const unitPrice = new PriceDecimal(String(item.unit_price));
         tx.write(sql`
           INSERT INTO catalog.price_list_item (id, version_id, product_id, min_qty, unit_price)
           VALUES (
@@ -456,7 +457,7 @@ export async function replaceItems(
         INSERT INTO catalog.price_list_item (id, version_id, product_id, min_qty, unit_price)
         VALUES (
           CAST(${itemId} AS UUID), CAST(${fresh.id} AS UUID), CAST(${item.product_id} AS UUID),
-          ${new Decimal(item.min_qty)}, ${new Decimal(item.unit_price)}
+          ${new PriceDecimal(item.min_qty)}, ${new PriceDecimal(item.unit_price)}
         )
       `);
       tx.audit({
@@ -494,7 +495,7 @@ export async function quoteFromRequest(writer: Writer, request: Request): Promis
   const quote = await priceFor(writer, {
     customerId: customerId ?? '',
     productId: productId ?? '',
-    qty: qty ?? new Decimal(0),
+    qty: qty ?? new PriceDecimal(0),
     date: date ?? businessDate(new Date()),
   });
   return {

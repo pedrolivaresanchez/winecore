@@ -1,7 +1,11 @@
 import { Decimal } from 'decimal.js';
 import { domainError } from '../errors';
 
-Decimal.set({ precision: 40, rounding: Decimal.ROUND_HALF_UP });
+/** Precisión 40 solo aquí. El Decimal global se queda en 20 para no afectar a otros módulos. */
+export const PriceDecimal = Decimal.clone({
+  precision: 40,
+  rounding: Decimal.ROUND_HALF_UP,
+});
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -56,7 +60,7 @@ export function requireUuid(value: string, field = 'id'): string {
 }
 
 export function scale(value: unknown, digits: number): string {
-  return new Decimal(String(value)).toDecimalPlaces(digits, Decimal.ROUND_HALF_UP).toFixed(digits);
+  return new PriceDecimal(String(value)).toDecimalPlaces(digits, Decimal.ROUND_HALF_UP).toFixed(digits);
 }
 
 export function enumValue<T extends string>(
@@ -152,13 +156,13 @@ export function decimalValue(
     errors.add(field, `Máximo ${opts.scale} decimales`);
     return null;
   }
-  const parsed = new Decimal(trimmed);
+  const parsed = new PriceDecimal(trimmed);
   if (!parsed.isFinite()) {
     errors.add(field, 'Importe no válido');
     return null;
   }
   if (opts.min !== undefined) {
-    const min = new Decimal(opts.min);
+    const min = new PriceDecimal(opts.min);
     const below = opts.exclusiveMin ? parsed.lte(min) : parsed.lt(min);
     if (below) {
       errors.add(field, opts.exclusiveMin ? 'Debe ser mayor que 0' : 'No puede ser negativo');

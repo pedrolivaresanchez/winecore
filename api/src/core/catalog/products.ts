@@ -1,4 +1,3 @@
-import { Decimal } from 'decimal.js';
 import type { Actor, Tx, Writer } from '../db/writer';
 import { sql } from '../db/sql';
 import { domainError } from '../errors';
@@ -8,6 +7,7 @@ import { businessDate } from '../time';
 import {
   assertIfMatch,
   FieldBag,
+  PriceDecimal,
   boolValue,
   decimalValue,
   enumValue,
@@ -448,7 +448,7 @@ function insertProduct(tx: Tx, id: string, state: ProductState, now: Date): void
       CAST(${id} AS UUID), ${state.sku}, ${state.name}, ${state.name_en}, ${state.kind},
       CAST(${state.wine_id} AS UUID), ${state.vintage}, CAST(${state.format_id} AS UUID), ${state.unit},
       ${state.gtin}, ${state.gtin_case}, ${state.nc_code}, ${state.excise_product_key},
-      ${state.alcohol_pct === null ? null : new Decimal(state.alcohol_pct)},
+      ${state.alcohol_pct === null ? null : new PriceDecimal(state.alcohol_pct)},
       ${state.default_tax_code}, ${state.sales_account}, ${state.is_stock_tracked}, ${state.requires_lot},
       ${state.is_active}, ${sql.json(state.legacy_refs)}, ${now}, ${now}
     )
@@ -475,7 +475,7 @@ function updateProductRow(tx: Tx, id: string, state: ProductState, before: Produ
     sql`gtin_case = ${state.gtin_case}`,
     sql`nc_code = ${state.nc_code}`,
     sql`excise_product_key = ${state.excise_product_key}`,
-    sql`alcohol_pct = ${state.alcohol_pct === null ? null : new Decimal(state.alcohol_pct)}`,
+    sql`alcohol_pct = ${state.alcohol_pct === null ? null : new PriceDecimal(state.alcohol_pct)}`,
     sql`default_tax_code = ${state.default_tax_code}`,
     sql`sales_account = ${state.sales_account}`,
     sql`is_stock_tracked = ${state.is_stock_tracked}`,
