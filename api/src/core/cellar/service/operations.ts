@@ -1,3 +1,6 @@
+import { noteBarrelFills } from '../../cellar-assets/barrel-fills';
+import { assertBottlingChecklist } from '../../hygiene/checklist';
+import { postPlannedConsumptions } from '../../hygiene/stock';
 import { planOperation } from '../engine';
 import type {
   AdditionRequest,
@@ -16,11 +19,17 @@ import type {
   LotEdgeDraft,
   LotKind,
   LotRef,
+  BleedingRequest,
+  DelestageRequest,
   FermentationEndRequest,
   FermentationStartRequest,
+  FermentationVolumeLine,
   OperationRequest,
   PlanSuccess,
+  PressingOffLine,
+  PressingOffRequest,
   PressingRequest,
+  TemperatureControlRequest,
   StockMoveDraft,
   TransferLine,
   TransferRequest,
@@ -39,6 +48,8 @@ import { newId } from '../../ids';
 import { sql } from '../../db/sql';
 import type { Tx, Writer } from '../../db/writer';
 import { DomainError, domainError } from '../../errors';
+import type { CheckResult } from '../../enology/checks';
+import { runChecks, type ReadDb } from '../../enology/service';
 import { businessDate } from '../../time';
 import { planBottlingMaterials, type MaterialUseLine } from './materials';
 import { applyWinemakingEffects, loadPhase, recordAdditionTrace, restoreWinemaking } from '../../winemaking/effects';
@@ -93,6 +104,10 @@ const OP_TYPES = [
   'fermentation_start',
   'malolactic_start',
   'malolactic_end',
+  'bleeding',
+  'pressing_off',
+  'delestage',
+  'temperature_control',
 ] as const;
 
 const ENGINE_TYPES = [
@@ -108,9 +123,19 @@ const ENGINE_TYPES = [
   'fermentation_start',
   'malolactic_start',
   'malolactic_end',
+  'bleeding',
+  'pressing_off',
+  'delestage',
+  'temperature_control',
 ] as const;
-const WINEMAKING_LINE_OPS = new Set(['crushing_pressing', 'fermentation_end', 'malolactic_end']);
-const WINEMAKING_START_OPS = new Set(['fermentation_start', 'malolactic_start']);
+const WINEMAKING_LINE_OPS = new Set(['crushing_pressing', 'fermentation_end', 'malolactic_end', 'bleeding', 'pressing_off']);
+const WINEMAKING_START_OPS = new Set([
+  'fermentation_start',
+  'malolactic_start',
+  'delestage',
+  'temperature_control',
+]);
+const NO_VOLUME_OPS = new Set(['delestage', 'temperature_control']);
 const LINE_TYPES = new Set(['racking', 'blend', 'bottling', 'loss', 'destruction']);
 const STATUSES = ['draft', 'confirmed', 'rectified', 'discarded'] as const;
 const LOSS_KINDS = ['authorized', 'incident'] as const;
@@ -187,6 +212,7 @@ interface ParsedLine {
   nominal_volume_ml: number | null;
   excise_product_key: string | null;
   nc_code: string | null;
+  new_lot_code: string | null;
 }
 
 interface AdditionInput {
@@ -230,6 +256,16 @@ interface StoredDraft {
   focus_lot_id: string | null;
   abv_pct: string | null;
   excise_product_key: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  notes: string | null;
+  previous_setpoint_c: string | null;
+  new_setpoint_c: string | null;
+  inoculation: 'spontaneous' | 'commercial' | null;
+  inoculum_product_id: string | null;
+  end_evidence: 'sensory' | 'analysis' | 'both' | null;
+  end_analysis_id: string | null;
+  observations: string | null;
 }
 
 export interface OperationPreview {
@@ -242,6 +278,8 @@ export interface OperationPreview {
   silicie_entries: ReturnType<typeof describeSilicie>;
   pressing_yield: PlanSuccess['pressingYield'];
   fermentation_phase: PlanSuccess['fermentationPhase'];
+  notes: readonly string[];
+  enology_checks: CheckResult;
 }
 
 export async function listOperations(writer: Writer, request: Request): Promise<ListBody<OperationHeader>> {
@@ -324,6 +362,52 @@ export async function updateOperation(writer: Writer, request: Request, id: stri
   return readOperation(writer, id);
 }
 
+const CHECK_STATES = new Set(['grape', 'must', 'wine', 'packaged_unlabeled', 'packaged_labeled']);
+
+async function enologyChecks(tx: ReadDb, current: LoadedDraft, now: Date): Promise<CheckResult> {
+  const lines = current.draft.lines;
+  const state = lines.find((line) => CHECK_STATES.has(line.product_state))?.product_state ?? 'wine';
+  const sum = (role: string) => lines
+    .filter((line) => line.role === role)
+    .reduce((total, line) => total + line.volume_ml, 0);
+  const lotId = lines.find((line) => line.role === 'input' && line.lot_id)?.lot_id
+    ?? current.draft.focus_lot_id
+    ?? current.draft.addition?.lot_id
+    ?? null;
+  const additions: { name: string; purpose: string | null; is_so2: boolean }[] = [];
+  if (current.draft.addition) {
+    const products = await tx.read<{ name: string }>(sql`
+      SELECT name FROM catalog.product WHERE id = CAST(${current.draft.addition.additive_product_id} AS UUID)
+    `);
+    additions.push({
+      name: products[0]?.name ?? 'adición',
+      purpose: current.draft.addition.purpose,
+      is_so2: current.draft.addition.purpose === 'sulphiting',
+    });
+  }
+  const fiscal = current.header.fiscal_date;
+  return runChecks(tx, {
+    legal_entity_id: current.header.legal_entity_id,
+    as_of: /^\d{4}-\d{2}-\d{2}/u.test(fiscal) ? fiscal.slice(0, 10) : undefined,
+    operation: {
+      op_type: current.header.op_type,
+      product_state: state,
+      input_volume_ml: String(sum('input')),
+      loss_volume_ml: String(sum('loss')),
+      reason: current.header.reason,
+      additions,
+      practices: [],
+    },
+    lot: lotId ? { id: lotId } : {},
+  }, now);
+}
+
+function assertEnologyAllows(checks: CheckResult): void {
+  const block = checks.findings.find((finding) => finding.blocks);
+  if (!block) return;
+  throw new DomainError('WC_ENOLOGY_PROHIBITED', 422, block.message, undefined, { findings: checks.findings });
+}
+
 export async function previewOperation(writer: Writer, request: Request, id: string): Promise<OperationPreview> {
   if (!isUuid(id)) throw domainError('WC_NOT_FOUND');
   sessionOf(request);
@@ -333,6 +417,7 @@ export async function previewOperation(writer: Writer, request: Request, id: str
     const actorId = sessionOf(request).id;
     const plan = await planStored(tx, current, actorId);
     const materials = await materialsFor(tx, current, plan, actorId);
+    const checks = await enologyChecks(tx, current, new Date(current.header.occurred_at));
     return {
       stock_moves: materials.short ? plan.stockMoves : [...plan.stockMoves, ...materials.exits],
       fiscal_moves: plan.fiscalMoves,
@@ -343,6 +428,11 @@ export async function previewOperation(writer: Writer, request: Request, id: str
       silicie_entries: describeSilicie(plan),
       pressing_yield: plan.pressingYield,
       fermentation_phase: plan.fermentationPhase,
+      notes: [
+        ...plan.notes,
+        ...checks.findings.filter((finding) => finding.severity !== 'info').map((finding) => finding.message),
+      ],
+      enology_checks: checks,
     };
   });
 }
@@ -358,6 +448,8 @@ export async function confirmOperation(writer: Writer, request: Request, id: str
     }
     await consumeLossApproval(tx, policies, current);
     const plan = await planStored(tx, current, actor.id);
+    const checks = await enologyChecks(tx, current, new Date(current.header.occurred_at));
+    assertEnologyAllows(checks);
     const materials = await materialsFor(tx, current, plan, actor.id);
     if (materials.short) {
       throw new DomainError('WC024', 422, 'Saldo negativo', undefined, {
@@ -371,6 +463,16 @@ export async function confirmOperation(writer: Writer, request: Request, id: str
         })),
       });
     }
+    if (current.header.op_type === 'bottling') {
+      await assertBottlingChecklist(tx, current.id);
+    }
+    // Limpieza: el consumo planificado se da de baja aquí. La filtración no está en el motor;
+    // su consumo lo publica POST /v1/hygiene/filtrations en el mismo write que la ficha.
+    await postPlannedConsumptions(tx, {
+      operationId: current.id,
+      occurredAt: current.header.occurred_at,
+      actorId: actor.id,
+    });
     const number = await takeCellarOperationNumber(tx, current.header.legal_entity_id, current.header.fiscal_date);
     await persistConfirmed(tx, current, plan, actor.id, number, materials);
   });
@@ -474,13 +576,30 @@ function linesLocked(status: string): DomainError {
 
 function parseBody(body: Record<string, unknown>): { header: ParsedHeader; draft: StoredDraft } {
   const header = parseHeader(body);
+  if (NO_VOLUME_OPS.has(header.op_type) && Array.isArray(body.lines) && body.lines.length > 0) {
+    throw domainError('WC020', { lines: 'Esta operación no mueve volumen' }, `WC020: ${header.op_type} no mueve volumen`);
+  }
+  if (header.op_type === 'temperature_control' && (header.reason === null || header.reason.trim() === '')) {
+    invalid({ reason: 'La corrección de temperatura exige motivo' });
+  }
   const lines = WINEMAKING_LINE_OPS.has(header.op_type)
     ? parseWinemakingLines(body)
     : LINE_TYPES.has(header.op_type) ? parseLines(body) : [];
   const addition = header.op_type === 'addition' ? parseAddition(body) : null;
   const cleaning = header.op_type === 'cleaning' ? parseCleaning(body) : null;
-  const newLot = header.op_type === 'blend' || header.op_type === 'bottling' ? parseNewLot(body, header.op_type) : null;
+  const newLot = header.op_type === 'blend' || header.op_type === 'bottling' || header.op_type === 'bleeding'
+    ? parseNewLot(body, header.op_type)
+    : null;
+  if (header.op_type === 'bleeding' && newLot) {
+    for (const line of lines) {
+      if (line.role === 'output' && !line.new_lot_code) line.new_lot_code = newLot.code;
+    }
+  }
   const winemaking = isWinemakingOp(header.op_type);
+  const inoculation = optionalInoculation(body.inoculation);
+  if (inoculation === 'commercial' && (body.inoculum_product_id === undefined || body.inoculum_product_id === null)) {
+    invalid({ inoculum_product_id: 'La inoculación comercial necesita el producto' });
+  }
   return {
     header,
     draft: {
@@ -494,6 +613,18 @@ function parseBody(body: Record<string, unknown>): { header: ParsedHeader; draft
       focus_lot_id: WINEMAKING_START_OPS.has(header.op_type) ? requireUuid(body.lot_id, 'lot_id') : null,
       abv_pct: optionalAbv(body.abv_pct),
       excise_product_key: optionalText(body.excise_product_key, 'excise_product_key', 40),
+      started_at: optionalInstant(body.started_at, 'started_at'),
+      ended_at: optionalInstant(body.ended_at, 'ended_at'),
+      notes: optionalText(body.notes, 'notes', 2000),
+      previous_setpoint_c: optionalSetpoint(body.previous_setpoint_c),
+      new_setpoint_c: optionalSetpoint(body.new_setpoint_c),
+      inoculation: header.op_type === 'fermentation_start' || header.op_type === 'malolactic_start'
+        ? (inoculation ?? 'spontaneous')
+        : inoculation,
+      inoculum_product_id: optionalUuid(body.inoculum_product_id, 'inoculum_product_id'),
+      end_evidence: optionalEvidence(body.end_evidence),
+      end_analysis_id: optionalUuid(body.end_analysis_id, 'end_analysis_id'),
+      observations: optionalText(body.observations, 'observations', 2000),
     },
   };
 }
@@ -615,7 +746,18 @@ async function persistConfirmed(
   number: string,
   materials: { lines: readonly MaterialUseLine[]; exits: readonly StockMoveDraft[] } | null = null,
 ): Promise<void> {
+  const segregateChild = current.header.op_type === 'blend' && await blendSegregation(tx, current.draft.lines) === 'segregated';
   for (const lot of plan.newLots) insertLot(tx, lot);
+  if (segregateChild && plan.newLots[0]) {
+    tx.write(sql`UPDATE inventory.lot SET segregated = TRUE WHERE id = CAST(${plan.newLots[0].id} AS UUID)`);
+    tx.audit({
+      table: 'inventory.lot',
+      rowId: plan.newLots[0].id,
+      action: 'UPDATE',
+      before: { segregated: false },
+      after: { segregated: true },
+    });
+  }
   const confirmedAt = new Date().toISOString();
   const silicie = plan.fiscalMoves.length > 0 || plan.silicieFacts.length > 0;
   const details = {
@@ -624,6 +766,7 @@ async function persistConfirmed(
       silicie_entries: describeSilicie(plan),
       pressing_yield: plan.pressingYield,
       fermentation_phase: plan.fermentationPhase,
+      notes: plan.notes,
     },
   };
   deleteDraftLines(tx, current.id);
@@ -631,7 +774,7 @@ async function persistConfirmed(
   for (const line of current.draft.lines) {
     if (!line.lot_id && line.role !== 'output') continue;
     if (!line.vessel_id && !line.location_id && line.product_state !== 'grape') continue;
-    insertLine(tx, current.id, line, newLotId, current.header.op_type);
+    insertLine(tx, current.id, line, newLotId, current.header.op_type, plan.newLots);
   }
   auditUpdate(tx, 'cellar.operation', current.id, { status: 'draft', number: null }, {
     status: 'confirmed',
@@ -649,6 +792,7 @@ async function persistConfirmed(
   `);
   for (const edge of plan.lotEdges) insertEdge(tx, edge);
   for (const move of plan.stockMoves) insertStock(tx, move);
+  await noteBarrelFills(tx, plan.stockMoves, current.id, actorId);
   for (const move of plan.fiscalMoves) insertFiscal(tx, move);
   if (current.draft.addition && current.header.op_type === 'addition') {
     insertAddition(tx, current.id, current.draft.addition);
@@ -664,7 +808,15 @@ async function persistConfirmed(
     for (const line of materials.lines) insertConsumption(tx, current.id, line);
     for (const move of materials.exits) insertStock(tx, move);
   }
-  await applyWinemakingEffects(tx, current.id, plan);
+  await applyWinemakingEffects(tx, current.id, plan, {
+    at: current.header.occurred_at,
+    actorId,
+    inoculation: current.draft.inoculation,
+    inoculumProductId: current.draft.inoculum_product_id,
+    observations: current.draft.observations,
+    endEvidence: current.draft.end_evidence,
+    endAnalysisId: current.draft.end_analysis_id,
+  });
 }
 
 function bottledOutput(plan: PlanSuccess): {
@@ -756,6 +908,10 @@ async function buildRequest(
   if (header.op_type === 'fermentation_end' || header.op_type === 'malolactic_end') {
     return buildFermentationEnd(tx, common, header.op_type, lines, draft);
   }
+  if (header.op_type === 'bleeding') return buildBleeding(tx, common, lines, draft);
+  if (header.op_type === 'pressing_off') return buildPressingOff(tx, common, lines);
+  if (header.op_type === 'delestage') return buildDelestage(tx, common, draft);
+  if (header.op_type === 'temperature_control') return buildTemperature(tx, common, draft);
   return buildCleaning(tx, common, draft.cleaning);
 }
 
@@ -769,7 +925,12 @@ async function vesselMap(tx: Tx, request: OperationRequest): Promise<Map<string,
 function vesselIdsOf(request: OperationRequest): string[] {
   const ids = new Set<string>();
   if (request.op_type === 'addition') ids.add(request.vessel_id);
-  if (request.op_type === 'fermentation_start' || request.op_type === 'malolactic_start') ids.add(request.vessel_id);
+  if (
+    request.op_type === 'fermentation_start'
+    || request.op_type === 'malolactic_start'
+    || request.op_type === 'delestage'
+    || request.op_type === 'temperature_control'
+  ) ids.add(request.vessel_id);
   if (request.op_type === 'cleaning' && request.cleaning.vessel_id) ids.add(request.cleaning.vessel_id);
   if (
     request.op_type === 'racking'
@@ -780,6 +941,8 @@ function vesselIdsOf(request: OperationRequest): string[] {
     || request.op_type === 'crushing_pressing'
     || request.op_type === 'fermentation_end'
     || request.op_type === 'malolactic_end'
+    || request.op_type === 'bleeding'
+    || request.op_type === 'pressing_off'
   ) {
     for (const line of request.lines) {
       if ('vessel_id' in line && line.vessel_id) ids.add(line.vessel_id);
@@ -821,6 +984,22 @@ async function buildTransfer(
   return { ...common, op_type: 'racking', lines: engine };
 }
 
+async function blendSegregation(tx: Tx, lines: readonly ParsedLine[]): Promise<'segregated' | 'healthy'> {
+  const ids = [...new Set(lines.filter((line) => line.role === 'input' && line.lot_id).map((line) => line.lot_id as string))];
+  if (ids.length === 0) return 'healthy';
+  const list = ids.map((id) => sql`CAST(${id} AS UUID)`).join(', ');
+  const rows = await tx.read<Record<string, unknown>>(`
+    SELECT segregated FROM inventory.lot WHERE id IN (${list})
+  `);
+  const flags = rows.map((row) => row.segregated === true || row.segregated === 'true');
+  const any = flags.some(Boolean);
+  const all = flags.length > 0 && flags.every(Boolean);
+  if (any && !all) {
+    throw new DomainError('WC_VALIDATION', 422, 'Un lote segregado no se ensambla con uno sano');
+  }
+  return all ? 'segregated' : 'healthy';
+}
+
 async function buildBlend(
   tx: Tx,
   common: Omit<BlendRequest, 'op_type' | 'lines' | 'new_lot'>,
@@ -828,6 +1007,7 @@ async function buildBlend(
   newLot: NewLotInput | null,
 ): Promise<BlendRequest> {
   if (!newLot) invalid({ new_lot: 'El ensamblaje crea un lote' });
+  await blendSegregation(tx, lines);
   const engine: BlendLine[] = [];
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
@@ -1089,6 +1269,101 @@ async function buildFermentationEnd(
   const first = lines.find((line) => line.lot_id)?.lot_id ?? null;
   const phase = first ? await loadPhase(tx, first) : null;
   return fermentationEndRequest(common, op, lines, lots, phase, draft.abv_pct, draft.excise_product_key);
+}
+
+async function buildBleeding(
+  tx: Tx,
+  common: Omit<BleedingRequest, 'op_type' | 'lines' | 'new_lot'>,
+  lines: readonly ParsedLine[],
+  draft: StoredDraft,
+): Promise<BleedingRequest> {
+  if (!draft.new_lot) invalid({ new_lot: 'El sangrado crea un lote' });
+  const parentId = lines.find((line) => line.role === 'input' && line.lot_id)?.lot_id ?? null;
+  const parent = await requireLot(tx, parentId, 'lines.lot_id');
+  const engine: FermentationVolumeLine[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!line) continue;
+    const field = `lines[${index}]`;
+    const lot = line.lot_id ? await requireLot(tx, line.lot_id, `${field}.lot_id`) : parent;
+    const state = bulkState(line.product_state, `${field}.product_state`);
+    if (!line.vessel_id) invalid({ [`${field}.vessel_id`]: 'Falta el recipiente' });
+    engine.push({
+      role: line.role,
+      lot,
+      vessel_id: line.vessel_id,
+      volume_ml: line.volume_ml,
+      product_state: state,
+      loss_kind: line.role === 'loss' ? line.loss_kind : null,
+    });
+  }
+  return { ...common, op_type: 'bleeding', lines: engine, new_lot: { code: draft.new_lot.code } };
+}
+
+async function buildPressingOff(
+  tx: Tx,
+  common: Omit<PressingOffRequest, 'op_type' | 'lines'>,
+  lines: readonly ParsedLine[],
+): Promise<PressingOffRequest> {
+  const engine: PressingOffLine[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!line) continue;
+    const field = `lines[${index}]`;
+    if (!line.lot_id && line.role !== 'output') invalid({ [`${field}.lot_id`]: 'Falta el lote' });
+    const parentId = line.lot_id ?? lines.find((item) => item.role === 'input' && item.lot_id)?.lot_id ?? null;
+    const lot = await requireLot(tx, parentId, `${field}.lot_id`);
+    if (!line.vessel_id) invalid({ [`${field}.vessel_id`]: 'Falta el recipiente' });
+    engine.push({
+      role: line.role,
+      lot,
+      vessel_id: line.vessel_id,
+      volume_ml: line.volume_ml,
+      product_state: bulkState(line.product_state, `${field}.product_state`),
+      loss_kind: line.role === 'loss' ? line.loss_kind : null,
+      new_lot_code: line.role === 'output' ? line.new_lot_code : null,
+    });
+  }
+  return { ...common, op_type: 'pressing_off', lines: engine };
+}
+
+async function buildDelestage(
+  tx: Tx,
+  common: Omit<DelestageRequest, 'op_type' | 'vessel_id' | 'lot' | 'started_at' | 'ended_at' | 'notes'>,
+  draft: StoredDraft,
+): Promise<DelestageRequest> {
+  if (!draft.focus_vessel_id || !draft.focus_lot_id) invalid({ vessel_id: 'Falta el recipiente o el lote' });
+  if (!draft.started_at || !draft.ended_at) invalid({ started_at: 'El délestage necesita inicio y fin' });
+  const lot = await requireLot(tx, draft.focus_lot_id, 'lot_id');
+  return {
+    ...common,
+    op_type: 'delestage',
+    vessel_id: draft.focus_vessel_id,
+    lot,
+    started_at: draft.started_at,
+    ended_at: draft.ended_at,
+    notes: draft.notes,
+  };
+}
+
+async function buildTemperature(
+  tx: Tx,
+  common: Omit<TemperatureControlRequest, 'op_type' | 'vessel_id' | 'lot' | 'previous_setpoint_c' | 'new_setpoint_c'>,
+  draft: StoredDraft,
+): Promise<TemperatureControlRequest> {
+  if (!draft.focus_vessel_id || !draft.focus_lot_id) invalid({ vessel_id: 'Falta el recipiente o el lote' });
+  if (!draft.previous_setpoint_c || !draft.new_setpoint_c) {
+    invalid({ previous_setpoint_c: 'Faltan la consigna anterior y la nueva' });
+  }
+  const lot = await requireLot(tx, draft.focus_lot_id, 'lot_id');
+  return {
+    ...common,
+    op_type: 'temperature_control',
+    vessel_id: draft.focus_vessel_id,
+    lot,
+    previous_setpoint_c: draft.previous_setpoint_c,
+    new_setpoint_c: draft.new_setpoint_c,
+  };
 }
 
 async function lotsFor(tx: Tx, lines: readonly ParsedLine[]): Promise<Map<string, LotRef>> {
@@ -1389,6 +1664,12 @@ async function assertReferences(tx: Tx, draft: StoredDraft): Promise<void> {
   if (draft.focus_lot_id) {
     await assertRow(tx, 'inventory.lot', draft.focus_lot_id, 'lot_id', 'El lote no existe');
   }
+  if (draft.inoculum_product_id) {
+    await assertRow(tx, 'catalog.product', draft.inoculum_product_id, 'inoculum_product_id', 'El producto no existe');
+  }
+  if (draft.end_analysis_id) {
+    await assertRow(tx, 'cellar.analysis', draft.end_analysis_id, 'end_analysis_id', 'La analítica no existe');
+  }
   if (draft.cleaning) {
     await assertRow(tx, 'catalog.product', draft.cleaning.product_id, 'cleaning.product_id', 'El producto de limpieza no existe');
     if (draft.cleaning.location_id) {
@@ -1412,7 +1693,7 @@ function asStored(value: unknown): StoredDraft | null {
   if (typeof record.fiscal_date !== 'string' || !Array.isArray(record.lines)) return null;
   return {
     fiscal_date: record.fiscal_date,
-    lines: record.lines.map((line) => ({ ...line, mass_g: line.mass_g ?? 0 })),
+    lines: record.lines.map((line) => ({ ...line, mass_g: line.mass_g ?? 0, new_lot_code: line.new_lot_code ?? null })),
     new_lot: record.new_lot ?? null,
     addition: record.addition
       ? {
@@ -1427,6 +1708,18 @@ function asStored(value: unknown): StoredDraft | null {
     focus_lot_id: typeof record.focus_lot_id === 'string' ? record.focus_lot_id : null,
     abv_pct: typeof record.abv_pct === 'string' ? record.abv_pct : null,
     excise_product_key: typeof record.excise_product_key === 'string' ? record.excise_product_key : null,
+    started_at: typeof record.started_at === 'string' ? record.started_at : null,
+    ended_at: typeof record.ended_at === 'string' ? record.ended_at : null,
+    notes: typeof record.notes === 'string' ? record.notes : null,
+    previous_setpoint_c: typeof record.previous_setpoint_c === 'string' ? record.previous_setpoint_c : null,
+    new_setpoint_c: typeof record.new_setpoint_c === 'string' ? record.new_setpoint_c : null,
+    inoculation: record.inoculation === 'spontaneous' || record.inoculation === 'commercial' ? record.inoculation : null,
+    inoculum_product_id: typeof record.inoculum_product_id === 'string' ? record.inoculum_product_id : null,
+    end_evidence: record.end_evidence === 'sensory' || record.end_evidence === 'analysis' || record.end_evidence === 'both'
+      ? record.end_evidence
+      : null,
+    end_analysis_id: typeof record.end_analysis_id === 'string' ? record.end_analysis_id : null,
+    observations: typeof record.observations === 'string' ? record.observations : null,
   };
 }
 
@@ -1555,12 +1848,17 @@ function insertLot(tx: Tx, lot: LotDraft): void {
   `);
 }
 
-function lineLotId(line: ParsedLine, newLotId: string | null, opType: string): string | null {
-  return (opType === 'blend' || opType === 'bottling') && line.role === 'output' ? newLotId : line.lot_id;
-}
-
-function insertLine(tx: Tx, operationId: string, line: ParsedLine, newLotId: string | null, opType: string): void {
-  const lotId = lineLotId(line, newLotId, opType);
+function insertLine(
+  tx: Tx,
+  operationId: string,
+  line: ParsedLine,
+  newLotId: string | null,
+  opType: string,
+  newLots: readonly LotDraft[] = [],
+): void {
+  const born = line.new_lot_code ? newLots.find((lot) => lot.code === line.new_lot_code)?.id ?? null : null;
+  const lotId = born
+    ?? ((opType === 'blend' || opType === 'bottling') && line.role === 'output' ? newLotId : line.lot_id);
   if (!lotId) throw new Error('La línea no tiene lote');
   const vesselId = opType === 'bottling' && line.role === 'output' ? null : line.vessel_id;
   const id = newId();
@@ -1981,6 +2279,7 @@ function parseWinemakingLines(body: Record<string, unknown>): ParsedLine[] {
       excise_product_key: null,
       nc_code: null,
       mass_g: mass,
+      new_lot_code: optionalLotCode(line.new_lot_code, `${field}.new_lot_code`),
     };
   });
 }
@@ -1989,6 +2288,41 @@ function optionalAbv(value: unknown): string | null {
   if (value === undefined || value === null || value === '') return null;
   const text = requireText(value, 'abv_pct', 10);
   if (!/^(0|[1-9]\d?)(?:\.\d{1,2})?$/.test(text)) invalid({ abv_pct: 'El grado no es válido' });
+  return text;
+}
+
+function optionalInoculation(value: unknown): 'spontaneous' | 'commercial' | null {
+  if (value === undefined || value === null || value === '') return null;
+  if (value === 'spontaneous' || value === 'commercial') return value;
+  invalid({ inoculation: 'La inoculación no es válida' });
+}
+
+function optionalEvidence(value: unknown): 'sensory' | 'analysis' | 'both' | null {
+  if (value === undefined || value === null || value === '') return null;
+  if (value === 'sensory' || value === 'analysis' || value === 'both') return value;
+  invalid({ end_evidence: 'La evidencia de fin no es válida' });
+}
+
+function optionalInstant(value: unknown, field: string): string | null {
+  if (value === undefined || value === null || value === '') return null;
+  const text = requireText(value, field, 40);
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:Z|[+-]\d{2}:\d{2})$/.test(text)) {
+    invalid({ [field]: 'Debe ser un instante ISO-8601 con zona horaria' });
+  }
+  return text;
+}
+
+function optionalSetpoint(value: unknown): string | null {
+  if (value === undefined || value === null || value === '') return null;
+  const text = typeof value === 'number' ? String(value) : value;
+  if (typeof text !== 'string') invalid({ previous_setpoint_c: 'La consigna no es válida' });
+  return text.trim();
+}
+
+function optionalLotCode(value: unknown, field: string): string | null {
+  if (value === undefined || value === null || value === '') return null;
+  const text = requireText(value, field, 30);
+  if (!LOT_CODE.test(text)) invalid({ [field]: 'El código de lote no es válido' });
   return text;
 }
 
@@ -2018,6 +2352,7 @@ function parseLine(value: unknown, index: number): ParsedLine {
     excise_product_key: optionalText(line.excise_product_key, `${field}.excise_product_key`, 40),
     nc_code: optionalText(line.nc_code, `${field}.nc_code`, 8),
     mass_g: 0,
+    new_lot_code: null,
   };
 }
 

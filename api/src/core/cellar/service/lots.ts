@@ -176,7 +176,17 @@ async function loadComposition(writer: Writer, lotId: string): Promise<Compositi
   }));
 }
 
-async function loadNodes(writer: Writer, lotId: string, direction: 'up' | 'down'): Promise<LotNode[]> {
+type SqlReader = {
+  read<T = Record<string, unknown>>(statement: string): Promise<T[]>;
+};
+
+/** Strict ancestors of a lot (parents, grandparents, …), the same walk as the lot sheet. */
+export async function ancestorLotIds(reader: SqlReader, lotId: string): Promise<string[]> {
+  const nodes = await loadNodes(reader, lotId, 'up');
+  return nodes.map((node) => node.lot_id);
+}
+
+async function loadNodes(reader: SqlReader, lotId: string, direction: 'up' | 'down'): Promise<LotNode[]> {
   const sqlText = direction === 'up'
     ? `
       WITH RECURSIVE walk AS (
@@ -213,7 +223,7 @@ async function loadNodes(writer: Writer, lotId: string, direction: 'up' | 'down'
       ORDER BY min(walk.depth), p.code
     `;
   if (!isUuid(lotId)) throw new Error('Lote no válido');
-  const rows = await writer.read<Record<string, unknown>>(sqlText);
+  const rows = await reader.read<Record<string, unknown>>(sqlText);
   return rows.map((row) => ({
     lot_id: textOf(row.lot_id),
     code: textOf(row.code),
