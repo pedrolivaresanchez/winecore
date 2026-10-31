@@ -93,6 +93,14 @@ export const navigation: NavEntry[] = [
     icon: Receipt,
     path: '/ventas',
     permission: 'sales.read',
+  },
+  {
+    id: 'expenses',
+    module: 'purchasing',
+    label: copy.gastos.title,
+    icon: Receipt,
+    path: '/gastos',
+    permission: 'purchasing.read',
     mobile: 'tab',
     placement: 'main',
   },
@@ -113,6 +121,7 @@ export const navigation: NavEntry[] = [
     ],
   },
   {
+
 
 
     id: 'settings',
