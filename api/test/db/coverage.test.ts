@@ -23,6 +23,8 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
   expect(new Set(guards.map((guard) => guard.id)).size).toBe(guards.length);
   const implemented = guards.filter((guard) => guard.implemented).map((guard) => guard.id).sort();
   expect(implemented).toEqual([
+    "UQ:billing.intercompany_settlement(seller_entity_id,buyer_entity_id,period_start,period_end)",
+    "UQ:catalog.intercompany_tariff(seller_entity_id,buyer_entity_id,valid_from,valid_to)",
     "UQ:party.contact(tax_id)",
     "UQ:party.contact_address(contact_id,kind)",
   ]);
