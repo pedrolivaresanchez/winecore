@@ -21,8 +21,10 @@ import {
   patchContact,
   patchPerson,
 } from './routes/contacts';
+import { downloadAttachment, listAttachmentLinks, uploadAttachment } from './routes/attachments';
 import { health } from './routes/health';
 import { me } from './routes/me';
+import { createNumberSeries, deactivateNumberSeries, listNumberSeries } from './routes/series';
 
 export interface AppDeps {
   config: Config;
@@ -129,6 +131,34 @@ export function createApp(deps: AppDeps) {
     })
     .post('/v1/contacts/:id/persons/:pid/archive', ({ request, params }) => archivePerson(deps.writer, request, params.id, params.pid), {
       beforeHandle: requirePermission(guardDeps, 'contacts.write'),
+    })
+    // Series de numeración (TASK-CORE-004). Sin borrado.
+    .get('/v1/number-series', ({ request }) => listNumberSeries(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'settings.manage'),
+    })
+    .post('/v1/number-series', async ({ request, set }) => {
+      const body = await createNumberSeries(deps.writer, request);
+      set.status = 201;
+      return body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'settings.manage'),
+    })
+    .post('/v1/number-series/:id/deactivate', ({ request, params }) => deactivateNumberSeries(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'settings.manage'),
+    })
+    // Adjuntos (TASK-CORE-006). El permiso es el del módulo de la tabla enlazada.
+    .post('/v1/attachments', async ({ request, set }) => {
+      const body = await uploadAttachment(deps.writer, request);
+      set.status = 201;
+      return body;
+    }, {
+      beforeHandle: requireUser(guardDeps),
+    })
+    .get('/v1/attachments', ({ request }) => listAttachmentLinks(deps.writer, request), {
+      beforeHandle: requireUser(guardDeps),
+    })
+    .get('/v1/attachments/:id', ({ request, params }) => downloadAttachment(deps.writer, request, params.id), {
+      beforeHandle: requireUser(guardDeps),
     });
   return app;
 }
