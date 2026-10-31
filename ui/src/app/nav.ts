@@ -1,4 +1,4 @@
-import { Box, ChartBar, Check, Home, Layers, Receipt, Settings2, Users, type IconComponent } from '@/ui/icons'
+import { Box, Calendar, ChartBar, Check, Home, Layers, Receipt, Settings2, Users, type IconComponent } from '@/ui/icons'
 import { copy } from '@/i18n'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
@@ -64,6 +64,7 @@ export const navigation: NavEntry[] = [
   },
   { id: 'contacts', module: 'contacts', label: copy.nav.contacts, icon: Users, path: '/contactos', permission: 'contacts.read', mobile: 'tab', placement: 'main' },
   { id: 'reports', module: 'core', label: copy.nav.reports, icon: ChartBar, path: '/informes', permission: 'reports.read', mobile: 'more', placement: 'main' },
+  { id: 'regulatory', module: 'regulatory', label: copy.nav.regulatory, icon: Calendar, path: '/regulatorio', permission: 'regulatory.read', mobile: 'more', placement: 'main' },
   { id: 'settings', module: 'core', label: 'Ajustes', icon: Settings2, action: 'settings', mobile: 'more', placement: 'footer' },
 ]
 
