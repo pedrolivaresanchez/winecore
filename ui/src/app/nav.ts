@@ -1,4 +1,4 @@
-import { Box, ChartBar, Check, Home, Layers, Receipt, Settings2, Users, type IconComponent } from '@/ui/icons'
+import { Box, ChartBar, Check, Home, Layers, MapPin, Receipt, Settings2, Users, type IconComponent } from '@/ui/icons'
 import { copy } from '@/i18n'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
@@ -45,6 +45,7 @@ export const navigation: NavEntry[] = [
       { id: 'new-operation', label: copy.nav.newOperation, path: '/bodega/operaciones/nueva', permission: 'cellar.operate' },
     ],
   },
+  { id: 'vineyard', module: 'vineyard', label: copy.nav.vineyard, icon: MapPin, path: '/vinedo', permission: 'vineyard.read', mobile: 'tab', placement: 'main' },
   { id: 'stock', module: 'inventory', label: copy.nav.stock, icon: Box, path: '/stock', permission: 'inventory.read', mobile: 'more', placement: 'main' },
   {
     id: 'catalog',
