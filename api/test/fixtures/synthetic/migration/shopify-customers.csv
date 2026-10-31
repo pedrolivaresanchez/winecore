@@ -1,0 +1,4 @@
+Customer ID,First Name,Last Name,Email,Accepts Email Marketing,Default Address Company,Default Address Address1,Default Address Address2,Default Address City,Default Address Province Code,Default Address Country Code,Default Address Zip,Default Address Phone,Phone,Accepts SMS Marketing,Total Spent,Total Orders,Note,Tax Exempt,Tags,Accepts WhatsApp Marketing
+shop-ada,Ada,Ejemplo,ada.ejemplo@example.com,no,,Calle Ejemplo 1,,Ejemplo,V,ES,28013,,,no,10.00,1,,no,web,no
+shop-bo,Bo,Ejemplo,bo.ejemplo@example.com,yes,,Calle Ejemplo 2,,Ejemplo,V,ES,28014,,,no,0.00,0,,no,,no
+shop-cia,Cia,Ejemplo,cia.ejemplo@example.com,no,,Calle Ejemplo 3,,Ejemplo,V,ES,28015,,,no,0.00,0,,no,,no
