@@ -22,6 +22,7 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
   expect(missingIndexes).toEqual([]);
   expect(new Set(guards.map((guard) => guard.id)).size).toBe(guards.length);
   const implementedIds = [
+    "FN:billing.resolve_issuing_entity",
     "UQ:core.number_series(legal_entity_id,doc_type,year)",
     "UQ:party.contact(tax_id)",
     "UQ:party.contact_address(contact_id,kind)",
@@ -34,6 +35,8 @@ test("cada WC y cada índice único parcial de la referencia está en el registr
     "WC025",
     "WC026",
     "WC027",
+    "WC060",
+    "WC070",
   ];
   const implemented = guards.filter((guard) => guard.implemented).map((guard) => guard.id).sort();
   expect(implemented).toEqual(implementedIds);

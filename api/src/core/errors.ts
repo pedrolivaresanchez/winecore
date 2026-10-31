@@ -45,6 +45,8 @@ const CATALOG = {
   WC_NO_ACCESS: [403, 'No tienes acceso a WineCore'],
   // Contactos (TASK-CONT-001)
   WC_CONTACT_DUPLICATE_TAX_ID: [409, 'Ya existe un contacto con este NIF'],
+  WC_REG_EAD_REQUIRED: [409, 'Hace falta el ARC (e-DA) antes de expedir'],
+  WC_IC_NO_TARIFF: [422, 'No hay tarifa intercompañía vigente'],
 } as const;
 
 export type ErrorCode = keyof typeof CATALOG;

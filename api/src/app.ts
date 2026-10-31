@@ -32,6 +32,7 @@ import {
   submitInventoryCountRoute,
 } from './routes/stock-counts';
 import { stockBalances, stockFiscalBalances, stockInspection, stockMoves } from './routes/stock';
+import { salesRoutes } from './routes/sales';
 
 export interface AppDeps {
   config: Config;
@@ -192,6 +193,7 @@ export function createApp(deps: AppDeps) {
     .post('/v1/inventory-counts/:id/post-request', ({ request, params }) => submitInventoryCountRoute(deps.writer, request, params), {
       beforeHandle: requirePermission(guardDeps, 'inventory.count'),
     })
-    });
+    // Ventas: reglas D3, presupuestos, pedidos y albaranes.
+    .use(salesRoutes(deps.writer, guardDeps));
   return app;
 }

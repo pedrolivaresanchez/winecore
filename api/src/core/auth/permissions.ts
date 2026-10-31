@@ -7,6 +7,10 @@ export const PERMISSIONS = [
   // Existencias (stock): lectura del libro y aforos.
   'inventory.read',
   'inventory.count',
+  // Ventas (docs/07-arquitectura.md §6): lectura, operación y excepciones.
+  'sales.read',
+  'sales.write',
+  'sales.manage',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -30,11 +34,11 @@ export interface UserCtx {
 
 const MATRIX: Record<RoleCode, readonly Permission[]> = {
   owner: PERMISSIONS,
-  approver: ['contacts.read', 'audit.read', 'inventory.read'],
-  admin: ['contacts.read', 'contacts.write', 'inventory.read', 'inventory.count'],
+  approver: ['contacts.read', 'audit.read', 'inventory.read', 'sales.read'],
+  admin: ['contacts.read', 'contacts.write', 'inventory.read', 'inventory.count', 'sales.read', 'sales.write'],
   cellar: ['inventory.read', 'inventory.count'],
   field: [],
-  advisor: ['contacts.read', 'audit.read', 'inventory.read'],
+  advisor: ['contacts.read', 'audit.read', 'inventory.read', 'sales.read'],
 };
 
 const PERSONAL_CONTACT_ROLES = new Set<RoleCode>(['owner', 'admin', 'approver']);
