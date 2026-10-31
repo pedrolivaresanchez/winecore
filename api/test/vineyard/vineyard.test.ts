@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'bun:test';
 import { newId } from '../../src/core/ids';
 import { sql } from '../../src/core/db/sql';
-import { businessDate } from '../../src/core/time';
 import { createTestApp } from '../helpers';
 import { call, entityId, seedHolding, seedWarehouse } from '../cellar-api/fixtures';
 
-const fiscal = businessDate(new Date());
-const occurred = `${fiscal}T10:00:00Z`;
+// Fecha fija. Si el día civil sale de businessDate(new Date()) y cae después
+// de las 10:00 UTC, la rectificación (reloj real) queda anterior a la entrada
+// y el saldo de uva parece negativo.
+const fiscal = '2026-10-15';
+const occurred = '2026-10-15T10:00:00Z';
 const year = Number(fiscal.slice(0, 4));
 
 function expectOk(response: { status: number; body: Record<string, unknown> }, status: number) {
