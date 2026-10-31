@@ -256,6 +256,45 @@ CREATE TRIGGER silicie_entry_no_delete BEFORE DELETE ON regulatory.silicie_entry
 ALTER TABLE inventory.fiscal_move
   ADD CONSTRAINT fiscal_move_silicie_entry_fk FOREIGN KEY (silicie_entry_id) REFERENCES regulatory.silicie_entry(id);
 
+-- Mayores contables de SILICIE 2.0: identificación estable de cada producto o materia prima
+-- (Orden HAC/998/2019, anexo, campos 9.1–9.8 y 10.1–10.2; docs/04-regulatorio/silicie.md §6)
+CREATE TABLE regulatory.silicie_ledger (
+  id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tax_warehouse_id     uuid NOT NULL REFERENCES inventory.tax_warehouse(id),
+  reference            text NOT NULL CHECK (reference ~ '^[A-Z0-9_-]{2,20}$'),              -- 9.8 Referencia
+  description          text NOT NULL CHECK (length(description) BETWEEN 3 AND 100),           -- 9.7 Descripción (agrupa existencias en 2.0)
+  product_class        text NOT NULL CHECK (product_class IN ('raw_grape','raw_must','bulk','bulk_wood','packaged','byproduct')),
+  epigrafe             text,                                                                  -- 9.1 (vino tranquilo: '1')
+  epigrafe_code        text,                                                                  -- 9.2 (vino tranquilo: 'V0')
+  nc_code              text NOT NULL CHECK (nc_code ~ '^[0-9]{4}([0-9]{2}){0,2}$'),            -- 9.3 (mínimo 4 dígitos en 2.0)
+  product_key          text,                                                                  -- 9.4 Clave ('V01' uva, 'V02' mosto)
+  container_type       text,                                                                  -- 10.1 Tipo de envase ('VF03'…)
+  container_capacity_l numeric(7,3),                                                          -- 10.2 Capacidad del envase
+  is_active            boolean NOT NULL DEFAULT true,
+  validated_by         text,                                                                  -- revisión del asesor
+  created_at           timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (tax_warehouse_id, reference),
+  UNIQUE (tax_warehouse_id, description),
+  UNIQUE (tax_warehouse_id, reference, product_class),
+  CHECK (product_class NOT IN ('bulk','bulk_wood','packaged') OR (epigrafe IS NOT NULL AND epigrafe_code IS NOT NULL)),
+  CHECK (product_class <> 'packaged' OR (container_type IS NOT NULL AND container_capacity_l IS NOT NULL))
+);
+-- La identificación de un mayor no se cambia: se crea otro y se pasa el saldo con A17/A16
+CREATE FUNCTION regulatory.silicie_ledger_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF (to_jsonb(NEW) - ARRAY['is_active','validated_by']) IS DISTINCT FROM (to_jsonb(OLD) - ARRAY['is_active','validated_by']) THEN
+    RAISE EXCEPTION 'WC122: la identificación de un mayor de SILICIE no se modifica; crea otro y traspasa el saldo';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER silicie_ledger_guard BEFORE UPDATE ON regulatory.silicie_ledger FOR EACH ROW EXECUTE FUNCTION regulatory.silicie_ledger_guard();
+CREATE TRIGGER silicie_ledger_no_delete BEFORE DELETE ON regulatory.silicie_ledger FOR EACH ROW EXECUTE FUNCTION core.forbid_delete();
+
+-- Cada movimiento fiscal apunta a un mayor existente y de su misma clase
+ALTER TABLE inventory.fiscal_move
+  ADD CONSTRAINT fiscal_move_ledger_fk FOREIGN KEY (tax_warehouse_id, excise_product_key, product_class)
+  REFERENCES regulatory.silicie_ledger(tax_warehouse_id, reference, product_class);
+
 -- ---------------------------------------------------------------------
 -- SISV (docs/04-regulatorio/sisv.md): anotaciones por libro, derivadas de operaciones y documentos
 -- ---------------------------------------------------------------------

@@ -317,6 +317,36 @@ DO $$ BEGIN
 END $$;
 COMMIT;
 
+-- 18) SILICIE 2.0: el paso depósito → barrica cambia de mayor (A17/A16) y debe cuadrar (WC028)
+BEGIN;
+SELECT core.set_actor('system', 'silicie', NULL, 'test', NULL);
+INSERT INTO regulatory.silicie_ledger(tax_warehouse_id, reference, description, product_class, epigrafe, epigrafe_code, nc_code)
+VALUES ('00000000-0000-0000-0000-0000000007a1','GRANEL-TINTO','Vino tinto a granel en depósito','bulk','1','V0','22042998'),
+       ('00000000-0000-0000-0000-0000000007a1','CRIANZA-TINTO','Vino tinto en crianza en barrica','bulk_wood','1','V0','22042998');
+SELECT pg_temp.expect_error($q$ UPDATE regulatory.silicie_ledger SET description = 'Otro nombre' WHERE reference = 'GRANEL-TINTO' $q$, 'WC122');
+SELECT pg_temp.expect_error($q$ INSERT INTO inventory.fiscal_move(tax_warehouse_id, fiscal_date, move_type, product_class, volume_ml, excise_product_key, nc_code,
+       justification_type, justification_ref, fiscal_trigger, source_table, source_id, created_by)
+  VALUES ('00000000-0000-0000-0000-0000000007a1','2027-01-10','opening','bulk_wood',1000,'GRANEL-TINTO','22042998','count_record','AF-2027-1','count','inventory.inventory_count',gen_random_uuid(),'test') $q$, 'fiscal_move_ledger_fk');
+INSERT INTO inventory.fiscal_move(tax_warehouse_id, fiscal_date, move_type, product_class, volume_ml, excise_product_key, nc_code,
+       justification_type, justification_ref, fiscal_trigger, source_table, source_id, created_by)
+VALUES ('00000000-0000-0000-0000-0000000007a1','2027-01-10','opening','bulk',2000000,'GRANEL-TINTO','22042998','count_record','AF-2027-1','count','inventory.inventory_count',gen_random_uuid(),'test'),
+       ('00000000-0000-0000-0000-0000000007a1','2027-02-01','ledger_change_out','bulk',-225000,'GRANEL-TINTO','22042998','internal','OB-0001','operation','cellar.operation','00000000-0000-0000-0000-0000000020a1','test'),
+       ('00000000-0000-0000-0000-0000000007a1','2027-02-01','ledger_change_in','bulk_wood',225000,'CRIANZA-TINTO','22042998','internal','OB-0001','operation','cellar.operation','00000000-0000-0000-0000-0000000020a1','test');
+SET CONSTRAINTS ALL IMMEDIATE;
+DO $$ BEGIN
+  BEGIN
+    INSERT INTO inventory.fiscal_move(tax_warehouse_id, fiscal_date, move_type, product_class, volume_ml, excise_product_key, nc_code,
+           justification_type, justification_ref, fiscal_trigger, source_table, source_id, created_by)
+    VALUES ('00000000-0000-0000-0000-0000000007a1','2027-02-02','ledger_change_out','bulk',-100000,'GRANEL-TINTO','22042998','internal','OB-0002','operation','cellar.operation','00000000-0000-0000-0000-0000000020a2','test'),
+           ('00000000-0000-0000-0000-0000000007a1','2027-02-02','ledger_change_in','bulk_wood',90000,'CRIANZA-TINTO','22042998','internal','OB-0002','operation','cellar.operation','00000000-0000-0000-0000-0000000020a2','test');
+    SET CONSTRAINTS ALL IMMEDIATE;
+    RAISE EXCEPTION 'debió fallar WC028';
+  EXCEPTION WHEN OTHERS THEN
+    IF position('WC028' IN SQLERRM) = 0 THEN RAISE; END IF;
+  END;
+END $$;
+ROLLBACK;
+
 -- 17) Verifactu: la hora de generación no retrocede (WC131) y el rol del emisor (ADR 003)
 --     anota el resultado del envío pero no crea registros, no altera su contenido ni toca facturas
 BEGIN;

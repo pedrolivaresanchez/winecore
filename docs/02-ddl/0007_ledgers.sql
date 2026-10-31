@@ -82,8 +82,10 @@ CREATE TABLE inventory.fiscal_move (
                              'packaging_out_bulk','packaging_in_packaged',
                              'loss','destruction',
                              'exit_domestic','exit_export','exit_intra_eu','exit_canary',
+                             'ledger_change_out','ledger_change_in',      -- SILICIE A17/A16: paso entre mayores (depósito ↔ barrica)
                              'return_in','regularization_in','regularization_out','reversal')),
-  product_class            text NOT NULL CHECK (product_class IN ('bulk','packaged')),
+  -- Mayor contable de SILICIE 2.0: granel en depósitos, granel en madera no revestida (crianza) y envasado
+  product_class            text NOT NULL CHECK (product_class IN ('bulk','bulk_wood','packaged')),
   lot_id                   uuid REFERENCES inventory.lot(id),
   product_id               uuid REFERENCES catalog.product(id),
   volume_ml                bigint NOT NULL CHECK (volume_ml <> 0),
@@ -105,8 +107,9 @@ CREATE TABLE inventory.fiscal_move (
   created_by               text NOT NULL,
   created_at               timestamptz NOT NULL DEFAULT now(),
   CHECK (move_type IN ('reversal')
-      OR (move_type IN ('opening','production','bulk_receipt','packaging_in_packaged','return_in','regularization_in') AND volume_ml > 0 AND units >= 0)
-      OR (move_type IN ('packaging_out_bulk','loss','destruction','exit_domestic','exit_export','exit_intra_eu','exit_canary','regularization_out') AND volume_ml < 0 AND units <= 0)),
+      OR (move_type IN ('opening','production','bulk_receipt','packaging_in_packaged','ledger_change_in','return_in','regularization_in') AND volume_ml > 0 AND units >= 0)
+      OR (move_type IN ('packaging_out_bulk','loss','destruction','exit_domestic','exit_export','exit_intra_eu','exit_canary','ledger_change_out','regularization_out') AND volume_ml < 0 AND units <= 0)),
+  CHECK (move_type NOT IN ('ledger_change_out','ledger_change_in') OR product_class IN ('bulk','bulk_wood')),
   CHECK ((move_type = 'reversal') = (reverses_move_id IS NOT NULL)),
   CHECK (product_class <> 'packaged' OR (product_id IS NOT NULL AND units <> 0)),
   CHECK (move_type NOT IN ('regularization_in','regularization_out','destruction') OR reason IS NOT NULL)
@@ -213,6 +216,15 @@ BEGIN
      AND excise_product_key IS NOT DISTINCT FROM NEW.excise_product_key;
   IF v < 0 THEN
     RAISE EXCEPTION 'WC027: saldo fiscal negativo (% / %): % mL', NEW.product_class, NEW.excise_product_key, v;
+  END IF;
+  -- Un paso entre mayores (depósito ↔ barrica) sale de un mayor y entra en otro por el mismo volumen (WC028)
+  IF NEW.move_type IN ('ledger_change_out','ledger_change_in') THEN
+    SELECT coalesce(sum(volume_ml),0) INTO v FROM inventory.fiscal_move
+     WHERE source_table = NEW.source_table AND source_id = NEW.source_id
+       AND move_type IN ('ledger_change_out','ledger_change_in');
+    IF v <> 0 THEN
+      RAISE EXCEPTION 'WC028: el cambio de mayor de % no cuadra (% mL)', NEW.source_id, v;
+    END IF;
   END IF;
   RETURN NULL;
 END $$;

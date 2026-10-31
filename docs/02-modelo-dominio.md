@@ -193,7 +193,7 @@ Una **operación** es un hecho de bodega con líneas de **entrada**, **salida** 
 | `bulk_reception` | — | lote de vino/mosto (mL) en recipiente | — | solo salidas | `cellar_in` | Entrada de producto | Sí (entrada con documento) |
 | `crushing_pressing` | uva (g) | mosto (mL) en recipientes | opcional (g) | uva > 0 y mosto > 0 | `cellar_out` uva, `cellar_in` mosto | Elaboración | Según silicie.md |
 | `fermentation_end` | mosto (mL) | vino (mL) mismo lote | lías (mL) | entra = sale + merma | `cellar_out` mosto, `cellar_in` vino, `loss` | Elaboración | Según silicie.md (producción) |
-| `racking` (trasiego) | lote en recipiente A | mismo lote en B (uno o varios) | lías | entra = sale + merma | `cellar_out`/`cellar_in`/`loss` | Trasiegos | **No** (regla operativa; ver silicie.md) |
+| `racking` (trasiego) | lote en recipiente A | mismo lote en B (uno o varios) | lías | entra = sale + merma | `cellar_out`/`cellar_in`/`loss` | Trasiegos | **No** entre depósitos del mismo mayor. **Sí** si cruza depósito ↔ barrica de madera no revestida: `ledger_change_out`/`ledger_change_in` (A17/A16) y la merma como A30 (SILICIE 2.0, silicie.md §5) |
 | `blend` (ensamblaje) | varios lotes | lote nuevo | sí | entra = sale + merma | ídem + aristas DAG | Ensamblaje/elaboración | No (salvo cambio de clase) |
 | `filtration` | lote | mismo lote | sí | entra = sale + merma | ídem | Prácticas enológicas | No |
 | `addition` | — | — | — | sin líneas de volumen; filas en `cellar.addition` | ninguno | Prácticas enológicas (productos) | No |
@@ -221,8 +221,8 @@ D2: el stock **físico** se mueve con el albarán (y con las operaciones de bode
 | Qué representa | Dónde está cada cosa ahora: ubicación, recipiente, propietario, lote, producto, estado | Existencias contables del establecimiento con CAE (fábrica de P.O) a efectos de II.EE. y SILICIE |
 | Unidad | mL (granel), unidades (envasado), g (uva) | mL (+ unidades en envasado) y grado |
 | Lo mueven | Operaciones de bodega, albaranes, traspasos, cambios de propietario, aforos | Producción/envasado/mermas (operaciones), salidas (factura por defecto, D2), devoluciones, regularizaciones |
-| Clave del saldo | (ubicación, recipiente, propietario, lote, producto, estado) | (establecimiento, clase granel/envasado, clave de producto) |
-| Invariantes | Saldo ≥ 0 (`WC024`); capacidad (`WC025`); un lote por recipiente (`WC026`); unidades × volumen nominal = volumen (`WC023`) | Saldo ≥ 0 (`WC027`) |
+| Clave del saldo | (ubicación, recipiente, propietario, lote, producto, estado) | (establecimiento, mayor `bulk` / `bulk_wood` / `packaged`, referencia SILICIE en `excise_product_key`) |
+| Invariantes | Saldo ≥ 0 (`WC024`); capacidad (`WC025`); un lote por recipiente (`WC026`); unidades × volumen nominal = volumen (`WC023`) | Saldo ≥ 0 (`WC027`); el cambio de mayor cuadra (`WC028`) |
 | Corrección | Movimiento `reversal` (nunca UPDATE: `WC022`) | Movimiento `reversal`; solo se permite enlazar el asiento SILICIE una vez |
 | Cierre | `period_lock('physical')` | `period_lock('fiscal')` al presentar SILICIE (`WC021`) |
 
@@ -397,6 +397,7 @@ Instalación por entidad y entorno, registros de alta y anulación **encadenados
 | WC022 | Movimiento inmutable | 409 |
 | WC023 | Unidades y volumen incoherentes | 422 |
 | WC024 / WC025 / WC026 / WC027 | Saldo negativo / capacidad / varios lotes / saldo fiscal negativo | 422 |
+| WC028 | Cambio de mayor fiscal (depósito ↔ barrica) que no cuadra | 422 |
 | WC030 | Ciclo en la genealogía | 422 |
 | WC031 / WC032 | Operación de bodega no editable | 409 |
 | WC040–WC043 | Aprobación: hash distinto / inmutable / no pendiente / caducada | 409 |
@@ -408,6 +409,7 @@ Instalación por entidad y entorno, registros de alta y anulación **encadenados
 | WC100 / WC101 | Exceso de cobro / documento no cobrable | 422 |
 | WC110 / WC111 | Asiento descuadrado / inmutable | 422 / 409 |
 | WC120 / WC121 | Envío congelado / cerrado | 409 |
+| WC122 | Identificación de un mayor de SILICIE modificada (se crea otro y se traspasa) | 409 |
 | WC130 | Encadenamiento Verifactu incorrecto o registro inmutable | 409 |
 | WC131 | Hora de generación del registro Verifactu anterior a la del registro anterior | 409 |
 | `WC_MODULE_DISABLED` | Módulo desactivado | 404 |
