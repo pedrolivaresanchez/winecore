@@ -125,6 +125,7 @@ export function Sidebar({
                 <NavLink
                   key={child.id}
                   to={child.path}
+                  end={child.end}
                   className={() =>
                     cn(
                       "flex min-h-11 items-center rounded-md px-3 text-compact",

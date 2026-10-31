@@ -19,6 +19,12 @@ import { PriceListsPage } from "@/pages/catalogo/PriceListsPage";
 import { ProductList } from "@/pages/catalogo/ProductList";
 import { ProductPage } from "@/pages/catalogo/ProductPage";
 import { WinesPage } from "@/pages/catalogo/WinesPage";
+import { CountCreate } from "@/pages/existencias/CountCreate";
+import { CountPage } from "@/pages/existencias/CountPage";
+import { CountsPage } from "@/pages/existencias/CountsPage";
+import { InspectionPage } from "@/pages/existencias/InspectionPage";
+import { MovesPage } from "@/pages/existencias/MovesPage";
+import { StockPage } from "@/pages/existencias/StockPage";
 
 function LoadingScreen() {
   return (
@@ -68,6 +74,12 @@ export function Workspace() {
           <Route path="catalogo/tarifas" element={<PriceListsPage me={me.data} />} />
           <Route path="catalogo/tarifas/:id" element={<PriceListPage me={me.data} />} />
           <Route path="catalogo/:id" element={<ProductPage me={me.data} />} />
+          <Route path="stock" element={<StockPage me={me.data} />} />
+          <Route path="stock/informe" element={<InspectionPage me={me.data} />} />
+          <Route path="stock/movimientos" element={<MovesPage me={me.data} />} />
+          <Route path="stock/aforos" element={<CountsPage me={me.data} />} />
+          <Route path="stock/aforos/nuevo" element={<CountCreate me={me.data} />} />
+          <Route path="stock/aforos/:id" element={<CountPage me={me.data} />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Shell>
