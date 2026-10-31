@@ -58,9 +58,11 @@ describe("planOperation · envasado", () => {
       is_organic: true,
       producer_entity_id: bulk.producer_entity_id,
     });
+    const created = result.newLots[0];
+    if (created === undefined) throw new Error("falta el lote envasado");
     expect(result.lotEdges).toEqual([
       {
-        child_lot_id: result.newLots[0]?.id,
+        child_lot_id: created.id,
         parent_lot_id: "lot-bulk",
         operation_id: "op-1",
         volume_ml: 504_000,

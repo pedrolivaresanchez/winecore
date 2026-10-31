@@ -52,16 +52,18 @@ describe("planOperation · ensamblaje", () => {
       notes: null,
       created_by_operation_id: "op-1",
     });
+    const created = result.newLots[0];
+    if (created === undefined) throw new Error("falta el lote nuevo");
     expect(result.lotEdges).toEqual([
       {
-        child_lot_id: result.newLots[0]?.id,
+        child_lot_id: created.id,
         parent_lot_id: "lot-a",
         operation_id: "op-1",
         volume_ml: 3_000_000,
         mass_g: 0,
       },
       {
-        child_lot_id: result.newLots[0]?.id,
+        child_lot_id: created.id,
         parent_lot_id: "lot-b",
         operation_id: "op-1",
         volume_ml: 2_000_000,
@@ -84,7 +86,7 @@ describe("planOperation · ensamblaje", () => {
       expect.objectContaining({
         id: "tank-c",
         volume_ml: 4_800_000,
-        lot_id: result.newLots[0]?.id,
+        lot_id: created.id,
         product_state: "wine",
       }),
     ]);
