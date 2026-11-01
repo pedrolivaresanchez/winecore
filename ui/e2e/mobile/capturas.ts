@@ -5,6 +5,9 @@
  * Uso (con API y UI ya levantadas y sembradas):
  *   CAPTURAS_BASE=http://127.0.0.1:5261 CAPTURAS_API=http://127.0.0.1:3161 \
  *     CAPTURAS_OUT=/opt/cursor/artifacts/screenshots bun e2e/mobile/capturas.ts [expresion-regular]
+ *
+ * Con CAPTURAS_ESCRITORIO=1 hace las pantallas que no dependen del táctil a 1440x900 y las guarda
+ * como `escritorio_<pantalla>_1440.png`, para comparar lo tocado con el escritorio.
  */
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
@@ -15,6 +18,7 @@ const BASE = process.env.CAPTURAS_BASE ?? "http://127.0.0.1:5261";
 const API = process.env.CAPTURAS_API ?? "http://127.0.0.1:3161";
 const OUT = process.env.CAPTURAS_OUT ?? "/opt/cursor/artifacts/screenshots";
 const CHROME = process.env.CHROME_PATH ?? "/usr/local/bin/google-chrome";
+const DESKTOP = process.env.CAPTURAS_ESCRITORIO === "1";
 const FILTER = process.argv[2] ? new RegExp(process.argv[2]) : null;
 
 // Respuestas JSON de la API sin esquema: solo se leen para localizar datos del seed.
@@ -289,11 +293,15 @@ async function main() {
   const failed: string[] = [];
   for (const shot of shots) {
     if (FILTER && !FILTER.test(shot.name)) continue;
-    const context = await browser.newContext({ ...MOBILE_CONTEXT, baseURL: BASE });
+    const context = await browser.newContext(
+      DESKTOP
+        ? { viewport: { width: 1440, height: 900 }, locale: "es-ES", timezoneId: "Europe/Madrid", reducedMotion: "reduce", baseURL: BASE }
+        : { ...MOBILE_CONTEXT, baseURL: BASE },
+    );
     const page = await context.newPage();
     try {
       await shot.run(page);
-      const file = path.join(OUT, `movil_${shot.name}_390.png`);
+      const file = path.join(OUT, DESKTOP ? `escritorio_${shot.name}_1440.png` : `movil_${shot.name}_390.png`);
       await page.screenshot({ path: file });
       done.push(file);
       console.log(`✓ ${shot.name}`);
