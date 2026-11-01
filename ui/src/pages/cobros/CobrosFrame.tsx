@@ -14,8 +14,8 @@ type Action = { label: string; onClick: () => void; loading?: boolean }
 
 /**
  * Cobros' four views share one header (the views as tabs, the view's buttons at the end) and
- * one filter row. On a phone the header is gone: the tabs become the bar's switch and the
- * buttons ride at the end of the bar.
+ * one filter row. On a phone the header is gone: the tabs become the bar's switch, the page's
+ * main button stays at the end of the bar and the secondary one rides with the chips.
  */
 export function CobrosFrame({
   screen,
@@ -44,18 +44,20 @@ export function CobrosFrame({
     setParams(query, { replace: true })
   }
 
+  const secondaryButton = secondary ? (
+    <Button type="button" variant="secondary" size="sm" loading={secondary.loading} onClick={secondary.onClick}>
+      {secondary.label}
+    </Button>
+  ) : null
+  const actionButton = action ? (
+    <Button type="button" variant="primary" size="sm" loading={action.loading} onClick={action.onClick}>
+      {action.label}
+    </Button>
+  ) : null
   const buttons = (
     <>
-      {secondary ? (
-        <Button type="button" variant="secondary" size="sm" loading={secondary.loading} onClick={secondary.onClick}>
-          {secondary.label}
-        </Button>
-      ) : null}
-      {action ? (
-        <Button type="button" variant="primary" size="sm" loading={action.loading} onClick={action.onClick}>
-          {action.label}
-        </Button>
-      ) : null}
+      {secondaryButton}
+      {actionButton}
     </>
   )
 
@@ -94,6 +96,7 @@ export function CobrosFrame({
             <>
               {bar.controls}
               {bar.trailing}
+              {secondaryButton}
             </>
           ) : (
             bar.controls
@@ -102,7 +105,7 @@ export function CobrosFrame({
         trailing={
           <>
             {phone ? null : bar.trailing}
-            {action || secondary ? <span className="flex items-center gap-1.5 md:hidden">{buttons}</span> : null}
+            {action || secondary ? <span className="flex items-center gap-1.5 md:hidden">{phone ? actionButton : buttons}</span> : null}
           </>
         }
       />
