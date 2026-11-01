@@ -1,108 +1,86 @@
-import { api, apiStream, ApiError } from "@/lib/api";
-import { copy } from "@/i18n";
+import { api, apiStream, ApiError, isAbortError } from "@/lib/api";
+import {
+  createEventTap,
+  failureForStatus,
+  localFailure,
+  localFailureResponse,
+  resolveParent,
+  tapBody,
+  withTurnContext,
+  type PromptBody,
+  type TapStore,
+  type TurnContext,
+} from "@/lib/assistant-stream";
+import { civilDay, displayTimezone } from "@/lib/civil-date";
 
-export type AssistantStep = {
-  tool: string;
-  title: string;
-  ok: boolean;
-  summary: string;
-  code?: string;
-};
+export type {
+  ApprovalView,
+  AssistantRuns,
+  ChatEntry,
+  FailureKind,
+  StepStatus,
+  ToolStep,
+} from "@/lib/assistant-stream";
 
-export type AssistantLink = { label: string; path: string };
+/**
+ * The workforce member that answers. It is looked up by name, never as "the first one": the
+ * project has more members (`ocr-gastos`) and the gateway lists them in no particular order.
+ */
+export const ASSISTANT_WORKFORCE = import.meta.env.VITE_ASSISTANT_WORKFORCE?.trim() || "asistente";
 
-/** A prepared write waiting for the person's yes. The token only travels back to the API. */
-export type AssistantPending = {
-  tool: string;
-  summary_es: string;
-  confirmation_token: string;
-  expires_at: string;
-};
+export type AssistantToolInfo = { name: string; title: string; kind: string };
 
-export type AssistantReply = {
-  reply: string;
-  steps: AssistantStep[];
-  links: AssistantLink[];
-  pending: AssistantPending | null;
-};
-
-export type StepEvent =
-  | { status: "running"; tool: string; title: string }
-  | ({ status: "done" } & AssistantStep);
-
-export type ChatTurnMessage = {
-  role: "user" | "assistant";
-  content: string;
-  pending?: AssistantPending;
-};
-
-export const ASSISTANT_UNAVAILABLE = "WC_ASSISTANT_UNAVAILABLE";
-
-/** `tools` are the ones this person's turns may call: their permissions and the active modules. */
-export type AssistantStatus = { available: boolean; tools: string[] };
+/** The tools this person's turns may call: their permissions and the active modules, with the titles the chips use. */
+export type AssistantStatus = { tools: AssistantToolInfo[] };
 
 export function assistantStatus(signal?: AbortSignal): Promise<AssistantStatus> {
   return api<AssistantStatus>("/v1/assistant/status", { signal });
 }
 
-type Frame = { event: string; data: string };
+export type AssistantBridge = {
+  runs: TapStore;
+  screen: () => { path: string };
+  /** The answer to an approval the next request carries, once. */
+  takeResume: () => TurnContext["resume"] | null;
+};
 
-function parseFrame(chunk: string): Frame | null {
-  let event = "message";
-  const data: string[] = [];
-  for (const line of chunk.split("\n")) {
-    if (line.startsWith(":")) continue;
-    if (line.startsWith("event:")) event = line.slice(6).trim();
-    else if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
-  }
-  return data.length > 0 ? { event, data: data.join("\n") } : null;
-}
-
-function errorFrom(data: string): ApiError {
+function readBody(body: BodyInit | null | undefined): PromptBody {
+  if (typeof body !== "string") return {};
   try {
-    const body = JSON.parse(data) as { code?: unknown; message?: unknown };
-    const code = typeof body.code === "string" ? body.code : "WC_ASSISTANT_FAILED";
-    const message = typeof body.message === "string" ? body.message : copy.assistant.failure.other;
-    return new ApiError(code === "WC_RATE_LIMITED" ? 429 : 502, code, message);
+    const parsed: unknown = JSON.parse(body);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as PromptBody) : {};
   } catch {
-    return new ApiError(502, "WC_ASSISTANT_FAILED", copy.assistant.failure.other);
+    return {};
   }
 }
 
 /**
- * One turn of the chat over server-sent events: `step` while tools run, then `done` with
- * the reply. Errors before the stream starts arrive as a normal `ApiError`.
+ * The `fetch` the Timbal chat runtime talks through. It carries the person's session like the rest
+ * of the app (`apiStream`), adds the screen and the answer to an approval to the request, and lets
+ * a tap read the response for what the runtime does not keep. A request that fails before the agent
+ * hears of it comes back as an empty run, so the failure is worded here and not by the runtime.
  */
-export async function sendAssistantTurn(
-  body: { messages: ChatTurnMessage[]; context: { path: string } },
-  options: { signal: AbortSignal; onStep: (event: StepEvent) => void },
-): Promise<AssistantReply> {
-  const response = await apiStream("/v1/assistant/chat", {
-    method: "POST",
-    body: JSON.stringify(body),
-    signal: options.signal,
-  });
-  if (!response.headers.get("content-type")?.includes("text/event-stream")) {
-    return (await response.json()) as AssistantReply;
-  }
-  const reader = response.body?.getReader();
-  if (!reader) throw new ApiError(0, "WC_ASSISTANT_FAILED", copy.assistant.failure.cut);
-  const decoder = new TextDecoder();
-  let buffer = "";
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
-    let boundary = buffer.indexOf("\n\n");
-    while (boundary >= 0) {
-      const frame = parseFrame(buffer.slice(0, boundary));
-      buffer = buffer.slice(boundary + 2);
-      boundary = buffer.indexOf("\n\n");
-      if (!frame) continue;
-      if (frame.event === "step") options.onStep(JSON.parse(frame.data) as StepEvent);
-      else if (frame.event === "done") return JSON.parse(frame.data) as AssistantReply;
-      else if (frame.event === "error") throw errorFrom(frame.data);
+export function createAssistantFetch(bridge: AssistantBridge) {
+  return async (url: string, init?: RequestInit): Promise<Response> => {
+    const body = readBody(init?.body);
+    const requested = typeof body.context?.parent_id === "string" ? body.context.parent_id : null;
+    const resume = bridge.takeResume() ?? undefined;
+    const parent = resolveParent(bridge.runs.get(), requested);
+    const start = { parent: resume?.runId ?? parent, resumeOf: resume?.runId };
+    const screen = { ...bridge.screen(), date: civilDay(new Date(), displayTimezone()) };
+    const payload = withTurnContext(body, { screen, parent, resume });
+
+    try {
+      const response = await apiStream(url, { ...init, body: JSON.stringify(payload) });
+      if (!response.body) throw new ApiError(0, "WC_NETWORK", "");
+      const tap = createEventTap(bridge.runs, start);
+      return new Response(tapBody(response.body, tap), { status: response.status, headers: response.headers });
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      const id = `local-${crypto.randomUUID()}`;
+      const kind = error instanceof ApiError ? failureForStatus(error.status) : "failed";
+      bridge.runs.set(localFailure(bridge.runs.get(), id, kind, start));
+      return localFailureResponse(id);
     }
-  }
-  throw new ApiError(0, "WC_ASSISTANT_FAILED", copy.assistant.failure.cut);
+  };
 }

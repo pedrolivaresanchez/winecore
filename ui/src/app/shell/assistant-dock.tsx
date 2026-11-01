@@ -78,6 +78,7 @@ export function AssistantDock({ me }: { me: Me }) {
           style={{ zIndex: 'var(--z-chat-dock)', transformOrigin: 'bottom right' }}
           className={cn(
             'fixed right-4 bottom-4 flex w-100 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-border-subtle bg-surface shadow-(--shadow-float)',
+            'max-md:inset-x-0 max-md:bottom-0 max-md:w-auto max-md:max-w-none max-md:rounded-b-none max-md:border-x-0 max-md:pb-[env(safe-area-inset-bottom)]',
             tall ? 'h-[min(640px,calc(100dvh-5rem))]' : 'max-h-[calc(100dvh-5rem)]',
           )}
         >

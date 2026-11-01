@@ -1,14 +1,15 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { AlertCircle, ArrowUp, ArrowUpRight, Check, ChevronRight, Copy, MessageCircleOff, RefreshCw, Square } from '@/ui/icons'
-import { Button, EmptyState, Tooltip } from '@/ui'
+import { AlertCircle, ArrowUp, ArrowUpRight, Check, ChevronRight, Copy, RefreshCw, Square } from '@/ui/icons'
+import { Button, Tooltip } from '@/ui'
 import { texturePrimary, textureSecondary } from '@/ui/button'
-import { useAssistant, type ChatEntry, type LiveStep } from '@/app/shell/assistant-context'
+import { railGroups } from '@/app/nav'
+import { useAssistant, type ChatEntry } from '@/app/shell/assistant-context'
 import { copy, fill } from '@/i18n'
 import { cn } from '@/lib/cn'
 import { iconStroke } from '@/lib/motion'
 import { allows } from '@/lib/permissions'
-import type { AssistantLink, AssistantPending, AssistantStep } from '@/lib/assistant'
+import { internalPath, type ApprovalView, type FailureKind, type ToolStep } from '@/lib/assistant-stream'
 import type { Me } from '@/lib/types'
 
 type Variant = 'dock' | 'page'
@@ -44,8 +45,22 @@ function suggestionsFor(me: Me, tools: string[] | null, path: string): Suggestio
   return list.slice(0, SUGGESTIONS_SHOWN)
 }
 
-function isInternal(href: string): boolean {
-  return href.startsWith('/') && !href.startsWith('//')
+/** Where the assistant's links stay: WineCore's own paths, whether written relative or with this origin. */
+function internalHref(href: string): string | null {
+  return internalPath(href, window.location.origin)
+}
+
+const SECTIONS = railGroups
+  .flatMap((group) => group.items)
+  .map((item) => ({ path: item.path.split('?')[0] ?? item.path, label: item.label }))
+  .filter((section) => section.path !== '/')
+  .sort((a, b) => b.path.length - a.path.length)
+
+/** The section a record lives in, to name its link. */
+function linkLabel(path: string): string {
+  const pathname = path.split(/[?#]/)[0] ?? path
+  const section = SECTIONS.find((candidate) => pathname === candidate.path || pathname.startsWith(`${candidate.path}/`))
+  return section?.label ?? copy.assistant.openRecord
 }
 
 const INLINE = /\*\*([^*\n]+)\*\*|\[([^\]\n]+)\]\(([^)\s]+)\)/g
@@ -65,11 +80,11 @@ function Inline({ text, onFollow }: { text: string; onFollow?: () => void }) {
           {bold}
         </strong>,
       )
-    } else if (label && href && isInternal(href)) {
+    } else if (label && href && internalHref(href)) {
       parts.push(
         <Link
           key={at}
-          to={href}
+          to={internalHref(href) ?? '/'}
           onClick={onFollow}
           className="font-medium text-ink-900 underline decoration-border-strong underline-offset-2 hover:decoration-ink-900"
         >
@@ -139,28 +154,24 @@ function Prose({ text, onFollow }: { text: string; onFollow?: () => void }) {
   )
 }
 
-function StepChip({ title, done, ok, summary }: { title: string; done: boolean; ok: boolean; summary: string }) {
+function StepChip({ title, status, summary }: { title: string; status: ToolStep['status']; summary: string }) {
+  const running = status === 'running'
   return (
     <span
-      title={done && summary ? `${title} · ${summary}` : undefined}
+      title={status === 'failed' && summary ? `${title} · ${summary}` : undefined}
       className="inline-flex h-6 max-w-full items-center gap-1 rounded-full bg-fill-muted px-2 text-caption text-text-secondary"
     >
-      {done ? (
-        ok ? (
-          <Check className="size-3 shrink-0 text-success-600" strokeWidth={iconStroke} />
-        ) : (
-          <AlertCircle className="size-3 shrink-0 text-danger-600" strokeWidth={iconStroke} />
-        )
-      ) : null}
-      <span className={cn(done ? 'max-w-full shrink-0 truncate' : 'truncate text-shimmer motion-reduce:animate-none')}>
-        {done ? title : fill(copy.assistant.stepRunning, { title })}
+      {status === 'done' ? <Check className="size-3 shrink-0 text-success-600" strokeWidth={iconStroke} /> : null}
+      {status === 'failed' ? <AlertCircle className="size-3 shrink-0 text-danger-600" strokeWidth={iconStroke} /> : null}
+      <span className={cn(running ? 'truncate text-shimmer motion-reduce:animate-none' : 'max-w-full shrink-0 truncate')}>
+        {running ? fill(copy.assistant.stepRunning, { title }) : title}
       </span>
-      {done && summary ? <span className="min-w-0 truncate text-text-tertiary">· {summary}</span> : null}
+      {status === 'failed' && summary ? <span className="min-w-0 truncate text-text-tertiary">· {summary}</span> : null}
     </span>
   )
 }
 
-function StepRow({ steps }: { steps: (AssistantStep | LiveStep)[] }) {
+function StepRow({ steps, titles }: { steps: ToolStep[]; titles: Record<string, string> }) {
   if (steps.length === 0) return null
   return (
     <div
@@ -168,26 +179,37 @@ function StepRow({ steps }: { steps: (AssistantStep | LiveStep)[] }) {
       aria-label={steps.length === 1 ? copy.assistant.oneStep : fill(copy.assistant.steps, { count: String(steps.length) })}
       className="flex flex-wrap gap-1"
     >
-      {steps.map((step, index) => (
-        <StepChip key={index} title={step.title} done={'done' in step ? step.done : true} ok={step.ok} summary={step.summary} />
+      {steps.map((step) => (
+        <StepChip key={step.callId} title={titles[step.tool] ?? copy.assistant.toolFallback} status={step.status} summary={step.summary ?? ''} />
       ))}
     </div>
   )
 }
 
-function LinkRow({ links, content, onFollow }: { links: AssistantLink[]; content: string; onFollow?: () => void }) {
-  const shown = links.filter((link) => isInternal(link.path) && !content.includes(`](${link.path})`))
+/** Hrefs the reply already links in its text, whichever way they are written. */
+function linkedInText(content: string): Set<string> {
+  const linked = new Set<string>()
+  for (const match of content.matchAll(INLINE)) {
+    const path = match[3] ? internalHref(match[3]) : null
+    if (path) linked.add(path)
+  }
+  return linked
+}
+
+function LinkRow({ links, content, onFollow }: { links: string[]; content: string; onFollow?: () => void }) {
+  const linked = linkedInText(content)
+  const shown = links.filter((path) => !linked.has(path))
   if (shown.length === 0) return null
   return (
     <div role="group" aria-label={copy.assistant.sources} className="flex flex-wrap gap-1">
-      {shown.map((link) => (
+      {shown.map((path) => (
         <Link
-          key={link.path}
-          to={link.path}
+          key={path}
+          to={path}
           onClick={onFollow}
           className="inline-flex h-6 max-w-full items-center gap-1 rounded-full bg-fill-selected px-2 text-caption text-ink-900 hover:bg-fill-hover"
         >
-          <span className="truncate">{link.label}</span>
+          <span className="truncate">{linkLabel(path)}</span>
           <ArrowUpRight className="size-3 shrink-0 text-icon-muted" strokeWidth={iconStroke} />
         </Link>
       ))}
@@ -195,23 +217,26 @@ function LinkRow({ links, content, onFollow }: { links: AssistantLink[]; content
   )
 }
 
-function expiryTime(iso: string): string | null {
+function expiryTime(iso: string | null): string | null {
+  if (!iso) return null
   const at = new Date(iso)
   if (Number.isNaN(at.getTime())) return null
   return at.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
 }
 
-function PendingCard({ pending, onAnswer }: { pending: AssistantPending; onAnswer: (text: string) => void }) {
-  const time = expiryTime(pending.expires_at)
+/** The write waits here until the person says yes: nothing is saved before Confirmar. */
+function ApprovalCard({ approval, onConfirm, onDecline }: { approval: ApprovalView; onConfirm: () => void; onDecline: () => void }) {
+  const time = expiryTime(approval.expiresAt)
+  const summary = approval.summary ?? approval.title ?? copy.assistant.pending.fallback
   return (
-    <div className="rounded-2xl border border-border-subtle bg-surface-subtle p-3">
+    <div role="group" aria-label={copy.assistant.pending.title} className="rounded-2xl border border-border-subtle bg-surface-subtle p-3">
       <p className="text-caption font-medium text-text-secondary">{copy.assistant.pending.title}</p>
-      <p className="mt-1 whitespace-pre-wrap text-label text-ink-900">{pending.summary_es}</p>
-      <div className="mt-3 flex items-center gap-2">
-        <Button size="sm" variant="primary" onClick={() => onAnswer(copy.assistant.pending.confirmMessage)}>
+      <p className="mt-1 whitespace-pre-wrap break-words text-label text-ink-900">{summary}</p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="primary" onClick={onConfirm}>
           {copy.assistant.pending.confirm}
         </Button>
-        <Button size="sm" variant="secondary" onClick={() => onAnswer(copy.assistant.pending.cancelMessage)}>
+        <Button size="sm" variant="secondary" onClick={onDecline}>
           {copy.assistant.pending.cancel}
         </Button>
         {time ? <span className="ml-auto text-caption text-text-tertiary">{fill(copy.assistant.pending.expires, { time })}</span> : null}
@@ -244,21 +269,30 @@ function CopyReply({ text }: { text: string }) {
   )
 }
 
+const FAILURE_COPY: Record<FailureKind, string> = {
+  busy: copy.assistant.failure.busy,
+  unavailable: copy.assistant.failure.unavailable,
+  forbidden: copy.assistant.failure.forbidden,
+  cut: copy.assistant.failure.cut,
+  failed: copy.assistant.failure.other,
+}
+
 function Entry({
   entry,
   last,
-  running,
-  onAnswer,
+  live,
+  titles,
   onRetry,
   onFollow,
 }: {
   entry: ChatEntry
   last: boolean
-  running: boolean
-  onAnswer: (text: string) => void
+  live: boolean
+  titles: Record<string, string>
   onRetry: () => void
   onFollow?: () => void
 }) {
+  const { approval, confirm, decline, running } = useAssistant()
   if (entry.role === 'user') {
     return (
       <div className="flex justify-end pl-10">
@@ -266,39 +300,39 @@ function Entry({
       </div>
     )
   }
-  if (entry.failure) {
-    return (
-      <div className="flex items-center gap-2 text-label text-text-secondary" role="alert">
-        <AlertCircle className="size-3.5 shrink-0 text-danger-600" strokeWidth={iconStroke} />
-        <span className="min-w-0 flex-1">{entry.failure}</span>
-        {last && !running ? (
-          <Button size="sm" variant="secondary" onClick={onRetry}>
-            <RefreshCw strokeWidth={iconStroke} />
-            {copy.assistant.retry}
-          </Button>
-        ) : null}
-      </div>
-    )
-  }
+  const problem = entry.failure ? FAILURE_COPY[entry.failure] : entry.notice === 'stopped' ? copy.assistant.failure.stopped : null
+  const thinking = live && entry.content === '' && !entry.steps.some((step) => step.status === 'running')
   return (
     <div className="group flex flex-col gap-2">
-      <StepRow steps={entry.steps ?? []} />
-      <Prose text={entry.content} onFollow={onFollow} />
-      <LinkRow links={entry.links ?? []} content={entry.content} onFollow={onFollow} />
-      {entry.pending && last && !running ? <PendingCard pending={entry.pending} onAnswer={onAnswer} /> : null}
-      <div className="-mt-1 -ml-1.5 flex h-7 items-center">
-        <CopyReply text={entry.content} />
-      </div>
-    </div>
-  )
-}
-
-function Thinking({ live }: { live: LiveStep[] }) {
-  const busy = live.some((step) => !step.done)
-  return (
-    <div className="flex flex-col gap-2" aria-live="polite">
-      <StepRow steps={live} />
-      {busy ? null : <span className="text-label text-shimmer motion-reduce:animate-none">{copy.assistant.thinking}</span>}
+      <StepRow steps={entry.steps} titles={titles} />
+      {entry.content ? <Prose text={entry.content} onFollow={onFollow} /> : null}
+      {thinking ? (
+        <span className="text-label text-shimmer motion-reduce:animate-none" aria-live="polite">
+          {copy.assistant.thinking}
+        </span>
+      ) : null}
+      <LinkRow links={entry.links} content={entry.content} onFollow={onFollow} />
+      {problem ? (
+        <div className="flex items-center gap-2 text-label text-text-secondary" role="alert">
+          <AlertCircle className="size-3.5 shrink-0 text-danger-600" strokeWidth={iconStroke} />
+          <span className="min-w-0 flex-1">{problem}</span>
+          {last && !running && entry.retryable ? (
+            <Button size="sm" variant="secondary" onClick={onRetry}>
+              <RefreshCw strokeWidth={iconStroke} />
+              {copy.assistant.retry}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {entry.notice === 'cancelled' ? <p className="text-label text-text-secondary">{copy.assistant.pending.cancelled}</p> : null}
+      {last && approval && approval.runId === entry.runId ? (
+        <ApprovalCard approval={approval} onConfirm={confirm} onDecline={decline} />
+      ) : null}
+      {entry.content && !live ? (
+        <div className="-mt-1 -ml-1.5 flex h-7 items-center">
+          <CopyReply text={entry.content} />
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -418,26 +452,13 @@ function Composer({ variant }: { variant: Variant }) {
  * them keeps the thread, the draft and the turn in flight.
  */
 export function AssistantConversation({ me, variant, onFollow }: { me: Me; variant: Variant; onFollow?: () => void }) {
-  const { messages, running, live, availability, send, retry } = useAssistant()
+  const { messages, running, loadFailed, titles, retry } = useAssistant()
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useLayoutEffect(() => {
     const list = scrollRef.current
     if (list) list.scrollTop = list.scrollHeight
-  }, [messages, live, running])
-
-  if (availability === 'unavailable') {
-    return (
-      <div className="flex min-h-0 flex-1 items-center justify-center">
-        <EmptyState
-          size="sm"
-          icon={<MessageCircleOff strokeWidth={iconStroke} />}
-          title={copy.assistant.unavailableTitle}
-          description={copy.assistant.unavailableLead}
-        />
-      </div>
-    )
-  }
+  }, [messages, running])
 
   const empty = messages.length === 0 && !running
   const column = variant === 'page' ? 'mx-auto w-full max-w-3xl px-4' : ''
@@ -458,21 +479,34 @@ export function AssistantConversation({ me, variant, onFollow }: { me: Me; varia
           </div>
         ) : (
           <div className={cn('flex flex-col gap-4 py-4', variant === 'page' ? column : 'px-4')}>
-            {messages.map((entry, index) => (
-              <Entry
-                key={entry.id}
-                entry={entry}
-                last={index === messages.length - 1}
-                running={running}
-                onAnswer={send}
-                onRetry={retry}
-                onFollow={onFollow}
-              />
-            ))}
-            {running ? <Thinking live={live} /> : null}
+            {messages.map((entry, index) => {
+              const last = index === messages.length - 1
+              return (
+                <Entry
+                  key={entry.id}
+                  entry={entry}
+                  last={last}
+                  live={last && running && entry.role === 'assistant'}
+                  titles={titles}
+                  onRetry={retry}
+                  onFollow={onFollow}
+                />
+              )
+            })}
+            {running && messages.at(-1)?.role === 'user' ? (
+              <span className="text-label text-shimmer motion-reduce:animate-none" aria-live="polite">
+                {copy.assistant.thinking}
+              </span>
+            ) : null}
           </div>
         )}
       </div>
+      {loadFailed ? (
+        <div className={cn('flex items-center gap-2 pb-2 text-label text-text-secondary', variant === 'page' ? column : 'px-4')} role="alert">
+          <AlertCircle className="size-3.5 shrink-0 text-danger-600" strokeWidth={iconStroke} />
+          <span className="min-w-0 flex-1">{copy.assistant.failure.load}</span>
+        </div>
+      ) : null}
       <div className={column}>
         <Composer variant={variant} />
       </div>

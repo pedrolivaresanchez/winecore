@@ -1,44 +1,46 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
-import { useLocation } from 'react-router-dom'
-import { copy } from '@/i18n'
-import { ApiError, isAbortError } from '@/lib/api'
 import {
-  ASSISTANT_UNAVAILABLE,
+  Component,
+  Suspense,
+  createContext,
+  lazy,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
+import { useLocation } from 'react-router-dom'
+import type { ChatMessage, TimbalStreamApi } from '@timbal-ai/timbal-react/chat'
+import { copy } from '@/i18n'
+import {
   assistantStatus,
-  sendAssistantTurn,
-  type AssistantLink,
-  type AssistantPending,
-  type AssistantStep,
-  type ChatTurnMessage,
-  type StepEvent,
+  createAssistantFetch,
+  type ApprovalView,
+  type AssistantRuns,
+  type AssistantToolInfo,
+  type ChatEntry,
 } from '@/lib/assistant'
+import {
+  awaitsApproval,
+  deserializeConversation,
+  dismissApproval,
+  emptyRuns,
+  projectEntries,
+  serializeConversation,
+  type ThreadMessage,
+} from '@/lib/assistant-stream'
 import type { Me } from '@/lib/types'
+
+export type { ChatEntry } from '@/lib/assistant'
 
 export const ASSISTANT_PATH = '/asistente'
 
 const OPEN_EVENT = 'winecore-assistant'
 const DOCK_KEY = 'winecore.assistant.dock'
-const KEPT_ENTRIES = 60
-/* The API's own caps (`CHAT_LIMITS`). Older turns are dropped rather than refused. */
-const TURN_MESSAGES = 40
-const TURN_CHARS = 40_000
 const CONTENT_CHARS = 4000
 const PATH_CHARS = 200
-
-export type ChatEntry = {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-  steps?: AssistantStep[]
-  links?: AssistantLink[]
-  pending?: AssistantPending
-  /** The turn did not finish; this says why. */
-  failure?: string
-}
-
-export type LiveStep = { id: number; tool: string; title: string; done: boolean; ok: boolean; summary: string }
-
-export type Availability = 'unknown' | 'available' | 'unavailable'
 
 type AssistantValue = {
   open: boolean
@@ -50,10 +52,12 @@ type AssistantValue = {
   focusComposer: () => void
   messages: ChatEntry[]
   running: boolean
-  live: LiveStep[]
-  availability: Availability
+  /** The chat runtime could not be loaded: the next question tries again. */
+  loadFailed: boolean
   /** Tools the assistant may call for this person; `null` until the status arrives. */
   tools: string[] | null
+  /** Spanish title of each tool, for the chips. */
+  titles: Record<string, string>
   /** Where the person is, or where they came from when the assistant has the whole page. */
   contextPath: string
   draft: string
@@ -62,6 +66,10 @@ type AssistantValue = {
   stop: () => void
   retry: () => void
   reset: () => void
+  /** The write the assistant is waiting on, if the person has neither confirmed nor dropped it. */
+  approval: ApprovalView | null
+  confirm: () => void
+  decline: () => void
 }
 
 const AssistantContext = createContext<AssistantValue | null>(null)
@@ -95,67 +103,18 @@ function writeSession(key: string, value: string | null) {
   }
 }
 
-function isEntry(value: unknown): value is ChatEntry {
-  if (!value || typeof value !== 'object') return false
-  const entry = value as Record<string, unknown>
-  return typeof entry.id === 'string' && (entry.role === 'user' || entry.role === 'assistant') && typeof entry.content === 'string'
-}
-
-function readConversation(key: string): ChatEntry[] {
-  const raw = readSession(key)
-  if (!raw) return []
-  try {
-    const parsed: unknown = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed.filter(isEntry) : []
-  } catch {
-    return []
+/** The runtime's chunk is a separate request: if it fails, the person can ask again instead of facing a blank shell. */
+class RuntimeBoundary extends Component<{ onError: () => void; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+  static getDerivedStateFromError() {
+    return { failed: true }
   }
-}
-
-let sequence = 0
-function entryId(): string {
-  sequence += 1
-  return `${Date.now().toString(36)}-${sequence}`
-}
-
-/** A prepared write only travels back on the message right before the person's answer. */
-function turnMessages(entries: ChatEntry[]): ChatTurnMessage[] {
-  const usable = entries.filter((entry) => !entry.failure && entry.content.trim() !== '')
-  const messages = usable.map((entry, index): ChatTurnMessage => {
-    const content = entry.content.slice(0, CONTENT_CHARS)
-    return entry.pending && index === usable.length - 2
-      ? { role: entry.role, content, pending: entry.pending }
-      : { role: entry.role, content }
-  })
-  let start = Math.max(0, messages.length - TURN_MESSAGES)
-  let total = messages.slice(start).reduce((sum, message) => sum + message.content.length, 0)
-  while (total > TURN_CHARS && start < messages.length - 1) {
-    total -= messages[start]?.content.length ?? 0
-    start += 1
+  componentDidCatch() {
+    this.props.onError()
   }
-  return messages.slice(start)
-}
-
-function advance(steps: LiveStep[], event: StepEvent): LiveStep[] {
-  if (event.status === 'running') {
-    return [...steps, { id: steps.length, tool: event.tool, title: event.title, done: false, ok: true, summary: '' }]
+  render() {
+    return this.state.failed ? null : this.props.children
   }
-  const index = steps.findLastIndex((step) => step.tool === event.tool && !step.done)
-  const finished = { tool: event.tool, title: event.title, done: true, ok: event.ok, summary: event.summary }
-  if (index < 0) return [...steps, { id: steps.length, ...finished }]
-  return steps.map((step, at) => (at === index ? { ...step, ...finished } : step))
-}
-
-function failureText(error: unknown, stopped: boolean): string {
-  if (stopped || isAbortError(error)) return copy.assistant.failure.stopped
-  if (!(error instanceof ApiError)) return copy.assistant.failure.other
-  if (error.status === 429) return copy.assistant.failure.busy
-  if (error.code === 'WC_NETWORK') return copy.assistant.failure.cut
-  return error.fields?.messages ?? (error.message || copy.assistant.failure.other)
-}
-
-function withoutTrailingFailure(entries: ChatEntry[]): ChatEntry[] {
-  return entries.at(-1)?.failure ? entries.slice(0, -1) : entries
 }
 
 export function AssistantProvider({ me, children }: { me: Me; children: ReactNode }) {
@@ -165,36 +124,129 @@ export function AssistantProvider({ me, children }: { me: Me; children: ReactNod
   const contextPath = location.pathname === ASSISTANT_PATH && typeof from === 'string' ? from : location.pathname
   const [open, setOpen] = useState(() => readSession(DOCK_KEY) === 'open')
   const [focusTick, setFocusTick] = useState(0)
-  const [messages, setMessages] = useState(() => readConversation(storageKey))
-  const [running, setRunning] = useState(false)
-  const [live, setLive] = useState<LiveStep[]>([])
-  const [availability, setAvailability] = useState<Availability>('unknown')
-  const [tools, setTools] = useState<string[] | null>(null)
   const [draft, setDraft] = useState('')
-  const controllerRef = useRef<AbortController | null>(null)
-  const messagesRef = useRef(messages)
+  const [tools, setTools] = useState<AssistantToolInfo[] | null>(null)
+  const [wanted, setWanted] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+  const [loadFailed, setLoadFailed] = useState(false)
+  const [resuming, setResuming] = useState(false)
+  const [stream, setStream] = useState<TimbalStreamApi | null>(null)
+  const [ready, setReady] = useState(false)
+
+  const restored = useMemo(() => deserializeConversation(readSession(storageKey)), [storageKey])
+  const [runs, setRuns] = useState<AssistantRuns>(() => restored?.store ?? emptyRuns)
+
+  const runsRef = useRef(runs)
+  const streamRef = useRef<TimbalStreamApi | null>(null)
   const pathRef = useRef(contextPath)
-  messagesRef.current = messages
+  const resumeRef = useRef<{ runId: string; approvalId: string } | null>(null)
+  const seedRef = useRef<readonly ThreadMessage[]>(restored?.messages ?? [])
+  const readyRef = useRef(false)
+  const loadedRef = useRef(false)
+  const loadFailedRef = useRef(false)
+  const queuedRef = useRef<((stream: TimbalStreamApi) => void) | null>(null)
   pathRef.current = contextPath
+  streamRef.current = stream
+  readyRef.current = ready
+  loadFailedRef.current = loadFailed
 
   const shown = open || location.pathname === ASSISTANT_PATH
 
+  const store = useMemo(
+    () => ({
+      get: () => runsRef.current,
+      set: (next: AssistantRuns) => {
+        runsRef.current = next
+        setRuns(next)
+      },
+    }),
+    [],
+  )
+
+  const assistantFetch = useMemo(
+    () =>
+      createAssistantFetch({
+        runs: store,
+        screen: () => ({ path: pathRef.current.slice(0, PATH_CHARS) }),
+        takeResume: () => {
+          const resume = resumeRef.current
+          resumeRef.current = null
+          return resume
+        },
+      }),
+    [store],
+  )
+
+  const Runtime = useMemo(() => lazy(() => import('@/app/shell/assistant-runtime')), [attempt])
+
+  const onStream = useCallback((next: TimbalStreamApi | null) => setStream(next), [])
+  const onRuntimeError = useCallback(() => {
+    setLoadFailed(true)
+    setWanted(false)
+  }, [])
+
+  const threadMessages: readonly ThreadMessage[] = stream && ready ? stream.messages : seedRef.current
+  const entries = useMemo(
+    () => projectEntries(threadMessages, runs, window.location.origin, { resuming }),
+    [threadMessages, runs, resuming],
+  )
+  const running = stream?.isRunning ?? false
+  const approval = useMemo(() => {
+    const last = entries.at(-1)
+    return last?.role === 'assistant' && last.approval && !running ? last.approval : null
+  }, [entries, running])
+
+  const runningRef = useRef(running)
+  const approvalRef = useRef(approval)
+  const entriesRef = useRef(entries)
+  runningRef.current = running
+  approvalRef.current = approval
+  entriesRef.current = entries
+
+  /* The runtime brings the saved thread back the first time it shows up. Questions that came in
+     before that wait until the restored messages are in place, or they would be sent on an empty
+     history and wipe it. */
   useEffect(() => {
-    writeSession(storageKey, messages.length > 0 ? JSON.stringify(messages.slice(-KEPT_ENTRIES)) : null)
-  }, [storageKey, messages])
+    if (!stream) {
+      setReady(false)
+      loadedRef.current = false
+      return
+    }
+    if (!loadedRef.current) {
+      loadedRef.current = true
+      const seed = seedRef.current
+      if (seed.length > 0) {
+        stream.loadMessages(seed as ChatMessage[])
+        return
+      }
+    }
+    setReady(true)
+    const next = queuedRef.current
+    if (next && !stream.isRunning) {
+      queuedRef.current = null
+      next(stream)
+    }
+  }, [stream])
+
+  useEffect(() => {
+    if (!stream || !ready || running) return
+    const messages = stream.messages
+    writeSession(storageKey, messages.length > 0 ? serializeConversation(messages, runs) : null)
+  }, [stream, ready, running, runs, storageKey])
 
   useEffect(() => {
     writeSession(DOCK_KEY, open ? 'open' : null)
   }, [open])
 
   useEffect(() => {
+    if (shown) setWanted(true)
+  }, [shown])
+
+  useEffect(() => {
     if (!shown || tools !== null) return
     const controller = new AbortController()
     assistantStatus(controller.signal)
-      .then((status) => {
-        setAvailability(status.available ? 'available' : 'unavailable')
-        setTools(Array.isArray(status.tools) ? status.tools : [])
-      })
+      .then((status) => setTools(Array.isArray(status.tools) ? status.tools : []))
       .catch(() => {
         /* Unknown stays unknown: the first question will say what is wrong. */
       })
@@ -222,78 +274,75 @@ export function AssistantProvider({ me, children }: { me: Me; children: ReactNod
     return () => window.removeEventListener(OPEN_EVENT, onRequest)
   }, [openDock, toggleDock, focusComposer])
 
-  useEffect(() => () => controllerRef.current?.abort(), [])
-
-  const run = useCallback(async (entries: ChatEntry[]) => {
-    const controller = new AbortController()
-    controllerRef.current = controller
-    setMessages(entries)
-    setRunning(true)
-    setLive([])
-    let next: ChatEntry[] | null = null
-    try {
-      const reply = await sendAssistantTurn(
-        { messages: turnMessages(entries), context: { path: pathRef.current.slice(0, PATH_CHARS) } },
-        { signal: controller.signal, onStep: (event) => setLive((steps) => advance(steps, event)) },
-      )
-      setAvailability('available')
-      next = [
-        ...entries,
-        {
-          id: entryId(),
-          role: 'assistant',
-          content: reply.reply,
-          steps: reply.steps,
-          links: reply.links,
-          pending: reply.pending ?? undefined,
-        },
-      ]
-    } catch (error) {
-      if (error instanceof ApiError && error.code === ASSISTANT_UNAVAILABLE) {
-        setAvailability('unavailable')
-        next = entries
-      } else {
-        next = [...entries, { id: entryId(), role: 'assistant', content: '', failure: failureText(error, controller.signal.aborted) }]
-      }
-    } finally {
-      /* A chat started over while this turn was in flight owns the state now. */
-      if (controllerRef.current === controller) {
-        controllerRef.current = null
-        if (next) setMessages(next)
-        setRunning(false)
-        setLive([])
-      }
+  /** Runs `action` on the runtime now, or as soon as it has loaded and picked the saved thread up. */
+  const whenReady = useCallback((action: (stream: TimbalStreamApi) => void) => {
+    const current = streamRef.current
+    if (current && readyRef.current) {
+      action(current)
+      return
     }
+    queuedRef.current = action
+    if (loadFailedRef.current) {
+      setLoadFailed(false)
+      setAttempt((count) => count + 1)
+    }
+    setWanted(true)
   }, [])
 
   const send = useCallback(
     (text: string) => {
-      const content = text.trim()
-      if (!content || controllerRef.current) return
-      void run([...withoutTrailingFailure(messagesRef.current), { id: entryId(), role: 'user', content: content.slice(0, CONTENT_CHARS) }])
+      const content = text.trim().slice(0, CONTENT_CHARS)
+      if (!content || runningRef.current) return
+      whenReady((current) => {
+        const pending = approvalRef.current
+        if (pending) store.set(dismissApproval(runsRef.current, pending.runId))
+        void current.send(content)
+      })
     },
-    [run],
+    [whenReady, store],
   )
 
-  const stop = useCallback(() => controllerRef.current?.abort(), [])
+  const confirm = useCallback(() => {
+    const pending = approvalRef.current
+    if (!pending || runningRef.current) return
+    whenReady((current) => {
+      if (!awaitsApproval(runsRef.current, pending.runId)) return
+      resumeRef.current = { runId: pending.runId, approvalId: pending.id }
+      setResuming(true)
+      void current.send(copy.assistant.pending.confirmMessage).finally(() => setResuming(false))
+    })
+  }, [whenReady])
+
+  const decline = useCallback(() => {
+    const pending = approvalRef.current
+    if (!pending || runningRef.current) return
+    store.set(dismissApproval(runsRef.current, pending.runId))
+    setFocusTick((tick) => tick + 1)
+  }, [store])
+
+  const stop = useCallback(() => streamRef.current?.cancel(), [])
 
   const retry = useCallback(() => {
-    if (controllerRef.current) return
-    const entries = withoutTrailingFailure(messagesRef.current)
-    if (entries.at(-1)?.role !== 'user') return
-    void run(entries)
-  }, [run])
+    const current = streamRef.current
+    const last = entriesRef.current.at(-1)
+    if (!current || runningRef.current || last?.role !== 'assistant' || !last.retryable) return
+    void current.reload()
+  }, [])
 
   const reset = useCallback(() => {
-    const controller = controllerRef.current
-    controllerRef.current = null
-    controller?.abort()
-    setMessages([])
-    setRunning(false)
-    setLive([])
+    queuedRef.current = null
+    resumeRef.current = null
+    seedRef.current = []
+    streamRef.current?.clear()
+    store.set(emptyRuns)
+    writeSession(storageKey, null)
+    setResuming(false)
     setDraft('')
     setFocusTick((tick) => tick + 1)
-  }, [])
+  }, [store, storageKey])
+
+  const titles = useMemo(() => Object.fromEntries((tools ?? []).map((tool) => [tool.name, tool.title])), [tools])
+  const toolNames = useMemo(() => (tools ? tools.map((tool) => tool.name) : null), [tools])
 
   const value: AssistantValue = {
     open,
@@ -302,11 +351,11 @@ export function AssistantProvider({ me, children }: { me: Me; children: ReactNod
     toggleDock,
     focusTick,
     focusComposer,
-    messages,
+    messages: entries,
     running,
-    live,
-    availability,
-    tools,
+    loadFailed,
+    tools: toolNames,
+    titles,
     contextPath,
     draft,
     setDraft,
@@ -314,8 +363,23 @@ export function AssistantProvider({ me, children }: { me: Me; children: ReactNod
     stop,
     retry,
     reset,
+    approval,
+    confirm,
+    decline,
   }
-  return <AssistantContext.Provider value={value}>{children}</AssistantContext.Provider>
+
+  return (
+    <AssistantContext.Provider value={value}>
+      {children}
+      {wanted ? (
+        <RuntimeBoundary key={attempt} onError={onRuntimeError}>
+          <Suspense fallback={null}>
+            <Runtime fetch={assistantFetch} onStream={onStream} />
+          </Suspense>
+        </RuntimeBoundary>
+      ) : null}
+    </AssistantContext.Provider>
+  )
 }
 
 export function useAssistant() {

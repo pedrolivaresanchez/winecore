@@ -3422,25 +3422,29 @@
       "expenses": "Gastos recibidos este mes",
       "contactSearch": "Busca el contacto "
     },
-    "unavailableTitle": "Asistente sin conectar",
-    "unavailableLead": "Avisa a quien administra WineCore para conectarlo.",
     "thinking": "Pensando",
     "stepRunning": "Consultando «{title}»…",
+    "toolFallback": "Consulta",
     "steps": "{count} pasos",
     "oneStep": "1 paso",
     "sources": "Registros citados",
+    "openRecord": "Abrir en WineCore",
     "pending": {
       "title": "Pendiente de tu confirmación",
       "confirm": "Confirmar",
       "cancel": "Cancelar",
       "confirmMessage": "Sí, confirmo.",
-      "cancelMessage": "No, cancela.",
+      "cancelled": "Cancelado. No se ha guardado nada.",
+      "fallback": "Se guardará el cambio que acabas de revisar.",
       "expires": "Caduca a las {time}"
     },
     "failure": {
       "stopped": "Has parado la respuesta.",
       "cut": "Se ha cortado la conexión.",
       "busy": "Demasiadas preguntas seguidas. Espera un minuto.",
+      "unavailable": "El asistente no está disponible ahora mismo. Inténtalo de nuevo en unos minutos.",
+      "forbidden": "No tienes acceso al asistente.",
+      "load": "No se ha podido cargar el asistente. Prueba otra vez.",
       "other": "No se ha podido responder."
     }
   },
