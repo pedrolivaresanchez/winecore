@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useChromeTitle } from '@/app/shell/shell-context'
 import { useEntity } from '@/app/entity-context'
@@ -13,7 +13,7 @@ import { iconStroke } from '@/lib/motion'
 import { allows } from '@/lib/permissions'
 import type { EntityChoice, Me } from '@/lib/types'
 import { FRAME_GUTTER, FRAME_STRIP_SCROLL } from '@/ui/frame'
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, LayoutGrid, Search } from '@/ui/icons'
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Layers, Search } from '@/ui/icons'
 import { Button, Chip, EmptyState, Input, SegmentedControl, Select, Skeleton, useToast } from '@/ui'
 import { createPosition, deletePosition, patchPosition } from '@/pages/bodega-plano/api'
 import { PlanBoard } from '@/pages/bodega-plano/board'
@@ -208,8 +208,8 @@ function Legend({ mode }: { mode: ColourMode }) {
   )
 }
 
-export function PlanoPage({ me }: { me: Me }) {
-  useChromeTitle(copy.plano.title)
+export function PlanoPage({ me, views }: { me: Me; views?: ReactNode }) {
+  useChromeTitle(copy.cellar.vessels)
   const toast = useToast()
   const { filter, entities } = useEntity()
   const [params] = useSearchParams()
@@ -469,8 +469,9 @@ export function PlanoPage({ me }: { me: Me }) {
   return (
     <div data-screen={screen} data-zone={kind} data-colour={colour} data-panel={card ? 'open' : 'closed'} className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header className={cn('flex h-12 shrink-0 items-center gap-2 border-b border-border-subtle', FRAME_GUTTER)}>
-        <LayoutGrid className="hidden size-4 shrink-0 text-icon md:block" strokeWidth={iconStroke} />
-        <h1 className="hidden min-w-0 truncate text-label font-medium text-ink-900 md:block">{copy.plano.title}</h1>
+        <Layers className="hidden size-4 shrink-0 text-icon md:block" strokeWidth={iconStroke} />
+        <h1 className="hidden min-w-0 truncate text-label font-medium text-ink-900 md:block">{copy.cellar.vessels}</h1>
+        {views}
         {cellars.length > 1 ? (
           <Select
             size="sm"

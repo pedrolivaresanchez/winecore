@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useChromeTitle } from '@/app/shell/shell-context'
 import { ErrorState } from '@/components/ErrorState'
@@ -62,7 +62,7 @@ function vesselTargetFromScan(raw: string): string | null {
   return null
 }
 
-export function MapaPage({ me }: { me: Me }) {
+export function MapaPage({ me, views }: { me: Me; views?: ReactNode }) {
   useChromeTitle(copy.cellar.vessels)
   const navigate = useNavigate()
   const columnsMenu = useMenuOpen()
@@ -161,18 +161,22 @@ export function MapaPage({ me }: { me: Me }) {
 
   return (
     <div data-screen={screen} data-view={table ? 'tabla' : 'tarjetas'} className="flex min-h-0 flex-1 flex-col">
-      <header className={cn('hidden h-12 shrink-0 items-center gap-2 border-b border-border-subtle md:flex', FRAME_GUTTER)}>
-        <Layers className="size-4 shrink-0 text-icon" strokeWidth={iconStroke} />
-        <h1 className="min-w-0 truncate text-label font-medium text-ink-900">{copy.cellar.vessels}</h1>
+      <header className={cn('flex h-12 shrink-0 items-center gap-2 border-b border-border-subtle', FRAME_GUTTER)}>
+        <Layers className="hidden size-4 shrink-0 text-icon md:block" strokeWidth={iconStroke} />
+        <h1 className="hidden min-w-0 truncate text-label font-medium text-ink-900 md:block">{copy.cellar.vessels}</h1>
+        {views}
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           <Button type="button" variant="secondary" size="sm" onClick={() => navigate('/bodega/higiene')}>
             {copy.nav.hygiene}
           </Button>
-          <Button type="button" variant="secondary" size="sm" onClick={() => setScan(true)}>
+          <Button type="button" variant="secondary" size="sm" className="hidden md:inline-flex" onClick={() => setScan(true)}>
             {copy.cellar.scan}
           </Button>
+          <Button type="button" variant="secondary" size="sm" iconOnly className="md:hidden" aria-label={copy.cellar.scan} onClick={() => setScan(true)}>
+            <ScanSearch strokeWidth={iconStroke} />
+          </Button>
           {allows(me, 'cellar.operate') ? (
-            <Button type="button" variant="secondary" size="sm" onClick={() => setImportOpen(true)}>
+            <Button type="button" variant="secondary" size="sm" className="hidden md:inline-flex" onClick={() => setImportOpen(true)}>
               {copy.cellar.importVessels}
             </Button>
           ) : null}
@@ -241,19 +245,6 @@ export function MapaPage({ me }: { me: Me }) {
                 </MenuItem>
               ))}
             </GlassMenu>
-          ) : null}
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5 md:hidden">
-          <Button type="button" variant="secondary" size="sm" onClick={() => navigate('/bodega/higiene')}>
-            {copy.nav.hygiene}
-          </Button>
-          <Button type="button" variant="secondary" size="sm" iconOnly aria-label={copy.cellar.scan} onClick={() => setScan(true)}>
-            <ScanSearch strokeWidth={iconStroke} />
-          </Button>
-          {allows(me, 'cellar.operate') ? (
-            <Button type="button" variant="primary" size="sm" onClick={() => navigate('/bodega/operaciones/nueva')}>
-              {copy.cellar.operation}
-            </Button>
           ) : null}
         </div>
       </div>

@@ -18,6 +18,8 @@
     "catalog": "Catálogo",
     "cellar": "Bodega",
     "vessels": "Depósitos",
+    "vesselsPlan": "Plano de depósitos",
+    "vesselsList": "Lista de depósitos",
     "lots": "Lotes",
     "plan": "Plano",
     "readings": "Lecturas",
@@ -34,7 +36,6 @@
     "sales": "Ventas",
     "vineyard": "Viñedo",
     "regulatory": "Regulatorio",
-    "map": "Mapa",
     "settings": "Ajustes",
     "moreIn": "Más en {group}",
     "groups": {
@@ -1177,6 +1178,9 @@
   },
   "cellar": {
     "vessels": "Depósitos",
+    "view": "Vista",
+    "viewPlan": "Plano",
+    "viewList": "Lista",
     "lots": "Lotes",
     "searchVessels": "Lote, vino o código",
     "searchLots": "Buscar por código",

@@ -11,7 +11,7 @@ export const GO_KEYS: { key: string; path: string; label: KeyLabel }[] = [
   { key: 'v', path: '/ventas', label: 'goSales' },
   { key: 'f', path: '/facturas', label: 'goInvoices' },
   { key: 'o', path: '/cobros', label: 'goCollections' },
-  { key: 'd', path: '/bodega/plano', label: 'goCellar' },
+  { key: 'd', path: '/bodega/depositos', label: 'goCellar' },
   { key: 'e', path: '/stock', label: 'goStock' },
   { key: 'g', path: '/gastos', label: 'goExpenses' },
   { key: 'i', path: '/informes', label: 'goReports' },

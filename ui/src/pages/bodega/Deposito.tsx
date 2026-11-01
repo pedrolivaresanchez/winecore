@@ -171,7 +171,7 @@ function Loaded({
           <MenuItem
             onClick={() => {
               more.close()
-              navigate(`/bodega/plano?recipiente=${encodeURIComponent(vessel.code)}`)
+              navigate(`/bodega/depositos?vista=plano&recipiente=${encodeURIComponent(vessel.code)}`)
             }}
           >
             {copy.plano.onPlan}

@@ -17,16 +17,15 @@ import { ProductList } from '@/pages/catalogo/ProductList'
 import { ProductPage } from '@/pages/catalogo/ProductPage'
 import { WinesPage } from '@/pages/catalogo/WinesPage'
 import { DepositoPage } from '@/pages/bodega/Deposito'
+import { DepositosPage, PlanoRedirect } from '@/pages/bodega/Depositos'
 import { HolderPage } from '@/pages/bodega-plano/HolderPage'
 import { HoldersPage } from '@/pages/bodega-plano/Holders'
-import { PlanoPage } from '@/pages/bodega-plano/Plano'
 import { CalculadorasPage } from '@/pages/enologia/Calculadoras'
 import { AnadasPage } from '@/pages/lote-diseno/AnadasPage'
 import { RecetaPage } from '@/pages/lote-diseno/RecetaPage'
 import { RecetasPage } from '@/pages/lote-diseno/RecetasPage'
 import { LotePage } from '@/pages/bodega/Lote'
 import { LotesPage } from '@/pages/bodega/Lotes'
-import { MapaPage } from '@/pages/bodega/Mapa'
 import { OperacionPage } from '@/pages/bodega/Operacion'
 import { QrOpen } from '@/pages/bodega/QrOpen'
 import { CatasPage } from '@/pages/catas/CatasPage'
@@ -79,11 +78,11 @@ export function AppRoutes({ me }: { me: Me }) {
       <Route path="catalogo/tarifas" element={<PriceListsPage me={me} />} />
       <Route path="catalogo/tarifas/:id" element={<PriceListPage me={me} />} />
       <Route path="catalogo/:id" element={<ProductPage me={me} />} />
-      <Route path="bodega" element={<MapaPage me={me} />} />
+      <Route path="bodega" element={<Navigate to="/bodega/depositos" replace />} />
       <Route path="bodega/calculadoras" element={<CalculadorasPage me={me} />} />
-      <Route path="bodega/depositos" element={<MapaPage me={me} />} />
+      <Route path="bodega/depositos" element={<DepositosPage me={me} />} />
       <Route path="bodega/depositos/:vesselId" element={<DepositoPage me={me} />} />
-      <Route path="bodega/plano" element={<PlanoPage me={me} />} />
+      <Route path="bodega/plano" element={<PlanoRedirect />} />
       <Route path="bodega/contenedores" element={<HoldersPage me={me} />} />
       <Route path="bodega/contenedores/:code" element={<HolderPage me={me} />} />
       <Route path="bodega/lotes" element={<LotesPage me={me} />} />
