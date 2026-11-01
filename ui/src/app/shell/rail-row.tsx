@@ -46,7 +46,7 @@ export function RailRow({
       onClick={onNavigate}
       title={label}
       className={cn(
-        'group relative flex h-7 w-full items-center gap-2 rounded-md py-0 pr-2 pl-2 text-left text-label',
+        'group relative flex h-7 w-full items-center gap-2 rounded-md py-0 pr-2 pl-2 text-left text-label max-md:h-11',
         'transition-[color,background-color] duration-(--duration-quick) ease-(--ease-smooth-out)',
         face,
       )}

@@ -86,7 +86,7 @@ function WorkspaceRail({ me, collapsed }: { me: Me; collapsed: boolean }) {
                 type="button"
                 onClick={() => setSidebarOpen(false)}
                 aria-label={copy.nav.collapse}
-                className="flex size-7 shrink-0 items-center justify-center rounded-md text-icon-muted hover:bg-sidebar-hover hover:text-ink-900"
+                className="flex size-7 shrink-0 items-center justify-center rounded-md text-icon-muted hover:bg-sidebar-hover hover:text-ink-900 max-md:size-11"
               >
                 <PanelLeft className={railMetrics.icon} strokeWidth={iconStroke} />
               </button>
