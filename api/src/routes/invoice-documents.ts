@@ -41,7 +41,7 @@ export async function downloadInvoicePdf(
   return new Response(Buffer.from(stored.bytes), {
     headers: {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Disposition': `inline; filename="${filename}"`,
     },
   });
 }

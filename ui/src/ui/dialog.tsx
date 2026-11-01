@@ -13,7 +13,7 @@ import { OverlayScrim } from './overlay-scrim'
 import { useDismissOnEscape } from './dismiss-layer'
 import { useUiLabels } from './ui-labels'
 
-export type DialogSize = 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'full'
+export type DialogSize = 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'full' | 'screen'
 
 const sizes: Record<DialogSize, string> = {
   sm: 'max-w-sm',
@@ -23,6 +23,8 @@ const sizes: Record<DialogSize, string> = {
   '2xl': 'max-w-6xl',
   /** A records table opened over a chart — needs the columns, not a reading column. */
   full: 'max-w-[min(96vw,80rem)]',
+  /** A document beside its record: 24px off every edge, the whole screen on a phone. */
+  screen: 'max-w-none',
 }
 
 const FOCUSABLE =
@@ -135,9 +137,11 @@ export function Dialog({
   }
 
   const narrow = useSyncExternalStore(subscribeSheet, sheetLayout, () => false)
-  const sheet = narrow && align === 'center'
+  const screen = size === 'screen'
+  const docked = narrow && align === 'center'
+  const sheet = docked && !screen
   const fade = reduce ? { duration: 0 } : overlayFade
-  const modal = sheet
+  const modal = docked
     ? sheetMotion(reduce, { edge: 'bottom' })
     : modalMotion(reduce, { from: align === 'top' ? 'above' : 'below' })
 
@@ -149,12 +153,14 @@ export function Dialog({
           role="presentation"
           className={cn(
             'fixed inset-0 flex justify-center',
-            sheet
-              ? 'items-end pt-6'
-              : [
-                  'p-3 sm:p-4',
-                  align === 'top' ? 'items-start pt-[10vh] sm:pt-[14vh]' : 'items-center',
-                ],
+            screen
+              ? 'items-stretch sm:p-6'
+              : sheet
+                ? 'items-end pt-6'
+                : [
+                    'p-3 sm:p-4',
+                    align === 'top' ? 'items-start pt-[10vh] sm:pt-[14vh]' : 'items-center',
+                  ],
           )}
           style={{ zIndex: 'var(--z-modal)' }}
           initial="closed"
@@ -179,9 +185,11 @@ export function Dialog({
             data-sheet={sheet ? '' : undefined}
             className={cn(
               'relative flex w-full flex-col overflow-hidden border-[5px] border-ink-900/20 bg-surface shadow-(--shadow-float) outline-none',
-              sheet
-                ? 'max-h-[92dvh] rounded-t-2xl border-b-0 pb-[env(safe-area-inset-bottom)]'
-                : ['rounded-2xl', size === 'full' ? 'max-h-[90dvh]' : 'max-h-[85dvh]'],
+              screen
+                ? 'h-full border-0 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] sm:rounded-2xl sm:border-[5px] sm:pt-0 sm:pb-0'
+                : sheet
+                  ? 'max-h-[92dvh] rounded-t-2xl border-b-0 pb-[env(safe-area-inset-bottom)]'
+                  : ['rounded-2xl', size === 'full' ? 'max-h-[90dvh]' : 'max-h-[85dvh]'],
               sizes[size],
               className,
             )}
@@ -252,7 +260,19 @@ export function DialogBody({ children, className }: { children: ReactNode; class
   )
 }
 
-export function DialogFooter({ children, className }: { children: ReactNode; className?: string }) {
+export function DialogFooter({
+  children,
+  className,
+  error,
+}: {
+  children: ReactNode
+  className?: string
+  /**
+   * A refusal belongs where the button that caused it is. The body scrolls, so a message at
+   * the end of the form is out of sight exactly when the person has pressed Create.
+   */
+  error?: string | null
+}) {
   return (
     <div
       className={cn(
@@ -260,6 +280,14 @@ export function DialogFooter({ children, className }: { children: ReactNode; cla
         className,
       )}
     >
+      {error ? (
+        <p
+          role="alert"
+          className="mb-1 w-full rounded-md border border-danger-500/30 bg-danger-50 px-3 py-2 text-label text-danger-700"
+        >
+          {error}
+        </p>
+      ) : null}
       {children}
     </div>
   )

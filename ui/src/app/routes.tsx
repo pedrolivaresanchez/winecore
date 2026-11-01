@@ -1,12 +1,11 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { copy } from '@/i18n'
 import type { Me } from '@/lib/types'
 import { NotFound } from '@/pages/NotFound'
+import { AsistentePage } from '@/pages/asistente/AsistentePage'
 import { InformesPage } from '@/pages/informes/InformesPage'
 import { Panel } from '@/pages/Panel'
 import { ApprovalPage } from '@/pages/aprobaciones/Detail'
 import { ApprovalInbox } from '@/pages/aprobaciones/Inbox'
-import { ContactCreate } from '@/pages/contactos/ContactCreate'
 import { ContactList } from '@/pages/contactos/ContactList'
 import { ContactPage } from '@/pages/contactos/ContactPage'
 import { FormatPage } from '@/pages/catalogo/FormatPage'
@@ -18,16 +17,15 @@ import { ProductList } from '@/pages/catalogo/ProductList'
 import { ProductPage } from '@/pages/catalogo/ProductPage'
 import { WinesPage } from '@/pages/catalogo/WinesPage'
 import { DepositoPage } from '@/pages/bodega/Deposito'
+import { DepositosPage, PlanoRedirect } from '@/pages/bodega/Depositos'
 import { HolderPage } from '@/pages/bodega-plano/HolderPage'
 import { HoldersPage } from '@/pages/bodega-plano/Holders'
-import { PlanoPage } from '@/pages/bodega-plano/Plano'
 import { CalculadorasPage } from '@/pages/enologia/Calculadoras'
 import { AnadasPage } from '@/pages/lote-diseno/AnadasPage'
 import { RecetaPage } from '@/pages/lote-diseno/RecetaPage'
 import { RecetasPage } from '@/pages/lote-diseno/RecetasPage'
 import { LotePage } from '@/pages/bodega/Lote'
 import { LotesPage } from '@/pages/bodega/Lotes'
-import { MapaPage } from '@/pages/bodega/Mapa'
 import { OperacionPage } from '@/pages/bodega/Operacion'
 import { QrOpen } from '@/pages/bodega/QrOpen'
 import { CatasPage } from '@/pages/catas/CatasPage'
@@ -68,9 +66,10 @@ export function AppRoutes({ me }: { me: Me }) {
       <Route path="aprobaciones" element={<ApprovalInbox me={me} />} />
       <Route path="aprobaciones/:id" element={<ApprovalPage />} />
       <Route path="contactos" element={<ContactList me={me} />} />
-      <Route path="contactos/nuevo" element={<ContactCreate me={me} />} />
+      <Route path="contactos/nuevo" element={<ContactList me={me} creating />} />
       <Route path="contactos/:id" element={<ContactPage me={me} />} />
       <Route path="informes" element={<InformesPage me={me} />} />
+      <Route path="asistente" element={<AsistentePage me={me} />} />
       <Route path="catalogo" element={<ProductList me={me} />} />
       <Route path="catalogo/nuevo" element={<ProductCreate me={me} />} />
       <Route path="catalogo/vinos" element={<WinesPage me={me} />} />
@@ -79,11 +78,11 @@ export function AppRoutes({ me }: { me: Me }) {
       <Route path="catalogo/tarifas" element={<PriceListsPage me={me} />} />
       <Route path="catalogo/tarifas/:id" element={<PriceListPage me={me} />} />
       <Route path="catalogo/:id" element={<ProductPage me={me} />} />
-      <Route path="bodega" element={<MapaPage me={me} />} />
+      <Route path="bodega" element={<Navigate to="/bodega/depositos" replace />} />
       <Route path="bodega/calculadoras" element={<CalculadorasPage me={me} />} />
-      <Route path="bodega/depositos" element={<MapaPage me={me} />} />
+      <Route path="bodega/depositos" element={<DepositosPage me={me} />} />
       <Route path="bodega/depositos/:vesselId" element={<DepositoPage me={me} />} />
-      <Route path="bodega/plano" element={<PlanoPage me={me} />} />
+      <Route path="bodega/plano" element={<PlanoRedirect />} />
       <Route path="bodega/contenedores" element={<HoldersPage me={me} />} />
       <Route path="bodega/contenedores/:code" element={<HolderPage me={me} />} />
       <Route path="bodega/lotes" element={<LotesPage me={me} />} />
@@ -132,7 +131,6 @@ export function AppRoutes({ me }: { me: Me }) {
       <Route path="vinedo" element={<Vinedo me={me} />} />
       <Route path="vinedo/:code" element={<ParcelaPage me={me} />} />
       <Route path="regulatorio/*" element={<Regulatorio me={me} />} />
-      <Route path="ajustes/puesta-en-marcha" element={<div className="sr-only">{copy.settings.setup}</div>} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   )

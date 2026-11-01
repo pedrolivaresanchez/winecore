@@ -1,5 +1,4 @@
-import { ApiError, api, apiText } from '@/lib/api'
-import { copy } from '@/i18n'
+import { api, apiText } from '@/lib/api'
 import type {
   AuditItem,
   BatchResult,
@@ -116,31 +115,4 @@ export function listAudit(table: string, rowId: string | null, signal?: AbortSig
   const params = new URLSearchParams({ table, limit: '100' })
   if (rowId) params.set('row_id', rowId)
   return api<{ items: AuditItem[]; next_cursor: string | null }>(`/v1/audit?${params}`, { signal })
-}
-
-export async function fetchInvoicePdf(id: string, signal?: AbortSignal): Promise<Blob> {
-  let response: Response
-  try {
-    response = await fetch(`/api/v1/invoices/${id}/pdf`, {
-      headers: { Accept: 'application/pdf' },
-      signal,
-      cache: 'no-store',
-    })
-  } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') throw error
-    throw new ApiError(0, 'WC_NETWORK', copy.api.offline)
-  }
-  if (!response.ok) {
-    let message = copy.api.generic
-    let code = 'WC_ERROR'
-    try {
-      const body = (await response.json()) as { code?: string; message?: string }
-      if (typeof body.message === 'string') message = body.message
-      if (typeof body.code === 'string') code = body.code
-    } catch {
-      message = copy.api.generic
-    }
-    throw new ApiError(response.status, code, message)
-  }
-  return response.blob()
 }

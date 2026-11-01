@@ -30,6 +30,7 @@ import {
   updateContact,
   updatePersonRow,
 } from '../core/party/contacts';
+import { loadContactSummary } from '../core/party/summary';
 
 const ROUTE = 'POST /v1/contacts';
 
@@ -165,6 +166,10 @@ export async function getContact(writer: Writer, request: Request, id: string) {
     ORDER BY receives_invoices DESC, created_at
   `);
   return contactOf(row, user, addresses, persons);
+}
+
+export function getContactSummary(writer: Writer, request: Request, id: string, now = new Date()) {
+  return loadContactSummary(writer, sessionOf(request), id, now);
 }
 
 export async function patchContact(writer: Writer, request: Request, id: string) {

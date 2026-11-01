@@ -17,13 +17,16 @@ test("Ventas: presupuesto, pedido, albarán y factura con PDF", async ({ page })
     await page.locator('[data-screen="ventas-dialogo"]').waitFor();
     const dialog = page.getByRole("dialog");
     await dialog.getByRole("combobox", { name: "Cliente" }).fill(customer);
-    await dialog.getByRole("listbox", { name: "Cliente" }).getByRole("option").filter({ hasText: customer }).first().click();
+    await page.getByRole("listbox").getByRole("option").filter({ hasText: customer }).first().click();
     const product = dialog.getByRole("combobox", { name: "Producto" });
-    await expect.poll(async () => product.locator("option").count(), { timeout: 8_000 }).toBeGreaterThan(1);
-    await product.selectOption({ index: 1 });
-    await dialog.getByRole("textbox", { name: "Precio" }).fill("12");
+    await product.click();
+    const firstProduct = page.getByRole("listbox").getByRole("option").first();
+    await firstProduct.waitFor();
+    await firstProduct.click();
+    const price = dialog.getByRole("textbox", { name: "Precio" });
+    await price.fill("12");
     const reason = dialog.getByRole("textbox", { name: /motivo/i });
-    if (await reason.isVisible()) await reason.fill("Precio de la prueba");
+    if (await reason.isVisible().catch(() => false)) await reason.fill("Precio de la prueba");
     const created = page.waitForResponse(
       (response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/v1/quotes",
     );
@@ -74,7 +77,7 @@ test("Ventas: presupuesto, pedido, albarán y factura con PDF", async ({ page })
     await page.locator('[data-screen="facturas-nueva"]').waitFor();
     const dialog = page.getByRole("dialog");
     await dialog.getByRole("combobox", { name: "Cliente" }).fill(customer);
-    await dialog.getByRole("listbox", { name: "Cliente" }).getByRole("option").filter({ hasText: customer }).first().click();
+    await page.getByRole("listbox").getByRole("option").filter({ hasText: customer }).first().click();
     await dialog.getByRole("radio", { name: "Desde albaranes" }).click();
     const elsewhere = dialog.getByRole("button", { name: /^Hay \d+ en / });
     const note = dialog.getByRole("checkbox").first();

@@ -1,8 +1,10 @@
-import { copy } from '@/i18n'
+import { Combobox, type ComboOption } from '@/components/Combobox'
+import { copy, fill } from '@/i18n'
 import type { CatalogLocation, CatalogLot, CatalogProduct } from '@/lib/sales-catalog'
 import { blankLine, type DraftLine } from '@/lib/sales-draft'
 import { formatAmount, pricesDiffer, TAX_CODES, taxLabel } from '@/lib/sales'
 import { Button, InfoTip, Input, Select } from '@/ui'
+import { useMemo } from 'react'
 
 export function LineEditor({
   lines,
@@ -16,6 +18,7 @@ export function LineEditor({
   askReason = true,
   freeLot,
   onPrice,
+  invalidKey,
 }: {
   lines: DraftLine[]
   onChange: (next: DraftLine[]) => void
@@ -29,7 +32,12 @@ export function LineEditor({
   /** A lot-tracked product with no lot of it in stock takes a typed lot code instead of the empty list. */
   freeLot?: boolean
   onPrice: (line: DraftLine) => void
+  invalidKey?: string | null
 }) {
+  const options = useMemo<ComboOption[]>(
+    () => products.map((product) => ({ value: product.id, label: product.label })),
+    [products],
+  )
   function patch(key: string, partial: Partial<DraftLine>, reprice = false) {
     const next = lines.map((line) => (line.key === key ? { ...line, ...partial } : line))
     onChange(next)
@@ -52,9 +60,13 @@ export function LineEditor({
         {lines.map((line, index) => {
           const place = locationId || (locations.length === 1 ? locations[0]?.id : '')
           const choices = lots.filter((lot) => lot.productId === line.productId && (!place || lot.locationId === place))
-          const differs = askReason && line.touched && line.unitPrice !== '' && (line.quoted == null || pricesDiffer(line.unitPrice, line.quoted))
+          const differs = askReason && line.touched && line.unitPrice !== '' && line.quoted != null && pricesDiffer(line.unitPrice, line.quoted)
           return (
-            <li key={line.key} className="grid gap-2 rounded-2xl border border-border-subtle p-3">
+            <li
+              key={line.key}
+              data-line-invalid={invalidKey === line.key ? 'true' : undefined}
+              className={`grid gap-2 rounded-2xl border p-3 ${invalidKey === line.key ? 'border-danger-500' : 'border-border-subtle'}`}
+            >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-caption text-text-tertiary">{index + 1}</span>
                 {lockCount || lines.length === 1 ? null : (
@@ -68,22 +80,18 @@ export function LineEditor({
                   </Button>
                 )}
               </div>
-              <label className="grid gap-1">
+              <div className="grid gap-1">
                 <span className="text-label text-text-secondary">{copy.sales.product}</span>
-                <Select
-                  className="w-full"
+                <Combobox
+                  options={options}
                   value={line.productId}
-                  aria-label={copy.sales.product}
-                  onChange={(event) => patch(line.key, { productId: event.target.value, lotId: '', lotCode: '', touched: false }, true)}
-                >
-                  <option value="">{copy.sales.product}</option>
-                  {products.map((product) => (
-                    <option key={product.id} value={product.id}>
-                      {product.label}
-                    </option>
-                  ))}
-                </Select>
-              </label>
+                  label={copy.sales.product}
+                  placeholder={copy.sales.findProduct}
+                  emptyText={copy.sales.noProductsMatch}
+                  invalid={invalidKey === line.key && !line.productId}
+                  onChange={(next) => patch(line.key, { productId: next, lotId: '', lotCode: '', touched: false }, true)}
+                />
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <label className="grid gap-1">
                   <span className="text-label text-text-secondary">{copy.sales.quantity}</span>
@@ -129,10 +137,14 @@ export function LineEditor({
                   </Select>
                 </label>
               </div>
-              {line.quoted ? (
-                <p className="text-caption text-text-tertiary tabular-nums">
-                  {formatAmount(line.quoted)}
-                </p>
+              {line.productId ? (
+                line.quoted ? (
+                  <p className="text-caption text-text-tertiary tabular-nums">
+                    {fill(copy.sales.tariffPrice, { price: formatAmount(line.quoted) })}
+                  </p>
+                ) : (
+                  <p className="text-caption text-text-tertiary">{copy.sales.noTariff}</p>
+                )
               ) : null}
               {differs ? (
                 <label className="grid gap-1">
@@ -140,6 +152,8 @@ export function LineEditor({
                   <Input
                     value={line.reason}
                     aria-label={copy.sales.priceReason}
+                    placeholder={copy.sales.priceReasonHint}
+                    invalid={invalidKey === line.key && line.reason.trim().length < 3}
                     onChange={(event) => patch(line.key, { reason: event.target.value })}
                   />
                 </label>

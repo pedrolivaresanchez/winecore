@@ -77,8 +77,9 @@ describe('ventas', () => {
     expect(created.number).toBeNull();
     const pdf = await ctx.app.handle(req('GET', `/v1/quotes/${String(created.id)}/pdf`));
     expect(pdf.status).toBe(200);
-    const text = await pdf.text();
+    const text = pdfLines(new Uint8Array(await pdf.arrayBuffer())).join('\n');
     expect(text).toContain('Proforma');
+    expect(text).toContain('This document is not a tax invoice.');
     expect(text).toContain('FCA');
     expect(text).not.toContain('Factura');
     expect(text).not.toContain('QR');

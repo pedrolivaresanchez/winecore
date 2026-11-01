@@ -12,6 +12,7 @@ import { domainError } from '../core/errors';
 import { issueIntercompanyInvoice } from '../core/intercompany/settlement';
 import { noopApprovalHook, type SupplierInvoiceApprovalHook } from '../core/purchasing/approval';
 import { consumePurchaseApproval } from '../core/purchasing/invoice';
+import { activateRuleSet } from '../core/sales/rules';
 import { syncSubmissionFromApproval } from '../core/regulatory/submissions';
 
 const PAGE_SIZE = 50;
@@ -147,6 +148,15 @@ export async function decideApproval(
   if (body.decision === 'approve' && row.kind === 'purchase_invoice_approval') {
     await deps.writer.withWrite(userActor(request, user.id), async (tx) => {
       await consumePurchaseApproval(tx, row.id, user.id, purchaseHook, now);
+    });
+  }
+  if (body.decision === 'approve' && row.kind === 'billing_rules_activation') {
+    await deps.writer.withWrite(userActor(request, user.id), async (tx) => {
+      const subject = await tx.read<{ subject_id: unknown; status: unknown }>(sql`
+        SELECT subject_id, status FROM ops.approval_request WHERE id = CAST(${row.id} AS UUID)
+      `);
+      const found = subject[0];
+      if (found && String(found.status) === 'approved') await activateRuleSet(tx, String(found.subject_id));
     });
   }
   if (body.decision === 'approve' && row.kind === 'intercompany_invoice_issue') {

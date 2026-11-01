@@ -87,7 +87,7 @@ export const inventoryStockAt = defineReadTool({
         packaged_liters: litersFromMl(packagedMl),
       },
       warnings,
-      links: { web: webLink(ctx, "/existencias") },
+      links: { web: webLink(ctx, "/stock") },
     };
   },
 });
@@ -144,7 +144,7 @@ export const inventoryMovementsList = defineReadTool({
           type: String(row.source_table ?? ""),
           id: text(row.source_id),
         },
-        link: webLink(ctx, `/existencias/movimientos/${String(row.id)}`),
+        link: webLink(ctx, input.ledger === "fiscal" ? "/stock/movimientos?book=fiscal" : "/stock/movimientos"),
       })),
       next_cursor: page.next_cursor,
       warnings: [] as string[],
@@ -220,7 +220,7 @@ export const inventoryReconcile = defineReadTool({
           type: String(row.source_table ?? row.move_type),
           number: text(row.id) ?? "",
           date: iso(row.occurred_at).slice(0, 10),
-          link: webLink(ctx, `/existencias/movimientos/${String(row.id)}`),
+          link: webLink(ctx, "/stock/movimientos"),
         })),
       }],
       warnings,

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { ComboOption } from '@/components/Combobox'
 import { ApiError, api, isAbortError } from '@/lib/api'
 import { listContacts, type ContactSummary } from '@/lib/contacts'
 import { listStock, type StockItem } from '@/lib/sales'
 
-export type CatalogCustomer = { id: string; name: string; country: string }
+export type CatalogCustomer = { id: string; name: string; country: string; taxId: string | null; city: string | null }
 export type CatalogProduct = { id: string; sku: string; label: string; requiresLot?: boolean }
 export type CatalogLot = { id: string; code: string; productId: string; locationId: string; qty: number }
 export type CatalogLocation = { id: string; code: string }
@@ -68,23 +69,33 @@ export function useSalesCatalog(aliases?: ReadonlyMap<string, string>) {
   }
 }
 
-async function loadCustomers(signal: AbortSignal): Promise<ContactSummary[]> {
+/** Every page: a customer missing from the list cannot be picked, and the Holded book alone runs to hundreds. */
+export async function loadCustomers(signal: AbortSignal): Promise<ContactSummary[]> {
   const items: ContactSummary[] = []
   let cursor: string | undefined
-  for (let page = 0; page < 4; page += 1) {
+  do {
     const result = await listContacts({ role: 'customer', limit: 100, cursor }, signal)
     items.push(...result.items)
-    if (!result.next_cursor) break
-    cursor = result.next_cursor
-  }
+    cursor = result.next_cursor ?? undefined
+  } while (cursor)
   return items
 }
 
-function customersOf(items: ContactSummary[]): CatalogCustomer[] {
+export function customersOf(items: ContactSummary[]): CatalogCustomer[] {
   return items
     .filter((item) => item.is_customer && !item.archived_at)
-    .map((item) => ({ id: item.id, name: item.legal_name, country: item.country_code }))
+    .map((item) => ({ id: item.id, name: item.legal_name, country: item.country_code, taxId: item.tax_id, city: item.city }))
     .sort((a, b) => a.name.localeCompare(b.name, 'es'))
+}
+
+/** The tax id rides along as the hint so typing a NIF finds the customer too. */
+export function customerOption(customer: CatalogCustomer): ComboOption {
+  const hint = customer.taxId ?? (customer.country === 'ES' ? undefined : customer.country)
+  return { value: customer.id, label: customer.name, hint: hint ?? undefined }
+}
+
+export function customerDetail(customer: CatalogCustomer | undefined): string {
+  return customer ? [customer.taxId, customer.city].filter(Boolean).join(' · ') : ''
 }
 
 function productsOf(stock: StockItem[], aliases?: ReadonlyMap<string, string>): CatalogProduct[] {
@@ -277,4 +288,23 @@ export function productAliases(lines: { product_id: string | null; description: 
     if (line.product_id && line.description) map.set(line.product_id, line.description)
   }
   return map
+}
+
+/** Todos los clientes activos, para elegirlos escribiendo en una lista. */
+export function useCustomers() {
+  const [customers, setCustomers] = useState<CatalogCustomer[]>([])
+  const [loading, setLoading] = useState(true)
+  useEffect(() => {
+    const controller = new AbortController()
+    loadCustomers(controller.signal)
+      .then((items) => {
+        setCustomers(customersOf(items))
+        setLoading(false)
+      })
+      .catch((err: unknown) => {
+        if (!isAbortError(err)) setLoading(false)
+      })
+    return () => controller.abort()
+  }, [])
+  return { customers, loading }
 }

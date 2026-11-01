@@ -1,4 +1,4 @@
-import { api } from '@/lib/api'
+import { api, apiBlob } from '@/lib/api'
 import type { BarrelStatus, BarrelView, DemijohnView, Geom, HolderView, OakOrigin, ToastLevel } from '@/pages/bodega-plano/types'
 
 export function patchPosition(zoneCode: string, positionId: string, geom: Geom) {
@@ -84,11 +84,6 @@ export function postHolderMove(
 }
 
 export async function attachmentUrl(id: string): Promise<string> {
-  const response = await fetch(`/api/v1/attachments/${encodeURIComponent(id)}`, {
-    headers: { Accept: '*/*' },
-    cache: 'no-store',
-  })
-  if (!response.ok) throw new Error('attachment')
-  const blob = await response.blob()
+  const { blob } = await apiBlob(`/v1/attachments/${encodeURIComponent(id)}`, { headers: { Accept: '*/*' } })
   return URL.createObjectURL(blob)
 }

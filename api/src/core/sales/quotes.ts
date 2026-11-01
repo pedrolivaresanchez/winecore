@@ -31,7 +31,7 @@ import {
 } from './db';
 import { createSalesOrder } from './orders';
 import { parseCommercialLines, resolveLinePrice } from './pricing';
-import { buildProformaPdf } from './proforma';
+import { renderQuotePdf } from './proforma';
 import { resolveIssuingEntity } from './rules';
 import { priceTotals, type PricedLine } from './totals';
 
@@ -344,25 +344,9 @@ export async function quoteToOrder(writer: Writer, request: Request, id: string)
 export async function quotePdf(writer: Writer, request: Request, id: string): Promise<Response> {
   sessionOf(request);
   const quote = await getQuote(writer, id);
-  const customer = await writer.read<{ legal_name: string }>(sql`
-    SELECT legal_name FROM party.contact WHERE id = CAST(${String(quote.customer_id)} AS UUID)
-  `);
-  const lines = (quote.lines as QuoteLine[]).map((line) => ({
-    description: line.description,
-    quantity: line.quantity,
-    amount: decOf(line.quantity).mul(decOf(line.unit_price)).toFixed(2),
-  }));
-  const bytes = buildProformaPdf({
-    proforma: quote.is_proforma === true,
-    language: String(quote.language),
-    incoterm: quote.incoterm == null ? null : String(quote.incoterm),
-    customer: customer[0] ? String(customer[0].legal_name) : 'Cliente',
-    number: quote.number == null ? null : String(quote.number),
-    lines,
-    total: String(quote.total),
-  });
-  return new Response(bytes, {
-    headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': 'inline; filename="proforma.pdf"' },
+  const { bytes, filename } = await renderQuotePdf(writer, quote);
+  return new Response(Buffer.from(bytes), {
+    headers: { 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="${filename}"` },
   });
 }
 

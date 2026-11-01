@@ -370,6 +370,34 @@ describe('passkeys y TOTP', () => {
 });
 
 describe('aprobaciones', () => {
+  test('aprobar la activación de reglas de facturación deja el conjunto activo', async () => {
+    const ctx = await openApp();
+    try {
+      const { passkey } = await registerPasskey(ctx.app, ownerHeaders());
+      const made = await call(ctx.app, 'POST', '/v1/billing-rules/sets', { notes: 'inicial' });
+      expect(made.status).toBe(201);
+      const setId = String(made.body?.id);
+      const rules = await call(ctx.app, 'PUT', `/v1/billing-rules/sets/${setId}/rules`, {
+        rules: [{ scope: 'default', issuing_entity_id: CVPO }],
+      });
+      expect(rules.status).toBe(200);
+      const asked = await call(ctx.app, 'POST', `/v1/billing-rules/sets/${setId}/request-activation`, {});
+      expect(asked.status).toBe(200);
+      const stepped = await stepUpWithPasskey(ctx.app, passkey, ownerHeaders());
+      expect(stepped.status).toBe(200);
+      const decided = await call(ctx.app, 'POST', `/v1/approvals/${String(asked.body?.approval_request_id)}/decide`, {
+        decision: 'approve',
+        payload_sha256: asked.body?.payload_sha256,
+      });
+      expect(decided.status).toBe(200);
+      const sets = await call(ctx.app, 'GET', '/v1/billing-rules/sets');
+      const listed = (sets.body?.items as { id: string; status: string }[]).find((item) => item.id === setId);
+      expect(listed?.status).toBe('active');
+    } finally {
+      await ctx.close();
+    }
+  });
+
   test('exige verificación reciente, lista y muestra el detalle', async () => {
     const clock = mutableClock();
     const ctx = await openApp(clock);

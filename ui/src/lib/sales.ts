@@ -1,4 +1,4 @@
-import { ApiError, api, apiBlob } from '@/lib/api'
+import { ApiError, api } from '@/lib/api'
 import { copy } from '@/i18n'
 import { formatMoney } from '@/lib/format'
 
@@ -320,6 +320,9 @@ export function pricesDiffer(left: string | null | undefined, right: string | nu
 
 export function errorText(error: unknown): string {
   if (error instanceof ApiError) {
+    if (/conjunto de reglas activo|regla de entidad facturadora/i.test(error.message)) return copy.sales.rulesInactive
+    if (/serie inexistente|serie activa/i.test(error.message)) return copy.sales.seriesMissing
+    if (/no hay precio de tarifa/i.test(error.message)) return copy.sales.noTariffServer
     const extra = error.fields ? Object.values(error.fields).filter(Boolean).join(' ') : ''
     return extra ? `${error.message} ${extra}` : error.message
   }
@@ -362,23 +365,6 @@ export function rejectQuote(id: string, reason?: string) {
 
 export function quoteToOrder(id: string) {
   return api<SalesOrder>(`/v1/quotes/${id}/to-order`, { method: 'POST', body: '{}' })
-}
-
-// The API sends X-Frame-Options DENY and CSP default-src 'none', and a new tab carries no bearer token,
-// so the PDF is fetched with the session and shown from a blob URL. The tab opens inside the click to avoid popup blockers.
-export async function openQuotePdf(id: string): Promise<void> {
-  const tab = window.open('', '_blank')
-  if (tab) tab.opener = null
-  try {
-    const { blob } = await apiBlob(`/v1/quotes/${id}/pdf`)
-    const url = URL.createObjectURL(blob)
-    if (tab) tab.location.href = url
-    else window.open(url, '_blank', 'noopener')
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
-  } catch (error) {
-    tab?.close()
-    throw error
-  }
 }
 
 export function listOrders(

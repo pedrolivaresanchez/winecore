@@ -146,6 +146,7 @@ const HREF = {
   tariffs: '/catalogo/tarifas',
   sales: '/ventas/presupuestos',
   invoices: '/facturas',
+  approvals: '/aprobaciones',
   cobros: '/cobros',
   gastos: '/gastos',
   vessels: '/bodega/depositos',
@@ -609,8 +610,8 @@ function billingRulesCheck(sets: number | undefined, defaults: number | undefine
       'billing.rules',
       'missing',
       'Reglas de entidad',
-      'No hay un conjunto de reglas de entidad facturadora (D3) activo.',
-      HREF.invoices,
+      'No hay un conjunto de reglas de entidad facturadora (D3) activo. Sin él no se pueden crear presupuestos, pedidos ni albaranes: apruébalo en Aprobaciones.',
+      HREF.approvals,
     );
   }
   if (defaults === 0) {

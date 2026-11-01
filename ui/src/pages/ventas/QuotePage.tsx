@@ -18,7 +18,6 @@ import {
   errorText,
   formatIsoDate,
   getPriceQuote,
-  openQuotePdf,
   patchQuote,
   quoteStatusLabel,
   quoteToOrder,
@@ -35,6 +34,8 @@ import { DocLink, FactList, LineTable, MoreMenu, RecordFrame, SalesHistory, Stat
 import { ReasonDialog } from '@/pages/ventas/dialogs'
 import { LineEditor } from '@/pages/ventas/lines'
 import { RecordSkeleton } from '@/components/RecordSkeleton'
+import { DocumentModal } from '@/pages/documents/DocumentModal'
+import { useDocParam } from '@/pages/documents/use-doc-param'
 
 const DATE_LABELS = { clear: 'Quitar', today: 'Hoy' }
 
@@ -57,9 +58,8 @@ export function QuotePage({ me }: { me: Me }) {
 function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () => void }) {
   const navigate = useNavigate()
   const toast = useToast()
-  const showPdf = () => {
-    openQuotePdf(quote.id).catch((error: unknown) => toast(errorText(error)))
-  }
+  const opened = useDocParam()
+  const showPdf = () => opened.open(quote.id)
   const catalog = useSalesCatalog()
   const [tab, setTab] = useState('lines')
   const [busy, setBusy] = useState(false)
@@ -373,6 +373,7 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
           }}
         />
       ) : null}
+      <DocumentModal me={me} source="quote" id={opened.id} onClose={opened.close} onChanged={onReload} />
     </RecordFrame>
   )
 }

@@ -150,6 +150,11 @@ export async function apiBlob(path: string, init?: RequestInit): Promise<{ blob:
   return { blob: await response.blob(), filename: matched?.[1] ?? null };
 }
 
+/** The raw response, for bodies read as a stream (server-sent events). */
+export async function apiStream(path: string, init?: RequestInit): Promise<Response> {
+  return send(path, { ...init, headers: { Accept: "text/event-stream", ...headersOf(init) } }, false);
+}
+
 export async function apiText(path: string, init?: RequestInit): Promise<string> {
   const response = await send(path, { ...init, headers: { Accept: "text/csv", ...headersOf(init) } }, false);
   return response.text();

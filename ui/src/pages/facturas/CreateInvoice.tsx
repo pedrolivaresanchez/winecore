@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { Combobox } from '@/components/Combobox'
 import { Field } from '@/components/Field'
 import { copy, fill } from '@/i18n'
 import { isAbortError } from '@/lib/api'
 import { cn } from '@/lib/cn'
-import { useSalesOffer, type TaxRate } from '@/lib/sales-catalog'
+import { customerDetail, customerOption, useCustomers, useSalesOffer, type TaxRate } from '@/lib/sales-catalog'
 import { blankLine, shortPrice, type DraftLine } from '@/lib/sales-draft'
 import {
   deliveryStatusLabel,
@@ -36,7 +38,6 @@ import {
 import { createInvoice } from '@/pages/facturas/api'
 import { DATE_LABELS, money } from '@/pages/facturas/format'
 import type { CreateInvoiceBody, SourceKind } from '@/pages/facturas/types'
-import { CustomerPicker, type CustomerOption } from '@/pages/ventas/CustomerPicker'
 import { useIssuer } from '@/pages/ventas/issuer'
 import { LineEditor } from '@/pages/ventas/lines'
 
@@ -60,20 +61,23 @@ type Priced = { quantity: string; price: string | null; discount: string | null;
 
 export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
   const toast = useToast()
+  const [params] = useSearchParams()
   const [source, setSource] = useState<SourceKind>('lines')
-  const [customer, setCustomer] = useState<CustomerOption | null>(null)
+  const [customerId, setCustomerId] = useState(() => params.get('cliente') ?? '')
   const [lines, setLines] = useState<DraftLine[]>([blankLine()])
   const [orderId, setOrderId] = useState('')
   const [noteIds, setNoteIds] = useState<string[]>([])
   const [description, setDescription] = useState('')
   const [language, setLanguage] = useState<'es' | 'en'>('es')
   const [operationDate, setOperationDate] = useState<string | null>(null)
-  const [customerError, setCustomerError] = useState<string | null>(null)
-  const [sourceError, setSourceError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [badLine, setBadLine] = useState<string | null>(null)
+  const [customerBad, setCustomerBad] = useState(false)
   const [saving, setSaving] = useState(false)
   const stamps = useRef<Record<string, string>>({})
-  const customerId = customer?.id ?? ''
+  const { customers } = useCustomers()
+  const customerOptions = useMemo(() => customers.map(customerOption), [customers])
+  const customer = customers.find((item) => item.id === customerId)
   const issuer = useIssuer(customerId, '')
   const offer = useSalesOffer({ customerId: customerId || undefined, channel: PRICE_CHANNEL, date: todayMadrid() })
   const docs = useCustomerDocs(customerId, source)
@@ -121,16 +125,30 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
   }
 
   function clearErrors() {
-    setSourceError(null)
     setError(null)
+    setBadLine(null)
+    setCustomerBad(false)
   }
 
-  function pickCustomer(next: CustomerOption | null) {
-    setCustomer(next)
+  function refuse(message: string, options: { customer?: boolean; line?: string | null } = {}) {
+    setError(message)
+    setCustomerBad(options.customer ?? false)
+    setBadLine(options.line ?? null)
+    window.setTimeout(() => {
+      const target = options.customer
+        ? document.getElementById('cliente-factura')
+        : document.querySelector<HTMLElement>('[data-line-invalid="true"]')
+      target?.scrollIntoView?.({ block: 'center' })
+      if (options.customer) target?.focus()
+    }, 0)
+  }
+
+  function pickCustomer(next: string) {
+    setCustomerId(next)
     setOrderId('')
     setNoteIds([])
-    setCustomerError(null)
     clearErrors()
+    for (const line of lines) quoteTier(line, next)
   }
 
   function applyListed(line: DraftLine) {
@@ -152,10 +170,14 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
 
   function reprice(line: DraftLine) {
     applyListed(line)
-    if (!customerId || !line.productId || !(Number(line.quantity) > 0)) return
+    quoteTier(line, customerId)
+  }
+
+  function quoteTier(line: DraftLine, nextCustomer: string) {
+    if (!nextCustomer || !line.productId || !(Number(line.quantity) > 0)) return
     const stamp = crypto.randomUUID()
     stamps.current[line.key] = stamp
-    getPriceQuote({ customerId, productId: line.productId, qty: line.quantity, date: todayMadrid() })
+    getPriceQuote({ customerId: nextCustomer, productId: line.productId, qty: line.quantity, date: todayMadrid() })
       .then((hit) => {
         if (stamps.current[line.key] !== stamp) return
         setLines((current) =>
@@ -168,9 +190,9 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
   }
 
   async function submit() {
-    setError(null)
+    clearErrors()
     if (!customer) {
-      setCustomerError(copy.sales.pickCustomer)
+      refuse(copy.facturas.pickCustomer, { customer: true })
       return
     }
     const body: CreateInvoiceBody = {
@@ -181,7 +203,7 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
     if (source === 'lines') {
       const problem = lineProblem(lines)
       if (problem) {
-        setSourceError(problem)
+        refuse(problem.message, { line: problem.key })
         return
       }
       body.legal_entity_id = issuer.entityId
@@ -197,13 +219,13 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
       }))
     } else if (source === 'order') {
       if (!pickedOrder) {
-        setSourceError(copy.facturas.pickOrder)
+        refuse(copy.facturas.pickOrder)
         return
       }
       body.from_order = pickedOrder.id
     } else {
       if (pickedNotes.length === 0) {
-        setSourceError(copy.facturas.pickNotes)
+        refuse(copy.facturas.pickNotes)
         return
       }
       body.from_delivery_notes = pickedNotes.map((note) => note.id)
@@ -234,8 +256,16 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
           }}
         >
           <div className="grid items-start gap-4 sm:grid-cols-[minmax(0,1fr)_auto]">
-            <Field id="cliente-factura" label={copy.facturas.customer} error={customerError ?? undefined}>
-              <CustomerPicker id="cliente-factura" value={customer} invalid={Boolean(customerError)} onChange={pickCustomer} />
+            <Field id="cliente-factura" label={copy.facturas.customer} hint={customerDetail(customer) || undefined}>
+              <Combobox
+                id="cliente-factura"
+                options={customerOptions}
+                value={customerId}
+                placeholder={copy.facturas.findCustomer}
+                emptyText={copy.sales.noCustomers}
+                invalid={customerBad}
+                onChange={pickCustomer}
+              />
             </Field>
             <div className="grid content-start gap-1.5">
               <span className="text-label text-text-secondary">{copy.facturas.entity}</span>
@@ -281,6 +311,7 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
                 showLot
                 freeLot
                 askReason={false}
+                invalidKey={badLine}
                 onChange={(next) => {
                   setLines(next)
                   clearErrors()
@@ -336,11 +367,6 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
               </Button>
             </div>
           ) : null}
-          {sourceError ? (
-            <p role="alert" className="text-label text-danger-700">
-              {sourceError}
-            </p>
-          ) : null}
 
           <div className="grid items-start gap-4 sm:grid-cols-3">
             <Field id="descripcion-nueva" label={copy.facturas.description}>
@@ -375,14 +401,9 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
             <p className="text-caption text-text-tertiary">{copy.facturas.estimate}</p>
           </div>
 
-          {error ? (
-            <p role="alert" className="text-label text-danger-700">
-              {error}
-            </p>
-          ) : null}
         </form>
       </DialogBody>
-      <DialogFooter>
+      <DialogFooter error={error}>
         <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={saving}>
           {copy.facturas.cancel}
         </Button>
@@ -487,13 +508,15 @@ function invoiceableNote(note: DeliveryNote): boolean {
   )
 }
 
-function lineProblem(lines: DraftLine[]): string | null {
-  for (const [index, line] of lines.entries()) {
-    const n = String(index + 1)
-    if (!line.productId) return fill(copy.facturas.lineProduct, { n })
-    if (!(Number(line.quantity) > 0)) return fill(copy.facturas.lineQuantity, { n })
-    if (line.unitPrice.trim() === '' || !Number.isFinite(Number(line.unitPrice))) return fill(copy.facturas.linePrice, { n })
-    if (!line.taxCode) return fill(copy.facturas.lineTax, { n })
+function lineProblem(lines: DraftLine[]): { message: string; key: string } | null {
+  if (lines.every((line) => !line.productId && line.unitPrice.trim() === '')) {
+    return { message: copy.sales.needLine, key: lines[0]?.key ?? '' }
+  }
+  for (const line of lines) {
+    if (!line.productId) return { message: copy.facturas.pickProduct, key: line.key }
+    if (!(Number(line.quantity) > 0)) return { message: copy.sales.needQuantity, key: line.key }
+    if (line.unitPrice.trim() === '' || !Number.isFinite(Number(line.unitPrice))) return { message: copy.facturas.needPrice, key: line.key }
+    if (!line.taxCode) return { message: copy.facturas.needTax, key: line.key }
   }
   return null
 }

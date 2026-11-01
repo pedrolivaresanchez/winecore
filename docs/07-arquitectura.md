@@ -98,7 +98,7 @@ WineCore/
 
 | Miembro | Tipo | Hito | Qué hace | Cambios respecto al plan |
 |---|---|---|---|---|
-| `asistente` | agent | M3 | Chat interno y de inspección: existencias a fecha, trazabilidad de un lote (diagrama), cobros pendientes. Usa las herramientas MCP de solo lectura | — |
+| `asistente` | workflow (paso LLM) | M3 | Chat interno y de inspección (dock en cualquier pantalla y `/asistente`): existencias a fecha, lotes, depósitos, aprobaciones, facturas por entregar. En cada paso decide qué herramientas MCP pedir o responde; las ejecuta la API (`POST /v1/assistant/chat`) con la sesión de la persona. Lee libremente; escribe solo con `*_prepare` y, tras un «sí» explícito en el mensaje siguiente, `*_commit` | Workflow sin herramientas propias: el bucle vive en la API para compartir permisos, auditoría `mcp.call` y límite por minuto con `/m2m/mcp` |
 | `ocr-gastos` | workflow (paso LLM) | M2 | Extrae campos de una factura recibida (PDF/foto) y la crea `captured` vía API | — |
 | `regulatorio-silicie` / `-sisv` / `-emcs` / `-edi` | workflow | M2/M3 | Preparar → pedir aprobación → `suspend()` → encolar intento → informar del resultado | — |
 | `vendimia-campo` | agent (voz y foto) | M4 | Controles de maduración, catas y lecturas de fermentación por voz o foto | — |

@@ -1,8 +1,18 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { Combobox } from '@/components/Combobox'
 import { Field } from '@/components/Field'
 import { copy } from '@/i18n'
+import { ApiError } from '@/lib/api'
 import { COUNTRIES } from '@/lib/contacts'
-import { useSalesOffer, type CatalogCustomer, type CatalogLocation, type CatalogLot } from '@/lib/sales-catalog'
+import {
+  customerDetail,
+  customerOption,
+  useSalesOffer,
+  type CatalogCustomer,
+  type CatalogLocation,
+  type CatalogLot,
+} from '@/lib/sales-catalog'
 import { blankLine, commercialLines, shortPrice, type DraftLine } from '@/lib/sales-draft'
 import {
   CHANNELS,
@@ -32,7 +42,6 @@ import {
   Switch,
   Textarea,
 } from '@/ui'
-import { CustomerPicker, type CustomerOption } from '@/pages/ventas/CustomerPicker'
 import { useIssuer } from '@/pages/ventas/issuer'
 import { LineEditor } from '@/pages/ventas/lines'
 
@@ -40,15 +49,17 @@ const DATE_LABELS = { clear: 'Quitar', today: 'Hoy' }
 
 export function CreateDocument({
   doc,
+  customers,
   onClose,
   onCreated,
 }: {
   doc: 'quote' | 'order'
+  customers: CatalogCustomer[]
   onClose: () => void
   onCreated: (id: string) => void
 }) {
-  const [customer, setCustomer] = useState<CustomerOption | null>(null)
-  const [customerError, setCustomerError] = useState<string | null>(null)
+  const [params] = useSearchParams()
+  const [customerId, setCustomerId] = useState(() => params.get('cliente') ?? '')
   const [channel, setChannel] = useState<ChannelCode>('horeca')
   const [language, setLanguage] = useState('es')
   const [proforma, setProforma] = useState(false)
@@ -62,12 +73,15 @@ export function CreateDocument({
   const [ship, setShip] = useState('')
   const [lines, setLines] = useState<DraftLine[]>([blankLine()])
   const [error, setError] = useState<string | null>(null)
+  const [badLine, setBadLine] = useState<string | null>(null)
+  const [customerBad, setCustomerBad] = useState(false)
   const [saving, setSaving] = useState(false)
   const stamps = useRef<Record<string, string>>({})
-  const customerId = customer?.id ?? ''
   const offerDate = doc === 'order' ? orderDate : todayMadrid()
   const offer = useSalesOffer({ customerId: customerId || undefined, channel, date: offerDate })
   const issuer = useIssuer(customerId, channel)
+  const customerOptions = useMemo(() => customers.map(customerOption), [customers])
+  const customer = customers.find((item) => item.id === customerId)
 
   function applyListed(line: DraftLine) {
     const listed = offer.priceOf(line.productId)
@@ -114,27 +128,60 @@ export function CreateDocument({
         )
       })
       .catch((err: unknown) => {
-        if (stamps.current[line.key] === stamp) setError(errorText(err))
+        if (stamps.current[line.key] !== stamp) return
+        if (err instanceof ApiError && (err.status === 404 || err.status === 422)) {
+          setLines((current) => current.map((item) => (item.key === line.key ? { ...item, quoted: null } : item)))
+          return
+        }
+        setError(errorText(err))
       })
+  }
+
+  function changeLines(next: DraftLine[]) {
+    setLines(next)
+    setError(null)
+    setBadLine(null)
+  }
+
+  function pickCustomer(next: string) {
+    setCustomerId(next)
+    setCustomerBad(false)
+    setError(null)
+    repriceAll({ customerId: next })
+  }
+
+  function refuse(message: string, customer = false, line: string | null = null) {
+    setError(message)
+    setCustomerBad(customer)
+    setBadLine(line)
+    window.setTimeout(() => {
+      const target = customer
+        ? document.getElementById('cliente')
+        : document.querySelector<HTMLElement>('[data-line-invalid="true"]')
+      target?.scrollIntoView?.({ block: 'center' })
+      if (customer) target?.focus()
+    }, 0)
   }
 
   async function submit() {
     setError(null)
+    setBadLine(null)
+    setCustomerBad(false)
     if (!customerId) {
-      setCustomerError(copy.sales.pickCustomer)
+      refuse(copy.sales.pickCustomer, true)
       return
     }
     if (doc === 'order' && channel === 'eci_edi' && (!department.trim() || !costCenter.trim())) {
-      setError(copy.sales.department)
+      refuse(copy.sales.needDepartment)
       return
     }
     if (doc === 'order' && ship && ship !== 'ES' && !incoterm) {
-      setError(copy.sales.incoterm)
+      refuse(copy.sales.needIncoterm)
       return
     }
     const built = commercialLines(lines)
     if (built.error) {
-      setError(built.error)
+      refuse(built.error, false, built.badKey)
       return
     }
     setSaving(true)
@@ -193,17 +240,15 @@ export function CreateDocument({
             void submit()
           }}
         >
-          <Field id="cliente-venta" label={copy.sales.customer} error={customerError ?? undefined}>
-            <CustomerPicker
-              id="cliente-venta"
-              value={customer}
-              invalid={Boolean(customerError)}
-              onChange={(next) => {
-                setCustomer(next)
-                setCustomerError(null)
-                setError(null)
-                repriceAll({ customerId: next?.id ?? '' })
-              }}
+          <Field id="cliente" label={copy.sales.customer} hint={customerDetail(customer) || copy.sales.createHint}>
+            <Combobox
+              id="cliente"
+              options={customerOptions}
+              value={customerId}
+              placeholder={copy.sales.findCustomer}
+              emptyText={copy.sales.noCustomers}
+              invalid={customerBad}
+              onChange={pickCustomer}
             />
           </Field>
           <div className="grid items-start gap-4 sm:grid-cols-2">
@@ -248,11 +293,9 @@ export function CreateDocument({
             products={offer.products}
             lots={offer.lots}
             locations={offer.locations}
-            onChange={(next) => {
-              setLines(next)
-              setError(null)
-            }}
+            onChange={changeLines}
             onPrice={(line) => reprice(line)}
+            invalidKey={badLine}
           />
           {doc === 'quote' ? (
             <>
@@ -329,14 +372,9 @@ export function CreateDocument({
           <Field id="notas" label={copy.sales.notes}>
             <Textarea id="notas" rows={2} value={notes} onChange={(event) => setNotes(event.target.value)} />
           </Field>
-          {error ? (
-            <p role="alert" className="text-label text-danger-700">
-              {error}
-            </p>
-          ) : null}
         </form>
       </DialogBody>
-      <DialogFooter>
+      <DialogFooter error={error}>
         <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={saving}>
           {copy.sales.cancel}
         </Button>
@@ -364,7 +402,10 @@ export function CreateDelivery({
   const [toId, setToId] = useState('')
   const [lines, setLines] = useState<DraftLine[]>([blankLine()])
   const [error, setError] = useState<string | null>(null)
+  const [badLine, setBadLine] = useState<string | null>(null)
+  const [customerBad, setCustomerBad] = useState(false)
   const [saving, setSaving] = useState(false)
+  const customerOptions = useMemo(() => customers.map(customerOption), [customers])
   const offer = useSalesOffer({
     customerId: customerId || undefined,
     channel,
@@ -375,23 +416,38 @@ export function CreateDelivery({
   const needsCustomer = kind === 'sale' || kind === 'sample'
   const needsTo = kind === 'consignment' || kind === 'transfer' || kind === 'return'
 
+  function refuse(message: string, customer = false, line: string | null = null) {
+    setError(message)
+    setCustomerBad(customer)
+    setBadLine(line)
+    window.setTimeout(() => {
+      const target = customer
+        ? document.getElementById('cliente-albaran')
+        : document.querySelector<HTMLElement>('[data-line-invalid="true"]')
+      target?.scrollIntoView?.({ block: 'center' })
+      if (customer) target?.focus()
+    }, 0)
+  }
+
   async function submit() {
     setError(null)
+    setBadLine(null)
+    setCustomerBad(false)
     if (!fromId) {
-      setError(copy.sales.from)
+      refuse(copy.sales.pickOrigin)
       return
     }
     if (needsCustomer && !customerId) {
-      setError(copy.sales.customer)
+      refuse(copy.sales.pickCustomer, true)
       return
     }
     if (needsTo && !toId) {
-      setError(copy.sales.to)
+      refuse(copy.sales.pickDestination)
       return
     }
     const built = commercialLines(lines)
     if (built.error) {
-      setError(built.error)
+      refuse(built.error, false, built.badKey)
       return
     }
     setSaving(true)
@@ -445,14 +501,19 @@ export function CreateDelivery({
           </Field>
           {needsCustomer ? (
             <Field id="cliente-albaran" label={copy.sales.customer}>
-              <Select id="cliente-albaran" className="w-full" value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
-                <option value="">{copy.sales.customer}</option>
-                {customers.slice(0, 80).map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </Select>
+              <Combobox
+                id="cliente-albaran"
+                options={customerOptions}
+                value={customerId}
+                placeholder={copy.sales.findCustomer}
+                emptyText={copy.sales.noCustomers}
+                invalid={customerBad}
+                onChange={(next) => {
+                  setCustomerId(next)
+                  setCustomerBad(false)
+                  setError(null)
+                }}
+              />
             </Field>
           ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
@@ -488,13 +549,17 @@ export function CreateDelivery({
             locations={locations}
             showLot
             locationId={fromId}
-            onChange={setLines}
+            onChange={(next) => {
+              setLines(next)
+              setError(null)
+              setBadLine(null)
+            }}
             onPrice={() => undefined}
+            invalidKey={badLine}
           />
-          {error ? <p role="alert" className="text-label text-danger-700">{error}</p> : null}
         </form>
       </DialogBody>
-      <DialogFooter>
+      <DialogFooter error={error}>
         <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={saving}>
           {copy.sales.cancel}
         </Button>
@@ -618,10 +683,9 @@ export function DeliveryFromOrder({
               )
             })}
           </ul>
-          {error ? <p role="alert" className="text-label text-danger-700">{error}</p> : null}
         </form>
       </DialogBody>
-      <DialogFooter>
+      <DialogFooter error={error}>
         <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={saving}>
           {copy.sales.cancel}
         </Button>
@@ -663,7 +727,7 @@ export function ReasonDialog({
   async function submit() {
     const text = reason.trim()
     if (text.length < min && !(optional && text.length === 0)) {
-      setError(copy.sales.reason)
+      setError(copy.sales.reasonRequired)
       return
     }
     setSaving(true)
@@ -686,10 +750,9 @@ export function ReasonDialog({
           <Field id="motivo" label={fieldLabel ?? copy.sales.reason}>
             <Textarea id="motivo" value={reason} onChange={(event) => setReason(event.target.value)} />
           </Field>
-          {error ? <p role="alert" className="text-label text-danger-700">{error}</p> : null}
         </div>
       </DialogBody>
-      <DialogFooter>
+      <DialogFooter error={error}>
         <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={saving}>
           {copy.sales.cancel}
         </Button>
@@ -743,10 +806,9 @@ export function ReturnDialog({
               />
             </Field>
           ))}
-          {error ? <p role="alert" className="text-label text-danger-700">{error}</p> : null}
         </div>
       </DialogBody>
-      <DialogFooter>
+      <DialogFooter error={error}>
         <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={saving}>
           {copy.sales.cancel}
         </Button>
@@ -807,10 +869,9 @@ export function IncidentDialog({
           <Field id="uds-incidencia" label={copy.sales.units}>
             <Input id="uds-incidencia" inputMode="numeric" value={units} onChange={(event) => setUnits(event.target.value)} />
           </Field>
-          {error ? <p role="alert" className="text-label text-danger-700">{error}</p> : null}
         </div>
       </DialogBody>
-      <DialogFooter>
+      <DialogFooter error={error}>
         <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={saving}>
           {copy.sales.cancel}
         </Button>

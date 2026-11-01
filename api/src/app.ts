@@ -10,6 +10,8 @@ import type { SupplierInvoiceApprovalHook } from './core/purchasing/approval';
 import { noopApprovalHook } from './core/purchasing/approval';
 import type { OcrWorkforce } from './core/purchasing/extract';
 import { ocrFromEnv } from './core/purchasing/timbal';
+import type { AssistantProvider } from './core/assistant/provider';
+import { assistantFromConfig } from './core/assistant/timbal';
 import { bindFinance } from './core/finance/runtime';
 import { installIntegrations } from './core/wiring/integrations';
 import { asDomainError, domainError, errorBody } from './core/errors';
@@ -63,6 +65,7 @@ import {
   createPerson,
   exportContacts,
   getContact,
+  getContactSummary,
   listContacts,
   patchAddress,
   patchContact,
@@ -137,9 +140,11 @@ import {
 import { handleAuthenticatedMcp } from './mcp/http';
 import { RateLimiter } from './mcp/rate';
 import { createMcpClient, listMcpClients, revokeMcpClient, rotateMcpClient } from './routes/mcp-clients';
+import { assistantRoutes } from './routes/assistant';
 import { getDashboard } from './routes/dashboard';
 import {
   getLegacyDocument,
+  getLegacyDocumentPdf,
   getLegacyDocuments,
   getLegacyInvoice,
   getLegacyInvoicePdf,
@@ -163,6 +168,8 @@ import {
   submitInventoryCountRoute,
 } from './routes/stock-counts';
 import { salesRoutes } from './routes/sales';
+import { getSalesDocuments } from './routes/sales-documents';
+import { SALES_DOCUMENTS_READ } from './core/sales-documents/list';
 import { stockBalances, stockFiscalBalances, stockInspection, stockMoves } from './routes/stock';
 import { listRegulatoryObligations, postSyncObligations } from './routes/regulatory-obligations';
 import {
@@ -193,6 +200,8 @@ export interface AppDeps {
   invoiceDocuments?: InvoiceDocumentStore;
   /** Límite de llamadas MCP por minuto y cliente. Por defecto 60. */
   mcpRatePerMinute?: number;
+  /** Modelo del asistente. Por defecto el workflow de `WINECORE_ASSISTANT_URL`. */
+  assistant?: AssistantProvider;
 }
 
 const startedAt = new WeakMap<Request, number>();
@@ -309,11 +318,18 @@ export function createApp(deps: AppDeps) {
     .get('/v1/legacy/documents', ({ request }) => getLegacyDocuments(deps.writer, request), {
       beforeHandle: requireAnyPermission(guardDeps, ['reports.read', 'finance.read', 'sales.read', 'billing.read']),
     })
+    .get('/v1/legacy/documents/:id/pdf', ({ request, params }) => getLegacyDocumentPdf(deps.writer, request, params.id), {
+      beforeHandle: requireAnyPermission(guardDeps, ['reports.read', 'finance.read', 'sales.read', 'billing.read']),
+    })
     .get('/v1/legacy/documents/:id', ({ request, params }) => getLegacyDocument(deps.writer, request, params.id), {
       beforeHandle: requireAnyPermission(guardDeps, ['reports.read', 'finance.read', 'sales.read', 'billing.read']),
     })
     .get('/v1/legacy/products', ({ request }) => getLegacyProducts(deps.writer, request), {
       beforeHandle: requireAnyPermission(guardDeps, ['catalog.read', 'reports.read', 'finance.read', 'sales.read']),
+    })
+    // Holded y WineCore en una sola lista; cada libro exige su permiso de lectura.
+    .get('/v1/sales-documents', ({ request }) => getSalesDocuments(deps.writer, request, guardDeps.now?.() ?? new Date()), {
+      beforeHandle: requireAnyPermission(guardDeps, SALES_DOCUMENTS_READ),
     })
     .get('/v1/reports/sales.csv', ({ request }) => getReport(deps.writer, request, 'sales'), {
       beforeHandle: requirePermission(guardDeps, 'reports.read'),
@@ -354,6 +370,9 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requirePermission(guardDeps, 'contacts.write'),
     })
     .get('/v1/contacts/:id', ({ request, params }) => getContact(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'contacts.read'),
+    })
+    .get('/v1/contacts/:id/summary', ({ request, params }) => getContactSummary(deps.writer, request, params.id, guardDeps.now?.() ?? new Date()), {
       beforeHandle: requirePermission(guardDeps, 'contacts.read'),
     })
     .patch('/v1/contacts/:id', ({ request, params }) => patchContact(deps.writer, request, params.id), {
@@ -850,6 +869,14 @@ export function createApp(deps: AppDeps) {
     .post('/v1/mcp/clients/:id/revoke', ({ request, params }) => revokeMcpClient(deps.writer, request, params.id, http.now()), {
       beforeHandle: requireOwner(guardDeps),
     })
+    .use(assistantRoutes({
+      guard: guardDeps,
+      writer: deps.writer,
+      now: http.now,
+      provider: deps.assistant ?? assistantFromConfig(deps.config),
+      limiter: mcpLimiter,
+      log,
+    }))
     .use(vineyardRoutes(guardDeps))
     .use(winemakingRoutes({ writer: deps.writer, guard: guardDeps }))
     .use(vineyardNotebookRoutes(guardDeps))

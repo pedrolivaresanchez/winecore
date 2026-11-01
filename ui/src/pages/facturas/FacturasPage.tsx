@@ -10,7 +10,9 @@ export function FacturasPage({ me, creating = false }: { me: Me; creating?: bool
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const verifactu = params.get('libro') === 'emitidas' || Boolean(params.get('verifactu'))
-  const search = params.toString()
+  const back = new URLSearchParams(params)
+  back.delete('cliente')
+  const search = back.toString()
   return (
     <>
       {verifactu ? <InvoiceList me={me} /> : <HoldedList me={me} />}

@@ -33,6 +33,8 @@ import {
 import type { Me } from '@/lib/types'
 import { Button, Input, MenuItem, useToast } from '@/ui'
 import { RecordSkeleton } from '@/components/RecordSkeleton'
+import { DocumentModal } from '@/pages/documents/DocumentModal'
+import { useDocParam } from '@/pages/documents/use-doc-param'
 import {
   DocLink,
   EadChip,
@@ -68,6 +70,7 @@ export function DeliveryPage({ me }: { me: Me }) {
 function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: () => void }) {
   const navigate = useNavigate()
   const toast = useToast()
+  const opened = useDocParam()
   const aliases = productAliases(note.lines)
   const catalog = useSalesCatalog(aliases)
   const offer = useSalesOffer({
@@ -177,6 +180,9 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
                     {copy.sales.deliver}
                   </Button>
                 ) : null}
+                <Button type="button" variant="secondary" size="sm" onClick={() => opened.open(note.id)}>
+                  {copy.sales.pdf}
+                </Button>
               </>
             )}
             {((draft || note.status === 'issued') && canManage) || moved ? (
@@ -196,7 +202,11 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
               </MoreMenu>
             ) : null}
           </>
-        ) : null
+        ) : (
+          <Button type="button" variant="secondary" size="sm" onClick={() => opened.open(note.id)}>
+            {copy.sales.pdf}
+          </Button>
+        )
       }
       tabs={[
         { id: 'lines', label: copy.sales.lines },
@@ -323,6 +333,7 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
           }}
         />
       ) : null}
+      <DocumentModal me={me} source="delivery" id={opened.id} onClose={opened.close} onChanged={onReload} />
     </RecordFrame>
   )
 }

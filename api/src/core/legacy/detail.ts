@@ -25,6 +25,7 @@ export interface LegacyInvoiceDetail {
   issue_date: string;
   due_date: string | null;
   counterparty_name: string;
+  counterparty_contact_id: string | null;
   description: string | null;
   subtotal: string;
   vat: string;
@@ -53,12 +54,18 @@ export interface HoldedInvoiceLoaded {
   seller: HoldedSeller;
 }
 
+export interface HoldedDocumentLoaded {
+  detail: LegacyDocumentDetail;
+  seller: HoldedSeller;
+}
+
 export interface LegacyDocumentDetail {
   id: string;
   number: string;
   issue_date: string;
   due_date: string | null;
   counterparty_name: string;
+  counterparty_contact_id: string | null;
   description: string | null;
   subtotal: string;
   vat: string;
@@ -82,7 +89,7 @@ export async function readHoldedInvoice(writer: Writer, user: UserCtx, rawId: st
     SELECT h.id, h.entity_id, h.kind, h.number,
            CAST(h.issue_date AS VARCHAR) AS issue_date,
            CAST(h.due_date AS VARCHAR) AS due_date,
-           h.counterparty_name, h.description,
+           h.counterparty_name, CAST(h.counterparty_contact_id AS VARCHAR) AS counterparty_contact_id, h.description,
            CAST(h.subtotal AS VARCHAR) AS subtotal,
            CAST(h.vat AS VARCHAR) AS vat,
            CAST(h.withholding AS VARCHAR) AS withholding,
@@ -104,20 +111,14 @@ export async function readHoldedInvoice(writer: Writer, user: UserCtx, rawId: st
   const number = String(row.number ?? '');
   const lines = await loadLines(writer, String(row.entity_id), kind, number, issueDate);
   return {
-    seller: {
-      legalName: String(row.legal_name ?? ''),
-      taxId: String(row.tax_id ?? ''),
-      addressLine: String(row.address_line ?? ''),
-      postalCode: String(row.postal_code ?? ''),
-      city: String(row.city ?? ''),
-      province: String(row.province ?? ''),
-    },
+    seller: sellerOf(row),
     detail: {
       id: String(row.id),
       number,
       issue_date: issueDate,
       due_date: dayOrNull(row.due_date),
       counterparty_name: String(row.counterparty_name ?? ''),
+      counterparty_contact_id: uuidOrNull(row.counterparty_contact_id),
       description: textOrNull(row.description),
       subtotal: money2(row.subtotal),
       vat: money2(row.vat),
@@ -135,18 +136,23 @@ export async function readHoldedInvoice(writer: Writer, user: UserCtx, rawId: st
 }
 
 export async function loadLegacyDocument(writer: Writer, user: UserCtx, rawId: string): Promise<LegacyDocumentDetail> {
+  return (await readHoldedDocument(writer, user, rawId)).detail;
+}
+
+export async function readHoldedDocument(writer: Writer, user: UserCtx, rawId: string): Promise<HoldedDocumentLoaded> {
   const id = parseId(rawId);
   const scope = entityPredicate(legacyScope(user, 'both'));
   const quote = await writer.read<Record<string, unknown>>(`
     SELECT h.id, h.entity_id, h.number,
            CAST(h.issue_date AS VARCHAR) AS issue_date,
            CAST(h.valid_until AS VARCHAR) AS due_date,
-           h.counterparty_name, h.description,
+           h.counterparty_name, CAST(h.counterparty_contact_id AS VARCHAR) AS counterparty_contact_id, h.description,
            CAST(h.subtotal AS VARCHAR) AS subtotal,
            CAST(h.vat AS VARCHAR) AS vat,
            CAST(h.total AS VARCHAR) AS total,
            h.status_holded,
-           e.code AS entity_code
+           e.code AS entity_code,
+           e.legal_name, e.tax_id, e.address_line, e.postal_code, e.city, e.province
       FROM legacy.holded_quote h
       JOIN core.legal_entity e ON e.id = h.entity_id
      WHERE h.id = CAST(${sql`${id}`} AS UUID)
@@ -163,7 +169,8 @@ export async function loadLegacyDocument(writer: Writer, user: UserCtx, rawId: s
            CAST(h.withholding AS VARCHAR) AS withholding,
            CAST(h.total AS VARCHAR) AS total,
            h.invoiced_status AS status_holded,
-           e.code AS entity_code
+           e.code AS entity_code,
+           e.legal_name, e.tax_id, e.address_line, e.postal_code, e.city, e.province
       FROM legacy.holded_delivery_note h
       JOIN core.legal_entity e ON e.id = h.entity_id
      WHERE h.id = CAST(${sql`${id}`} AS UUID)
@@ -178,26 +185,41 @@ async function documentOf(
   writer: Writer,
   row: Record<string, unknown>,
   kind: 'quote' | 'delivery_note',
-): Promise<LegacyDocumentDetail> {
+): Promise<HoldedDocumentLoaded> {
   const issueDate = dateOf(row.issue_date);
   const number = String(row.number ?? '');
   const lines = await loadLines(writer, String(row.entity_id), kind, number, issueDate);
   return {
-    id: String(row.id),
-    number,
-    issue_date: issueDate,
-    due_date: dayOrNull(row.due_date),
-    counterparty_name: String(row.counterparty_name ?? ''),
-    description: textOrNull(row.description),
-    subtotal: money2(row.subtotal),
-    vat: money2(row.vat),
-    withholding: kind === 'delivery_note' ? moneyOrNull(row.withholding) : null,
-    total: money2(row.total),
-    status_holded: String(row.status_holded ?? ''),
-    kind,
-    entity_code: String(row.entity_code ?? ''),
-    legal_entity_id: String(row.entity_id),
-    lines,
+    seller: sellerOf(row),
+    detail: {
+      id: String(row.id),
+      number,
+      issue_date: issueDate,
+      due_date: dayOrNull(row.due_date),
+      counterparty_name: String(row.counterparty_name ?? ''),
+      counterparty_contact_id: uuidOrNull(row.counterparty_contact_id),
+      description: textOrNull(row.description),
+      subtotal: money2(row.subtotal),
+      vat: money2(row.vat),
+      withholding: kind === 'delivery_note' ? moneyOrNull(row.withholding) : null,
+      total: money2(row.total),
+      status_holded: String(row.status_holded ?? ''),
+      kind,
+      entity_code: String(row.entity_code ?? ''),
+      legal_entity_id: String(row.entity_id),
+      lines,
+    },
+  };
+}
+
+function sellerOf(row: Record<string, unknown>): HoldedSeller {
+  return {
+    legalName: String(row.legal_name ?? ''),
+    taxId: String(row.tax_id ?? ''),
+    addressLine: String(row.address_line ?? ''),
+    postalCode: String(row.postal_code ?? ''),
+    city: String(row.city ?? ''),
+    province: String(row.province ?? ''),
   };
 }
 
@@ -256,6 +278,11 @@ function textOrNull(value: unknown): string | null {
   if (value == null) return null;
   const text = String(value).trim();
   return text === '' ? null : text;
+}
+
+function uuidOrNull(value: unknown): string | null {
+  const text = textOrNull(value);
+  return text != null && UUID_RE.test(text) ? text.toLowerCase() : null;
 }
 
 function moneyOrNull(value: unknown): string | null {

@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useLocation } from 'react-router-dom'
 import { motion, useReducedMotion } from 'motion/react'
-import { PanelLeft, Search } from '@/ui/icons'
+import { MessageCircle, PanelLeft, Search } from '@/ui/icons'
 import { Tooltip } from '@/ui'
 import { AppSidebar } from '@/app/shell/app-sidebar'
+import { AssistantProvider, openAssistant, toggleAssistant } from '@/app/shell/assistant-context'
+import { AssistantDock } from '@/app/shell/assistant-dock'
 import { CommandPalette } from '@/app/shell/command-palette'
 import { ShellProvider, useShell } from '@/app/shell/shell-context'
 import { useGlobalShortcuts } from '@/app/shell/shortcuts'
@@ -19,11 +21,6 @@ import type { Me } from '@/lib/types'
 
 const OPEN_W = RAIL_OPEN
 const SHUT_W = RAIL_SHUT
-const SETUP_PATH = '/ajustes/puesta-en-marcha'
-
-function openedOnSetup() {
-  return typeof window !== 'undefined' && window.location.pathname === SETUP_PATH
-}
 
 /** The stored choice is the desktop rail's. On a phone the rail is a drawer over the page,
     so it always starts shut — opening the app should show the app. */
@@ -42,25 +39,27 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
   const [open, setOpen] = useState(readOpen)
   const [command, setCommand] = useState(false)
   const [shortcuts, setShortcuts] = useState(false)
-  const [settings, setSettings] = useState(openedOnSetup)
-  const [area, setArea] = useState<SettingsArea>(openedOnSetup() ? 'setup' : 'entities')
-  const location = useLocation()
-  const navigate = useNavigate()
+  const [settings, setSettings] = useState(false)
+  const [area, setArea] = useState<SettingsArea>('entities')
   const before = useRef<boolean | null>(null)
   const openRef = useRef(open)
   const settingsRef = useRef(settings)
   const mobileRef = useRef(mobile)
+  const settingsPath = useRef(location.pathname)
+  const pathRef = useRef(location.pathname)
   openRef.current = open
   settingsRef.current = settings
   mobileRef.current = mobile
+  pathRef.current = location.pathname
 
   useEffect(() => {
     function onFocus(event: Event) {
       const detail = (event as CustomEvent<string>).detail
-      if (detail !== 'security' && detail !== 'approvals' && detail !== 'setup') return
+      if (detail !== 'security' && detail !== 'approvals') return
       if (!settingsRef.current) before.current = openRef.current
+      settingsPath.current = pathRef.current
       setSettings(true)
-      setArea(detail === 'approvals' ? 'policies' : detail === 'setup' ? 'setup' : 'security')
+      setArea(detail === 'approvals' ? 'policies' : 'security')
       setOpen(!mobileRef.current)
     }
     window.addEventListener('winecore-settings', onFocus)
@@ -84,32 +83,28 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
     onCommand: () => setCommand((current) => !current),
     onHelp: () => setShortcuts(true),
     onToggleRail: toggleRail,
+    onAssistant: toggleAssistant,
   })
 
   function openSettings() {
     if (!settings) before.current = open
+    settingsPath.current = location.pathname
     setSettings(true)
     setArea('entities')
     setOpen(!mobile)
   }
 
-  useLayoutEffect(() => {
-    if (location.pathname !== SETUP_PATH) return
-    if (!settingsRef.current) before.current = openRef.current
-    setSettings(true)
-    setArea('setup')
-    setOpen(!mobileRef.current)
+  // Ajustes se abre encima de la página sin cambiar la ruta. Si algo dentro navega a otra
+  // pantalla, Ajustes debe dejar paso a esa pantalla; si no, parece que el enlace no hace nada.
+  useEffect(() => {
+    if (!settingsRef.current || settingsPath.current === location.pathname) return
+    setSettings(false)
+    if (before.current != null) setSidebarOpen(before.current)
   }, [location.pathname])
-
-  function chooseArea(next: SettingsArea) {
-    setArea(next)
-    if (location.pathname === SETUP_PATH && next !== 'setup') navigate('/', { replace: true })
-  }
 
   function closeSettings() {
     setSettings(false)
     if (before.current != null) setSidebarOpen(before.current)
-    if (location.pathname === SETUP_PATH) navigate('/')
   }
 
   return (
@@ -122,18 +117,21 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
       closeSettings={closeSettings}
       openCommand={openCommand}
     >
-      <Frame me={me} area={area} onArea={chooseArea}>
-        {children}
-      </Frame>
-      <CommandPalette
-        me={me}
-        open={command}
-        onClose={() => setCommand(false)}
-        onToggleRail={toggleRail}
-        onSettings={openSettings}
-        onShortcuts={() => setShortcuts(true)}
-      />
-      <ShortcutsDialog open={shortcuts} onClose={() => setShortcuts(false)} />
+      <AssistantProvider me={me}>
+        <Frame me={me} area={area} onArea={setArea}>
+          {children}
+        </Frame>
+        <CommandPalette
+          me={me}
+          open={command}
+          onClose={() => setCommand(false)}
+          onToggleRail={toggleRail}
+          onSettings={openSettings}
+          onShortcuts={() => setShortcuts(true)}
+        />
+        <ShortcutsDialog open={shortcuts} onClose={() => setShortcuts(false)} />
+        <AssistantDock me={me} />
+      </AssistantProvider>
     </ShellProvider>
   )
 }
@@ -215,6 +213,14 @@ function Frame({
               </button>
             </Tooltip>
             <span className="min-w-0 flex-1 truncate text-label font-medium text-ink-900">{chromeTitle}</span>
+            <button
+              type="button"
+              onClick={openAssistant}
+              aria-label={copy.assistant.ask}
+              className="flex size-9 shrink-0 items-center justify-center rounded-md text-ink-900 hover:bg-fill-hover"
+            >
+              <MessageCircle className="size-4" strokeWidth={iconStroke} />
+            </button>
             <button
               type="button"
               onClick={openCommand}

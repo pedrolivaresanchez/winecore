@@ -125,7 +125,7 @@ export const catalogProductGet = defineReadTool({
         unit_price: money.toString(money.fromString(price.unit_price)),
         valid_from: price.valid_from,
       })),
-      links: { web: webLink(ctx, `/productos/${product.id}`) },
+      links: { web: webLink(ctx, `/catalogo/${product.id}`) },
       warnings: [] as string[],
     };
     if (ctx.activeModules.includes("inventory")) {

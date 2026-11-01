@@ -10,6 +10,7 @@ import {
   FlaskConical,
   Home,
   Layers,
+  LayoutGrid,
   List,
   MapPin,
   Plus,
@@ -25,7 +26,8 @@ import type { Me } from '@/lib/types'
 import type { GlyphTint } from '@/ui/object-glyph'
 
 export type RailGroupId = 'inicio' | 'comercial' | 'bodega' | 'gestion'
-export type RailTier = 'primary' | 'more'
+/** `palette` places have no row in the rail; Cmd-K finds them by name. */
+export type RailTier = 'primary' | 'more' | 'palette'
 
 export type RailItem = {
   id: string
@@ -38,6 +40,8 @@ export type RailItem = {
   tier: RailTier
   /** Record lists wear SDR's object glyph; screens keep a plain icon. */
   tint?: GlyphTint
+  /** Other words Cmd-K should find the place by. */
+  keywords?: string
 }
 
 export type RailGroup = {
@@ -56,7 +60,7 @@ export const railGroups: RailGroup[] = [
     label: copy.nav.groups.inicio,
     items: [
       { id: 'panel', label: copy.nav.panel, icon: Home, path: '/', exact: ['/'], tier: 'primary' },
-      { id: 'approvals', label: copy.nav.approvals, icon: Check, path: '/aprobaciones', tier: 'more' },
+      { id: 'approvals', label: copy.nav.approvals, icon: Check, path: '/aprobaciones', tier: 'palette', keywords: 'aprobar pendientes firmar' },
     ],
   },
   {
@@ -74,9 +78,10 @@ export const railGroups: RailGroup[] = [
     id: 'bodega',
     label: copy.nav.groups.bodega,
     items: [
-      { id: 'deposits', label: copy.nav.vessels, icon: Layers, path: '/bodega/plano', permission: 'cellar.read', tier: 'primary', tint: 'purple' },
+      { id: 'deposits', label: copy.nav.vessels, icon: Layers, path: '/bodega/depositos', exact: ['/bodega'], permission: 'cellar.read', tier: 'primary', tint: 'purple', keywords: 'barricas fermentadores' },
       { id: 'vineyard', label: copy.nav.vineyard, icon: MapPin, path: '/vinedo', permission: 'vineyard.read', tier: 'primary', tint: 'success' },
-      { id: 'map', label: copy.nav.map, icon: List, path: '/bodega/depositos', exact: ['/bodega'], permission: 'cellar.read', tier: 'more', tint: 'purple' },
+      { id: 'deposits-plan', label: copy.nav.vesselsPlan, icon: LayoutGrid, path: '/bodega/depositos?vista=plano', permission: 'cellar.read', tier: 'palette', tint: 'purple', keywords: 'mapa' },
+      { id: 'deposits-list', label: copy.nav.vesselsList, icon: List, path: '/bodega/depositos?vista=lista', permission: 'cellar.read', tier: 'palette', tint: 'purple', keywords: 'tabla tarjetas' },
       { id: 'lots', label: copy.nav.lots, icon: Archive, path: '/bodega/lotes', permission: 'cellar.read', tier: 'more', tint: 'violet' },
       { id: 'operation', label: copy.nav.newOperation, icon: Plus, path: '/bodega/operaciones/nueva', permission: 'cellar.operate', tier: 'more' },
       { id: 'readings', label: copy.nav.readings, icon: ChartBar, path: '/bodega/lecturas', permission: 'cellar.read', tier: 'more' },

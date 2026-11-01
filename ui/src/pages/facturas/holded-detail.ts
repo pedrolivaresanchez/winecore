@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ApiError, api, apiBlob, isAbortError } from '@/lib/api'
+import { ApiError, api, isAbortError } from '@/lib/api'
 import { copy } from '@/i18n'
 import type { LegacyDocumentPage, LegacyInvoicePage } from '@/lib/legacy'
 import type { EntityFilter } from '@/lib/reports'
@@ -14,8 +14,6 @@ export type HoldedLine = {
   line_base: string
   tax_code: string
 }
-
-export type HoldedDetailState = 'loading' | 'ready' | 'missing' | 'error'
 
 export type HoldedFilters = {
   status: string
@@ -228,85 +226,4 @@ export function useHoldedPage<T>(
   }, [])
 
   return { items, total, cursor, loading, loadingMore, error, loadMore, reload }
-}
-
-/**
- * Opens the PDF from a blob URL. A new tab has no bearer token, and the API
- * response is not a document the browser can navigate to.
- */
-export async function openHoldedPdf(path: string): Promise<void> {
-  const tab = window.open('', '_blank')
-  if (tab) tab.opener = null
-  try {
-    const { blob, filename } = await apiBlob(path, { headers: { Accept: 'application/pdf' } })
-    const file = blob.type === 'application/pdf' ? blob : new Blob([blob], { type: 'application/pdf' })
-    const url = URL.createObjectURL(file)
-    if (tab) tab.location.href = url
-    else {
-      const link = document.createElement('a')
-      link.href = url
-      link.download = filename || 'documento.pdf'
-      link.rel = 'noopener'
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-    }
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
-  } catch (error) {
-    tab?.close()
-    throw error
-  }
-}
-
-export function useHoldedDetail(id: string, resource: 'invoices' | 'documents') {
-  const [lines, setLines] = useState<HoldedLine[] | null>(null)
-  const [state, setState] = useState<HoldedDetailState>('loading')
-  const [pdfHidden, setPdfHidden] = useState(false)
-  const [pdfBusy, setPdfBusy] = useState(false)
-  const [pdfError, setPdfError] = useState(false)
-
-  useEffect(() => {
-    const controller = new AbortController()
-    let active = true
-    setLines(null)
-    setState('loading')
-    setPdfHidden(false)
-    setPdfError(false)
-    api<unknown>(`/v1/legacy/${resource}/${encodeURIComponent(id)}`, { signal: controller.signal })
-      .then((payload) => {
-        if (!active) return
-        setLines(linesOf(payload))
-        setState('ready')
-      })
-      .catch((err: unknown) => {
-        if (!active || isAbortError(err)) return
-        setLines(null)
-        if (err instanceof ApiError && err.status === 404) {
-          setPdfHidden(true)
-          setState('missing')
-          return
-        }
-        setState('error')
-      })
-    return () => {
-      active = false
-      controller.abort()
-    }
-  }, [id, resource])
-
-  const openPdf = useCallback(async () => {
-    setPdfBusy(true)
-    setPdfError(false)
-    try {
-      await openHoldedPdf(`/v1/legacy/${resource}/${encodeURIComponent(id)}/pdf`)
-    } catch (err: unknown) {
-      if (err instanceof ApiError && err.status === 404) setPdfHidden(true)
-      else setPdfError(true)
-    } finally {
-      setPdfBusy(false)
-    }
-  }, [id, resource])
-
-  const showPdf = state !== 'loading' && state !== 'missing' && !pdfHidden
-  return { lines, state, showPdf, pdfBusy, pdfError, openPdf }
 }

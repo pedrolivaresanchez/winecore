@@ -1,10 +1,11 @@
 import { sessionOf } from '../auth/guard';
 import { listLinks, readContent } from '../core/attachments/store';
-import { loadLegacyDocument, loadLegacyInvoice, readHoldedInvoice } from '../core/legacy/detail';
+import { loadLegacyDocument, loadLegacyInvoice, readHoldedDocument, readHoldedInvoice } from '../core/legacy/detail';
 import { listLegacyDocuments } from '../core/legacy/documents';
 import { listLegacyInvoices } from '../core/legacy/invoices';
 import { loadLegacyOverview } from '../core/legacy/overview';
-import { holdedPdfFilename, holdedPdfInput, renderHoldedInvoicePdf } from '../core/legacy/pdf';
+import { holdedDocumentPdfInput, holdedPdfFilename, holdedPdfInput } from '../core/legacy/pdf';
+import { renderDocumentPdf } from '../core/pdf/document';
 import { listLegacyProducts } from '../core/legacy/products';
 import type { Writer } from '../core/db/writer';
 
@@ -22,26 +23,43 @@ export function getLegacyInvoice(writer: Writer, request: Request, id: string) {
 
 export async function getLegacyInvoicePdf(writer: Writer, request: Request, id: string): Promise<Response> {
   const loaded = await readHoldedInvoice(writer, sessionOf(request), id);
-  const stored = await storedInvoicePdf(writer, id);
-  const bytes = stored ?? await renderHoldedInvoicePdf(holdedPdfInput(loaded));
-  const filename = holdedPdfFilename(loaded.detail.number);
+  const stored = await storedPdf(writer, 'legacy.holded_invoice', loaded.detail.id, ['invoice_pdf', 'supplier_invoice_scan']);
+  const bytes = stored ?? await renderDocumentPdf(holdedPdfInput(loaded));
+  return pdfResponse(bytes, holdedPdfFilename(loaded.detail.number));
+}
+
+export async function getLegacyDocumentPdf(writer: Writer, request: Request, id: string): Promise<Response> {
+  const loaded = await readHoldedDocument(writer, sessionOf(request), id);
+  const quote = loaded.detail.kind === 'quote';
+  const table = quote ? 'legacy.holded_quote' : 'legacy.holded_delivery_note';
+  const stored = await storedPdf(writer, table, loaded.detail.id, quote ? ['contract', 'other'] : ['delivery_note_pdf', 'other']);
+  const bytes = stored ?? await renderDocumentPdf(holdedDocumentPdfInput(loaded));
+  return pdfResponse(bytes, holdedPdfFilename(loaded.detail.number, quote ? 'presupuesto' : 'albaran'));
+}
+
+/** La UI lo pinta desde un blob, así que `inline` solo cuenta si alguien abre la URL de la API. */
+function pdfResponse(bytes: Uint8Array, filename: string): Response {
   return new Response(Buffer.from(bytes), {
     headers: {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Disposition': `inline; filename="${filename}"`,
     },
   });
 }
 
-async function storedInvoicePdf(writer: Writer, id: string): Promise<Uint8Array | null> {
-  const links = await listLinks(writer.read.bind(writer), 'legacy.holded_invoice', id);
-  const link = links.find((item) => item.role === 'invoice_pdf' || item.role === 'supplier_invoice_scan');
-  if (!link) return null;
-  try {
-    return await readContent(writer.read.bind(writer), link.sha256);
-  } catch {
-    return null;
+/** El original adjunto gana a la copia generada, pero solo si de verdad es un PDF (un escaneo puede ser una foto). */
+async function storedPdf(writer: Writer, table: string, id: string, roles: string[]): Promise<Uint8Array | null> {
+  const links = await listLinks(writer.read.bind(writer), table, id);
+  for (const role of roles) {
+    const link = links.find((item) => item.role === role && item.mime_type === 'application/pdf');
+    if (!link) continue;
+    try {
+      return await readContent(writer.read.bind(writer), link.sha256);
+    } catch {
+      continue;
+    }
   }
+  return null;
 }
 
 export function getLegacyDocument(writer: Writer, request: Request, id: string) {

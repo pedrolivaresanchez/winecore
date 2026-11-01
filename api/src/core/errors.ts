@@ -73,6 +73,9 @@ const CATALOG = {
   WC_IC_PERIOD_OVERLAP: [409, 'El periodo se solapa con otra liquidación'],
   WC_INV_LOT_REQUIRED: [422, 'Indica el lote de la línea'],
   WC_OCR_UNAVAILABLE: [503, 'La extracción de la factura no está disponible'],
+  WC_ASSISTANT_UNAVAILABLE: [503, 'El asistente no está disponible: falta conectar su miembro de la workforce'],
+  WC_ASSISTANT_FAILED: [502, 'El asistente no ha podido responder. Inténtalo de nuevo'],
+  WC_ASSISTANT_CONFIRMATION_REQUIRED: [409, 'Hace falta que confirmes la operación en tu siguiente mensaje'],
   // Facturación (TASK-FACT-002, 003, 005, 006, 008, 011). Verifactu no genera registros: módulo apagado.
   WC_INV_TAX_ID_REQUIRED: [422, 'El cliente necesita NIF para una factura completa'],
   WC_INV_VAT_ID_REQUIRED: [422, 'Valida el NIF-IVA en VIES'],
