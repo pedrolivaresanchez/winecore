@@ -4,7 +4,8 @@ import { loadLegacyDocument, loadLegacyInvoice, readHoldedDocument, readHoldedIn
 import { listLegacyDocuments } from '../core/legacy/documents';
 import { listLegacyInvoices } from '../core/legacy/invoices';
 import { loadLegacyOverview } from '../core/legacy/overview';
-import { holdedDocumentPdfInput, holdedPdfFilename, holdedPdfInput, renderHoldedPdf } from '../core/legacy/pdf';
+import { holdedDocumentPdfInput, holdedPdfFilename, holdedPdfInput } from '../core/legacy/pdf';
+import { renderDocumentPdf } from '../core/pdf/document';
 import { listLegacyProducts } from '../core/legacy/products';
 import type { Writer } from '../core/db/writer';
 
@@ -23,7 +24,7 @@ export function getLegacyInvoice(writer: Writer, request: Request, id: string) {
 export async function getLegacyInvoicePdf(writer: Writer, request: Request, id: string): Promise<Response> {
   const loaded = await readHoldedInvoice(writer, sessionOf(request), id);
   const stored = await storedPdf(writer, 'legacy.holded_invoice', loaded.detail.id, ['invoice_pdf', 'supplier_invoice_scan']);
-  const bytes = stored ?? await renderHoldedPdf(holdedPdfInput(loaded));
+  const bytes = stored ?? await renderDocumentPdf(holdedPdfInput(loaded));
   return pdfResponse(bytes, holdedPdfFilename(loaded.detail.number));
 }
 
@@ -32,7 +33,7 @@ export async function getLegacyDocumentPdf(writer: Writer, request: Request, id:
   const quote = loaded.detail.kind === 'quote';
   const table = quote ? 'legacy.holded_quote' : 'legacy.holded_delivery_note';
   const stored = await storedPdf(writer, table, loaded.detail.id, quote ? ['contract', 'other'] : ['delivery_note_pdf', 'other']);
-  const bytes = stored ?? await renderHoldedPdf(holdedDocumentPdfInput(loaded));
+  const bytes = stored ?? await renderDocumentPdf(holdedDocumentPdfInput(loaded));
   return pdfResponse(bytes, holdedPdfFilename(loaded.detail.number, quote ? 'presupuesto' : 'albaran'));
 }
 

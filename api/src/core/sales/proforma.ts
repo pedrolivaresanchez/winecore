@@ -1,59 +1,95 @@
-export type ProformaPdfInput = {
-  proforma: boolean;
-  language: string;
-  incoterm: string | null;
-  customer: string;
-  number: string | null;
-  lines: { description: string; quantity: string; amount: string }[];
-  total: string;
+import { sql } from '../db/sql';
+import type { Tx } from '../db/writer';
+import { renderDocumentPdf, type DocumentPdfLang } from '../pdf/document';
+import { decOf } from './db';
+
+type ReadDb = Pick<Tx, 'read'>;
+
+const STATUS: Record<DocumentPdfLang, Record<string, string>> = {
+  es: {
+    draft: 'Borrador',
+    sent: 'Enviado',
+    accepted: 'Aceptado',
+    rejected: 'Rechazado',
+    expired: 'Caducado',
+    converted: 'Convertido en pedido',
+  },
+  en: {
+    draft: 'Draft',
+    sent: 'Sent',
+    accepted: 'Accepted',
+    rejected: 'Rejected',
+    expired: 'Expired',
+    converted: 'Converted to order',
+  },
 };
 
-/** PDF mínimo con el texto literal (Helvetica, ASCII) para la proforma. */
-export function buildProformaPdf(input: ProformaPdfInput): Uint8Array {
-  const english = input.language === 'en';
-  const title = input.proforma ? 'Proforma' : (english ? 'Quote' : 'Presupuesto');
-  const lines = [
+/** Presupuesto o proforma en el idioma del documento. No es factura ni toca Verifactu. */
+export async function renderQuotePdf(db: ReadDb, quote: Record<string, unknown>): Promise<{ bytes: Uint8Array; filename: string }> {
+  const lang: DocumentPdfLang = quote.language === 'en' ? 'en' : 'es';
+  const english = lang === 'en';
+  const proforma = quote.is_proforma === true;
+  const sellers = await db.read<Record<string, unknown>>(sql`
+    SELECT legal_name, tax_id, address_line, postal_code, city, province
+    FROM core.legal_entity WHERE id = CAST(${String(quote.legal_entity_id)} AS UUID)
+  `);
+  const customers = await db.read<{ legal_name: string }>(sql`
+    SELECT legal_name FROM party.contact WHERE id = CAST(${String(quote.customer_id)} AS UUID)
+  `);
+  const seller = sellers[0] ?? {};
+  const raw = Array.isArray(quote.lines) ? (quote.lines as Record<string, unknown>[]) : [];
+  const lines = raw.map((line) => {
+    const discount = decOf(line.discount_pct ?? '0');
+    const base = decOf(line.quantity).mul(decOf(line.unit_price)).mul(decOf(100).sub(discount)).div(100);
+    return {
+      description: discount.isZero() ? String(line.description) : `${String(line.description)} (-${discount.toString()} %)`,
+      quantity: String(line.quantity),
+      unit_price: String(line.unit_price),
+      line_base: base.toFixed(2),
+      tax_code: line.tax_code == null ? null : String(line.tax_code),
+    };
+  });
+  const title = proforma ? 'Proforma' : (english ? 'Quote' : 'Presupuesto');
+  const number = typeof quote.number === 'string' && quote.number !== '' ? quote.number : null;
+  const bytes = await renderDocumentPdf({
+    lang,
     title,
-    english ? 'This document is not a tax invoice.' : 'Este documento no es una factura fiscal.',
-    input.number ? `${title} ${ascii(input.number)}` : '',
-    input.incoterm ? `Incoterm ${ascii(input.incoterm)}` : '',
-    ascii(input.customer),
-    ...input.lines.map((line) => `${ascii(line.description)} ${ascii(line.quantity)} ${ascii(line.amount)}`),
-    `Total ${ascii(input.total)} EUR`,
-  ].filter((line) => line.length > 0);
-  return pdf(lines);
+    number: number ?? (english ? 'Draft' : 'Borrador'),
+    issueDate: typeof quote.issue_date === 'string' ? quote.issue_date : null,
+    dueLabel: english ? 'Valid until' : 'Válido hasta',
+    dueDate: typeof quote.valid_until === 'string' ? quote.valid_until : null,
+    status: STATUS[lang][String(quote.status)] ?? String(quote.status),
+    meta: typeof quote.incoterm === 'string' && quote.incoterm !== '' ? [`Incoterm ${quote.incoterm}`] : [],
+    partyLabel: english ? 'Customer' : 'Cliente',
+    seller: {
+      legalName: text(seller.legal_name),
+      taxId: text(seller.tax_id),
+      addressLine: text(seller.address_line),
+      postalCode: text(seller.postal_code),
+      city: text(seller.city),
+      province: text(seller.province),
+    },
+    customerName: customers[0] ? String(customers[0].legal_name) : (english ? 'Customer' : 'Cliente'),
+    description: typeof quote.notes === 'string' && quote.notes.trim() !== '' ? quote.notes : null,
+    lines,
+    totals: {
+      subtotal: String(quote.subtotal),
+      vat: String(quote.tax_total),
+      withholding: null,
+      total: String(quote.total),
+    },
+    settlement: null,
+    note: english ? 'This document is not a tax invoice.' : 'Este documento no es una factura fiscal.',
+  });
+  const stem = proforma ? 'proforma' : (english ? 'quote' : 'presupuesto');
+  return { bytes, filename: `${stem}-${safeName(number ?? (english ? 'draft' : 'borrador'))}.pdf` };
 }
 
-function ascii(value: string): string {
-  return value.replace(/[^\x20-\x7e]/g, '?');
+function text(value: unknown): string {
+  return value == null ? '' : String(value);
 }
 
-function pdf(lines: string[]): Uint8Array {
-  const text = lines.map(escapePdf).join(') Tj T* (');
-  const stream = `BT /F1 12 Tf 50 800 Td 16 TL (${text}) Tj ET`;
-  const objects = [
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
-    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-  ];
-  let body = '%PDF-1.4\n';
-  const offsets = [0];
-  for (let index = 0; index < objects.length; index += 1) {
-    offsets.push(body.length);
-    body += `${index + 1} 0 obj\n${objects[index] ?? ''}\nendobj\n`;
-  }
-  const start = body.length;
-  body += `xref\n0 ${objects.length + 1}\n`;
-  body += '0000000000 65535 f \n';
-  for (let index = 1; index < offsets.length; index += 1) {
-    body += `${String(offsets[index] ?? 0).padStart(10, '0')} 00000 n \n`;
-  }
-  body += `trailer << /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${start}\n%%EOF`;
-  return new TextEncoder().encode(body);
-}
-
-function escapePdf(value: string): string {
-  return value.replaceAll('\\', '\\\\').replaceAll('(', '\\(').replaceAll(')', '\\)');
+function safeName(value: string): string {
+  const clean = value.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
+  return clean === '' ? 'borrador' : clean.slice(0, 60);
 }
