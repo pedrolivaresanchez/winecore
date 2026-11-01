@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import type { Page } from "playwright/test";
 import { test } from "playwright/test";
+import type { SeedIds } from "../mobile/seed";
 
 export const statePath = process.env.E2E_STATE_FILE ?? "/tmp/winecore-e2e-state.json";
 
@@ -8,6 +9,7 @@ export type RunState = {
   customerName?: string;
   invoiceNumber?: string;
   deliveryNoteId?: string;
+  movil?: SeedIds;
 };
 
 export function readState(): RunState {
