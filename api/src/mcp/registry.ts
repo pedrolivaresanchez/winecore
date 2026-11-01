@@ -78,6 +78,8 @@ export interface ReadTool {
   readonly extraScopes?: readonly string[];
   /** REST routes of the web app this tool is the equivalent of, as `METHOD /v1/path`. */
   readonly routes?: readonly string[];
+  /** Why the non-GET routes it covers save nothing (a calculator, a check, a preview). */
+  readonly computeOnly?: string;
   readonly handler: (ctx: McpContext, input: unknown) => Promise<unknown> | unknown;
 }
 
@@ -128,6 +130,7 @@ export interface ReadToolDefinition<T> {
   input: ZodType<T>;
   extraScopes?: readonly string[];
   routes?: readonly string[];
+  computeOnly?: string;
   handler: (ctx: McpContext, input: T) => Promise<unknown> | unknown;
 }
 
@@ -174,6 +177,7 @@ export function defineReadTool<T>(definition: ReadToolDefinition<T>): ReadTool {
     input: definition.input,
     extraScopes: definition.extraScopes,
     routes: definition.routes,
+    computeOnly: definition.computeOnly,
     handler: (ctx, input) => definition.handler(ctx, input as T),
   };
 }
@@ -284,6 +288,10 @@ export function accessGranted(grantedScopes: readonly string[], tool: AnyTool): 
       const have = normalizeScope(scope);
       return have === "read:*" || have.startsWith("read:") || scope.endsWith(".read");
     });
+  }
+  // `write:*` on a tool: any permission that changes something (the route decides the rest).
+  if (normalizeScope(tool.scope) === "write:*") {
+    return grantedScopes.some((scope) => !normalizeScope(scope).startsWith("read:"));
   }
   return false;
 }

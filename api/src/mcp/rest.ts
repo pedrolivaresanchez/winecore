@@ -54,6 +54,8 @@ export interface RestReadDefinition<T> extends RestShape<T> {
   alsoCovers?: readonly RestRoute[];
   /** Web app path for the result, so the person can open it. */
   web?: (input: T, body: unknown) => string | null;
+  /** Required when `route` is not a GET: why the route saves nothing (a calculator, a check, a preview). */
+  computeOnly?: string;
 }
 
 export interface RestWriteDefinition<T> extends RestShape<T> {
@@ -386,6 +388,7 @@ export function defineRestRead<T>(definition: RestReadDefinition<T>): ReadTool {
     input: definition.input,
     extraScopes: definition.extraScopes,
     routes: [definition.route, ...(definition.alsoCovers ?? [])],
+    computeOnly: definition.computeOnly,
     handler: async (ctx, input) => {
       const body = await restCall(ctx, buildRequest(definition, input));
       return withLink(ctx, body, definition.web?.(input, body) ?? null);

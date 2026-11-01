@@ -21,6 +21,7 @@ import { contactsRestTools } from "./rest/contacts";
 import { financeRestTools } from "./rest/finance";
 import { hygieneRestTools } from "./rest/hygiene";
 import { inventoryRestTools } from "./rest/inventory";
+import { lotsRestTools } from "./rest/lots";
 import { purchasingRestTools } from "./rest/purchasing";
 import { regulatoryRestTools } from "./rest/regulatory";
 import { salesRestTools } from "./rest/sales";
@@ -75,6 +76,7 @@ export const restTools: readonly AnyTool[] = [
   ...purchasingRestTools,
   ...inventoryRestTools,
   ...cellarRestTools,
+  ...lotsRestTools,
   ...hygieneRestTools,
   ...vineyardRestTools,
   ...tastingRestTools,

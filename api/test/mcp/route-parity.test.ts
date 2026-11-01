@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { NOT_IN_MCP, READ_ONLY_ROUTES } from "../../src/mcp/parity";
+import { NOT_IN_MCP } from "../../src/mcp/parity";
 import { DECISION_VERB, mcpNames } from "../../src/mcp/registry";
 import { baseTools } from "../../src/mcp/server";
 import { createTestApp } from "../helpers";
@@ -37,14 +37,16 @@ describe("MCP parity with the web app", () => {
     expect([...covered.keys()].filter((route) => !routes.has(route))).toEqual([]);
     expect(Object.keys(NOT_IN_MCP).filter((route) => !routes.has(route))).toEqual([]);
     expect(Object.keys(NOT_IN_MCP).filter((route) => covered.has(route))).toEqual([]);
-    expect(Object.keys(READ_ONLY_ROUTES).filter((route) => !routes.has(route) || route.startsWith("GET "))).toEqual([]);
   });
 
   test("every write is prepare/commit and every decision needs a confirmation", () => {
     for (const tool of baseTools) {
-      const writes = (tool.routes ?? []).some((route) => !route.startsWith("GET ") && !(route in READ_ONLY_ROUTES));
-      if (writes && tool.kind === "read") {
-        expect(`${tool.name}: ${tool.routes?.join(", ")}`).toBe(`${tool.name} is read-only`);
+      const writes = (tool.routes ?? []).some((route) => !route.startsWith("GET "));
+      if (writes && tool.kind === "read" && !tool.computeOnly?.trim()) {
+        expect(`${tool.name}: ${tool.routes?.join(", ")}`).toBe(`${tool.name} is read-only or says why (computeOnly)`);
+      }
+      if (writes && tool.kind === "direct") {
+        expect(`${tool.name}: ${tool.routes?.join(", ")}`).toBe(`${tool.name} must be prepare/commit`);
       }
       if (DECISION_VERB.test(tool.name)) expect(tool.kind).toBe("write");
       for (const name of mcpNames(tool)) expect(name).toMatch(/^[a-z][a-z0-9]*(_[a-z0-9]+)*$/);

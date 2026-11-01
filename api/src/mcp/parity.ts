@@ -29,9 +29,3 @@ export const NOT_IN_MCP: Readonly<Record<string, string>> = {
   "POST /v1/users": PEOPLE,
   "PATCH /v1/users/:id": PEOPLE,
 };
-
-/**
- * Non-GET routes that only compute or check and save nothing, so a read tool may stand for
- * them. Every other non-GET route is a write: prepare/commit.
- */
-export const READ_ONLY_ROUTES: Readonly<Record<string, string>> = {};
