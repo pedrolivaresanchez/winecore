@@ -29,14 +29,18 @@ describe('catálogo de ventas y presupuestos', () => {
     const products = catalog.products as {
       id: string;
       sku: string;
+      default_tax_code: string | null;
       format: { code: string; nominal_volume_ml: number } | null;
       price: { unit_price: string; currency: string } | null;
     }[];
     expect(products.some((item) => item.id === packaging)).toBe(false);
     const wine = products.find((item) => item.id === fx.product);
     expect(wine?.sku).toBe('TINTO2025B075');
+    expect(wine?.default_tax_code).toBe('IVA21');
     expect(wine?.format).toMatchObject({ code: 'B075', nominal_volume_ml: 750 });
     expect(wine?.price).toMatchObject({ currency: 'EUR', unit_price: '9.500000' });
+    const taxes = catalog.taxes as { code: string; rate: string; surcharge_rate: string }[];
+    expect(taxes.find((tax) => tax.code === 'IVA21')).toEqual({ code: 'IVA21', rate: '21.00', surcharge_rate: '0.00' });
     const lots = catalog.lots as { id: string; location_code: string; qty_units: string }[];
     const full = lots.find((lot) => lot.id === fx.lot);
     expect(full?.location_code).toBe('BOD');

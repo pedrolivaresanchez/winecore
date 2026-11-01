@@ -17,6 +17,7 @@ export interface CatalogProduct {
   kind: string;
   unit: string;
   requires_lot: boolean;
+  default_tax_code: string | null;
   format: { id: string; code: string; name: string; nominal_volume_ml: number } | null;
   price: {
     currency: 'EUR';
@@ -37,6 +38,12 @@ export interface CatalogLot {
   volume_ml: string;
 }
 
+export interface CatalogTax {
+  code: string;
+  rate: string;
+  surcharge_rate: string;
+}
+
 export async function salesCatalog(writer: Writer, url: URL, now: Date): Promise<{
   date: string;
   channel: string | null;
@@ -44,6 +51,7 @@ export async function salesCatalog(writer: Writer, url: URL, now: Date): Promise
   price_list_id: string | null;
   products: CatalogProduct[];
   lots: CatalogLot[];
+  taxes: CatalogTax[];
 }> {
   const fields: Record<string, string> = {};
   const channelRaw = url.searchParams.get('channel')?.trim() ?? '';
@@ -80,11 +88,23 @@ export async function salesCatalog(writer: Writer, url: URL, now: Date): Promise
   if (!customerId) listId = await defaultListId(writer, channel);
   else if (!listId && channel) listId = await listIdForChannel(writer, channel);
 
-  const [products, lots] = await Promise.all([
+  const [products, lots, taxes] = await Promise.all([
     loadProducts(writer, listId, day),
     loadLots(writer),
+    loadTaxes(writer),
   ]);
-  return { date: day, channel, customer_id: customerId, price_list_id: listId, products, lots };
+  return { date: day, channel, customer_id: customerId, price_list_id: listId, products, lots, taxes };
+}
+
+async function loadTaxes(writer: Writer): Promise<CatalogTax[]> {
+  const rows = await writer.read<Record<string, unknown>>(`
+    SELECT code, rate, surcharge_rate FROM billing.tax_code WHERE is_active ORDER BY code
+  `);
+  return rows.map((row) => ({
+    code: String(row.code),
+    rate: money.fromString(String(row.rate)).toFixed(2),
+    surcharge_rate: money.fromString(String(row.surcharge_rate)).toFixed(2),
+  }));
 }
 
 async function listIdForChannel(writer: Writer, channel: string): Promise<string | null> {
@@ -132,7 +152,7 @@ async function loadProducts(writer: Writer, listId: string | null, day: string):
     `
     : '';
   const rows = await writer.read<Record<string, unknown>>(`
-    SELECT p.id, p.sku, p.name, p.kind, p.unit, p.requires_lot,
+    SELECT p.id, p.sku, p.name, p.kind, p.unit, p.requires_lot, p.default_tax_code,
            f.id AS format_id, f.code AS format_code, f.name AS format_name, f.nominal_volume_ml
            ${listId ? ', pr.unit_price, pr.min_qty, pr.version_id, pr.price_list_id' : ''}
     FROM catalog.product p
@@ -159,6 +179,7 @@ async function loadProducts(writer: Writer, listId: string | null, day: string):
       kind: String(row.kind),
       unit: String(row.unit),
       requires_lot: flag(row.requires_lot),
+      default_tax_code: row.default_tax_code == null ? null : String(row.default_tax_code),
       format: formatId
         ? {
             id: formatId,
