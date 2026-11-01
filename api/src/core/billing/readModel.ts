@@ -52,6 +52,7 @@ export interface HeaderView {
   approvalRequestId: string | null;
   issuedAt: string | null;
   verifactuRecordId: string | null;
+  origin: 'native' | 'holded_import';
   voidedAt: string | null;
   voidReason: string | null;
   legacyRefs: Record<string, unknown>;
@@ -228,6 +229,7 @@ export function headerOf(row: Record<string, unknown>): HeaderView {
     approvalRequestId: row.approval_request_id == null ? null : idOf(row.approval_request_id),
     issuedAt: stamp(row.issued_at),
     verifactuRecordId: row.verifactu_record_id == null ? null : idOf(row.verifactu_record_id),
+    origin: row.origin === 'holded_import' ? 'holded_import' : 'native',
     voidedAt: stamp(row.voided_at),
     voidReason: text(row.void_reason),
     legacyRefs,
@@ -568,6 +570,7 @@ export function presentInvoice(
     approval_request_id: header.approvalRequestId,
     issued_at: header.issuedAt,
     verifactu_record_id: header.verifactuRecordId,
+    origin: header.origin,
     qr_url: null,
     voided_at: header.voidedAt,
     void_reason: header.voidReason,

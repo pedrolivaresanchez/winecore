@@ -371,7 +371,7 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
         ) : null}
         {tab === 'pdf' ? <PdfPane id={invoice.id} issued={issued} number={invoice.number} /> : null}
         <div className={tab === 'envio' ? 'block' : 'hidden'}>
-          <DeliveryPanel me={me} invoiceId={invoice.id} issued={invoice.status === 'issued'} onStatus={onStatus} />
+          <DeliveryPanel me={me} invoiceId={invoice.id} issued={invoice.status === 'issued'} historical={invoice.origin === 'holded_import'} onStatus={onStatus} />
         </div>
         {tab === 'historial' ? <History items={history.data?.items ?? []} loading={history.loading} error={history.error?.message} onRetry={history.reload} /> : null}
       </RecordFrame>

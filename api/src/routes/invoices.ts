@@ -34,9 +34,13 @@ export async function listInvoices(writer: Writer, request: Request) {
   if (query.from) filters.push(sql`i.issue_date >= CAST(${query.from} AS DATE)`);
   if (query.to) filters.push(sql`i.issue_date <= CAST(${query.to} AS DATE)`);
   if (query.paymentStatus) filters.push(sql`i.payment_status = ${query.paymentStatus}`);
-  if (query.verifactuStatus === 'pending') filters.push('i.verifactu_record_id IS NULL');
+  if (query.verifactuStatus === 'pending') {
+    filters.push("i.verifactu_record_id IS NULL AND COALESCE(i.origin, 'native') <> 'holded_import'");
+  }
   if (query.verifactuStatus === 'accepted') filters.push('i.verifactu_record_id IS NOT NULL');
-  if (query.deliveryStatus === 'none') filters.push('del.invoice_id IS NULL');
+  if (query.deliveryStatus === 'none') {
+    filters.push("del.invoice_id IS NULL AND COALESCE(i.origin, 'native') <> 'holded_import'");
+  }
   else if (query.deliveryStatus) filters.push(sql`del.status = ${query.deliveryStatus}`);
   const where = filters.join(' AND ');
   const cursor = query.cursor;
@@ -240,7 +244,8 @@ function listItem(row: Record<string, unknown>) {
     invoice_type: String(row.invoice_type),
     series_id: row.series_id == null ? null : idOf(row.series_id),
     verifactu_record_id: row.verifactu_record_id == null ? null : idOf(row.verifactu_record_id),
-    delivery_status: deliveryStatusOf(row.delivery_status),
+    origin: row.origin === 'holded_import' ? 'holded_import' : 'native',
+    delivery_status: row.origin === 'holded_import' ? null : deliveryStatusOf(row.delivery_status),
     last_delivery_at: stamp(row.last_delivery_at),
     updated_at: String(row.updated_at),
   };

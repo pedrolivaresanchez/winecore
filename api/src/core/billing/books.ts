@@ -22,9 +22,11 @@ export interface BookRow {
 /**
  * Cuadres del libro de emitidas. Si Verifactu está apagado, el tercer cuadre
  * no exige registros: el módulo no los genera (P.O hasta el 30-06-2027).
+ * Las facturas con verifactuRequired = false (histórico Holded) tampoco:
+ * no se firman ni se envían.
  */
 export function reconcileBook(input: {
-  invoices: { id: string; importeTotal: string; verifactuRecordId: string | null }[];
+  invoices: { id: string; importeTotal: string; verifactuRecordId: string | null; verifactuRequired?: boolean }[];
   rows: readonly BookRow[];
   model303: { base: string; quota: string; surcharge: string };
   verifactuEnabled: boolean;
@@ -70,8 +72,10 @@ export function reconcileBook(input: {
   const modelOk = base.eq(decimalOf(input.model303.base))
     && quota.eq(decimalOf(input.model303.quota))
     && surcharge.eq(decimalOf(input.model303.surcharge));
-  const recorded = input.invoices.filter((invoice) => invoice.verifactuRecordId != null).length;
-  const verifactuOk = input.verifactuEnabled ? recorded === input.invoices.length : true;
+  const subject = input.invoices.filter((invoice) => invoice.verifactuRequired !== false);
+  const recorded = subject.filter((invoice) => invoice.verifactuRecordId != null).length;
+  const historical = input.invoices.length - subject.length;
+  const verifactuOk = input.verifactuEnabled ? recorded === subject.length : true;
   return [
     {
       name: 'libro_vs_facturas',
@@ -92,8 +96,10 @@ export function reconcileBook(input: {
       ok: verifactuOk,
       detail: input.verifactuEnabled
         ? (verifactuOk
-          ? 'Cada factura del libro tiene registro Verifactu'
-          : `Faltan registros Verifactu (${recorded} de ${input.invoices.length})`)
+          ? (historical > 0
+            ? 'Cada factura emitida en WineCore tiene registro Verifactu; las importadas de Holded no se envían'
+            : 'Cada factura del libro tiene registro Verifactu')
+          : `Faltan registros Verifactu (${recorded} de ${subject.length})`)
         : 'Verifactu está apagado: no hay registros que cuadrar',
     },
   ];
@@ -105,7 +111,7 @@ export async function exportIssuedBook(
 ): Promise<{ csv: string; checks: BookCheck[] }> {
   if (!isUuid(input.entityId)) throw domainError('WC_VALIDATION', { entity: 'Identificador no válido' });
   const invoices = await db.read(sql`
-    SELECT i.id, i.number, i.issue_date, i.operation_date, i.invoice_type, i.status,
+    SELECT i.id, i.number, i.issue_date, i.operation_date, i.invoice_type, i.status, i.origin,
            i.subtotal, i.tax_total, i.surcharge_total, i.withholding_total, i.total,
            i.customer_snapshot, i.verifactu_record_id, c.legal_name, c.tax_id
     FROM billing.invoice i
@@ -139,16 +145,18 @@ export async function exportIssuedBook(
   let modelBase = decimalOf('0');
   let modelQuota = decimalOf('0');
   let modelSurcharge = decimalOf('0');
-  const bookInvoices: { id: string; importeTotal: string; verifactuRecordId: string | null }[] = [];
+  const bookInvoices: { id: string; importeTotal: string; verifactuRecordId: string | null; verifactuRequired: boolean }[] = [];
   for (const invoice of invoices) {
     const id = idOf(invoice.id);
     const importe = importeOf(moneyText(invoice.subtotal), moneyText(invoice.tax_total), moneyText(invoice.surcharge_total))
       ?? moneyText(invoice.total)
       ?? '0.00';
+    const historical = text(invoice.origin) === 'holded_import';
     bookInvoices.push({
       id,
       importeTotal: importe,
       verifactuRecordId: invoice.verifactu_record_id == null ? null : idOf(invoice.verifactu_record_id),
+      verifactuRequired: !historical,
     });
     const ownTaxes = taxes.filter((row) => idOf(row.invoice_id) === id);
     const ownRects = rects.filter((row) => idOf(row.rectifying_invoice_id) === id);
@@ -167,6 +175,7 @@ export async function exportIssuedBook(
         withholding: moneyText(invoice.withholding_total) ?? '0.00',
         first: true,
         tax: null,
+        historical,
       }));
       continue;
     }
@@ -183,6 +192,7 @@ export async function exportIssuedBook(
         withholding: moneyText(invoice.withholding_total) ?? '0.00',
         first: index === 0,
         tax,
+        historical,
       }));
     });
   }
@@ -223,6 +233,7 @@ function csvLine(input: {
   withholding: string;
   first: boolean;
   tax: Record<string, unknown> | null;
+  historical: boolean;
 }): string[] {
   return [
     input.ejercicio,
@@ -246,7 +257,7 @@ function csvLine(input: {
     input.first ? input.importe : '',
     input.first ? input.withholding : '',
     '',
-    '',
+    input.historical ? 'no aplica (histórico Holded)' : '',
   ];
 }
 

@@ -21,11 +21,13 @@ export function DeliveryPanel({
   me,
   invoiceId,
   issued,
+  historical = false,
   onStatus,
 }: {
   me: Me
   invoiceId: string
   issued: boolean
+  historical?: boolean
   onStatus: (status: DeliveryStatus | null) => void
 }) {
   const [pack, setPack] = useState<DeliveryPackage | null>(null)
@@ -38,7 +40,7 @@ export function DeliveryPanel({
   const canDeliver = allows(me, 'billing.deliver')
 
   useEffect(() => {
-    if (!issued || !canDeliver) {
+    if (!issued || !canDeliver || historical) {
       setLoading(false)
       onStatus(null)
       return
@@ -79,7 +81,7 @@ export function DeliveryPanel({
       active = false
       controller.abort()
     }
-  }, [attempt, canDeliver, invoiceId, issued, onStatus])
+  }, [attempt, canDeliver, historical, invoiceId, issued, onStatus])
 
   async function resend() {
     setBusy(true)
@@ -93,6 +95,7 @@ export function DeliveryPanel({
     }
   }
 
+  if (historical) return <EmptyState size="sm" title={copy.facturas.historicalHolded} description={copy.facturas.historicalHoldedHint} />
   if (!canDeliver) return <EmptyState size="sm" title={copy.facturas.noDelivery} description={copy.facturas.noDeliveryHint} />
   if (!issued) return <EmptyState size="sm" title={copy.facturas.noDelivery} description={copy.facturas.noDeliveryHint} />
   if (loading) return <Skeleton className="h-40 w-full" />

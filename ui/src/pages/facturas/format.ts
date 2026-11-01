@@ -80,7 +80,8 @@ export function methodLabel(method: string | null | undefined): string {
   return method || '—'
 }
 
-export function verifactuLabel(recordId: string | null | undefined): string {
+export function verifactuLabel(recordId: string | null | undefined, origin?: string | null): string {
+  if (origin === 'holded_import') return copy.facturas.verifactuHistorical
   return recordId ? copy.facturas.verifactuAccepted : copy.facturas.verifactuPending
 }
 
