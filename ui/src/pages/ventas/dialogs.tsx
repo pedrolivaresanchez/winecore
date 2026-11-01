@@ -387,7 +387,7 @@ export function CreateDelivery({
       <DialogHeader titleId="albaran-nuevo" title={copy.sales.newDelivery} onClose={onClose} />
       <DialogBody>
         <form
-          id="albaran-nuevo"
+          id="albaran-nuevo-form"
           data-screen="ventas-dialogo"
           className="grid gap-4 pb-2"
           onSubmit={(event) => {
@@ -468,7 +468,7 @@ export function CreateDelivery({
         <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={saving}>
           {copy.sales.cancel}
         </Button>
-        <Button type="submit" form="albaran-nuevo" variant="primary" size="sm" loading={saving}>
+        <Button type="submit" form="albaran-nuevo-form" variant="primary" size="sm" loading={saving}>
           {saving ? copy.sales.creating : copy.sales.create}
         </Button>
       </DialogFooter>
@@ -532,7 +532,7 @@ export function DeliveryFromOrder({
       <DialogHeader titleId="albaran-pedido" title={copy.sales.createDelivery} onClose={onClose} />
       <DialogBody>
         <form
-          id="albaran-pedido"
+          id="albaran-pedido-form"
           className="grid gap-4 pb-2"
           onSubmit={(event) => {
             event.preventDefault()
@@ -595,7 +595,7 @@ export function DeliveryFromOrder({
         <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={saving}>
           {copy.sales.cancel}
         </Button>
-        <Button type="submit" form="albaran-pedido" variant="primary" size="sm" loading={saving}>
+        <Button type="submit" form="albaran-pedido-form" variant="primary" size="sm" loading={saving}>
           {saving ? copy.sales.creating : copy.sales.create}
         </Button>
       </DialogFooter>
