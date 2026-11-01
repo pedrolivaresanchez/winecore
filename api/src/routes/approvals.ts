@@ -66,10 +66,17 @@ export async function listApprovals(deps: HttpDeps, request: Request) {
   const kind = parseKind(url.searchParams.get('kind'));
   const entity = parseEntity(url.searchParams.get('entity'));
   const cursor = parseCursor(url.searchParams.get('cursor'));
+  const limit = parseLimit(url.searchParams.get('limit'));
+  const mine = parseMine(url.searchParams.get('mine'));
   const now = deps.now();
   const rows = await loadRows(deps, now, { status, kind, entity });
   const visible = await visibleRows(deps, request, rows);
-  return presentPage(deps, request, visible, cursor, now);
+  const listed = mine ? visible.filter((row) => row.requestedBy.toLowerCase() === principalId(request)) : visible;
+  return presentPage(deps, request, listed, cursor, now, limit);
+}
+
+function principalId(request: Request): string {
+  return (machineOf(request)?.id ?? sessionOf(request).id).toLowerCase();
 }
 
 export async function getApproval(deps: HttpDeps, request: Request, id: string) {
@@ -274,6 +281,7 @@ async function presentPage(
   rows: RequestRow[],
   cursor: { at: string; id: string } | null,
   now: Date,
+  limit = PAGE_SIZE,
 ) {
   let start = 0;
   if (cursor) {
@@ -283,13 +291,13 @@ async function presentPage(
     }
     start = index + 1;
   }
-  const slice = rows.slice(start, start + PAGE_SIZE);
+  const slice = rows.slice(start, start + limit);
   const policies = await loadApprovalPolicies(deps.writer);
   const decided = await decidedIds(deps, request);
   const last = slice[slice.length - 1];
   return {
     items: slice.map((row) => summaryOf(request, row, policies, decided, now)),
-    next_cursor: start + PAGE_SIZE < rows.length && last ? encodeCursor(last.requestedAt, last.id) : null,
+    next_cursor: start + limit < rows.length && last ? encodeCursor(last.requestedAt, last.id) : null,
     total: rows.length,
   };
 }
@@ -419,6 +427,21 @@ function parseKind(value: string | null): ApprovalKind | null {
     throw domainError('WC_VALIDATION', { kind: 'El tipo de aprobación no es válido' });
   }
   return value;
+}
+
+function parseLimit(value: string | null): number {
+  if (value === null || value.trim() === '') return PAGE_SIZE;
+  const limit = Number(value);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw domainError('WC_VALIDATION', { limit: 'El tamaño de página va de 1 a 100' });
+  }
+  return limit;
+}
+
+function parseMine(value: string | null): boolean {
+  if (value === null || value === '' || value === 'false') return false;
+  if (value === 'true') return true;
+  throw domainError('WC_VALIDATION', { mine: 'Debe ser true o false' });
 }
 
 function parseEntity(value: string | null): string | null {

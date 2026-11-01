@@ -696,6 +696,27 @@ describe('aprobaciones', () => {
       expect(second.body?.next_cursor).toBeNull();
       const bad = await call(ctx.app, 'GET', '/v1/approvals?cursor=no-es-un-cursor');
       expect(bad.status).toBe(422);
+
+      const short = await call(ctx.app, 'GET', '/v1/approvals?status=pending&kind=invoice_batch_issue&limit=20');
+      expect((short.body?.items as unknown[]).length).toBe(20);
+      expect(short.body?.total).toBe(51);
+      const shortNext = await call(ctx.app, 'GET', `/v1/approvals?status=pending&kind=invoice_batch_issue&limit=20&cursor=${short.body?.next_cursor}`);
+      expect((shortNext.body?.items as { id: string }[]).map((item) => item.id)).toEqual(
+        (first.body?.items as { id: string }[]).slice(20, 40).map((item) => item.id),
+      );
+      expect((await call(ctx.app, 'GET', '/v1/approvals?limit=101')).status).toBe(422);
+      expect((await call(ctx.app, 'GET', '/v1/approvals?limit=0')).status).toBe(422);
+
+      await ctx.client.query(`
+        UPDATE ops.approval_request SET requested_by = '${ADMIN}'
+        WHERE id = CAST('019a0000-0000-7000-8100-000000000001' AS UUID)
+      `);
+      const ownerMine = await call(ctx.app, 'GET', '/v1/approvals?status=all&kind=invoice_batch_issue&mine=true&limit=100');
+      expect(ownerMine.body?.total).toBe(50);
+      const adminMine = await call(ctx.app, 'GET', '/v1/approvals?status=all&kind=invoice_batch_issue&mine=true', undefined, asUser('admin@winecore.test'));
+      expect(adminMine.status).toBe(200);
+      expect((adminMine.body?.items as { id: string }[]).map((item) => item.id)).toEqual(['019a0000-0000-7000-8100-000000000001']);
+      expect((await call(ctx.app, 'GET', '/v1/approvals?mine=si')).status).toBe(422);
     } finally {
       await ctx.close();
     }
