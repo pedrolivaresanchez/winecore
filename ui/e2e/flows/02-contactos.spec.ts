@@ -15,6 +15,9 @@ test("Contactos: alta, edición, búsqueda y archivo", async ({ page }) => {
     await page.locator("#tax_id").fill(NIF);
     await page.locator("#email").fill(EMAIL);
     await page.getByRole("button", { name: "Crear contacto" }).click();
+    await pantalla(page, "contacto-preview");
+    await expect(page.getByRole("heading", { name: LEGAL })).toBeVisible();
+    await page.getByRole("button", { name: "Abrir ficha" }).click();
     await pantalla(page, "ficha");
     await expect(page.getByRole("heading", { name: LEGAL })).toBeVisible();
   });

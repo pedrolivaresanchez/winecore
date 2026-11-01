@@ -6,7 +6,6 @@ import { InformesPage } from '@/pages/informes/InformesPage'
 import { Panel } from '@/pages/Panel'
 import { ApprovalPage } from '@/pages/aprobaciones/Detail'
 import { ApprovalInbox } from '@/pages/aprobaciones/Inbox'
-import { ContactCreate } from '@/pages/contactos/ContactCreate'
 import { ContactList } from '@/pages/contactos/ContactList'
 import { ContactPage } from '@/pages/contactos/ContactPage'
 import { FormatPage } from '@/pages/catalogo/FormatPage'
@@ -69,7 +68,7 @@ export function AppRoutes({ me }: { me: Me }) {
       <Route path="aprobaciones" element={<ApprovalInbox me={me} />} />
       <Route path="aprobaciones/:id" element={<ApprovalPage />} />
       <Route path="contactos" element={<ContactList me={me} />} />
-      <Route path="contactos/nuevo" element={<ContactCreate me={me} />} />
+      <Route path="contactos/nuevo" element={<ContactList me={me} creating />} />
       <Route path="contactos/:id" element={<ContactPage me={me} />} />
       <Route path="informes" element={<InformesPage me={me} />} />
       <Route path="catalogo" element={<ProductList me={me} />} />

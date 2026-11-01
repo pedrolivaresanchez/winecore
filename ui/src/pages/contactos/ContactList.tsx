@@ -39,6 +39,7 @@ import { readStorage, writeStorage } from '@/lib/storage'
 import { iconStroke } from '@/lib/motion'
 import { cn } from '@/lib/cn'
 import type { Me } from '@/lib/types'
+import { ContactCreate } from '@/pages/contactos/ContactCreate'
 import { ContactPreview } from '@/pages/contactos/ContactPreview'
 
 const COLUMN_KEY = 'winecore.columns.contacts'
@@ -94,7 +95,7 @@ const ROLE_PILLS: { id: ContactRole; label: string }[] = [
   { id: 'logistics_operator', label: 'Operadores logísticos' },
 ]
 
-export function ContactList({ me }: { me: Me }) {
+export function ContactList({ me, creating = false }: { me: Me; creating?: boolean }) {
   useChromeTitle(copy.contacts.title)
   const navigate = useNavigate()
   const toast = useToast()
@@ -117,6 +118,7 @@ export function ContactList({ me }: { me: Me }) {
   const [error, setError] = useState<ApiError | null>(null)
   const [attempt, setAttempt] = useState(0)
   const [selected, setSelected] = useState<string | null>(null)
+  const [createOpen, setCreateOpen] = useState(false)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [hidden, setHidden] = useState(readHidden)
   const [widths, setWidths] = useState<Record<string, number>>({ legal_name: 280, tax_id: 140, roles: 200 })
@@ -226,7 +228,7 @@ export function ContactList({ me }: { me: Me }) {
             {copy.contacts.export}
           </Button>
           {canWrite ? (
-            <Button type="button" variant="primary" size="sm" onClick={() => navigate('/contactos/nuevo')}>
+            <Button type="button" variant="primary" size="sm" onClick={() => setCreateOpen(true)}>
               {copy.contacts.new}
             </Button>
           ) : null}
@@ -271,7 +273,7 @@ export function ContactList({ me }: { me: Me }) {
         </div>
         <div className="flex shrink-0 items-center gap-1.5 md:hidden">
           {canWrite ? (
-            <Button type="button" variant="primary" size="sm" onClick={() => navigate('/contactos/nuevo')}>
+            <Button type="button" variant="primary" size="sm" onClick={() => setCreateOpen(true)}>
               {copy.contacts.new}
             </Button>
           ) : null}
@@ -348,7 +350,7 @@ export function ContactList({ me }: { me: Me }) {
               description={filtersActive ? undefined : copy.contacts.emptyHint}
               action={
                 canWrite && !filtersActive ? (
-                  <Button type="button" variant="primary" size="sm" onClick={() => navigate('/contactos/nuevo')}>
+                  <Button type="button" variant="primary" size="sm" onClick={() => setCreateOpen(true)}>
                     {copy.contacts.new}
                   </Button>
                 ) : undefined
@@ -374,6 +376,19 @@ export function ContactList({ me }: { me: Me }) {
           if (!open) setSelected(null)
         }}
         onSelect={setSelected}
+      />
+      <ContactCreate
+        open={canWrite && (creating || createOpen)}
+        onClose={() => {
+          setCreateOpen(false)
+          if (creating) navigate('/contactos', { replace: true })
+        }}
+        onCreated={(id) => {
+          setCreateOpen(false)
+          setAttempt((value) => value + 1)
+          setSelected(id)
+          if (creating) navigate('/contactos', { replace: true })
+        }}
       />
     </div>
   )
