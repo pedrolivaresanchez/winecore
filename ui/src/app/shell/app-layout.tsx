@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 import { motion, useReducedMotion } from 'motion/react'
-import { PanelLeft, Search } from '@/ui/icons'
+import { MessageCircle, PanelLeft, Search } from '@/ui/icons'
 import { Tooltip } from '@/ui'
 import { AppSidebar } from '@/app/shell/app-sidebar'
+import { AssistantProvider, openAssistant, toggleAssistant } from '@/app/shell/assistant-context'
+import { AssistantDock } from '@/app/shell/assistant-dock'
 import { CommandPalette } from '@/app/shell/command-palette'
 import { ShellProvider, useShell } from '@/app/shell/shell-context'
 import { useGlobalShortcuts } from '@/app/shell/shortcuts'
@@ -77,6 +79,7 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
     onCommand: () => setCommand((current) => !current),
     onHelp: () => setShortcuts(true),
     onToggleRail: toggleRail,
+    onAssistant: toggleAssistant,
   })
 
   function openSettings() {
@@ -101,18 +104,21 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
       closeSettings={closeSettings}
       openCommand={openCommand}
     >
-      <Frame me={me} area={area} onArea={setArea}>
-        {children}
-      </Frame>
-      <CommandPalette
-        me={me}
-        open={command}
-        onClose={() => setCommand(false)}
-        onToggleRail={toggleRail}
-        onSettings={openSettings}
-        onShortcuts={() => setShortcuts(true)}
-      />
-      <ShortcutsDialog open={shortcuts} onClose={() => setShortcuts(false)} />
+      <AssistantProvider me={me}>
+        <Frame me={me} area={area} onArea={setArea}>
+          {children}
+        </Frame>
+        <CommandPalette
+          me={me}
+          open={command}
+          onClose={() => setCommand(false)}
+          onToggleRail={toggleRail}
+          onSettings={openSettings}
+          onShortcuts={() => setShortcuts(true)}
+        />
+        <ShortcutsDialog open={shortcuts} onClose={() => setShortcuts(false)} />
+        <AssistantDock me={me} />
+      </AssistantProvider>
     </ShellProvider>
   )
 }
@@ -194,6 +200,14 @@ function Frame({
               </button>
             </Tooltip>
             <span className="min-w-0 flex-1 truncate text-label font-medium text-ink-900">{chromeTitle}</span>
+            <button
+              type="button"
+              onClick={openAssistant}
+              aria-label={copy.assistant.ask}
+              className="flex size-9 shrink-0 items-center justify-center rounded-md text-ink-900 hover:bg-fill-hover"
+            >
+              <MessageCircle className="size-4" strokeWidth={iconStroke} />
+            </button>
             <button
               type="button"
               onClick={openCommand}

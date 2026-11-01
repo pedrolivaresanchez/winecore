@@ -6,6 +6,7 @@ import { textureSecondary } from '@/ui/button'
 import { ObjectGlyph } from '@/ui/object-glyph'
 import { activeRailId, visibleGroups, type RailGroup, type RailItem } from '@/app/nav'
 import { RailRow } from '@/app/shell/rail-row'
+import { AssistantLauncher } from '@/app/shell/assistant-dock'
 import { railMetrics } from '@/app/shell/rail-metrics'
 import { useShell } from '@/app/shell/shell-context'
 import { commandChord } from '@/app/shell/shortcuts'
@@ -152,6 +153,7 @@ function WorkspaceRail({ me, collapsed }: { me: Me; collapsed: boolean }) {
         ))}
       </nav>
 
+      <AssistantLauncher collapsed={collapsed} />
       <div className={cn('mt-auto shrink-0 pb-2', railMetrics.pad, collapsed && 'flex justify-center')}>
         <UserMenu me={me} collapsed={collapsed} />
       </div>

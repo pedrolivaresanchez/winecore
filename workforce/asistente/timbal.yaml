@@ -1,0 +1,8 @@
+# Auto-generated. Do not modify _id / _type by hand unless you know what you're doing.
+_id: "6e52ca516e4e20d4cf43c5a65f596058"
+_type: "workflow"
+
+build:
+
+# Runnable relativo a este directorio. Un paso LLM (timbal/auto); las herramientas las ejecuta la API.
+fqn: "workflow.py::workflow"

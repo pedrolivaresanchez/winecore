@@ -27,6 +27,10 @@ export function commandChord(): string {
   return isMac() ? '⌘K' : 'Ctrl K'
 }
 
+export function assistantChord(): string {
+  return isMac() ? '⌘J' : 'Ctrl J'
+}
+
 function typingIn(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
   if (target.isContentEditable) return true
@@ -48,30 +52,37 @@ function pageSearch(): HTMLInputElement | null {
 }
 
 /**
- * Keys that work on every screen. Cmd/Ctrl-K is honoured even inside a field, because that
- * is where you are when you want to leave; the single letters are not, or typing a name
- * containing a `g` would navigate away from the form.
+ * Keys that work on every screen. Cmd/Ctrl-K and Cmd/Ctrl-J are honoured even inside a
+ * field, because that is where you are when you want to leave or ask; the single letters
+ * are not, or typing a name containing a `g` would navigate away from the form.
  */
 export function useGlobalShortcuts({
   onCommand,
   onHelp,
   onToggleRail,
+  onAssistant,
 }: {
   onCommand: () => void
   onHelp: () => void
   onToggleRail: () => void
+  onAssistant: () => void
 }) {
   const navigate = useNavigate()
   const pendingGo = useRef(0)
-  const handlers = useRef({ onCommand, onHelp, onToggleRail, navigate })
-  handlers.current = { onCommand, onHelp, onToggleRail, navigate }
+  const handlers = useRef({ onCommand, onHelp, onToggleRail, onAssistant, navigate })
+  handlers.current = { onCommand, onHelp, onToggleRail, onAssistant, navigate }
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      const { onCommand, onHelp, onToggleRail, navigate } = handlers.current
+      const { onCommand, onHelp, onToggleRail, onAssistant, navigate } = handlers.current
       if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === 'k') {
         event.preventDefault()
         onCommand()
+        return
+      }
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'j') {
+        event.preventDefault()
+        onAssistant()
         return
       }
       if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return

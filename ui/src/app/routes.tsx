@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import type { Me } from '@/lib/types'
 import { NotFound } from '@/pages/NotFound'
+import { AsistentePage } from '@/pages/asistente/AsistentePage'
 import { InformesPage } from '@/pages/informes/InformesPage'
 import { Panel } from '@/pages/Panel'
 import { ApprovalPage } from '@/pages/aprobaciones/Detail'
@@ -69,6 +70,7 @@ export function AppRoutes({ me }: { me: Me }) {
       <Route path="contactos/nuevo" element={<ContactList me={me} creating />} />
       <Route path="contactos/:id" element={<ContactPage me={me} />} />
       <Route path="informes" element={<InformesPage me={me} />} />
+      <Route path="asistente" element={<AsistentePage me={me} />} />
       <Route path="catalogo" element={<ProductList me={me} />} />
       <Route path="catalogo/nuevo" element={<ProductCreate me={me} />} />
       <Route path="catalogo/vinos" element={<WinesPage me={me} />} />

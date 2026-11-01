@@ -2,8 +2,8 @@
 
 Heredado de tdesign, el mismo sistema que Timbal SDR (`closer-ui`).
 Los primitivos viven en `src/ui/`, los tokens en `src/index.css`.
-Telefonía, chat, voz y la celebración de cierre no forman parte de WineCore:
-el ERP es cuadrado, como el CRM de SDR.
+Telefonía, voz y la celebración de cierre no forman parte de WineCore, y del chat
+solo queda el asistente (`src/app/shell/assistant-*`): el ERP es cuadrado, como el CRM de SDR.
 
 
 All UI here comes from the **tdesign** design system, via the `timbal-chat` export.

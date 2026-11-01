@@ -78,7 +78,7 @@ export const systemSearch = defineReadTool({
           id: row.id,
           title: row.name,
           subtitle: `${row.sku} · ${row.kind}`,
-          link: webLink(ctx, `/productos/${row.id}`),
+          link: webLink(ctx, `/catalogo/${row.id}`),
         });
       }
     }

@@ -6,6 +6,7 @@ import {
   Building,
   FileText,
   Keyboard,
+  MessageCircle,
   Moon,
   PanelLeft,
   Plus,
@@ -20,6 +21,7 @@ import {
 import { Dialog, Kbd } from '@/ui'
 import { ObjectGlyph, type GlyphTint } from '@/ui/object-glyph'
 import { visibleGroups } from '@/app/nav'
+import { openAssistant } from '@/app/shell/assistant-context'
 import { useTheme } from '@/theme/theme-provider'
 import { listContacts, type ContactSummary } from '@/lib/contacts'
 import { isAbortError } from '@/lib/api'
@@ -152,6 +154,7 @@ export function CommandPalette({
     ]
     const dark = resolved === 'dark'
     const actions: Command[] = [
+      { id: 'assistant', group: 'actions', label: copy.assistant.ask, icon: MessageCircle, keywords: copy.assistant.keywords, run: openAssistant },
       { id: 'theme', group: 'actions', label: dark ? copy.command.themeLight : copy.command.themeDark, icon: dark ? Sun : Moon, keywords: 'tema oscuro claro modo', run: () => setTheme(dark ? 'light' : 'dark') },
       { id: 'rail', group: 'actions', label: copy.command.toggleRail, icon: PanelLeft, keywords: 'barra lateral sidebar', run: onToggleRail },
       { id: 'settings', group: 'actions', label: copy.nav.settings, icon: Settings2, keywords: 'ajustes configuracion empresa', run: onSettings },

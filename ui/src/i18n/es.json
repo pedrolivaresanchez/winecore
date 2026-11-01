@@ -3285,5 +3285,57 @@
     "sentToast": "Envío en marcha",
     "toOrder": "Convertir en pedido",
     "rectify": "Rectificar"
+  },
+  "assistant": {
+    "title": "Asistente",
+    "ask": "Preguntar al asistente",
+    "keywords": "asistente chat preguntar ayuda consulta",
+    "shortcut": "Abrir el asistente",
+    "expand": "Abrir a pantalla completa",
+    "collapse": "Volver a la ventana flotante",
+    "close": "Cerrar el asistente",
+    "newChat": "Chat nuevo",
+    "placeholder": "Pregunta por lotes, existencias, facturas…",
+    "send": "Enviar",
+    "stop": "Parar",
+    "retry": "Reintentar",
+    "copy": "Copiar",
+    "copied": "Copiado",
+    "emptyTitle": "¿Qué quieres saber?",
+    "emptyLead": "Consulta WineCore con tus permisos.",
+    "disclaimer": "Puede equivocarse. Comprueba lo importante.",
+    "suggestionsLabel": "Preguntas sugeridas",
+    "suggestions": {
+      "lot": "Resume el lote {code}",
+      "contact": "Resume este contacto",
+      "approvals": "¿Qué tengo pendiente de aprobar?",
+      "deliveries": "¿Qué facturas faltan por entregar?",
+      "stock": "Existencias a fecha de hoy",
+      "vessels": "¿Qué depósitos están ocupados?",
+      "lotTrace": "Trazabilidad del lote ",
+      "expenses": "Gastos recibidos este mes",
+      "contactSearch": "Busca el contacto "
+    },
+    "unavailableTitle": "Asistente sin conectar",
+    "unavailableLead": "Avisa a quien administra WineCore para conectarlo.",
+    "thinking": "Pensando",
+    "stepRunning": "Consultando «{title}»…",
+    "steps": "{count} pasos",
+    "oneStep": "1 paso",
+    "sources": "Registros citados",
+    "pending": {
+      "title": "Pendiente de tu confirmación",
+      "confirm": "Confirmar",
+      "cancel": "Cancelar",
+      "confirmMessage": "Sí, confirmo.",
+      "cancelMessage": "No, cancela.",
+      "expires": "Caduca a las {time}"
+    },
+    "failure": {
+      "stopped": "Has parado la respuesta.",
+      "cut": "Se ha cortado la conexión.",
+      "busy": "Demasiadas preguntas seguidas. Espera un minuto.",
+      "other": "No se ha podido responder."
+    }
   }
 }

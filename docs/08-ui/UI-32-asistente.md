@@ -9,11 +9,12 @@
 | Patrón | Chat |
 
 ## Componentes
-Chat de Timbal (`timbal-chat`) embebido con el estilo del sistema de diseño; mensajes con tablas y `MermaidView`; cada respuesta lleva enlaces a los registros usados y la fecha de los datos; sugerencias iniciales.
+Dock flotante abajo a la derecha en cualquier pantalla (lanzador en el rail, «Preguntar al asistente» en Cmd-K, Cmd/Ctrl+J) que se amplía a `/asistente` con el mismo hilo (`src/app/shell/assistant-*`). Mensajes con párrafos, listas, negritas y enlaces internos; un chip por herramienta consultada; enlaces a los registros usados; sugerencias según las herramientas que la persona puede usar; parar y reintentar; conversación en `sessionStorage`.
 
 ## Datos (API)
-- El agente `asistente` (workforce) usa **solo herramientas MCP de lectura** (13-mcp.md) con la identidad de la persona (`on_behalf_of_user_id`).
-- No tiene herramientas de escritura ni de aprobación. Si se le pide algo que cambia datos, responde con el enlace a la pantalla correspondiente.
+- `POST /v1/assistant/chat` (SSE con `Accept: text/event-stream`) y `GET /v1/assistant/status`. El workflow `asistente` (workforce) decide; la API ejecuta las herramientas MCP con la sesión de la persona (13-mcp.md), con la ruta actual como contexto.
+- Lecturas libres. Escrituras solo con `*_prepare`: la respuesta enseña el resumen y una tarjeta Confirmar/Cancelar, y el `*_commit` solo se ejecuta si el siguiente mensaje lo confirma sin condiciones. Sin herramientas de aprobación, emisión, anulación ni envío.
+- Sin workforce conectada (`WINECORE_ASSISTANT_URL`), la API responde 503 `WC_ASSISTANT_UNAVAILABLE` y el dock lo explica.
 
 ## Reglas
 - Respuestas con cifras: siempre con la fuente ("según el libro físico a 31-01-2027 18:00") y enlace.
@@ -22,10 +23,10 @@ Chat de Timbal (`timbal-chat`) embebido con el estilo del sistema de diseño; me
 - Sin iconos de IA ni nombres de agentes en la interfaz.
 
 ## Estados
-Respuesta en curso: indicador de escritura; error de herramienta: "No pude consultar <dato>. Prueba más tarde."
+Respuesta en curso: chips «Consultando…» y «Pensando»; herramienta con error: chip en rojo con el motivo al pasar por encima; turno cortado o parado: el motivo y «Reintentar»; sin conectar: estado vacío con aviso.
 
 ## Móvil
-Chat a pantalla completa con dictado del teclado.
+El dock ocupa el ancho de la pantalla; el botón de la barra superior lo abre y se puede ampliar a pantalla completa.
 
 ## Wireframe
 ```
