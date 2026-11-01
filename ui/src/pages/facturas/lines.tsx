@@ -1,6 +1,7 @@
 import { Field } from '@/components/Field'
 import { copy } from '@/i18n'
 import { Button, Input, Select } from '@/ui'
+import { decimalDot } from '@/lib/sales-draft'
 import { TAX_CODES, type LineDraft } from '@/pages/facturas/types'
 
 export function LineEditor({
@@ -38,7 +39,7 @@ export function LineEditor({
                 size="sm"
                 inputMode="decimal"
                 value={line.quantity}
-                onChange={(event) => update(line.key, { quantity: event.target.value })}
+                onChange={(event) => update(line.key, { quantity: decimalDot(event.target.value) })}
               />
             </Field>
             <Field id={`precio-${line.key}`} label={copy.facturas.price}>
@@ -47,7 +48,7 @@ export function LineEditor({
                 size="sm"
                 inputMode="decimal"
                 value={line.unitPrice}
-                onChange={(event) => update(line.key, { unitPrice: event.target.value })}
+                onChange={(event) => update(line.key, { unitPrice: decimalDot(event.target.value) })}
               />
             </Field>
             <Field id={`dto-${line.key}`} label={copy.facturas.discount}>
@@ -56,7 +57,7 @@ export function LineEditor({
                 size="sm"
                 inputMode="decimal"
                 value={line.discountPct}
-                onChange={(event) => update(line.key, { discountPct: event.target.value })}
+                onChange={(event) => update(line.key, { discountPct: decimalDot(event.target.value) })}
               />
             </Field>
             <Field id={`lote-${line.key}`} label={copy.facturas.lot}>

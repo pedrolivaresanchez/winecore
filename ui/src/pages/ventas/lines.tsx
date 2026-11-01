@@ -1,7 +1,7 @@
 import { Combobox, type ComboOption } from '@/components/Combobox'
 import { copy, fill } from '@/i18n'
 import type { CatalogLocation, CatalogLot, CatalogProduct } from '@/lib/sales-catalog'
-import { blankLine, type DraftLine } from '@/lib/sales-draft'
+import { blankLine, decimalDot, type DraftLine } from '@/lib/sales-draft'
 import { formatAmount, pricesDiffer, TAX_CODES, taxLabel } from '@/lib/sales'
 import { Button, InfoTip, Input, Select } from '@/ui'
 import { useMemo } from 'react'
@@ -99,7 +99,7 @@ export function LineEditor({
                     inputMode="decimal"
                     value={line.quantity}
                     aria-label={copy.sales.quantity}
-                    onChange={(event) => patch(line.key, { quantity: event.target.value }, true)}
+                    onChange={(event) => patch(line.key, { quantity: decimalDot(event.target.value) }, true)}
                   />
                 </label>
                 <label className="grid gap-1">
@@ -108,7 +108,7 @@ export function LineEditor({
                     inputMode="decimal"
                     value={line.discount}
                     aria-label={copy.sales.discount}
-                    onChange={(event) => patch(line.key, { discount: event.target.value })}
+                    onChange={(event) => patch(line.key, { discount: decimalDot(event.target.value) })}
                   />
                 </label>
                 <label className="grid gap-1">
@@ -117,7 +117,7 @@ export function LineEditor({
                     inputMode="decimal"
                     value={line.unitPrice}
                     aria-label={copy.sales.price}
-                    onChange={(event) => patch(line.key, { unitPrice: event.target.value, touched: true })}
+                    onChange={(event) => patch(line.key, { unitPrice: decimalDot(event.target.value), touched: true })}
                   />
                 </label>
                 <label className="grid gap-1">
