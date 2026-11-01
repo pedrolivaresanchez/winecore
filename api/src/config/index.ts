@@ -30,6 +30,9 @@ export interface Config {
   appPublicUrl: string;
   /** Hours before a pending CVBOT delivery raises a notification. Default 24. */
   deliveryAlertHours: number;
+  /** Workflow `asistente` de la workforce. Sin URL el chat responde 503. */
+  assistantUrl: string | null;
+  assistantToken: string | null;
 }
 
 function invalid(name: string): never {
@@ -151,6 +154,8 @@ export function loadConfig(env: Env): Config {
     dataKey,
     appPublicUrl,
     deliveryAlertHours: deliveryAlertHours(env),
+    assistantUrl: readHttpUrl(env, 'WINECORE_ASSISTANT_URL'),
+    assistantToken: readSecret(env, 'WINECORE_ASSISTANT_TOKEN'),
   };
 }
 

@@ -27,8 +27,11 @@ const commitInput = z.object({
   idempotency_key: z.string().min(1).optional(),
 });
 
+export type ExposedKind = "read" | "direct" | "prepare" | "commit";
+
 interface ExposedTool {
   name: string;
+  kind: ExposedKind;
   title: string;
   description: string;
   input: ZodType;
@@ -40,7 +43,7 @@ interface ExposedTool {
   };
 }
 
-interface JsonObjectSchema {
+export interface JsonObjectSchema {
   type: "object";
   properties?: Record<string, object>;
   required?: string[];
@@ -125,6 +128,7 @@ function expose(tool: AnyTool): ExposedTool[] {
     return [
       {
         name: tool.name,
+        kind: "direct",
         title: tool.title,
         description: tool.description,
         input: tool.input,
@@ -141,6 +145,7 @@ function expose(tool: AnyTool): ExposedTool[] {
     return [
       {
         name: tool.name,
+        kind: "read",
         title: tool.title,
         description: tool.description,
         input: tool.input,
@@ -156,6 +161,7 @@ function expose(tool: AnyTool): ExposedTool[] {
   return [
     {
       name: `${tool.name}_prepare`,
+      kind: "prepare",
       title: `${tool.title} · preparar`,
       description: `${tool.description} Valida y devuelve una vista previa; no escribe datos de negocio.`,
       input: tool.input,
@@ -168,6 +174,7 @@ function expose(tool: AnyTool): ExposedTool[] {
     },
     {
       name: `${tool.name}_commit`,
+      kind: "commit",
       title: `${tool.title} · confirmar`,
       description: `${tool.description} Ejecuta la operación preparada si el token de confirmación es válido.`,
       input: commitInput,
@@ -264,6 +271,29 @@ async function runCommit(ctx: McpContext, tool: WriteTool, args: unknown): Promi
 
 export function visibleToolNames(ctx: McpContext, tools: readonly AnyTool[] = baseTools): string[] {
   return visibleExposed(ctx, tools).map((tool) => tool.name);
+}
+
+export interface ToolDescriptor {
+  name: string;
+  kind: ExposedKind;
+  title: string;
+  description: string;
+  inputSchema: JsonObjectSchema;
+}
+
+/** The same list `tools/list` returns for this context, plus the kind of each tool. */
+export function visibleToolCatalogue(ctx: McpContext, tools: readonly AnyTool[] = baseTools): ToolDescriptor[] {
+  return visibleExposed(ctx, tools).map((tool) => ({
+    name: tool.name,
+    kind: tool.kind,
+    title: tool.title,
+    description: tool.description,
+    inputSchema: jsonObjectSchema(tool.input),
+  }));
+}
+
+export function toolKindOf(name: string, tools: readonly AnyTool[] = baseTools): ExposedKind | null {
+  return resolve(name, tools)?.kind ?? null;
 }
 
 export function catalogueNames(tools: readonly AnyTool[] = baseTools): string[] {
