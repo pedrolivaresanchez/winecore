@@ -12,7 +12,7 @@ import { PdfActions, PdfPreview } from '@/pages/documents/PdfPreview'
 import { usePdf, type PdfHandle } from '@/pages/documents/pdf'
 import { earlyPdfPath, partyIdOf, useDocument, viewOf, type DocRecord, type DocSource, type DocView } from '@/pages/documents/sources'
 import { ChevronLeft, ChevronRight, FileText, X } from '@/ui/icons'
-import { Badge, Button, Dialog, SegmentedControl, Skeleton, SkeletonText, Tooltip, textureSecondary, useUiLabels } from '@/ui'
+import { Badge, Button, Dialog, SegmentedControl, Skeleton, SkeletonText, StatusPill, Tooltip, textureSecondary, useUiLabels } from '@/ui'
 
 export type { DocSource } from '@/pages/documents/sources'
 
@@ -259,7 +259,11 @@ function Details({
   return (
     <div className="grid gap-5 p-4">
       <div className="flex flex-wrap items-center gap-1.5">
-        {view.status ? <Badge tone={view.status.tone}>{view.status.label}</Badge> : null}
+        {view.status ? (
+          <StatusPill tone={view.status.tone} size="md">
+            {view.status.label}
+          </StatusPill>
+        ) : null}
         <Badge tone="neutral">{view.entity}</Badge>
         <Badge tone={view.holded ? 'neutral' : 'info'} variant="dot">{view.holded ? copy.documents.holded : copy.documents.winecore}</Badge>
       </div>
