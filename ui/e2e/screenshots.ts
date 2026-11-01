@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { chromium, type Browser, type Page, type Route } from "playwright";
-import { auditEvents, contactDetail, filterContacts, healthOk, meForbidden, meOk } from "./fixtures";
+import { auditEvents, contactDetail, contactOverview, filterContacts, healthOk, meForbidden, meOk } from "./fixtures";
 
 const port = 5199;
 const baseUrl = `http://127.0.0.1:${port}`;
@@ -91,6 +91,8 @@ async function installApi(page: Page, mode: Mode) {
         201,
       );
     }
+    const overviewMatch = pathname.match(/\/v1\/contacts\/([^/]+)\/summary$/);
+    if (overviewMatch && method === "GET") return fulfill(route, contactOverview(overviewMatch[1] ?? ""));
     const contactMatch = pathname.match(/\/v1\/contacts\/([^/]+)$/);
     if (contactMatch && method === "GET") return fulfill(route, contactDetail(contactMatch[1] ?? ""));
     if (contactMatch && method === "PATCH") return fulfill(route, contactDetail(contactMatch[1] ?? ""));
@@ -212,7 +214,7 @@ async function main() {
         await shot(list.page, `contactos-${width}`);
         await list.page.getByRole("link", { name: "Vinoteca La Encina S.L." }).click();
         await list.page.waitForSelector("[data-screen='contacto-preview']");
-        await list.page.getByText("Luis Encina").waitFor();
+        await list.page.locator("[data-screen='contacto-preview']").getByText("VR26-0031").waitFor();
         await shot(list.page, `contacto-preview-${width}`);
         await list.page.keyboard.press("Escape");
         await list.page.getByRole("button", { name: "Columnas" }).click();
@@ -238,16 +240,17 @@ async function main() {
 
         const ficha = await openContext(browser, viewport, "ok");
         await gotoReady(ficha.page, "/contactos/c-encina", "ficha");
+        await ficha.page.getByText("Ventas por mes").waitFor();
         await shot(ficha.page, `ficha-resumen-${width}`);
-        await ficha.page.getByRole("tab", { name: "Direcciones" }).click();
-        await ficha.page.getByText("Calle de la Encina 12").waitFor();
-        await shot(ficha.page, `ficha-direcciones-${width}`);
-        await ficha.page.getByRole("tab", { name: "Personas" }).click();
-        await ficha.page.getByText("Luis Encina").waitFor();
-        await shot(ficha.page, `ficha-personas-${width}`);
-        await ficha.page.getByRole("tab", { name: "Historial" }).click();
-        await ficha.page.locator("[data-screen='ficha']").getByText("Ana Rivas").waitFor();
-        await shot(ficha.page, `ficha-historial-${width}`);
+        await ficha.page.getByRole("tab", { name: /Facturas/ }).click();
+        await ficha.page.getByText("F250310").waitFor();
+        await shot(ficha.page, `ficha-facturas-${width}`);
+        await ficha.page.getByRole("tab", { name: /Datos/ }).click();
+        await ficha.page.getByText("Calle de la Encina 12").last().waitFor();
+        await shot(ficha.page, `ficha-datos-${width}`);
+        await ficha.page.getByRole("tab", { name: /Actividad/ }).click();
+        await ficha.page.locator("[data-screen='ficha']").getByText("Presupuesto PR26-0007").waitFor();
+        await shot(ficha.page, `ficha-actividad-${width}`);
         await ficha.close();
 
         const empty = await openContext(browser, viewport, "empty");
