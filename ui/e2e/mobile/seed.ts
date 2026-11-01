@@ -21,6 +21,9 @@ export type SeedIds = {
   expenseCapturedId: string;
   approvalId: string | null;
   stockCountId: string | null;
+  bankAccountId: string | null;
+  statementId: string | null;
+  tariffId: string | null;
 };
 
 // Respuestas JSON de la API sin esquema: el seed solo lee los ids que necesita.
@@ -57,6 +60,38 @@ export function client(base: string, user = "owner@winecore.test") {
     return result.json as Json;
   }
   return { call, ok };
+}
+
+function mod97(value: string): number {
+  const digits = value.replace(/[A-Z]/g, (char) => String(char.charCodeAt(0) - 55));
+  let remainder = 0;
+  for (const char of digits) remainder = (remainder * 10 + Number(char)) % 97;
+  return remainder;
+}
+
+/** IBAN español de pruebas con los dígitos de control correctos. */
+function syntheticIban(account: string): string {
+  const bban = `00990001${"00"}${account}`;
+  return `ES${String(98 - mod97(`${bban}ES00`)).padStart(2, "0")}${bban}`;
+}
+
+const packagedRow = (row: Json) => String(row.product_state).startsWith("packaged");
+const countedUnits = (row: Json, index: number) => Number(row.qty_units) - (index === 0 ? 2 : 0);
+
+function camtEntry(input: { amount: string; credit: boolean; date: string; reference: string; remittance: string; party: string }) {
+  const party = input.credit ? "Dbtr" : "Cdtr";
+  return `<Ntry><Amt Ccy="EUR">${input.amount}</Amt><CdtDbtInd>${input.credit ? "CRDT" : "DBIT"}</CdtDbtInd>` +
+    `<BookgDt><Dt>${input.date}</Dt></BookgDt><ValDt><Dt>${input.date}</Dt></ValDt><AcctSvcrRef>${input.reference}</AcctSvcrRef>` +
+    `<NtryDtls><TxDtls><Refs><EndToEndId>${input.reference}</EndToEndId></Refs>` +
+    `<RltdPties><${party}><Nm>${input.party}</Nm></${party}></RltdPties>` +
+    `<RmtInf><Ustrd>${input.remittance}</Ustrd></RmtInf></TxDtls></NtryDtls></Ntry>`;
+}
+
+function camtStatement(entries: string[], from: string, to: string) {
+  return `<?xml version="1.0" encoding="UTF-8"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02">` +
+    `<BkToCstmrStmt><Stmt><Id>MOVIL-${from}</Id><CreDtTm>${from}T08:00:00</CreDtTm>` +
+    `<FrToDt><FrDtTm>${from}T00:00:00</FrDtTm><ToDtTm>${to}T23:59:59</ToDtTm></FrToDt>` +
+    `<Acct><Id><Othr><Id>CUENTA-SINTETICA</Id></Othr></Id></Acct>${entries.join("")}</Stmt></BkToCstmrStmt></Document>`;
 }
 
 async function ensureNumbering(api: ReturnType<typeof client>, entityId: string, docType: string) {
@@ -242,6 +277,88 @@ export async function seedMobile(base: string): Promise<SeedIds> {
   const pending = await api.ok("GET", "/approvals?status=pending&limit=10");
   const approvalId = ((pending.items as Json[])[0]?.id as string | undefined) ?? null;
 
+  const issuedInvoice = await api.ok("GET", `/invoices/${invoice.id}`);
+  let bankAccountId: string | null = null;
+  let statementId: string | null = null;
+  {
+    const bank = await api.call("POST", "/bank-accounts", {
+      legal_entity_id: entityId,
+      bank_name: "Banco Ejemplo",
+      iban: syntheticIban("0000000001"),
+      bic: "TESTESMMXXX",
+      is_default: true,
+    });
+    if (bank.status < 300) {
+      bankAccountId = bank.json.id as string;
+      const statement = await api.call("POST", "/bank-statements", {
+        bank_account_id: bankAccountId,
+        format: "camt053",
+        filename: "extracto-movil.xml",
+        content: camtStatement(
+          [
+            camtEntry({ amount: String(issuedInvoice.total), credit: true, date: today, reference: "MOV-0001", remittance: `Factura ${issuedInvoice.number}`, party: "Cliente Ejemplo SL" }),
+            camtEntry({ amount: "250.00", credit: true, date: today, reference: "MOV-0002", remittance: "Transferencia sin referencia", party: "Otro Cliente SA" }),
+            camtEntry({ amount: "64.20", credit: false, date: today, reference: "MOV-0003", remittance: "Recibo de suministros", party: "Proveedor Ejemplo SL" }),
+          ],
+          today,
+          today,
+        ),
+      });
+      if (statement.status < 300) statementId = (statement.json.id as string | undefined) ?? null;
+      else console.warn(`Extracto no importado: ${JSON.stringify(statement.json).slice(0, 200)}`);
+    } else if (!bank.json?.fields?.data_key) {
+      console.warn(`Cuenta bancaria no creada: ${JSON.stringify(bank.json).slice(0, 200)}`);
+    }
+  }
+
+  let tariffId: string | null = null;
+  const priceList = ((await api.ok("GET", "/price-lists?limit=5")).items as Json[])[0];
+  if (priceList) {
+    const tariff = await api.call("POST", "/intercompany/tariffs", {
+      base_price_list_id: priceList.id,
+      discount_pct: "12.00",
+      valid_from: today,
+      valid_to: null,
+      advisor_validation: "Validada por el asesor en la prueba móvil",
+    });
+    if (tariff.status < 300) tariffId = tariff.json.id as string;
+    else console.warn(`Tarifa intercompañía no creada: ${JSON.stringify(tariff.json).slice(0, 200)}`);
+  }
+
+  let stockCountId: string | null = null;
+  const site = first.location_id as string | undefined;
+  if (site) {
+    const count = await api.call("POST", "/inventory-counts", {
+      kind: "periodic",
+      counted_at: new Date().toISOString(),
+      location_ids: [site],
+      legal_entity_id: entityId,
+      notes: "Aforo de la prueba móvil",
+    });
+    if (count.status < 300) {
+      stockCountId = count.json.id as string;
+      const rows = stock.filter((row) => row.location_id === site && row.product_id).slice(0, 5);
+      const saved = await api.call("PUT", `/inventory-counts/${stockCountId}/lines`, {
+        lines: rows.map((row, index) => ({
+          id: crypto.randomUUID(),
+          location_id: row.location_id,
+          vessel_id: row.vessel_id ?? null,
+          owner_entity_id: row.owner_entity_id,
+          lot_id: row.lot_id ?? null,
+          product_id: row.product_id ?? null,
+          product_state: row.product_state,
+          counted_qty_units: packagedRow(row) ? countedUnits(row, index) : null,
+          counted_volume_ml: packagedRow(row)
+            ? Math.round((Number(row.volume_ml) * countedUnits(row, index)) / Number(row.qty_units))
+            : Number(row.volume_ml) - (index === 0 ? 1000 : 0),
+          method: packagedRow(row) ? "unit_count" : "dipstick",
+          difference_reason: index === 0 ? "Diferencia de la prueba móvil" : null,
+        })),
+      });
+      if (saved.status >= 300) console.warn(`Líneas de aforo no guardadas: ${JSON.stringify(saved.json).slice(0, 200)}`);
+    } else console.warn(`Aforo no creado: ${JSON.stringify(count.json).slice(0, 200)}`);
+  }
+
   return {
     customerId: customer.id,
     customerName: customer.legal_name,
@@ -257,7 +374,10 @@ export async function seedMobile(base: string): Promise<SeedIds> {
     expenseId: expense.id,
     expenseCapturedId: captured.id,
     approvalId,
-    stockCountId: null,
+    stockCountId,
+    bankAccountId,
+    statementId,
+    tariffId,
   };
 }
 

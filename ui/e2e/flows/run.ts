@@ -32,6 +32,7 @@ const apiEnv: NodeJS.ProcessEnv = {
   DB_PATH: ".data/e2e.duckdb",
   PORT: apiPort,
   DEV_USER_EMAIL: "owner@winecore.test",
+  WINECORE_DATA_KEY: Buffer.alloc(32, 7).toString("base64"),
   WEBAUTHN_RP_ID: "localhost",
   WEBAUTHN_ORIGIN: uiOrigin,
   APP_PUBLIC_URL: uiOrigin,

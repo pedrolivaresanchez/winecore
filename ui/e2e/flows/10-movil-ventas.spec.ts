@@ -114,3 +114,25 @@ test("Móvil: registrar un cobro", async ({ page }) => {
     await sinDesborde(page, "cobros tras registrar");
   });
 });
+
+test("Móvil: conciliar un apunte del extracto", async ({ page }) => {
+  const datos = await datosMovil();
+  test.skip(!datos.statementId, "La API de la prueba no tiene WINECORE_DATA_KEY y no pudo crear la cuenta bancaria.");
+
+  await test.step("Abrir el extracto con un apunte propuesto", async () => {
+    await page.goto(`/cobros?vista=conciliacion&extracto=${datos.statementId}`);
+    await pantalla(page, "cobros-conciliacion");
+    await expect(page.getByText("1 propuestas")).toBeVisible();
+    await sinDesborde(page, "extracto con apuntes");
+  });
+
+  await test.step("Confirmar la propuesta y ver el apunte conciliado", async () => {
+    const confirmado = page.waitForResponse(
+      (respuesta) => respuesta.request().method() === "POST" && /\/lines\/[^/]+\/confirm$/.test(new URL(respuesta.url()).pathname),
+    );
+    await page.getByRole("button", { name: "Confirmar", exact: true }).first().tap();
+    expect((await confirmado).ok()).toBe(true);
+    await expect(page.getByText("1 conciliadas")).toBeVisible();
+    await sinDesborde(page, "extracto tras conciliar");
+  });
+});

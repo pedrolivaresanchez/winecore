@@ -4,7 +4,7 @@
  *
  * Uso (con API y UI ya levantadas, y datos de e2e/mobile/seed.ts):
  *   AUDIT_BASE=http://127.0.0.1:5261 AUDIT_API=http://127.0.0.1:3161 AUDIT_TAG=antes \
- *     bun e2e/mobile/audit.ts [filtro-de-ruta]
+ *     bun e2e/mobile/audit.ts [expresion-regular-de-ruta]
  */
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -16,7 +16,8 @@ const API = process.env.AUDIT_API ?? "http://127.0.0.1:3161";
 const TAG = process.env.AUDIT_TAG ?? "antes";
 const OUT = process.env.AUDIT_OUT ?? `/tmp/movil-audit/${TAG}`;
 const CHROME = process.env.CHROME_PATH ?? "/usr/local/bin/google-chrome";
-const FILTER = process.argv[2] ?? "";
+const FILTER = process.argv[2] ? new RegExp(process.argv[2]) : null;
+const matches = (...parts: string[]) => !FILTER || parts.some((part) => FILTER.test(part));
 const DESKTOP = process.env.AUDIT_DESKTOP === "1";
 
 // Respuestas JSON de la API sin esquema: el rastreo solo las recorre.
@@ -40,7 +41,7 @@ async function routes(): Promise<Route[]> {
   const product = await first("/products?limit=20", (item) => item.kind === "wine");
   const format = await first("/formats?limit=20");
   const list = await first("/price-lists?limit=20");
-  const holder = await first("/cellar-holders?limit=20").catch(() => undefined);
+  const holder = await first("/holders?limit=20").catch(() => undefined);
   const recipe = await first("/recipes?limit=20").catch(() => undefined);
   const contact = await first("/contacts?role=customer&archived=false&limit=20", (item) => item.city);
   const quote = await first("/quotes?limit=5");
@@ -52,9 +53,11 @@ async function routes(): Promise<Route[]> {
   const expense = await first("/supplier-invoices?limit=20", (item) => item.status === "validated" || item.status === "approved");
   const captured = await first("/supplier-invoices?limit=20", (item) => item.status === "captured");
   const approval = await first("/approvals?limit=5");
-  const count = await first("/stock-counts?limit=5").catch(() => undefined);
-  const plot = await first("/vineyard/parcels?limit=5").catch(() => undefined);
+  const count = await first("/inventory-counts?limit=5").catch(() => undefined);
+  const plot = await first("/parcels?limit=5").catch(() => undefined);
   const remittance = await first("/remittances?limit=5");
+  const tariff = await first("/intercompany/tariffs").catch(() => undefined);
+  const statement = await first("/bank-statements?limit=5").catch(() => undefined);
 
   const list_: Route[] = [
     { slug: "panel", url: "/", screen: "panel" },
@@ -91,6 +94,15 @@ async function routes(): Promise<Route[]> {
     { slug: "operacion_nueva", url: "/bodega/operaciones/nueva" },
     { slug: "catas", url: "/bodega/catas" },
     { slug: "higiene", url: "/bodega/higiene" },
+    { slug: "higiene_limpieza_nueva", url: "/bodega/higiene/limpiezas/nueva" },
+    { slug: "higiene_filtraciones", url: "/bodega/higiene/filtraciones" },
+    { slug: "higiene_envasado", url: "/bodega/higiene/envasado" },
+    { slug: "higiene_equipos", url: "/bodega/higiene/equipos" },
+    { slug: "higiene_consumibles", url: "/bodega/higiene/consumibles" },
+    { slug: "higiene_procedimientos", url: "/bodega/higiene/procedimientos" },
+    { slug: "higiene_procedimiento_nuevo", url: "/bodega/higiene/procedimientos/nuevo" },
+    { slug: "catas_ciegas", url: "/bodega/catas/ciegas" },
+    { slug: "catas_evolucion", url: "/bodega/catas/evolucion" },
     { slug: "calculadoras", url: "/bodega/calculadoras" },
     { slug: "stock", url: "/stock" },
     { slug: "stock_movimientos", url: "/stock/movimientos" },
@@ -118,12 +130,24 @@ async function routes(): Promise<Route[]> {
     issued && { slug: "factura_emitida", url: `/facturas/${issued.id}` },
     issued && { slug: "factura_rectificar", url: `/facturas/${issued.id}/rectificar` },
     { slug: "cobros", url: "/cobros" },
+    { slug: "cobros_pagos", url: "/cobros?vista=pagos" },
+    { slug: "cobros_conciliacion", url: "/cobros?vista=conciliacion" },
+    statement && { slug: "cobros_conciliacion_extracto", url: `/cobros?vista=conciliacion&extracto=${statement.id}` },
+    { slug: "cobros_remesas", url: "/cobros?vista=remesas" },
     remittance && { slug: "remesa_ficha", url: `/cobros/remesas/${remittance.id}` },
     { slug: "intercompania", url: "/intercompania" },
     { slug: "intercompania_tarifas", url: "/intercompania/tarifas" },
+    tariff && { slug: "intercompania_tarifa_ficha", url: `/intercompania/tarifas/${tariff.id}` },
     { slug: "vinedo", url: "/vinedo" },
     plot && { slug: "parcela_ficha", url: `/vinedo/${plot.code}` },
     { slug: "regulatorio", url: "/regulatorio" },
+    { slug: "regulatorio_calendario", url: "/regulatorio/calendario" },
+    { slug: "regulatorio_mayores", url: "/regulatorio/mayores" },
+    { slug: "vinedo_maduracion", url: "/vinedo?seccion=maduracion" },
+    { slug: "vinedo_planificador", url: "/vinedo?seccion=planificador" },
+    { slug: "vinedo_vendimias", url: "/vinedo?seccion=vendimias" },
+    { slug: "vinedo_recepcion", url: "/vinedo?seccion=recepcion" },
+    { slug: "vinedo_cuaderno", url: "/vinedo?seccion=cuaderno" },
     { slug: "asistente", url: "/asistente" },
   ].filter(Boolean) as Route[];
   return list_;
@@ -428,9 +452,7 @@ function markdown(list: PageReport[]): string {
   return lines.join("\n");
 }
 
-async function main() {
-  await rm(OUT, { recursive: true, force: true });
-  await mkdir(path.join(OUT, "shots"), { recursive: true });
+async function launch() {
   const browser = await chromium.launch({
     executablePath: CHROME,
     headless: true,
@@ -441,21 +463,45 @@ async function main() {
       ? { viewport: { width: 1440, height: 900 }, locale: "es-ES", timezoneId: "Europe/Madrid", reducedMotion: "reduce" }
       : { ...MOBILE_CONTEXT },
   );
-  let page = await context.newPage();
-  let current = "";
+  const page = await context.newPage();
   page.on("pageerror", (error) => consoleErrors.push({ slug: current, message: error.message }));
-  const list = (await routes()).filter((route) => !FILTER || route.slug.includes(FILTER) || route.url.includes(FILTER));
+  return { browser, page };
+}
+
+let current = "";
+
+function crashed(error: unknown, page: Page): boolean {
+  return page.isClosed() || /crashed|closed|disconnected/i.test(String(error));
+}
+
+async function main() {
+  await rm(OUT, { recursive: true, force: true });
+  await mkdir(path.join(OUT, "shots"), { recursive: true });
+  let session = await launch();
+  const relaunch = async () => {
+    await session.browser.close().catch(() => undefined);
+    session = await launch();
+  };
+  const list = (await routes()).filter((route) => matches(route.slug, route.url));
   for (const route of list) {
     current = route.slug;
     process.stdout.write(`· ${route.slug} `);
     const before = reports.length;
-    try {
-      await visitRoute(page, route);
-    } catch (error) {
-      reports.push({ slug: route.slug, step: "", url: route.url, width: 0, scrollWidth: 0, findings: [], shot: "", error: String(error).slice(0, 160) });
-      if (page.isClosed() || String(error).includes("crashed")) {
-        page = await context.newPage();
-        page.on("pageerror", (err) => consoleErrors.push({ slug: current, message: err.message }));
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const mark = reports.length;
+      try {
+        await visitRoute(session.page, route);
+        break;
+      } catch (error) {
+        const again = attempt === 0 && crashed(error, session.page);
+        if (again) {
+          reports.length = mark;
+          await relaunch();
+          continue;
+        }
+        reports.push({ slug: route.slug, step: "", url: route.url, width: 0, scrollWidth: 0, findings: [], shot: "", error: String(error).slice(0, 160) });
+        if (crashed(error, session.page)) await relaunch();
+        break;
       }
     }
     const mine = reports.slice(before);
@@ -465,20 +511,32 @@ async function main() {
     );
     console.log(`(${mine.length} medidas, ${bad} hallazgos)`);
   }
-  for (const item of specials.filter((entry) => !FILTER || entry.slug.includes(FILTER) || entry.url.includes(FILTER))) {
+  for (const item of specials.filter((entry) => matches(entry.slug, entry.url))) {
     current = item.slug;
     process.stdout.write(`· ${item.slug} `);
     const before = reports.length;
-    try {
-      await page.goto(`${BASE}${item.url}`, { waitUntil: "domcontentloaded" });
-      await settle(page);
-      await item.run(page, item.url);
-    } catch (error) {
-      reports.push({ slug: item.slug, step: "", url: item.url, width: 0, scrollWidth: 0, findings: [], shot: "", error: String(error).slice(0, 160) });
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const mark = reports.length;
+      try {
+        await session.page.goto(`${BASE}${item.url}`, { waitUntil: "domcontentloaded" });
+        await settle(session.page);
+        await item.run(session.page, item.url);
+        break;
+      } catch (error) {
+        const again = attempt === 0 && crashed(error, session.page);
+        if (again) {
+          reports.length = mark;
+          await relaunch();
+          continue;
+        }
+        reports.push({ slug: item.slug, step: "", url: item.url, width: 0, scrollWidth: 0, findings: [], shot: "", error: String(error).slice(0, 160) });
+        if (crashed(error, session.page)) await relaunch();
+        break;
+      }
     }
     console.log(`(${reports.length - before} medidas)`);
   }
-  await browser.close();
+  await session.browser.close();
   await writeFile(path.join(OUT, "report.json"), JSON.stringify({ tag: TAG, summary: summarize(reports), reports, consoleErrors }, null, 2));
   await writeFile(path.join(OUT, "report.md"), markdown(reports));
   console.log(`\nInforme: ${OUT}/report.md`);

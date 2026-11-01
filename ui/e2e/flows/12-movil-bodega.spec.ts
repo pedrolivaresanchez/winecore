@@ -136,3 +136,26 @@ test("Móvil: trasiego entre depósitos (movimiento de stock)", async ({ page })
     await sinDesborde(page, "existencias tras el trasiego");
   });
 });
+
+test("Móvil: contar una línea de un aforo y guardarla", async ({ page }) => {
+  const datos = await datosMovil();
+  test.skip(!datos.stockCountId, "El seed no dejó un aforo abierto.");
+
+  await test.step("Abrir el aforo en recuento", async () => {
+    await page.goto(`/stock/aforos/${datos.stockCountId}`);
+    await expect(page.locator('[data-screen^="aforo"]')).toBeVisible();
+    await sinDesborde(page, "aforo en recuento");
+  });
+
+  await test.step("Escribir lo contado y guardar", async () => {
+    const campo = page.getByRole("textbox", { name: "Unidades contadas" }).first();
+    await campo.scrollIntoViewIfNeeded();
+    await campo.fill("100");
+    await sinDesborde(page, "aforo con una línea contada");
+    const guardado = page.waitForResponse(
+      (resp) => resp.request().method() === "PUT" && /\/inventory-counts\/[^/]+\/lines$/.test(new URL(resp.url()).pathname),
+    );
+    await page.getByRole("button", { name: "Guardar", exact: true }).tap();
+    expect((await guardado).ok()).toBe(true);
+  });
+});
