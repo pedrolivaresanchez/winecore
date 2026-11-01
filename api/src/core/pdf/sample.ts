@@ -173,9 +173,9 @@ export function sampleInvoice(options: {
   };
 }
 
-export type DocumentSampleKind = 'quote' | 'delivery_note';
+export type DocumentSampleKind = 'quote' | 'order' | 'delivery_note';
 
-export const DOCUMENT_SAMPLE_KINDS: readonly DocumentSampleKind[] = ['quote', 'delivery_note'];
+export const DOCUMENT_SAMPLE_KINDS: readonly DocumentSampleKind[] = ['quote', 'order', 'delivery_note'];
 
 const SAMPLE_SHIP_TO: ShipToView = {
   name: 'ALMACÉN CENTRAL DE EJEMPLO',
@@ -195,7 +195,8 @@ export function sampleDocument(options: {
   kind: DocumentSampleKind;
 }): DocumentPdfInput {
   const english = options.lang === 'en';
-  const quote = options.kind === 'quote';
+  const order = options.kind === 'order';
+  const quote = options.kind === 'quote' || order;
   const lines: DocumentPdfLine[] = BASE_LINES.map((line) => {
     const base = money.round2(money.mul(money.fromString(line.quantity), money.fromString(line.unitPrice)));
     return {
@@ -214,13 +215,19 @@ export function sampleDocument(options: {
   const vat = money.round2(money.mul(subtotal, money.fromString('0.21')));
   return {
     lang: options.lang,
-    title: quote ? (english ? 'Quote' : 'Presupuesto') : (english ? 'Delivery note' : 'Albarán'),
-    number: quote ? 'P260012' : 'A260142',
+    title: order
+      ? (english ? 'Order' : 'Pedido')
+      : quote ? (english ? 'Quote' : 'Presupuesto') : (english ? 'Delivery note' : 'Albarán'),
+    number: order ? 'PE260031' : quote ? 'P260012' : 'A260142',
     issueDate: '2026-10-29',
-    dueLabel: quote ? (english ? 'Valid until' : 'Válido hasta') : null,
+    dueLabel: order
+      ? (english ? 'Requested delivery' : 'Entrega solicitada')
+      : quote ? (english ? 'Valid until' : 'Válido hasta') : null,
     dueDate: quote ? '2026-11-28' : null,
-    status: quote ? (english ? 'Sent' : 'Enviado') : (english ? 'Issued' : 'Emitido'),
-    meta: quote ? [] : [english ? 'Type Sale' : 'Clase Venta'],
+    status: order
+      ? (english ? 'Confirmed' : 'Confirmado')
+      : quote ? (english ? 'Sent' : 'Enviado') : (english ? 'Issued' : 'Emitido'),
+    meta: order ? [english ? 'Channel Direct' : 'Canal Venta directa'] : quote ? [] : [english ? 'Type Sale' : 'Clase Venta'],
     partyLabel: english ? 'Customer' : 'Cliente',
     seller: options.seller,
     profile: options.profile,
@@ -235,7 +242,9 @@ export function sampleDocument(options: {
       ? { subtotal: money.toString(subtotal), vat: money.toString(vat), withholding: null, total: money.toString(money.add(subtotal, vat)) }
       : null,
     settlement: null,
-    note: quote
+    note: order
+      ? (english ? 'Sales order. This is not an invoice.' : 'Pedido de venta. No es una factura.')
+      : quote
       ? (english ? 'This document is not a tax invoice.' : 'Este documento no es una factura fiscal.')
       : (english ? 'Delivery note. This is not an invoice.' : 'Albarán de entrega. No es una factura.'),
   };

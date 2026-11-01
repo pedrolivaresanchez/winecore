@@ -25,6 +25,7 @@ import {
 } from './sales-quotes';
 import {
   getOrder,
+  getOrderPdf,
   getOrders,
   patchOrder,
   postCancel,
@@ -97,6 +98,7 @@ export function salesRoutes(writer: Writer, guardDeps: GuardDeps) {
       set.status = result.status;
       return result.body;
     }, { beforeHandle: write })
+    .get('/v1/sales-orders/:id/pdf', ({ request, params }) => getOrderPdf(writer, request, params.id), { beforeHandle: read })
     .get('/v1/sales-orders/:id', ({ request, params }) => getOrder(writer, request, params.id), { beforeHandle: read })
     .patch('/v1/sales-orders/:id', ({ request, params }) => patchOrder(writer, request, params.id), { beforeHandle: write })
     .post('/v1/sales-orders/:id/confirm', ({ request, params }) => postConfirm(writer, request, params.id), { beforeHandle: write })

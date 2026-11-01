@@ -34,6 +34,8 @@ import {
 } from '@/lib/sales'
 import type { Me } from '@/lib/types'
 import { Button, DatePicker, Input, MenuItem, Select, Textarea, useToast } from '@/ui'
+import { DocumentModal } from '@/pages/documents/DocumentModal'
+import { useDocParam } from '@/pages/documents/use-doc-param'
 import { RecordSkeleton } from '@/components/RecordSkeleton'
 import {
   DocLink,
@@ -72,6 +74,7 @@ export function OrderPage({ me }: { me: Me }) {
 function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: () => void }) {
   const navigate = useNavigate()
   const toast = useToast()
+  const opened = useDocParam()
   const notes = useApi<SalesPage<DeliveryNote>>('/v1/delivery-notes?limit=100')
   const related = (notes.data?.items ?? []).filter((item) => item.sales_order_id === order.id)
   const aliases = productAliases(order.lines)
@@ -187,7 +190,8 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
         </>
       }
       actions={
-        canWrite ? (
+        <>
+          {canWrite ? (
           <>
             {editing ? (
               <>
@@ -242,7 +246,13 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
               </MoreMenu>
             ) : null}
           </>
-        ) : null
+          ) : null}
+          {editing ? null : (
+            <Button type="button" variant="secondary" size="sm" onClick={() => opened.open(order.id)}>
+              {copy.sales.pdf}
+            </Button>
+          )}
+        </>
       }
       tabs={[
         { id: 'lines', label: copy.sales.lines },
@@ -423,6 +433,7 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
           }}
         />
       ) : null}
+      <DocumentModal me={me} source="order" id={opened.id} onClose={opened.close} onChanged={onReload} />
     </RecordFrame>
   )
 }

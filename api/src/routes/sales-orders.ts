@@ -2,6 +2,7 @@ import { sessionOf } from '../auth/guard';
 import type { Writer } from '../core/db/writer';
 import { actorOf, asRecord, optionalText, pathId, readJson } from '../core/sales/db';
 import { createDeliveryNote } from '../core/sales/delivery';
+import { salesOrderPdf } from '../core/sales/order-pdf';
 import {
   cancelSalesOrder,
   closeSalesOrder,
@@ -21,6 +22,10 @@ export function getOrders(writer: Writer, request: Request) {
 export function getOrder(writer: Writer, request: Request, id: string) {
   sessionOf(request);
   return getSalesOrder(writer, id);
+}
+
+export function getOrderPdf(writer: Writer, request: Request, id: string) {
+  return salesOrderPdf(writer, request, id);
 }
 
 export async function postOrder(writer: Writer, request: Request) {

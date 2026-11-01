@@ -4,9 +4,9 @@ export type DocumentVariant = 'po' | 'cvpo'
 
 export const VARIANTS: DocumentVariant[] = ['po', 'cvpo']
 
-export type SampleKind = 'invoice' | 'discount' | 'corrective' | 'withholding' | 'multipage' | 'quote' | 'delivery_note'
+export type SampleKind = 'invoice' | 'discount' | 'corrective' | 'withholding' | 'multipage' | 'quote' | 'order' | 'delivery_note'
 
-export const SAMPLE_KINDS: SampleKind[] = ['invoice', 'discount', 'corrective', 'withholding', 'multipage', 'quote', 'delivery_note']
+export const SAMPLE_KINDS: SampleKind[] = ['invoice', 'discount', 'corrective', 'withholding', 'multipage', 'quote', 'order', 'delivery_note']
 
 export type SampleLang = 'es' | 'en'
 

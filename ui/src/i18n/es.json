@@ -3314,6 +3314,7 @@
       "purchase": "Factura de compra",
       "quote": "Presupuesto",
       "proforma": "Proforma",
+      "order": "Pedido",
       "delivery": "Albarán"
     },
     "customer": "Cliente",
@@ -3321,6 +3322,7 @@
     "issueDate": "Fecha",
     "dueDate": "Vencimiento",
     "validUntil": "Válido hasta",
+    "requestedDate": "Entrega solicitada",
     "base": "Base",
     "tax": "IVA",
     "surcharge": "Recargo",
@@ -3653,6 +3655,7 @@
       "withholding": "Factura con retención",
       "multipage": "Factura de varias páginas",
       "quote": "Presupuesto",
+      "order": "Pedido",
       "delivery_note": "Albarán"
     }
   },
