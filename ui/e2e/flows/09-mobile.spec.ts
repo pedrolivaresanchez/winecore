@@ -26,6 +26,6 @@ test("Móvil: panel, bodega y gastos con el cajón", async ({ page }) => {
   await test.step("El cajón abre los gastos", async () => {
     await abrirCajon();
     await page.getByRole("button", { name: "Gastos" }).click();
-    await expect(page.locator('[data-screen^="facturas-holded"], [data-screen="facturas-cargando"]')).toBeVisible();
+    await expect(page.locator('[data-screen^="gastos"]')).toBeVisible();
   });
 });

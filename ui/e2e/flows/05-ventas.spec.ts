@@ -8,8 +8,8 @@ test("Ventas: presupuesto, pedido, albarán y factura con PDF", async ({ page })
   let customer = "";
 
   await test.step("Crear un presupuesto", async () => {
-    await page.goto("/ventas/presupuestos?libro=winecore");
-    await page.getByRole("button", { name: "Nuevo presupuesto" }).click();
+    await page.goto("/ventas/presupuestos");
+    await page.getByRole("button", { name: "Nuevo presupuesto" }).first().click();
     await page.locator('[data-screen="ventas-dialogo"]').waitFor();
     const dialog = page.getByRole("dialog");
     const customerBox = dialog.getByRole("combobox", { name: "Cliente" });
