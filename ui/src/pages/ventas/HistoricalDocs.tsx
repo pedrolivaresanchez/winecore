@@ -122,10 +122,15 @@ export function HistoricalDocs({ me, kind }: { me: Me; kind: 'quote' | 'delivery
       <header className={cn('hidden h-12 shrink-0 items-center gap-2 border-b border-border-subtle md:flex', FRAME_GUTTER)}>
         <Receipt className="size-4 shrink-0 text-icon" strokeWidth={iconStroke} />
         <h1 className="truncate text-label font-medium text-ink-900">{title}</h1>
-        <div className="ml-auto">
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
           <Button type="button" variant="secondary" size="sm" onClick={() => navigate(bookPath)}>
             {copy.facturas.winecoreBook}
           </Button>
+          {kind === 'quote' && allows(me, 'sales.write') ? (
+            <Button type="button" variant="primary" size="sm" onClick={() => navigate('/ventas/presupuestos/nuevo')}>
+              {copy.sales.newQuote}
+            </Button>
+          ) : null}
         </div>
       </header>
       <div className={cn('flex h-11 shrink-0 items-center gap-1.5 border-b border-border-subtle', FRAME_GUTTER)}>

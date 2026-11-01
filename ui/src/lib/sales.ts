@@ -381,11 +381,15 @@ export async function openQuotePdf(id: string): Promise<void> {
   }
 }
 
-export function listOrders(query: { status?: string; entity?: string; channel?: string; cursor?: string | null }, signal?: AbortSignal) {
+export function listOrders(
+  query: { status?: string; entity?: string; channel?: string; customer?: string; cursor?: string | null },
+  signal?: AbortSignal,
+) {
   const params = new URLSearchParams({ limit: '100' })
   if (query.status) params.set('status', query.status)
   if (query.entity) params.set('entity', query.entity)
   if (query.channel) params.set('channel', query.channel)
+  if (query.customer) params.set('customer_id', query.customer)
   if (query.cursor) params.set('cursor', query.cursor)
   return api<SalesPage<SalesOrder>>(`/v1/sales-orders?${params}`, { signal })
 }
@@ -433,13 +437,14 @@ export function createDeliveryFromOrder(orderId: string, body: Record<string, un
 }
 
 export function listDeliveries(
-  query: { kind?: string; status?: string; invoiced?: string; cursor?: string | null },
+  query: { kind?: string; status?: string; invoiced?: string; customer?: string; cursor?: string | null },
   signal?: AbortSignal,
 ) {
   const params = new URLSearchParams({ limit: '100' })
   if (query.kind) params.set('kind', query.kind)
   if (query.status) params.set('status', query.status)
   if (query.invoiced) params.set('invoiced', query.invoiced)
+  if (query.customer) params.set('customer_id', query.customer)
   if (query.cursor) params.set('cursor', query.cursor)
   return api<SalesPage<DeliveryNote>>(`/v1/delivery-notes?${params}`, { signal })
 }
@@ -508,7 +513,7 @@ export function getPriceQuote(query: { customerId: string; productId: string; qt
 
 export function resolveIssuing(customerId: string, channel: string, signal?: AbortSignal) {
   const params = new URLSearchParams({ customer_id: customerId, channel })
-  return api<IssuingPreview>(`/v1/billing-rules/resolve?${params}`, { signal })
+  return api<IssuingPreview | null>(`/v1/billing-rules/resolve?${params}`, { signal }).then((hit) => hit ?? null)
 }
 
 export type StockItem = {

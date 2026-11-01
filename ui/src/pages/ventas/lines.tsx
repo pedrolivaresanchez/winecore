@@ -13,6 +13,8 @@ export function LineEditor({
   showLot,
   locationId,
   lockCount,
+  askReason = true,
+  freeLot,
   onPrice,
 }: {
   lines: DraftLine[]
@@ -23,6 +25,9 @@ export function LineEditor({
   showLot?: boolean
   locationId?: string
   lockCount?: boolean
+  askReason?: boolean
+  /** A lot-tracked product with no lot of it in stock takes a typed lot code instead of the empty list. */
+  freeLot?: boolean
   onPrice: (line: DraftLine) => void
 }) {
   function patch(key: string, partial: Partial<DraftLine>, reprice = false) {
@@ -47,7 +52,7 @@ export function LineEditor({
         {lines.map((line, index) => {
           const place = locationId || (locations.length === 1 ? locations[0]?.id : '')
           const choices = lots.filter((lot) => lot.productId === line.productId && (!place || lot.locationId === place))
-          const differs = line.touched && line.unitPrice !== '' && (line.quoted == null || pricesDiffer(line.unitPrice, line.quoted))
+          const differs = askReason && line.touched && line.unitPrice !== '' && (line.quoted == null || pricesDiffer(line.unitPrice, line.quoted))
           return (
             <li key={line.key} className="grid gap-2 rounded-2xl border border-border-subtle p-3">
               <div className="flex items-center justify-between gap-2">
@@ -69,7 +74,7 @@ export function LineEditor({
                   className="w-full"
                   value={line.productId}
                   aria-label={copy.sales.product}
-                  onChange={(event) => patch(line.key, { productId: event.target.value, lotId: '', touched: false }, true)}
+                  onChange={(event) => patch(line.key, { productId: event.target.value, lotId: '', lotCode: '', touched: false }, true)}
                 >
                   <option value="">{copy.sales.product}</option>
                   {products.map((product) => (
@@ -139,7 +144,17 @@ export function LineEditor({
                   />
                 </label>
               ) : null}
-              {showLot ? (
+              {showLot && freeLot && choices.length === 0 && products.find((item) => item.id === line.productId)?.requiresLot ? (
+                <label className="grid gap-1">
+                  <span className="text-label text-text-secondary">{copy.sales.lot}</span>
+                  <Input
+                    value={line.lotCode}
+                    placeholder={copy.sales.lotCode}
+                    aria-label={copy.sales.lot}
+                    onChange={(event) => patch(line.key, { lotCode: event.target.value })}
+                  />
+                </label>
+              ) : showLot ? (
                 <label className="grid gap-1">
                   <span className="text-label text-text-secondary">{copy.sales.lot}</span>
                   <Select

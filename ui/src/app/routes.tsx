@@ -111,7 +111,7 @@ export function AppRoutes({ me }: { me: Me }) {
       <Route path="stock/aforos/:id" element={<CountPage me={me} />} />
       <Route path="ventas" element={<Navigate to="/ventas/presupuestos" replace />} />
       <Route path="ventas/presupuestos" element={<SalesHome me={me} doc="quote" />} />
-      <Route path="ventas/presupuestos/nuevo" element={<VentasList me={me} doc="quote" creating />} />
+      <Route path="ventas/presupuestos/nuevo" element={<SalesHome me={me} doc="quote" creating />} />
       <Route path="ventas/presupuestos/:id" element={<QuotePage me={me} />} />
       <Route path="ventas/pedidos" element={<VentasList me={me} doc="order" />} />
       <Route path="ventas/pedidos/nuevo" element={<VentasList me={me} doc="order" creating />} />

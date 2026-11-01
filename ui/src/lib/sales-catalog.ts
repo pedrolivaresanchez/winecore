@@ -4,7 +4,7 @@ import { listContacts, type ContactSummary } from '@/lib/contacts'
 import { listStock, type StockItem } from '@/lib/sales'
 
 export type CatalogCustomer = { id: string; name: string; country: string }
-export type CatalogProduct = { id: string; sku: string; label: string }
+export type CatalogProduct = { id: string; sku: string; label: string; requiresLot?: boolean }
 export type CatalogLot = { id: string; code: string; productId: string; locationId: string; qty: number }
 export type CatalogLocation = { id: string; code: string }
 
@@ -144,8 +144,18 @@ type OfferProduct = {
   id: string
   sku: string
   name: string
+  requires_lot?: boolean
+  default_tax_code?: string | null
   price: { unit_price: string } | null
 }
+
+type OfferTax = {
+  code: string
+  rate: string
+  surcharge_rate: string
+}
+
+export type TaxRate = { rate: number; surcharge: number }
 
 type OfferLot = {
   id: string
@@ -172,6 +182,8 @@ export function useSalesOffer(query: SalesOfferQuery | null) {
   const [lots, setLots] = useState<CatalogLot[]>([])
   const [locations, setLocations] = useState<CatalogLocation[]>([])
   const [prices, setPrices] = useState<ReadonlyMap<string, string>>(() => new Map())
+  const [taxes, setTaxes] = useState<ReadonlyMap<string, string>>(() => new Map())
+  const [rates, setRates] = useState<ReadonlyMap<string, TaxRate>>(() => new Map())
   const [loading, setLoading] = useState(enabled)
   const [error, setError] = useState<ApiError | null>(null)
 
@@ -184,17 +196,24 @@ export function useSalesOffer(query: SalesOfferQuery | null) {
     if (channel) params.set('channel', channel)
     if (date) params.set('date', date)
     setLoading(true)
-    api<{ products: OfferProduct[]; lots: OfferLot[] }>(`/v1/sales/catalog?${params}`, { signal: controller.signal })
+    api<{ products: OfferProduct[]; lots: OfferLot[]; taxes?: OfferTax[] }>(`/v1/sales/catalog?${params}`, { signal: controller.signal })
       .then((body) => {
         if (!active) return
         const nextPrices = new Map<string, string>()
+        const nextTaxes = new Map<string, string>()
+        const nextRates = new Map<string, TaxRate>()
+        for (const tax of body.taxes ?? []) {
+          nextRates.set(tax.code, { rate: Number(tax.rate) || 0, surcharge: Number(tax.surcharge_rate) || 0 })
+        }
         const nextProducts = (body.products ?? []).map((product) => {
           if (product.price?.unit_price) nextPrices.set(product.id, product.price.unit_price)
+          if (product.default_tax_code) nextTaxes.set(product.id, product.default_tax_code)
           const name = product.name?.trim() || product.sku
           return {
             id: product.id,
             sku: product.sku,
             label: product.sku && name !== product.sku ? `${product.sku} · ${name}` : name,
+            requiresLot: Boolean(product.requires_lot),
           }
         })
         nextProducts.sort((a, b) => a.label.localeCompare(b.label, 'es'))
@@ -220,6 +239,8 @@ export function useSalesOffer(query: SalesOfferQuery | null) {
         setLots(nextLots)
         setLocations([...places.values()].sort((a, b) => a.code.localeCompare(b.code, 'es')))
         setPrices(nextPrices)
+        setTaxes(nextTaxes)
+        setRates(nextRates)
         setError(null)
         setLoading(false)
       })
@@ -235,8 +256,10 @@ export function useSalesOffer(query: SalesOfferQuery | null) {
   }, [channel, customerId, date, enabled])
 
   const priceOf = useCallback((productId: string) => prices.get(productId) ?? null, [prices])
+  const taxOf = useCallback((productId: string) => taxes.get(productId) ?? null, [taxes])
+  const rateOf = useCallback((code: string) => rates.get(code) ?? null, [rates])
 
-  return { products, lots, locations, priceOf, loading, error }
+  return { products, lots, locations, priceOf, taxOf, rateOf, loading, error }
 }
 
 export function mergeProducts(products: CatalogProduct[], aliases?: ReadonlyMap<string, string>): CatalogProduct[] {

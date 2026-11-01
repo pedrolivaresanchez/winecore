@@ -476,7 +476,6 @@ export function VentasList({ me, doc, creating = false }: { me: Me; doc: DocKind
         <CreateDocument
           key={formKey}
           doc={doc}
-          customers={catalog.customers}
           onClose={closeCreate}
           onCreated={created}
         />

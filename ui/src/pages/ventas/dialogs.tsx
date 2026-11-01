@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { Field } from '@/components/Field'
 import { copy } from '@/i18n'
 import { COUNTRIES } from '@/lib/contacts'
 import { useSalesOffer, type CatalogCustomer, type CatalogLocation, type CatalogLot } from '@/lib/sales-catalog'
-import { blankLine, commercialLines, type DraftLine } from '@/lib/sales-draft'
+import { blankLine, commercialLines, shortPrice, type DraftLine } from '@/lib/sales-draft'
 import {
   CHANNELS,
   INCOTERMS,
@@ -13,12 +13,10 @@ import {
   createQuote,
   errorText,
   kindLabel,
-  resolveIssuing,
   todayMadrid,
   getPriceQuote,
   type ChannelCode,
   type DeliveryKind,
-  type IssuingPreview,
   type SalesOrder,
 } from '@/lib/sales'
 import {
@@ -34,23 +32,23 @@ import {
   Switch,
   Textarea,
 } from '@/ui'
+import { CustomerPicker, type CustomerOption } from '@/pages/ventas/CustomerPicker'
+import { useIssuer } from '@/pages/ventas/issuer'
 import { LineEditor } from '@/pages/ventas/lines'
 
 const DATE_LABELS = { clear: 'Quitar', today: 'Hoy' }
 
 export function CreateDocument({
   doc,
-  customers,
   onClose,
   onCreated,
 }: {
   doc: 'quote' | 'order'
-  customers: CatalogCustomer[]
   onClose: () => void
   onCreated: (id: string) => void
 }) {
-  const [query, setQuery] = useState('')
-  const [customerId, setCustomerId] = useState('')
+  const [customer, setCustomer] = useState<CustomerOption | null>(null)
+  const [customerError, setCustomerError] = useState<string | null>(null)
   const [channel, setChannel] = useState<ChannelCode>('horeca')
   const [language, setLanguage] = useState('es')
   const [proforma, setProforma] = useState(false)
@@ -63,37 +61,28 @@ export function CreateDocument({
   const [costCenter, setCostCenter] = useState('')
   const [ship, setShip] = useState('')
   const [lines, setLines] = useState<DraftLine[]>([blankLine()])
-  const [preview, setPreview] = useState<IssuingPreview | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const stamps = useRef<Record<string, string>>({})
+  const customerId = customer?.id ?? ''
   const offerDate = doc === 'order' ? orderDate : todayMadrid()
   const offer = useSalesOffer({ customerId: customerId || undefined, channel, date: offerDate })
-
-  const visible = customers.filter((item) => item.name.toLowerCase().includes(query.trim().toLowerCase())).slice(0, 50)
-  const selected = customers.find((item) => item.id === customerId)
-  const options = selected && !visible.some((item) => item.id === selected.id) ? [selected, ...visible] : visible
-
-  useEffect(() => {
-    if (!customerId || !channel) {
-      setPreview(null)
-      return
-    }
-    const controller = new AbortController()
-    resolveIssuing(customerId, channel, controller.signal)
-      .then(setPreview)
-      .catch(() => {
-        if (!controller.signal.aborted) setPreview(null)
-      })
-    return () => controller.abort()
-  }, [channel, customerId])
+  const issuer = useIssuer(customerId, channel)
 
   function applyListed(line: DraftLine) {
     const listed = offer.priceOf(line.productId)
-    if (!listed) return
+    const tax = offer.taxOf(line.productId)
+    if (!listed && !tax) return
     setLines((current) =>
       current.map((item) =>
-        item.key === line.key ? { ...item, quoted: listed, unitPrice: item.touched ? item.unitPrice : listed } : item,
+        item.key === line.key
+          ? {
+              ...item,
+              quoted: listed ?? item.quoted,
+              unitPrice: listed && !item.touched ? shortPrice(listed) : item.unitPrice,
+              taxCode: item.taxCode || tax || '',
+            }
+          : item,
       ),
     )
   }
@@ -109,7 +98,7 @@ export function CreateDocument({
         setLines((current) =>
           current.map((item) =>
             item.key === line.key
-              ? { ...item, quoted: hit.unit_price, unitPrice: item.touched ? item.unitPrice : hit.unit_price }
+              ? { ...item, quoted: hit.unit_price, unitPrice: item.touched ? item.unitPrice : shortPrice(hit.unit_price) }
               : item,
           ),
         )
@@ -122,7 +111,7 @@ export function CreateDocument({
   async function submit() {
     setError(null)
     if (!customerId) {
-      setError(copy.sales.customer)
+      setCustomerError(copy.sales.pickCustomer)
       return
     }
     if (doc === 'order' && channel === 'eci_edi' && (!department.trim() || !costCenter.trim())) {
@@ -143,6 +132,7 @@ export function CreateDocument({
       if (doc === 'quote') {
         const created = await createQuote({
           customer_id: customerId,
+          legal_entity_id: issuer.entityId || undefined,
           channel,
           language,
           is_proforma: proforma,
@@ -155,6 +145,7 @@ export function CreateDocument({
       } else {
         const created = await createOrder({
           customer_id: customerId,
+          legal_entity_id: issuer.entityId || undefined,
           channel,
           source: 'manual',
           order_date: orderDate,
@@ -192,35 +183,42 @@ export function CreateDocument({
             void submit()
           }}
         >
-          <Field id="cliente-buscar" label={copy.sales.customer}>
-            <Input id="cliente-buscar" value={query} placeholder={copy.sales.findCustomer} onChange={(event) => setQuery(event.target.value)} />
+          <Field id="cliente-venta" label={copy.sales.customer} error={customerError ?? undefined}>
+            <CustomerPicker
+              id="cliente-venta"
+              value={customer}
+              invalid={Boolean(customerError)}
+              onChange={(next) => {
+                setCustomer(next)
+                setCustomerError(null)
+                setError(null)
+              }}
+            />
           </Field>
-          <Select className="w-full" aria-label={copy.sales.customer} value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
-            <option value="">{copy.sales.customer}</option>
-            {options.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}
-              </option>
-            ))}
-          </Select>
-          <Field id="canal" label={copy.sales.channel}>
-            <Select id="canal" className="w-full" value={channel} onChange={(event) => setChannel(event.target.value as ChannelCode)}>
-              {CHANNELS.map((code) => (
-                <option key={code} value={code}>
-                  {channelLabel(code)}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          {preview ? (
-            <p className="text-label text-text-secondary">
-              <span className="font-medium text-ink-900">{copy.sales.invoiceAs.replace('{entity}', preview.entity_code)}</span>
-              {' · '}
-              {preview.label}
-            </p>
-          ) : customerId ? (
-            <p className="text-label text-text-tertiary">{copy.sales.ruleMissing}</p>
-          ) : null}
+          <div className="grid items-start gap-4 sm:grid-cols-2">
+            <Field id="canal" label={copy.sales.channel}>
+              <Select id="canal" className="w-full" value={channel} onChange={(event) => setChannel(event.target.value as ChannelCode)}>
+                {CHANNELS.map((code) => (
+                  <option key={code} value={code}>
+                    {channelLabel(code)}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <div className="grid content-start gap-1.5">
+              <span className="text-label text-text-secondary">{copy.sales.issuingEntity}</span>
+              <SegmentedControl
+                aria-label={copy.sales.issuingEntity}
+                value={issuer.entityId}
+                options={issuer.options}
+                onChange={(next) => {
+                  issuer.choose(next)
+                  setError(null)
+                }}
+              />
+              {issuer.note ? <p className="text-caption text-text-tertiary">{issuer.note}</p> : null}
+            </div>
+          </div>
           {offer.error && offer.products.length === 0 ? (
             <p role="alert" className="text-label text-danger-700">{errorText(offer.error)}</p>
           ) : null}
@@ -229,7 +227,10 @@ export function CreateDocument({
             products={offer.products}
             lots={offer.lots}
             locations={offer.locations}
-            onChange={setLines}
+            onChange={(next) => {
+              setLines(next)
+              setError(null)
+            }}
             onPrice={(line) => reprice(line)}
           />
           {doc === 'quote' ? (
