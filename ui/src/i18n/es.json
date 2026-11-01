@@ -3201,6 +3201,29 @@
       "archiveBody": "Dejan de salir en la lista. Se recuperan desde Archivados.",
       "archivedDone": "{n} contactos archivados",
       "unarchivedDone": "{n} contactos reactivados"
+    },
+    "origin": {
+      "label": "Origen",
+      "holded": "Holded",
+      "winecore": "WineCore"
+    },
+    "catalog": {
+      "kind": "Tipo",
+      "wine": "Vino",
+      "format": "Formato",
+      "vintage": "Añada",
+      "state": "Estado",
+      "active": "Activos",
+      "inactive": "Inactivos",
+      "activeOne": "Activo",
+      "inactiveOne": "Inactivo",
+      "warnings": "Avisos",
+      "deactivate": "Desactivar",
+      "reactivate": "Reactivar",
+      "deactivateTitle": "Desactivar {n} productos",
+      "deactivateBody": "Dejarán de ofrecerse en pedidos, pero no se borran. Los importados de Holded no cambian.",
+      "deactivatedDone": "{n} productos desactivados",
+      "reactivatedDone": "{n} productos reactivados"
     }
   }
 }
