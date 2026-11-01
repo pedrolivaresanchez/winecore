@@ -5,34 +5,40 @@ import { useEntity } from '@/app/entity-context'
 import { ErrorState } from '@/components/ErrorState'
 import { NoPermission } from '@/components/NoPermission'
 import { useMinWidth } from '@/hooks/use-media'
-import { FRAME_GUTTER, FRAME_STRIP_SCROLL } from '@/ui/frame'
-import { Receipt, Search } from '@/ui/icons'
+import { FRAME_GUTTER } from '@/ui/frame'
+import { DownloadSimple, Receipt } from '@/ui/icons'
 import {
-  Badge,
   Button,
-  Chip,
   DataGrid,
   EmptyState,
+  FilterBar,
   GlassMenu,
-  Input,
   MenuChip,
   MenuItem,
-  Select,
+  Pagination,
   SkeletonRows,
+  StatusPill,
+  useCursorPages,
+  useGridFilterLink,
   useMenuOpen,
   useToast,
+  type FilterDef,
+  type FilterValue,
   type GridColumn,
+  type SelectionAction,
 } from '@/ui'
-import { copy } from '@/i18n'
+import { copy, fill } from '@/i18n'
 import { ApiError, isAbortError } from '@/lib/api'
+import { downloadCsv } from '@/lib/csv'
 import { formatDate, formatMoney } from '@/lib/format'
 import { iconStroke } from '@/lib/motion'
 import { cn } from '@/lib/cn'
 import { allows } from '@/lib/permissions'
+import { entityTone, statusTone } from '@/lib/status-tones'
 import { readStorage, writeStorage } from '@/lib/storage'
 import type { EntityChoice, Me } from '@/lib/types'
 import { downloadBook, listCategories, listExpenses } from '@/pages/gastos/api'
-import { CATEGORIES, categoryLabel, currentQuarter, monthOptions, quarterOf, statusLabel, statusTone } from '@/pages/gastos/catalog'
+import { CATEGORIES, categoryLabel, currentQuarter, monthOptions, quarterOf, statusLabel } from '@/pages/gastos/catalog'
 import type { Expense, ExpenseQuery } from '@/pages/gastos/types'
 
 const COLUMN_KEY = 'winecore.columns.expenses'
@@ -65,14 +71,7 @@ const COLUMN_LABELS: Record<ColumnId, string> = {
   status: copy.gastos.status,
 }
 
-const STATUS_PILLS: { id: string; label: string }[] = [
-  { id: '', label: copy.gastos.statusAll },
-  { id: 'captured', label: copy.gastos.queue },
-  { id: 'validated', label: copy.gastos.statuses.validated },
-  { id: 'approved', label: copy.gastos.statuses.approved },
-  { id: 'rejected', label: copy.gastos.statuses.rejected },
-  { id: 'duplicate', label: copy.gastos.statuses.duplicate },
-]
+const STATUSES = ['captured', 'validated', 'approved', 'rejected', 'duplicate'] as const
 
 function readHidden(): Set<ColumnId> {
   const raw = readStorage(COLUMN_KEY)
@@ -103,6 +102,7 @@ export function ExpenseList({ me }: { me: Me }) {
   const navigate = useNavigate()
   const toast = useToast()
   const columnsMenu = useMenuOpen()
+  const gridFilters = useGridFilterLink()
   const desktop = useMinWidth(768)
   const { filter: rail } = useEntity()
   const [params, setParams] = useSearchParams()
@@ -114,13 +114,6 @@ export function ExpenseList({ me }: { me: Me }) {
   const [q, setQ] = useState(params.get('q') ?? '')
   const [debounced, setDebounced] = useState(q)
   const [categories, setCategories] = useState<{ code: string; name: string }[] | null>(null)
-  const [items, setItems] = useState<Expense[]>([])
-  const [total, setTotal] = useState(0)
-  const [cursor, setCursor] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [loadingMore, setLoadingMore] = useState(false)
-  const [error, setError] = useState<ApiError | null>(null)
-  const [attempt, setAttempt] = useState(0)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [hidden, setHidden] = useState(readHidden)
   const [widths, setWidths] = useState<Record<string, number>>({ supplier: 260, number: 140, total: 120, status: 140 })
@@ -156,57 +149,76 @@ export function ExpenseList({ me }: { me: Me }) {
     return () => controller.abort()
   }, [])
 
-  const categoryOptions = categories ?? CATEGORIES.map((item) => ({ code: item.code, name: categoryLabel(item.code) }))
+  const categoryOptions = useMemo(
+    () => categories ?? CATEGORIES.map((item) => ({ code: item.code, name: categoryLabel(item.code) })),
+    [categories],
+  )
   const query = useMemo<ExpenseQuery>(
-    () => ({ status, entity, month, category, q: debounced, limit: 50 }),
+    () => ({ status, entity, month, category, q: debounced }),
     [category, debounced, entity, month, status],
   )
 
-  useEffect(() => {
-    const controller = new AbortController()
-    let active = true
-    setLoading(true)
-    listExpenses(query, controller.signal)
-      .then((page) => {
-        if (!active) return
-        setItems(page.items)
-        setTotal(page.total)
-        setCursor(page.next_cursor)
-        setError(null)
-        setLoading(false)
-      })
-      .catch((err: unknown) => {
-        if (!active || isAbortError(err)) return
-        setError(err instanceof ApiError ? err : new ApiError(0, 'WC_ERROR', copy.error.load))
-        setLoading(false)
-      })
-    return () => {
-      active = false
-      controller.abort()
-    }
-  }, [query, attempt])
+  const pages = useCursorPages<Expense>({
+    queryKey: JSON.stringify(query),
+    storageKey: 'expenses',
+    fetchPage: ({ cursor, limit, signal }) => listExpenses({ ...query, cursor: cursor ?? undefined, limit }, signal),
+  })
+  const items = pages.items
+  const loading = pages.loading && items.length === 0
+  const error = pages.error ? (pages.error instanceof ApiError ? pages.error : new ApiError(0, 'WC_ERROR', copy.error.load)) : null
 
-  function setFilter(key: string, value: string) {
+  useEffect(() => {
+    setPicked(new Set())
+  }, [pages.pageKey])
+
+  const filters = useMemo<FilterDef[]>(
+    () => [
+      {
+        id: 'status',
+        label: copy.gastos.status,
+        kind: 'single',
+        display: 'chips',
+        options: STATUSES.map((value) => ({
+          value,
+          label: value === 'captured' ? copy.gastos.queue : statusLabel(value),
+          tone: statusTone(value),
+        })),
+      },
+      {
+        id: 'entity',
+        label: copy.gastos.entity,
+        kind: 'single',
+        options: [
+          { value: 'PO', label: copy.entity.po, tone: entityTone('PO') },
+          { value: 'CVPO', label: copy.entity.cvpo, tone: entityTone('CVPO') },
+        ],
+      },
+      { id: 'month', label: copy.gastos.month, kind: 'single', options: months },
+      {
+        id: 'category',
+        label: copy.gastos.category,
+        kind: 'single',
+        options: categoryOptions.map((item) => ({ value: item.code, label: item.name })),
+      },
+    ],
+    [categoryOptions, months],
+  )
+
+  function setFilter(key: string, value: FilterValue) {
     const next = new URLSearchParams(params)
-    if (value) next.set(key, value)
+    if (typeof value === 'string' && value) next.set(key, value)
+    else if (key === 'entity' && rail !== 'all') next.set('entity', 'all')
     else next.delete(key)
     setParams(next)
-    setLoading(true)
   }
 
-  async function loadMore() {
-    if (!cursor) return
-    setLoadingMore(true)
-    try {
-      const page = await listExpenses({ ...query, cursor })
-      setItems((current) => [...current, ...page.items])
-      setCursor(page.next_cursor)
-      setTotal(page.total)
-    } catch (err: unknown) {
-      setError(err instanceof ApiError ? err : new ApiError(0, 'WC_ERROR', copy.error.load))
-    } finally {
-      setLoadingMore(false)
-    }
+  function clearFilters() {
+    const next = new URLSearchParams(params)
+    for (const key of ['status', 'month', 'category', 'q']) next.delete(key)
+    if (rail !== 'all') next.set('entity', 'all')
+    else next.delete('entity')
+    setParams(next)
+    setQ('')
   }
 
   function toggleColumn(id: ColumnId) {
@@ -220,7 +232,6 @@ export function ExpenseList({ me }: { me: Me }) {
     })
   }
 
-  const shownTotal = total
   function categoryName(code: string | null): string {
     if (!code) return '—'
     return categoryOptions.find((item) => item.code === code)?.name ?? categoryLabel(code)
@@ -236,17 +247,45 @@ export function ExpenseList({ me }: { me: Me }) {
       { id: 'tax_id', header: copy.gastos.taxId, cell: (row) => row.supplier_tax_id || '—' },
       { id: 'number', header: copy.gastos.number, cell: (row) => row.supplier_invoice_number || '—' },
       { id: 'issue_date', header: copy.gastos.issueDate, cell: (row) => (row.issue_date ? formatDate(row.issue_date) : '—') },
-      { id: 'entity', header: copy.gastos.entity, cell: (row) => row.legal_entity_code },
+      {
+        id: 'entity',
+        header: copy.gastos.entity,
+        filterValue: (row) => row.legal_entity_code,
+        cell: (row) => <StatusPill tone={entityTone(row.legal_entity_code)}>{row.legal_entity_code}</StatusPill>,
+      },
       { id: 'category', header: copy.gastos.category, cell: (row) => nameOf(row.category_code) },
       { id: 'total', header: copy.gastos.total, align: 'right', cell: (row) => money(row.total) },
       {
         id: 'status',
         header: copy.gastos.status,
-        cell: (row) => <Badge tone={statusTone(row.status)}>{statusLabel(row.status)}</Badge>,
+        filterValue: (row) => statusLabel(row.status),
+        cell: (row) => <StatusPill tone={statusTone(row.status)}>{statusLabel(row.status)}</StatusPill>,
       },
     ]
     return all.filter((column) => !hidden.has(column.id as ColumnId))
   }, [categoryOptions, hidden])
+
+  const chosen = items.filter((item) => picked.has(item.id))
+
+  function exportSelection() {
+    downloadCsv(
+      'gastos-seleccion.csv',
+      COLUMN_IDS.map((id) => COLUMN_LABELS[id]),
+      chosen.map((row) => [
+        row.supplier_name,
+        row.supplier_tax_id,
+        row.supplier_invoice_number,
+        row.issue_date,
+        row.legal_entity_code,
+        categoryName(row.category_code),
+        row.total,
+        statusLabel(row.status),
+      ]),
+    )
+    toast(fill(copy.lists.bulk.exported, { n: String(chosen.length) }))
+  }
+
+  const actions: SelectionAction[] = [{ id: 'export', label: copy.lists.bulk.exportCsv, icon: DownloadSimple, onRun: exportSelection }]
 
   const filtersActive = Boolean(debounced || status || entity || month || category)
   const emptyTitle = filtersActive ? copy.gastos.noMatch : copy.gastos.empty
@@ -275,6 +314,22 @@ export function ExpenseList({ me }: { me: Me }) {
     </Button>
   ) : null
 
+  const empty = (
+    <EmptyState
+      size="sm"
+      icon={desktop ? undefined : <Receipt strokeWidth={iconStroke} />}
+      title={emptyTitle}
+      description={filtersActive ? undefined : copy.gastos.emptyHint}
+      action={
+        canWrite && !filtersActive ? (
+          <Button type="button" variant="primary" size="sm" onClick={() => navigate('/gastos/capturar')}>
+            {copy.gastos.add}
+          </Button>
+        ) : undefined
+      }
+    />
+  )
+
   return (
     <div data-screen={screen} className="flex min-h-0 flex-1 flex-col">
       <header className={cn('hidden h-12 shrink-0 items-center gap-2 border-b border-border-subtle md:flex', FRAME_GUTTER)}>
@@ -288,91 +343,48 @@ export function ExpenseList({ me }: { me: Me }) {
         </div>
       </header>
 
-      <div className={cn('flex h-11 shrink-0 items-center gap-1.5 border-b border-border-subtle', FRAME_GUTTER)}>
-        <div className={FRAME_STRIP_SCROLL}>
-          <Input
-            id="buscar-gastos"
-            size="sm"
-            type="search"
-            value={q}
-            placeholder={copy.gastos.search}
-            aria-label={copy.gastos.search}
-            className="w-56 shrink-0"
-            prefix={<Search className="size-3.5" strokeWidth={iconStroke} />}
-            onChange={(event) => setQ(event.target.value)}
-          />
-          <GlassMenu
-            open={columnsMenu.open}
-            onOpenChange={columnsMenu.setOpen}
-            placement="bottom-start"
-            panelClassName="min-w-[200px]"
-            trigger={
-              <MenuChip active={columnsMenu.open} onClick={columnsMenu.toggle} title={copy.gastos.columns}>
-                {copy.gastos.columns}
-              </MenuChip>
-            }
-          >
-            {COLUMN_IDS.map((id) => (
-              <MenuItem key={id} checked={!hidden.has(id)} disabled={id === 'supplier'} onClick={() => toggleColumn(id)}>
-                {COLUMN_LABELS[id]}
-              </MenuItem>
-            ))}
-          </GlassMenu>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5 md:hidden">{addButton}</div>
-      </div>
-
-      <div className={cn('flex h-10 shrink-0 items-center gap-1.5 border-b border-border-subtle bg-surface-subtle', FRAME_GUTTER)}>
-        <div className={cn(FRAME_STRIP_SCROLL, '[&>*]:shrink-0')}>
-          {STATUS_PILLS.map((pill) => (
-            <Chip key={pill.id || 'all'} pressed={status === pill.id} active={status === pill.id} onClick={() => setFilter('status', pill.id)}>
-              {pill.label}
-            </Chip>
-          ))}
-          <Chip pressed={!entity} active={!entity} onClick={() => setFilter('entity', 'all')}>
-            {copy.entity.all}
-          </Chip>
-          <Chip pressed={entity === 'PO'} active={entity === 'PO'} onClick={() => setFilter('entity', entity === 'PO' ? 'all' : 'PO')}>
-            {copy.entity.po}
-          </Chip>
-          <Chip pressed={entity === 'CVPO'} active={entity === 'CVPO'} onClick={() => setFilter('entity', entity === 'CVPO' ? 'all' : 'CVPO')}>
-            {copy.entity.cvpo}
-          </Chip>
-          <Select id="filtro-mes" size="sm" aria-label={copy.gastos.month} value={month} onChange={(event) => setFilter('month', event.target.value)}>
-            <option value="">{copy.gastos.month}</option>
-            {months.map((item) => (
-              <option key={item.value} value={item.value}>
-                {item.label}
-              </option>
-            ))}
-          </Select>
-          <Select
-            id="filtro-categoria"
-            size="sm"
-            aria-label={copy.gastos.category}
-            value={category}
-            onChange={(event) => setFilter('category', event.target.value)}
-          >
-            <option value="">{copy.gastos.category}</option>
-            {categoryOptions.map((item) => (
-              <option key={item.code} value={item.code}>
-                {item.name}
-              </option>
-            ))}
-          </Select>
-        </div>
-      </div>
+      <FilterBar
+        search={{ id: 'buscar-gastos', value: q, onChange: setQ, placeholder: copy.gastos.search }}
+        filters={filters}
+        values={{ status, entity, month, category }}
+        onChange={setFilter}
+        onClear={clearFilters}
+        grid={desktop ? gridFilters : undefined}
+        selection={{
+          count: picked.size,
+          pageCount: items.length,
+          onSelectAll: () => setPicked(new Set(items.map((item) => item.id))),
+          onClear: () => setPicked(new Set()),
+          actions,
+        }}
+        trailing={
+          <>
+            <GlassMenu
+              open={columnsMenu.open}
+              onOpenChange={columnsMenu.setOpen}
+              placement="bottom-end"
+              className="max-md:hidden"
+              panelClassName="min-w-[200px]"
+              trigger={
+                <MenuChip active={columnsMenu.open} onClick={columnsMenu.toggle} title={copy.gastos.columns}>
+                  {copy.gastos.columns}
+                </MenuChip>
+              }
+            >
+              {COLUMN_IDS.map((id) => (
+                <MenuItem key={id} checked={!hidden.has(id)} disabled={id === 'supplier'} onClick={() => toggleColumn(id)}>
+                  {COLUMN_LABELS[id]}
+                </MenuItem>
+              ))}
+            </GlassMenu>
+            <span className="md:hidden">{addButton}</span>
+          </>
+        }
+      />
 
       {error && items.length === 0 ? (
         <div className="p-4">
-          <ErrorState
-            title={`${copy.error.load} (${error.code})`}
-            detail={error.message}
-            onRetry={() => {
-              setLoading(true)
-              setAttempt((value) => value + 1)
-            }}
-          />
+          <ErrorState title={`${copy.error.load} (${error.code})`} detail={error.message} onRetry={pages.reload} />
         </div>
       ) : desktop ? (
         <DataGrid
@@ -386,22 +398,10 @@ export function ExpenseList({ me }: { me: Me }) {
           onSelectedChange={setPicked}
           onOpenRow={(row) => navigate(`/gastos/${row.id}`)}
           rowHref={(row) => `/gastos/${row.id}`}
-          total={shownTotal}
-          loading={loading}
-          empty={
-            <EmptyState
-              size="sm"
-              title={emptyTitle}
-              description={filtersActive ? undefined : copy.gastos.emptyHint}
-              action={
-                canWrite && !filtersActive ? (
-                  <Button type="button" variant="primary" size="sm" onClick={() => navigate('/gastos/capturar')}>
-                    {copy.gastos.add}
-                  </Button>
-                ) : undefined
-              }
-            />
-          }
+          total={pages.total ?? undefined}
+          loading={pages.loading}
+          filterLink={gridFilters}
+          empty={empty}
         />
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
@@ -410,19 +410,7 @@ export function ExpenseList({ me }: { me: Me }) {
               <SkeletonRows rows={6} />
             </div>
           ) : items.length === 0 ? (
-            <EmptyState
-              size="sm"
-              icon={<Receipt strokeWidth={iconStroke} />}
-              title={emptyTitle}
-              description={filtersActive ? undefined : copy.gastos.emptyHint}
-              action={
-                canWrite && !filtersActive ? (
-                  <Button type="button" variant="primary" size="sm" onClick={() => navigate('/gastos/capturar')}>
-                    {copy.gastos.add}
-                  </Button>
-                ) : undefined
-              }
-            />
+            empty
           ) : (
             <ul className="flex flex-col gap-2 p-3">
               {items.map((row) => (
@@ -442,9 +430,7 @@ export function ExpenseList({ me }: { me: Me }) {
                     </span>
                     <span className="flex shrink-0 flex-col items-end gap-1.5">
                       <span className="text-label font-medium text-ink-900">{money(row.total)}</span>
-                      <Badge size="sm" tone={statusTone(row.status)}>
-                        {statusLabel(row.status)}
-                      </Badge>
+                      <StatusPill tone={statusTone(row.status)}>{statusLabel(row.status)}</StatusPill>
                     </span>
                   </a>
                 </li>
@@ -454,13 +440,7 @@ export function ExpenseList({ me }: { me: Me }) {
         </div>
       )}
 
-      {cursor ? (
-        <div className={cn('flex h-10 shrink-0 items-center border-t border-border-subtle', FRAME_GUTTER)}>
-          <Button type="button" variant="ghost" size="sm" loading={loadingMore} onClick={() => void loadMore()}>
-            {copy.table.loadMore}
-          </Button>
-        </div>
-      ) : null}
+      <Pagination {...pages.pagination} />
     </div>
   )
 }
