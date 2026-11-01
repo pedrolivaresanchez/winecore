@@ -3229,9 +3229,10 @@
       "date": "Fecha",
       "type": "Tipo",
       "state": "Estado",
-      "location": "Ubicación",
-      "materials": "Materiales",
-      "kind": "Tipo de aforo",
+      "kind": "Tipo de aforo"
+    },
+    "lots": {
+      "kind": "Tipo",
       "status": "Estado"
     }
   }
