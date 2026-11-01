@@ -1,3 +1,5 @@
+import { accountFor } from '@/pages/gastos/catalog'
+
 export const EXPENSE_STATUSES = ['captured', 'validated', 'approved', 'rejected', 'duplicate'] as const
 
 export type ExpenseStatus = (typeof EXPENSE_STATUSES)[number]
@@ -172,6 +174,9 @@ export function draftFrom(expense: Expense): ExpenseDraft {
     total: expense.total ?? '',
     payment_method: expense.payment_method ?? '',
     notes: expense.notes ?? '',
-    lines: expense.lines.map((line) => ({ ...line })),
+    lines:
+      expense.lines.length === 0 && expense.status === 'captured'
+        ? [blankLine(accountFor(expense.category_code) ?? '629', 1)]
+        : expense.lines.map((line) => ({ ...line })),
   }
 }
