@@ -4,7 +4,6 @@ import { useEntity } from '@/app/entity-context'
 import { ErrorState } from '@/components/ErrorState'
 import {
   Alert,
-  Badge,
   Button,
   Dialog,
   DialogBody,
@@ -14,12 +13,17 @@ import {
   GlassMenu,
   Input,
   MenuItem,
+  Pagination,
   Select,
+  StatusPill,
   Textarea,
+  useLocalPages,
   useMenuOpen,
   useToast,
+  type FilterDef,
+  type FilterValue,
 } from '@/ui'
-import { FileText, MoreVertical, Search } from '@/ui/icons'
+import { FileText, MoreVertical } from '@/ui/icons'
 import { useApi } from '@/hooks/use-api'
 import { copy, fill } from '@/i18n'
 import { ApiError } from '@/lib/api'
@@ -40,6 +44,7 @@ import {
 import { allows } from '@/lib/permissions'
 import { iconStroke } from '@/lib/motion'
 import { cn } from '@/lib/cn'
+import type { StatusTone } from '@/lib/status-tones'
 import type { Me } from '@/lib/types'
 import { CuentasDialog } from '@/pages/cobros/CuentasDialog'
 import { CobrosFrame } from '@/pages/cobros/CobrosFrame'
@@ -47,6 +52,8 @@ import { vistaOf } from '@/pages/cobros/vista'
 import { centsOf, moneyOf, scoreLabel, statusLabel, textFromCents } from '@/pages/cobros/money'
 
 const EXTRACT_KEY = 'winecore.cobros.extracto'
+const LINE_STATES = ['suggested', 'unmatched', 'matched', 'ignored'] as const
+const LINE_TONE: Record<string, StatusTone> = { matched: 'success', suggested: 'info', ignored: 'slate', unmatched: 'neutral' }
 
 export function Conciliacion({ me }: { me: Me }) {
   const { entityCode } = useEntity()
@@ -81,15 +88,53 @@ export function Conciliacion({ me }: { me: Me }) {
     if (fromUrl && fromUrl !== importId) setImportId(fromUrl)
   }, [importId, params])
 
-  const lines = suggestions.data?.lines ?? []
+  const lines = useMemo(() => suggestions.data?.lines ?? [], [suggestions.data])
+  const states = useMemo(() => (params.get('estado') ?? '').split(',').filter((value) => (LINE_STATES as readonly string[]).includes(value)), [params])
   const query = q.trim().toLocaleLowerCase('es')
-  const shown = lines.filter((line) => {
-    if (!query) return true
-    return `${line.description} ${line.reference ?? ''} ${line.counterparty_name ?? ''}`.toLocaleLowerCase('es').includes(query)
-  })
+  const shown = useMemo(
+    () =>
+      lines.filter((line) => {
+        if (states.length > 0 && !states.includes(line.status)) return false
+        if (!query) return true
+        return `${line.description} ${line.reference ?? ''} ${line.counterparty_name ?? ''}`.toLocaleLowerCase('es').includes(query)
+      }),
+    [lines, query, states],
+  )
+  const pages = useLocalPages(shown, { queryKey: [importId, query, states.join(',')].join('|'), storageKey: 'cobros-conciliacion', defaultSize: 50 })
   const matched = lines.filter((line) => line.status === 'matched').length
   const proposed = lines.filter((line) => line.status === 'suggested').length
   const screen = lines.length === 0 ? 'cobros-conciliacion-vacio' : 'cobros-conciliacion'
+  const filtersActive = Boolean(query || states.length)
+
+  const filters: FilterDef[] = [
+    {
+      id: 'estado',
+      label: copy.cobros.status,
+      kind: 'multi',
+      display: 'chips',
+      options: LINE_STATES.map((value) => ({
+        value,
+        label: statusLabel(value),
+        tone: LINE_TONE[value],
+        count: lines.filter((line) => line.status === value).length,
+      })).filter((option) => option.count > 0 || states.includes(option.value)),
+    },
+  ]
+
+  function setFilter(id: string, value: FilterValue) {
+    const next = new URLSearchParams(params)
+    const raw = Array.isArray(value) ? value.join(',') : typeof value === 'string' ? value : ''
+    if (raw) next.set(id, raw)
+    else next.delete(id)
+    setParams(next, { replace: true })
+  }
+
+  function clearFilters() {
+    const next = new URLSearchParams(params)
+    next.delete('estado')
+    setParams(next, { replace: true })
+    setQ('')
+  }
 
   function remember(id: string) {
     setImportId(id)
@@ -159,19 +204,13 @@ export function Conciliacion({ me }: { me: Me }) {
       vista={vista}
       action={canWrite ? { label: copy.cobros.import, onClick: () => fileRef.current?.click() } : null}
       secondary={{ label: copy.cobros.accounts, onClick: () => setAccountsOpen(true) }}
-      toolbar={
-        <>
-          <Input
-            id="buscar-extracto"
-            size="sm"
-            type="search"
-            value={q}
-            placeholder={copy.cobros.searchLines}
-            aria-label={copy.cobros.searchLines}
-            className="w-56 shrink-0"
-            prefix={<Search className="size-3.5" strokeWidth={iconStroke} />}
-            onChange={(event) => setQ(event.target.value)}
-          />
+      bar={{
+        search: { id: 'buscar-extracto', value: q, onChange: setQ, placeholder: copy.cobros.searchLines },
+        filters,
+        values: { estado: states },
+        onChange: setFilter,
+        onClear: clearFilters,
+        controls: (
           <Select
             id="cuenta-extracto"
             size="sm"
@@ -186,20 +225,20 @@ export function Conciliacion({ me }: { me: Me }) {
               </option>
             ))}
           </Select>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".n43,.txt,.xml,text/plain,application/xml"
-            className="sr-only"
-            onChange={(event) => {
-              const file = event.target.files?.[0]
-              event.target.value = ''
-              if (file) void send(file)
-            }}
-          />
-        </>
-      }
+        ),
+      }}
     >
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".n43,.txt,.xml,text/plain,application/xml"
+        className="sr-only"
+        onChange={(event) => {
+          const file = event.target.files?.[0]
+          event.target.value = ''
+          if (file) void send(file)
+        }}
+      />
       <div
         className={cn('flex min-h-0 flex-1 flex-col', over && 'bg-surface-subtle')}
         onDragOver={(event) => {
@@ -233,10 +272,10 @@ export function Conciliacion({ me }: { me: Me }) {
           <div className="flex flex-1 items-center justify-center">
             <EmptyState
               size="sm"
-              title={query ? copy.cobros.noMatch : copy.cobros.statementEmpty}
-              description={query ? undefined : copy.cobros.statementEmptyHint}
+              title={filtersActive ? copy.cobros.noMatch : copy.cobros.statementEmpty}
+              description={filtersActive ? undefined : copy.cobros.statementEmptyHint}
               action={
-                canWrite && !query ? (
+                canWrite && !filtersActive ? (
                   <Button type="button" variant="primary" size="sm" loading={uploading} onClick={() => fileRef.current?.click()}>
                     {copy.cobros.chooseFile}
                   </Button>
@@ -246,7 +285,7 @@ export function Conciliacion({ me }: { me: Me }) {
           </div>
         ) : (
           <ul className="min-h-0 flex-1 overflow-y-auto">
-            {shown.map((line) => (
+            {pages.items.map((line) => (
               <LineRow
                 key={line.id}
                 line={line}
@@ -260,6 +299,7 @@ export function Conciliacion({ me }: { me: Me }) {
           </ul>
         )}
       </div>
+      {lines.length > 0 ? <Pagination {...pages.pagination} /> : null}
       <CuentasDialog me={me} open={accountsOpen} onClose={() => setAccountsOpen(false)} onCreated={() => accounts.reload()} />
       <IgnoreDialog
         line={ignore}
@@ -311,7 +351,6 @@ function LineRow({
   const more = useMenuOpen()
   const top = line.suggestions[0]
   const closed = line.status === 'matched' || line.status === 'ignored'
-  const tone = line.status === 'matched' ? 'success' : line.status === 'suggested' ? 'info' : 'neutral'
   return (
     <li className="flex flex-col gap-2 border-b border-border-subtle px-3 py-3 sm:flex-row sm:items-center sm:px-4">
       <FileText className="hidden size-4 shrink-0 text-icon sm:block" strokeWidth={iconStroke} />
@@ -330,7 +369,7 @@ function LineRow({
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-1.5">
         <span className="mr-1 tabular-nums text-label text-ink-900">{moneyOf(line.amount)}</span>
-        <Badge size="sm" tone={tone}>{statusLabel(line.status)}</Badge>
+        <StatusPill tone={LINE_TONE[line.status] ?? 'neutral'}>{statusLabel(line.status)}</StatusPill>
         {canWrite && !closed && top ? (
           <Button type="button" variant="primary" size="sm" loading={busy} onClick={() => onConfirm(top.target_table, top.target_id)}>
             {copy.cobros.confirm}
