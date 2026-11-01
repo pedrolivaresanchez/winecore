@@ -99,8 +99,11 @@ describe('numeración de la primera factura del año', () => {
     }));
 
     const credit = await proposal(po, 'credit_note', 2026);
-    expect(credit.body.holded).toBeNull();
+    expect(credit.body.holded).toEqual(expect.objectContaining({
+      code: 'RH', prefix: 'CN-2026-', padding: 2, next_value: 10, first_number: 'CN-2026-10', last_number: 'CN-2026-09',
+    }));
     expect(credit.body.fresh).toEqual(expect.objectContaining({ code: 'RC', first_number: 'RC26-0001' }));
+    expect((await proposal(cvpo, 'credit_note', 2026)).body.holded).toBeNull();
   });
 
   it('solo propietario y administración', async () => {

@@ -11,6 +11,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Código de la serie que sigue la numeración de Holded; el del plan (FA) queda para la nueva. */
 export const HOLDED_CODE = 'FH';
+export const HOLDED_CREDIT_CODE = 'RH';
 
 export type NumberingOption = {
   code: string;
@@ -75,17 +76,32 @@ type HoldedRow = {
   invoice: boolean;
 };
 
+/**
+ * Holded numera `F260086`: letras, año de dos cifras y un contador que vuelve a 1 cada año.
+ * Se lee así (prefijo `F26`, contador `0086`) cuando las dos cifras son las del año de la factura;
+ * el resto de formatos (`F-2026-34`, `1`, `99`) se leen como prefijo y contador finales.
+ */
+function splitNumber(number: string, year: number): { prefix: string; digits: string } | null {
+  const dated = /^([A-Za-z]{1,4})(\d{2})(\d{3,})$/.exec(number);
+  if (dated && Number(dated[2]) === year % 100) {
+    return { prefix: `${dated[1] ?? ''}${dated[2] ?? ''}`, digits: dated[3] ?? '' };
+  }
+  const plain = /^(.*?)(\d{1,15})$/.exec(number);
+  if (!plain) return null;
+  return { prefix: plain[1] ?? '', digits: plain[2] ?? '' };
+}
+
 function holdedRows(rows: { number: unknown; issue_date: unknown; total: unknown }[]): HoldedRow[] {
   const parsed: HoldedRow[] = [];
   for (const row of rows) {
     const number = String(row.number);
-    const match = /^(.*?)(\d{1,15})$/.exec(number);
     const date = row.issue_date instanceof Date ? row.issue_date.toISOString().slice(0, 10) : String(row.issue_date).slice(0, 10);
-    if (!match || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
-    const prefix = match[1] ?? '';
-    const digits = match[2] ?? '';
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    const year = Number(date.slice(0, 4));
+    const split = splitNumber(number, year);
+    if (!split) continue;
     const invoice = Number(row.total) >= 0;
-    parsed.push({ number, date, year: Number(date.slice(0, 4)), prefix, digits, value: Number(digits), invoice });
+    parsed.push({ number, date, year, prefix: split.prefix, digits: split.digits, value: Number(split.digits), invoice });
   }
   return parsed;
 }
@@ -95,22 +111,32 @@ function lastDate(rows: readonly HoldedRow[]): string {
 }
 
 /**
- * La última numeración de facturas de venta de Holded de la entidad hasta `year`. Las
- * rectificativas (total negativo) no eligen el prefijo, pero sí cuentan para el último número.
+ * La última numeración de venta de Holded de la entidad hasta `year`. Las facturas siguen la de
+ * las facturas; las rectificativas (total negativo) siguen la suya, que es otra (`CN260008`),
+ * y las facturas con total negativo en su serie solo cuentan para el último número.
  * Del mismo año se sigue desde el último número; de un año anterior se cambia el año del
  * prefijo y se empieza en 1, salvo que el prefijo no lleve año: entonces el contador sigue.
- * El ancho es el de Holded (mínimo 2): `F-2026-34` sigue en `F-2026-35`.
+ * El ancho es el de Holded (mínimo 2) y crece si el siguiente número ya no cabe:
+ * `F-2026-34` sigue en `F-2026-35` y `F-2026-99` en `F-2026-100`.
  */
-async function holdedHint(db: Read, legalEntityId: string, year: number, verifactu: boolean): Promise<HoldedHint | null> {
+async function holdedHint(
+  db: Read,
+  legalEntityId: string,
+  year: number,
+  verifactu: boolean,
+  credit: boolean,
+): Promise<HoldedHint | null> {
   const rows = holdedRows(await db.read<{ number: unknown; issue_date: unknown; total: unknown }>(sql`
     SELECT number, issue_date, total FROM legacy.holded_invoice
     WHERE entity_id = CAST(${legalEntityId} AS UUID) AND kind = 'sale' AND year(issue_date) <= ${year}
   `));
-  const latestYear = Math.max(...rows.filter((row) => row.invoice).map((row) => row.year));
+  const invoicePrefix = credit ? invoiceSeriesPrefix(rows) : null;
+  const chosenRows = credit ? rows.filter((row) => !row.invoice && row.prefix !== invoicePrefix) : rows.filter((row) => row.invoice);
+  const latestYear = Math.max(...chosenRows.map((row) => row.year));
   if (!Number.isFinite(latestYear)) return null;
   const groups = new Map<string, HoldedRow[]>();
-  for (const row of rows) {
-    if (row.year !== latestYear || !row.invoice) continue;
+  for (const row of chosenRows) {
+    if (row.year !== latestYear) continue;
     groups.set(row.prefix, [...(groups.get(row.prefix) ?? []), row]);
   }
   const ranked = [...groups.values()].sort((a, b) => lastDate(b).localeCompare(lastDate(a)) || b.length - a.length);
@@ -126,12 +152,25 @@ async function holdedHint(db: Read, legalEntityId: string, year: number, verifac
   const padding = Math.min(MAX_PADDING, Math.max(width, String(next).length));
   if (String(next).length > padding || seriesPrefixError(prefix, padding)) return null;
   return {
-    ...option(HOLDED_CODE, prefix, padding, next, verifactu),
+    ...option(credit ? HOLDED_CREDIT_CODE : HOLDED_CODE, prefix, padding, next, verifactu),
     last_number: last.number,
     last_date: last.date,
     last_year: latestYear,
     count: group.length,
   };
+}
+
+function invoiceSeriesPrefix(rows: readonly HoldedRow[]): string | null {
+  const invoices = rows.filter((row) => row.invoice);
+  const latestYear = Math.max(...invoices.map((row) => row.year));
+  if (!Number.isFinite(latestYear)) return null;
+  const groups = new Map<string, HoldedRow[]>();
+  for (const row of invoices) {
+    if (row.year !== latestYear) continue;
+    groups.set(row.prefix, [...(groups.get(row.prefix) ?? []), row]);
+  }
+  const ranked = [...groups.values()].sort((a, b) => lastDate(b).localeCompare(lastDate(a)) || b.length - a.length);
+  return ranked[0]?.[0]?.prefix ?? null;
 }
 
 export async function numberingProposal(db: Read, raw: NumberingInput): Promise<NumberingProposal> {
@@ -165,7 +204,9 @@ export async function numberingProposal(db: Read, raw: NumberingInput): Promise<
         }
       : null,
     fresh: option(plan.code, planPrefix(input.docType, input.year), PLAN_PADDING, 1, plan.verifactu),
-    holded: input.docType === 'invoice' ? await holdedHint(db, input.legalEntityId, input.year, plan.verifactu) : null,
+    holded: input.docType === 'invoice' || input.docType === 'credit_note'
+      ? await holdedHint(db, input.legalEntityId, input.year, plan.verifactu, input.docType === 'credit_note')
+      : null,
   };
 }
 
