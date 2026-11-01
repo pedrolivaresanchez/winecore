@@ -4,6 +4,7 @@ import type { Me } from '@/lib/types'
 import type { NumberingNeed } from '@/pages/ajustes/numeracion/api'
 import { canManageNumbering, firstTitle } from '@/pages/ajustes/numeracion/model'
 import { NumberingChoice } from '@/pages/ajustes/numeracion/NumberingChoice'
+import { openSettings } from '@/pages/ajustes/seguridad/open-settings'
 import { entityLabel } from '@/pages/facturas/format'
 import { Alert, Button, Surface, useToast } from '@/ui'
 
@@ -27,7 +28,10 @@ export function NumberingStep({ me, need, onOpened }: { me: Me; need: NumberingN
             onOpened()
           }}
         />
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" size="sm" onClick={() => openSettings('numbering')}>
+            {copy.numbering.manage}
+          </Button>
           <Button type="submit" form="numeracion-primera" variant="primary" size="sm" loading={busy}>
             {copy.numbering.use}
           </Button>

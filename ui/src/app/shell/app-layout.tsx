@@ -55,11 +55,13 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
   useEffect(() => {
     function onFocus(event: Event) {
       const detail = (event as CustomEvent<string>).detail
-      if (detail !== 'security' && detail !== 'approvals') return
+      const focus: Record<string, SettingsArea> = { security: 'security', approvals: 'policies', numbering: 'numbering' }
+      const next = focus[detail]
+      if (!next) return
       if (!settingsRef.current) before.current = openRef.current
       settingsPath.current = pathRef.current
       setSettings(true)
-      setArea(detail === 'approvals' ? 'policies' : 'security')
+      setArea(next)
       setOpen(!mobileRef.current)
     }
     window.addEventListener('winecore-settings', onFocus)
