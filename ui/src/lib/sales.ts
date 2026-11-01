@@ -320,8 +320,10 @@ export function pricesDiffer(left: string | null | undefined, right: string | nu
 
 export function errorText(error: unknown): string {
   if (error instanceof ApiError) {
-    if (/conjunto de reglas activo|regla de entidad facturadora/i.test(error.message)) return copy.sales.rulesInactive
-    if (/serie inexistente|serie activa/i.test(error.message)) return copy.sales.seriesMissing
+    if (error.code === 'WC_RULES_INACTIVE' || /conjunto de reglas activo|regla de entidad facturadora/i.test(error.message)) {
+      return copy.sales.rulesInactive
+    }
+    if (error.code === 'WC010' || /serie inexistente|serie activa/i.test(error.message)) return copy.sales.seriesMissing
     if (/no hay precio de tarifa/i.test(error.message)) return copy.sales.noTariffServer
     const extra = error.fields ? Object.values(error.fields).filter(Boolean).join(' ') : ''
     return extra ? `${error.message} ${extra}` : error.message

@@ -78,7 +78,7 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
   const { customers } = useCustomers()
   const customerOptions = useMemo(() => customers.map(customerOption), [customers])
   const customer = customers.find((item) => item.id === customerId)
-  const issuer = useIssuer(customerId, '')
+  const issuer = useIssuer(customerId, '', 'invoice')
   const offer = useSalesOffer({ customerId: customerId || undefined, channel: PRICE_CHANNEL, date: todayMadrid() })
   const docs = useCustomerDocs(customerId, source)
   const { priceOf, taxOf, rateOf } = offer

@@ -1,12 +1,21 @@
 import { useEffect, useState } from 'react'
 import { useEntity } from '@/app/entity-context'
+import { useApi } from '@/hooks/use-api'
 import { copy, fill } from '@/i18n'
 import { resolveIssuing, type IssuingPreview } from '@/lib/sales'
 import { entityLabel } from '@/pages/facturas/format'
 
-/** Rule preview wins until the user picks; then the switcher, then the first entity. */
-export function useIssuer(customerId: string, channel: string) {
+type RulesState = 'active' | 'inactive' | 'empty'
+
+/**
+ * Rule preview wins until the user picks; then the switcher, then the first entity. Sales
+ * documents get no automatic entity while a rule set awaits approval: the API only accepts
+ * a hand-picked one.
+ */
+export function useIssuer(customerId: string, channel: string, kind: 'sales' | 'invoice' = 'sales') {
   const { filter, entities } = useEntity()
+  const rules = useApi<{ state: RulesState }>(kind === 'sales' ? '/v1/billing-rules/state' : null)
+  const pending = rules.data?.state === 'inactive'
   const [preview, setPreview] = useState<IssuingPreview | null>(null)
   const [resolved, setResolved] = useState(false)
   const [chosen, setChosen] = useState('')
@@ -31,14 +40,15 @@ export function useIssuer(customerId: string, channel: string) {
     return () => controller.abort()
   }, [channel, customerId])
 
-  const fallback = entities.find((item) => item.code === filter)?.id ?? entities[0]?.id ?? ''
+  const fallback = pending ? '' : (entities.find((item) => item.code === filter)?.id ?? entities[0]?.id ?? '')
   const ruled = preview && entities.some((item) => item.id === preview.entity_id) ? preview.entity_id : ''
   const entityId = chosen || ruled || fallback
   const labelOf = (id: string | null | undefined) => entityLabel(entities.find((item) => item.id === id)?.code)
   const current = preview && customerId && resolved ? preview : null
 
   let note = ''
-  if (customerId && resolved) {
+  if (pending) note = chosen ? fill(copy.sales.entityManual, { entity: labelOf(chosen) }) : copy.sales.entityPick
+  else if (customerId && resolved) {
     if (!preview) note = fill(copy.sales.entityFirst, { entity: labelOf(entityId) })
     else if (preview.entity_id !== entityId) note = fill(copy.sales.entityException, { entity: entityLabel(preview.entity_code) })
     else note = preview.label
