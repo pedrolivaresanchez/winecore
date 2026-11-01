@@ -1,6 +1,4 @@
-import { isAuthEnabled } from "@/auth/config";
-import { getAccessToken } from "@/auth/tokens";
-import { ApiError, api } from "@/lib/api";
+import { api, apiBlob, apiResponse } from "@/lib/api";
 import type { EntityChoice, EntityCode, Me } from "@/lib/types";
 
 export type ProductState = "grape" | "must" | "wine" | "packaged_unlabeled" | "packaged_labeled" | "goods";
@@ -291,19 +289,10 @@ export type InspectionDocument = {
 };
 
 export async function downloadInspection(at: string, format: "csv" | "html"): Promise<Blob> {
-  const headers = new Headers({ Accept: format === "csv" ? "text/csv" : "text/html" });
-  if (isAuthEnabled) {
-    const token = getAccessToken();
-    if (token) headers.set("Authorization", `Bearer ${token}`);
-  }
-  const response = await fetch(`${apiBase()}/v1/stock/inspection-report?at=${encodeURIComponent(at)}&format=${format}`, {
-    headers,
-    cache: "no-store",
+  const { blob } = await apiBlob(`/v1/stock/inspection-report?at=${encodeURIComponent(at)}&format=${format}`, {
+    headers: { Accept: format === "csv" ? "text/csv" : "text/html" },
   });
-  if (!response.ok) {
-    throw new ApiError(response.status, "WC_ERROR", "No se ha podido descargar el informe");
-  }
-  return response.blob();
+  return blob;
 }
 
 export function getCount(id: string, signal?: AbortSignal) {
@@ -340,37 +329,11 @@ export function requestCountPosting(id: string, idempotencyKey: string) {
   });
 }
 
-function apiBase(): string {
-  const configured = import.meta.env.VITE_API_BASE_URL;
-  return (configured && configured.length > 0 ? configured : "/api").replace(/\/$/, "");
-}
-
 export async function fetchInspectionPdf(at: string): Promise<{ blob: Blob; sha256: string | null }> {
-  const headers = new Headers({ Accept: "application/pdf" });
-  if (isAuthEnabled) {
-    const token = getAccessToken();
-    if (token) headers.set("Authorization", `Bearer ${token}`);
-  }
-  let response: Response;
-  try {
-    response = await fetch(`${apiBase()}/v1/stock/inspection-report?at=${encodeURIComponent(at)}`, {
-      headers,
-      cache: "no-store",
-    });
-  } catch {
-    throw new ApiError(0, "WC_NETWORK", "No hay conexión. Comprueba la red e inténtalo de nuevo.");
-  }
-  if (!response.ok) {
-    let payload: { code?: string; message?: string; fields?: Record<string, string>; details?: Record<string, unknown> } = {};
-    try {
-      payload = (await response.json()) as typeof payload;
-    } catch {
-      payload = {};
-    }
-    throw new ApiError(response.status, payload.code ?? "WC_ERROR", payload.message ?? "No se ha podido generar el informe", payload.fields, payload.details);
-  }
-  const blob = await response.blob();
-  return { blob, sha256: response.headers.get("X-Document-Sha256") };
+  const response = await apiResponse(`/v1/stock/inspection-report?at=${encodeURIComponent(at)}`, {
+    headers: { Accept: "application/pdf" },
+  });
+  return { blob: await response.blob(), sha256: response.headers.get("X-Document-Sha256") };
 }
 
 export function saveBlob(blob: Blob, filename: string) {

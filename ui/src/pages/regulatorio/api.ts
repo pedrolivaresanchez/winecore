@@ -1,7 +1,4 @@
-import { isAuthEnabled } from '@/auth/config'
-import { getAccessToken } from '@/auth/tokens'
-import { copy } from '@/i18n'
-import { ApiError, api } from '@/lib/api'
+import { api, apiBlob } from '@/lib/api'
 
 export type Issue = {
   severity: 'error' | 'warning'
@@ -169,29 +166,6 @@ export function ledgerOf(row: Record<string, unknown>): Ledger {
   }
 }
 
-function root(): string {
-  const configured = import.meta.env.VITE_API_BASE_URL
-  return (configured && configured.length > 0 ? configured : '/api').replace(/\/$/, '')
-}
-
-function authHeaders(): Headers {
-  const headers = new Headers()
-  if (isAuthEnabled) {
-    const token = getAccessToken()
-    if (token) headers.set('Authorization', `Bearer ${token}`)
-  }
-  return headers
-}
-
-async function failed(response: Response): Promise<ApiError> {
-  try {
-    const payload = (await response.json()) as { code?: string; message?: string; fields?: Record<string, string> }
-    return new ApiError(response.status, payload.code ?? 'WC_ERROR', payload.message ?? copy.api.generic, payload.fields)
-  } catch {
-    return new ApiError(response.status, 'WC_ERROR', copy.api.generic)
-  }
-}
-
 export function submissionsPath(entityId?: string, status?: string): string {
   const params = new URLSearchParams()
   if (entityId) params.set('entity', entityId)
@@ -256,19 +230,9 @@ export async function uploadReceipt(submissionId: string, file: File): Promise<{
 export async function downloadSubmissionFile(id: string, file: { kind: string; exercise_year: number; filename: string }): Promise<void> {
   const params = new URLSearchParams({ exercise: String(file.exercise_year) })
   if (file.kind === 'anulaciones') params.set('part', 'anulaciones')
-  const headers = authHeaders()
-  headers.set('Accept', 'text/csv, application/json')
-  let response: Response
-  try {
-    response = await fetch(`${root()}/v1/regulatory/submissions/${id}/file?${params.toString()}`, {
-      headers,
-      cache: 'no-store',
-    })
-  } catch {
-    throw new ApiError(0, 'WC_NETWORK', copy.api.offline)
-  }
-  if (!response.ok) throw await failed(response)
-  const blob = await response.blob()
+  const { blob } = await apiBlob(`/v1/regulatory/submissions/${id}/file?${params.toString()}`, {
+    headers: { Accept: 'text/csv, application/json' },
+  })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
