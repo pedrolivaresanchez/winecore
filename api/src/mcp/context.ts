@@ -92,19 +92,23 @@ export async function contextForMachine(
     id: string;
     code: string;
     scopes: unknown;
+    granted_scopes: unknown;
     on_behalf_of_user_id: string | null;
   }>(sql`
-    SELECT id::VARCHAR AS id, code, scopes, on_behalf_of_user_id::VARCHAR AS on_behalf_of_user_id
-    FROM core.api_client
-    WHERE id = CAST(${clientId} AS UUID) AND revoked_at IS NULL
+    SELECT c.id::VARCHAR AS id, c.code, c.scopes, g.scopes AS granted_scopes,
+           c.on_behalf_of_user_id::VARCHAR AS on_behalf_of_user_id
+    FROM core.api_client c
+    LEFT JOIN core.api_client_grant g ON g.client_id = c.id
+    WHERE c.id = CAST(${clientId} AS UUID) AND c.revoked_at IS NULL
   `);
   const row = rows[0];
   if (!row) throw domainError("WC_UNAUTHENTICATED");
+  const scopes = [...new Set([...asStringList(row.scopes), ...asStringList(row.granted_scopes)])];
   const behalf = row.on_behalf_of_user_id ? await loadUser(writer, row.on_behalf_of_user_id) : null;
   if (row.on_behalf_of_user_id && !behalf) throw domainError("WC_UNAUTHENTICATED");
   const modules = await loadActiveModules(writer);
   const ctx: McpContext = {
-    client: { id: row.id, scopes: asStringList(row.scopes) },
+    client: { id: row.id, scopes },
     activeModules: modules,
     actor: behalf
       ? { id: behalf.id, name: behalf.displayName, roles: behalf.roles.map((role) => role.role) }
