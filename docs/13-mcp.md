@@ -2,11 +2,11 @@
 
 > Versión 1 · 31-10-2026 · Decisión de arquitectura: ADR 010. Entregable de Fase 1 (§12.5) e implementación en M1 (herramientas de los módulos de M1) y en cada hito (las de sus módulos).
 > Clientes: **CVBOT** (cliente MCP externo, en nombre de Pedro), `asistente` y `vendimia-campo` (workforce).
-> El `asistente` no llama al endpoint: `POST /v1/assistant/chat` ejecuta las herramientas en proceso con la sesión de la persona (mismos permisos, auditoría `mcp.call` y límite por minuto), sin herramientas de escritura directa, y solo envía un `*_commit` si el mensaje anterior propuso esa operación y la persona la confirma; el token no llega nunca al modelo.
+> El `asistente` es un agente nativo de Timbal (ADR 012) que usa este catálogo con `MCPServer(service="api")`: llama a `POST /api/mcp` (alias de `/m2m/mcp`, mismo guard, manejador y límite por minuto) con la identidad de la persona que pregunta, así que `tools/list` ya viene filtrado por sus permisos y los módulos activos. Las lecturas y los `*_prepare` son libres; los `*_commit` pasan por la aprobación de Timbal y la persona los confirma en la interfaz (`UI-32`). El modelo ve el `confirmation_token` (lo necesita para pedir el `*_commit`), pero ese `*_commit` no se ejecuta sin la aprobación de la persona.
 
 ## 1. Convenciones
 
-- **Endpoint**: `POST /api/m2m/mcp` (Streamable HTTP, sin estado). Cabecera `Authorization: Bearer wc_mcp_…`. Protocolo MCP 2025-06-18 (compatible 2025-03-26).
+- **Endpoint**: `POST /api/m2m/mcp` (Streamable HTTP, sin estado). Cabecera `Authorization: Bearer wc_mcp_…`. Protocolo MCP 2025-06-18 (compatible 2025-03-26). Alias `POST /api/mcp` para los agentes de la workforce (`MCPServer(service="api")`): acepta la sesión de una persona o un token de cliente, con el mismo guard, manejador y límite.
 - **Nombres**: `<módulo>_<verbo>_<objeto>` en inglés y snake_case. Descripciones y mensajes en **español**.
 - **Tipos** (notación TypeScript; en código son esquemas TypeBox): `UUID` (string uuid), `Date` (`YYYY-MM-DD`, Europe/Madrid), `DateTime` (ISO 8601 con zona), `Money` (string decimal con 2 decimales, p. ej. `"123.40"`), `Qty` (string decimal ≤ 3 decimales), `Liters` (string decimal con 3 decimales), `Entity` (`'PO' | 'CVPO'`).
 - **Paginación**: entrada `{ cursor?: string; limit?: number /* 1..100, def. 25 */ }`; salida `{ items: T[]; next_cursor: string | null }`.
