@@ -3598,6 +3598,60 @@
       "proforma": "Proforma",
       "cellar_operation": "Bodega",
       "inventory_count": "Aforo"
+    },
+    "documents": "Documentos"
+  },
+  "docProfile": {
+    "title": "Documentos de {entity}",
+    "description": "Cómo salen las facturas, presupuestos y albaranes. Lo ya emitido no cambia.",
+    "tabData": "Datos",
+    "tabSample": "Muestra",
+    "template": "Plantilla",
+    "variants": {
+      "po": "Estilo P.O",
+      "cvpo": "Estilo CVPO"
+    },
+    "variantHints": {
+      "po": "Concepto, precio, unidades, descuento, IVA y total.",
+      "cvpo": "Concepto, unidades con su unidad, precio, subtotal, IVA y total."
+    },
+    "logo": "Logotipo",
+    "logoHint": "PNG o JPG de hasta 2 MB. Se guarda en cuanto lo eliges.",
+    "logoNone": "Sin logotipo: el PDF sale solo con el nombre de la sociedad.",
+    "logoAlt": "Logotipo de {entity}",
+    "logoChoose": "Subir logotipo",
+    "logoReplace": "Cambiar logotipo",
+    "logoRemove": "Quitar",
+    "logoSaved": "Logotipo guardado",
+    "logoRemoved": "Logotipo quitado",
+    "logoType": "El logotipo debe ser PNG o JPG",
+    "logoSize": "El logotipo no puede pasar de 2 MB",
+    "contact": "Contacto en el PDF",
+    "email": "Correo",
+    "phone": "Teléfono",
+    "website": "Web",
+    "footer": "Líneas del pie",
+    "footerHint": "Una por línea, hasta 12. Por ejemplo la cuenta de cobro o el número de operador.",
+    "footerPlaceholder": "Nº de cuenta: …",
+    "emailInvalid": "El correo no es válido",
+    "footerLines": "Como máximo 12 líneas",
+    "footerLine": "Cada línea admite como máximo 200 caracteres",
+    "save": "Guardar",
+    "cancel": "Cerrar",
+    "saved": "Documentos guardados",
+    "sampleKind": "Documento de muestra",
+    "sampleLang": "Idioma",
+    "sampleNote": "Muestra con datos inventados: no numera ni guarda nada.",
+    "refresh": "Actualizar muestra",
+    "loadFailed": "No se pudo cargar el perfil de documentos",
+    "kinds": {
+      "invoice": "Factura",
+      "discount": "Factura con descuento",
+      "corrective": "Factura rectificativa",
+      "withholding": "Factura con retención",
+      "multipage": "Factura de varias páginas",
+      "quote": "Presupuesto",
+      "delivery_note": "Albarán"
     }
   }
 }
