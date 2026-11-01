@@ -541,7 +541,7 @@ export const catalogRestTools: readonly AnyTool[] = [
     description: "Cambia los precios de una versión en borrador. Manda upsert (precios nuevos o cambiados) y remove (los que se quitan) para tocar solo esos, o items con la lista completa, que sustituye a la actual.",
     input: z.object({
       id,
-      version: z.number().int().min(1).max(999999999).describe("Número de la versión en borrador"),
+      version: z.number().int().min(1).max(100_000).describe("Número de la versión en borrador"),
       items: z.array(priceItem).max(2000).optional().describe("Lista completa: sustituye a todos los precios del borrador"),
       upsert: z.array(priceItem).max(2000).optional().describe("Precios que se añaden o cambian; el resto se queda igual"),
       remove: z.array(priceKey).max(2000).optional().describe("Precios que se quitan (producto y cantidad mínima)"),
@@ -564,7 +564,7 @@ export const catalogRestTools: readonly AnyTool[] = [
     scope: "catalog.write",
     title: "Pedir la activación de una tarifa",
     description: "Pide la aprobación para activar una versión en borrador. Los precios no cambian hasta que se aprueba; el enlace de la aprobación sale en approvals_list_pending.",
-    input: z.object({ id, version: z.number().int().min(1).max(999999999) }).strict(),
+    input: z.object({ id, version: z.number().int().min(1).max(100_000) }).strict(),
     route: "POST /v1/price-lists/:id/versions/:version/request-activation",
     current: { route: "GET /v1/price-lists/:id/versions" },
     summary: (input, current) => {
