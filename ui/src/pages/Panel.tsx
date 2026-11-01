@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { Receipt, Users, type IconComponent } from '@/ui/icons'
+import { Calendar, Check, FileText, Users, type IconComponent } from '@/ui/icons'
 import { ObjectGlyph, type GlyphTint } from '@/ui/object-glyph'
 import { CHART_INK, ChartEmpty, ColumnChart, StatTile, chartModel } from '@/ui/charts'
 import { useChromeTitle } from '@/app/shell/shell-context'
@@ -8,10 +8,13 @@ import { useEntity } from '@/app/entity-context'
 import { ErrorState } from '@/components/ErrorState'
 import { FitAmount, Skeleton } from '@/ui'
 import { copy, fill } from '@/i18n'
+import { cn } from '@/lib/cn'
 import { formatInteger, formatMoney } from '@/lib/format'
-import { useLegacyOverview, type LegacyInvoice, type LegacyOverview } from '@/lib/legacy'
+import { entityName } from '@/lib/labels'
+import { useLegacyOverview, type LegacyOverview } from '@/lib/legacy'
+import { iconStroke } from '@/lib/motion'
 import { allows } from '@/lib/permissions'
-import { attentionHref, useDashboard, verifactuClock, type AttentionBlock } from '@/lib/dashboard'
+import { attentionHref, useDashboard, verifactuClock, type AttentionBlock, type Dashboard } from '@/lib/dashboard'
 import { entityFilter } from '@/lib/reports'
 import type { Me } from '@/lib/types'
 
@@ -24,6 +27,19 @@ const dateLabel = new Intl.DateTimeFormat('es-ES', {
 })
 
 const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+const LIST_LIMIT = 5
+
+/** Two tiles over three on a tablet, five in a row on a desktop; the year's sales lead on a phone. */
+const TILE_SPANS = [
+  'col-span-2 sm:col-span-3 lg:col-span-1',
+  'sm:col-span-3 lg:col-span-1',
+  'sm:col-span-2 lg:col-span-1',
+  'sm:col-span-2 lg:col-span-1',
+  'sm:col-span-2 lg:col-span-1',
+]
+
+const ROW = 'flex items-center justify-between gap-3 px-4 py-2.5'
+const ROW_LINK = cn(ROW, 'outline-none transition-colors duration-(--duration-quick) ease-(--ease-smooth-out) hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)')
 
 export function Panel({ me }: { me: Me }) {
   useChromeTitle(copy.panel.title)
@@ -33,13 +49,21 @@ export function Panel({ me }: { me: Me }) {
   const legacy = useLegacyOverview(entity, canLegacy)
   const dashboard = useDashboard(entity)
   const pending = legacy.initial
+  const company = filter === 'all' ? copy.panel.bothCompanies : entityName(filter)
+  const context = legacy.data ? fill(copy.panel.period, { year: String(legacy.data.year), company }) : company
 
   return (
     <div data-screen={pending ? 'panel-cargando' : 'panel'} className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-3 py-5 sm:px-4 sm:py-8">
-        <header>
-          <p className="text-caption text-text-tertiary first-letter:uppercase">{dateLabel.format(new Date())}</p>
-          <h1 className="mt-1 text-heading font-medium tracking-tight text-ink-900">{copy.panel.title}</h1>
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-3 py-5 sm:px-6 sm:py-7">
+        <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2 pb-2">
+          <div className="min-w-0">
+            <p className="text-caption text-text-tertiary first-letter:uppercase">{dateLabel.format(new Date())}</p>
+            <h1 className="mt-1 text-heading font-medium tracking-tight text-ink-900">{copy.panel.title}</h1>
+          </div>
+          <p className="flex min-w-0 items-center gap-1.5 text-label text-text-secondary">
+            <Calendar className="size-3.5 shrink-0 text-icon-muted" strokeWidth={iconStroke} />
+            <span className="truncate">{context}</span>
+          </p>
         </header>
 
         {legacy.initial ? <PanelSkeleton /> : null}
@@ -50,44 +74,23 @@ export function Panel({ me }: { me: Me }) {
             onRetry={legacy.reload}
           />
         ) : null}
-        {legacy.data ? <HoldedHome data={legacy.data} /> : null}
-
-        {dashboard.data?.verifactu && dashboard.data.verifactu.count > 0 ? (
-          <Link to={attentionHref.verifactu} className="rounded-2xl outline-none focus-visible:shadow-(--shadow-focus)">
-            <div className="rounded-2xl border border-ink-900/10 bg-warning-50 px-4 py-2.5 text-label text-warning-700">
-              {dashboard.data.verifactu.count === 1
-                ? fill(copy.panel.verifactuOne, { time: verifactuClock(dashboard.data.verifactu.since ?? '') })
-                : fill(copy.panel.verifactu, {
-                    count: formatInteger(dashboard.data.verifactu.count),
-                    time: verifactuClock(dashboard.data.verifactu.since ?? ''),
-                  })}
-            </div>
-          </Link>
-        ) : null}
-
-        <div className="flex flex-col gap-2">
-          <OpsLine
-            label={copy.panel.approvals}
-            href={attentionHref.approvals}
-            count={dashboard.data?.approvals?.count ?? 0}
-            empty={copy.panel.pendingApprovals}
-          />
-          {dashboard.data?.deadlines && dashboard.data.deadlines.count > 0 ? (
-            <OpsLine label={copy.panel.deadlines} href={attentionHref.deadlines} count={dashboard.data.deadlines.count} />
-          ) : null}
-          {dashboard.data?.alerts && dashboard.data.alerts.count > 0 ? (
-            <OpsLine label={copy.panel.alerts} href={firstHref(dashboard.data.alerts)} count={dashboard.data.alerts.count} />
-          ) : null}
-        </div>
+        {legacy.data ? (
+          <HoldedHome data={legacy.data} attention={<AttentionCard data={dashboard.data} failed={dashboard.error != null} className="md:col-span-2 lg:col-span-3" />} />
+        ) : legacy.initial ? null : (
+          <div className="grid gap-4 lg:grid-cols-12">
+            <AttentionCard data={dashboard.data} failed={dashboard.error != null} className="lg:col-span-5" />
+          </div>
+        )}
       </div>
     </div>
   )
 }
 
-function HoldedHome({ data }: { data: LegacyOverview }) {
-  const sales = Number(data.kpis.sales_this_year)
+function HoldedHome({ data, attention }: { data: LegacyOverview; attention: ReactNode }) {
   const chartEmpty = data.months.every((point) => Number(point.total) === 0)
   const monthly = data.months.map((point) => Number(point.total) || 0)
+  const invoices = data.recent_invoices.slice(0, LIST_LIMIT)
+  const customers = data.top_customers.slice(0, LIST_LIMIT)
   const model = chartModel({
     categoryLabel: copy.panel.chart,
     measureType: 'currency',
@@ -103,10 +106,18 @@ function HoldedHome({ data }: { data: LegacyOverview }) {
   })
   return (
     <>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <MoneyTile label={copy.panel.salesYear} value={data.kpis.sales_this_year} href="/facturas" empty={copy.panel.noneYear} spark={monthly} />
-        <MoneyTile label={copy.panel.salesLast} value={data.kpis.sales_last_year} href="/facturas" empty={copy.panel.noneYear} />
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-6 lg:grid-cols-5">
         <MoneyTile
+          className={TILE_SPANS[0]}
+          label={copy.panel.salesYear}
+          value={data.kpis.sales_this_year}
+          href="/facturas"
+          empty={copy.panel.noneYear}
+          spark={monthly}
+        />
+        <MoneyTile className={TILE_SPANS[1]} label={copy.panel.salesLast} value={data.kpis.sales_last_year} href="/facturas" empty={copy.panel.noneYear} />
+        <MoneyTile
+          className={TILE_SPANS[2]}
           label={copy.panel.receivables}
           value={data.kpis.pending_receivables}
           href="/cobros"
@@ -114,6 +125,7 @@ function HoldedHome({ data }: { data: LegacyOverview }) {
           empty={copy.panel.noneReceivables}
         />
         <StatTile
+          className={TILE_SPANS[3]}
           label={copy.panel.contacts}
           value={data.kpis.contacts}
           formatted={formatInteger(data.kpis.contacts)}
@@ -121,6 +133,7 @@ function HoldedHome({ data }: { data: LegacyOverview }) {
           hint={data.kpis.contacts === 0 ? copy.panel.noneContacts : undefined}
         />
         <MoneyTile
+          className={TILE_SPANS[4]}
           label={copy.panel.payables}
           value={data.kpis.open_payables}
           href="/gastos"
@@ -129,62 +142,206 @@ function HoldedHome({ data }: { data: LegacyOverview }) {
         />
       </div>
 
-      <section className="flex min-w-0 flex-col gap-3">
-        <div className="flex items-baseline justify-between gap-3">
-          <h3 className="text-label font-medium text-ink-900">{copy.panel.chart}</h3>
-          <Link to="/informes?tab=ventas" className="shrink-0 text-caption text-text-tertiary outline-none hover:text-ink-900 focus-visible:shadow-(--shadow-focus)">
-            {copy.nav.reports}
-          </Link>
+      <PanelCard title={copy.panel.chart} href="/informes?tab=ventas" more={copy.panel.seeReport}>
+        <div className="px-4 pb-4">
+          {chartEmpty ? (
+            <ChartEmpty height={220} message={data.has_imported ? copy.panel.noneYear : copy.panel.noneImported} />
+          ) : (
+            <ColumnChart model={model} height={220} subtitle={String(data.year)} />
+          )}
         </div>
-        {chartEmpty ? (
-          <ChartEmpty height={200} message={data.has_imported ? copy.panel.noneYear : copy.panel.noneImported} />
-        ) : (
-          <ColumnChart model={model} height={200} subtitle={String(data.year)} />
-        )}
-        {sales === 0 ? null : <p className="sr-only">{copy.panel.holdedHint}</p>}
-      </section>
+      </PanelCard>
 
-      <div className="grid gap-3 lg:grid-cols-2">
-        <RecordCard title={copy.panel.recentInvoices} icon={Receipt} tint="info" href="/facturas" empty={data.recent_invoices.length === 0 ? copy.panel.noneInvoices : null}>
-          {data.recent_invoices.map((invoice) => (
-            <li key={invoice.id}>
-              <Link to={`/facturas?q=${encodeURIComponent(invoice.number)}`} className="-mx-4 block px-4 py-2.5 outline-none hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)">
-                <InvoiceLine invoice={invoice} />
-              </Link>
-            </li>
-          ))}
-        </RecordCard>
-        <RecordCard title={copy.panel.topCustomers} icon={Users} tint="flame" href="/contactos" empty={data.top_customers.length === 0 ? copy.panel.noneCustomers : null}>
-          {data.top_customers.map((customer) => (
-            <li key={customer.name}>
-              <Link
-                to={`/contactos?q=${encodeURIComponent(customer.name)}`}
-                className="-mx-4 flex items-baseline justify-between gap-3 px-4 py-2.5 outline-none hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)"
-              >
-                <span className="min-w-0 truncate text-label text-ink-900">{customer.name}</span>
-                <span className="shrink-0 text-label tabular-nums text-text-secondary">{formatMoney(Number(customer.total))}</span>
-              </Link>
-            </li>
-          ))}
-        </RecordCard>
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-12">
+        <PanelCard
+          className="lg:col-span-5"
+          title={copy.panel.recentInvoices}
+          icon={FileText}
+          tint="info"
+          href="/facturas"
+          more={copy.panel.seeAll}
+        >
+          <CardList empty={invoices.length === 0 ? copy.panel.noneInvoices : null}>
+            {invoices.map((invoice) => (
+              <li key={invoice.id}>
+                <Link to={`/facturas?q=${encodeURIComponent(invoice.number)}`} className={ROW_LINK}>
+                  <RowBody
+                    title={invoice.counterparty_name}
+                    detail={`${invoice.number} · ${formatDate(invoice.issue_date)} · ${invoice.status_holded}`}
+                    value={formatMoney(Number(invoice.total))}
+                  />
+                </Link>
+              </li>
+            ))}
+          </CardList>
+        </PanelCard>
+        <PanelCard className="lg:col-span-4" title={copy.panel.topCustomers} icon={Users} tint="flame" href="/contactos" more={copy.panel.seeAll}>
+          <CardList empty={customers.length === 0 ? copy.panel.noneCustomers : null}>
+            {customers.map((customer) => (
+              <li key={customer.name}>
+                <Link to={`/contactos?q=${encodeURIComponent(customer.name)}`} className={ROW_LINK}>
+                  <RowBody
+                    title={customer.name}
+                    detail={customer.invoices === 1 ? copy.panel.invoiceOne : fill(copy.panel.invoiceMany, { count: formatInteger(customer.invoices) })}
+                    value={formatMoney(Number(customer.total))}
+                  />
+                </Link>
+              </li>
+            ))}
+          </CardList>
+        </PanelCard>
+        {attention}
       </div>
     </>
   )
 }
 
-function InvoiceLine({ invoice }: { invoice: LegacyInvoice }) {
+type AttentionRow = { id: string; label: string; href: string | null; count: number; hint: string; warn?: boolean }
+
+function attentionRows(data: Dashboard): AttentionRow[] {
+  const rows: AttentionRow[] = [
+    {
+      id: 'approvals',
+      label: copy.panel.approvals,
+      href: attentionHref.approvals,
+      count: data.approvals?.count ?? 0,
+      hint: leadOf(data.approvals) ?? copy.panel.pendingApprovals,
+    },
+  ]
+  if (data.deadlines) {
+    rows.push({
+      id: 'deadlines',
+      label: copy.panel.deadlines,
+      href: attentionHref.deadlines,
+      count: data.deadlines.count,
+      hint: leadOf(data.deadlines) ?? copy.panel.noneDeadlines,
+    })
+  }
+  if (data.alerts) {
+    rows.push({
+      id: 'alerts',
+      label: copy.panel.alerts,
+      href: firstHref(data.alerts),
+      count: data.alerts.count,
+      hint: leadOf(data.alerts) ?? copy.panel.noneAlerts,
+      warn: true,
+    })
+  }
+  if (data.verifactu) {
+    const { count, since } = data.verifactu
+    rows.push({
+      id: 'verifactu',
+      label: copy.panel.verifactuLabel,
+      href: attentionHref.verifactu,
+      count,
+      hint: count === 0 ? copy.panel.verifactuClear : since ? fill(copy.panel.verifactuSince, { time: verifactuClock(since) }) : copy.panel.verifactuWaiting,
+      warn: true,
+    })
+  }
+  return rows
+}
+
+function leadOf(block: AttentionBlock | null): string | null {
+  const first = block?.items[0]
+  if (!block || block.count === 0 || !first) return null
+  if (first.daysLeft == null) return first.title
+  return `${first.title} · ${first.daysLeft < 0 ? copy.panel.overdue : fill(copy.panel.days, { days: String(first.daysLeft) })}`
+}
+
+function AttentionCard({ data, failed, className }: { data: Dashboard | null; failed: boolean; className?: string }) {
   return (
-    <div className="flex items-baseline justify-between gap-3">
-      <div className="min-w-0">
-        <p className="truncate text-label text-ink-900">
-          {invoice.number} · {invoice.counterparty_name}
-        </p>
-        <p className="truncate text-caption text-text-tertiary">
-          {formatDate(invoice.issue_date)} · {invoice.status_holded}
-        </p>
+    <PanelCard className={className} title={copy.panel.attention} icon={Check} tint="slate">
+      {data ? (
+        <CardList empty={null}>
+          {attentionRows(data).map((row) => {
+            const body = (
+              <RowBody
+                title={row.label}
+                detail={row.hint}
+                value={formatInteger(row.count)}
+                valueClass={cn('font-medium', row.count === 0 ? 'text-text-tertiary' : row.warn ? 'text-warning-700' : 'text-ink-900')}
+              />
+            )
+            return (
+              <li key={row.id}>
+                {row.href ? (
+                  <Link to={row.href} className={ROW_LINK}>
+                    {body}
+                  </Link>
+                ) : (
+                  <div className={ROW}>{body}</div>
+                )}
+              </li>
+            )
+          })}
+        </CardList>
+      ) : (
+        <CardList empty={failed ? copy.error.load : null}>
+          {Array.from({ length: 3 }, (_, index) => (
+            <li key={index} aria-busy="true" className={ROW}>
+              <Skeleton className="h-8 w-full rounded-md" />
+            </li>
+          ))}
+        </CardList>
+      )}
+    </PanelCard>
+  )
+}
+
+function PanelCard({
+  title,
+  icon,
+  tint,
+  href,
+  more,
+  className,
+  children,
+}: {
+  title: string
+  icon?: IconComponent
+  tint?: GlyphTint
+  href?: string
+  more?: string
+  className?: string
+  children: ReactNode
+}) {
+  return (
+    <section className={cn('flex min-w-0 flex-col overflow-hidden rounded-[10px] border border-border-subtle bg-surface', className)}>
+      <div className="flex min-h-11 shrink-0 items-center justify-between gap-3 px-4">
+        <h2 className="flex min-w-0 items-center gap-2 text-label font-medium text-ink-900">
+          {icon ? <ObjectGlyph icon={icon} tint={tint} size="md" /> : null}
+          <span className="truncate">{title}</span>
+        </h2>
+        {href && more ? (
+          <Link
+            to={href}
+            className="shrink-0 rounded-md text-caption text-text-tertiary outline-none transition-colors duration-(--duration-quick) ease-(--ease-smooth-out) hover:text-ink-900 focus-visible:shadow-(--shadow-focus)"
+          >
+            {more}
+          </Link>
+        ) : null}
       </div>
-      <span className="shrink-0 text-label tabular-nums text-ink-900">{formatMoney(Number(invoice.total))}</span>
-    </div>
+      {children}
+    </section>
+  )
+}
+
+function CardList({ empty, children }: { empty: string | null; children: ReactNode }) {
+  if (empty) {
+    return <p className="flex flex-1 items-center justify-center border-t border-border-subtle px-4 py-8 text-center text-label text-text-tertiary">{empty}</p>
+  }
+  return <ul className="divide-y divide-border-subtle border-t border-border-subtle">{children}</ul>
+}
+
+function RowBody({ title, detail, value, valueClass }: { title: string; detail: string; value: string; valueClass?: string }) {
+  return (
+    <>
+      <span className="min-w-0">
+        <span className="block truncate text-label text-ink-900">{title}</span>
+        <span className="block truncate text-caption text-text-tertiary">{detail}</span>
+      </span>
+      <span className={cn('shrink-0 text-label tabular-nums text-ink-900', valueClass)}>{value}</span>
+    </>
   )
 }
 
@@ -195,6 +352,7 @@ function MoneyTile({
   count,
   empty,
   spark,
+  className,
 }: {
   label: string
   value: string
@@ -202,68 +360,27 @@ function MoneyTile({
   count?: number
   empty: string
   spark?: number[]
+  className?: string
 }) {
   const amount = Number(value)
   const safe = Number.isFinite(amount) ? amount : 0
   const quiet = safe === 0
   return (
     <StatTile
+      className={className}
       label={label}
       value={safe}
       type="currency"
       formatted={<FitAmount full={formatMoney(safe)} short={formatMoney(safe)} className="w-full" />}
       href={href}
       spark={quiet ? undefined : spark}
-      hint={quiet ? empty : count != null && count > 0 ? formatInteger(count) : undefined}
+      hint={quiet ? empty : count != null && count > 0 ? dueLabel(count) : undefined}
     />
   )
 }
 
-function RecordCard({
-  title,
-  icon,
-  tint,
-  href,
-  empty,
-  children,
-}: {
-  title: string
-  icon: IconComponent
-  tint: GlyphTint
-  href: string
-  empty: string | null
-  children: ReactNode
-}) {
-  return (
-    <section className="divide-y divide-border-subtle rounded-2xl border border-border-subtle bg-surface *:px-4">
-      <div className="flex min-h-11 items-center">
-        <Link
-          to={href}
-          className="flex min-w-0 items-center gap-2 text-label font-medium text-ink-900 outline-none focus-visible:shadow-(--shadow-focus)"
-        >
-          <ObjectGlyph icon={icon} tint={tint} size="md" />
-          <span className="truncate">{title}</span>
-        </Link>
-      </div>
-      {empty ? <p className="py-3 text-label text-text-tertiary">{empty}</p> : <ul className="divide-y divide-border-subtle">{children}</ul>}
-    </section>
-  )
-}
-
-function OpsLine({ label, href, count, empty }: { label: string; href: string | null; count: number; empty?: string }) {
-  const body = (
-    <>
-      <span className="min-w-0 truncate">{label}</span>
-      <span className="shrink-0 tabular-nums text-text-tertiary">{count > 0 ? formatInteger(count) : empty}</span>
-    </>
-  )
-  const className = 'flex items-center justify-between gap-3 rounded-2xl border border-border-subtle bg-surface px-4 py-2.5 text-label text-ink-900 outline-none hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)'
-  if (!href) return <div className={className}>{body}</div>
-  return (
-    <Link to={href} className={className}>
-      {body}
-    </Link>
-  )
+function dueLabel(count: number): string {
+  return count === 1 ? copy.panel.dueOne : fill(copy.panel.dueMany, { count: formatInteger(count) })
 }
 
 function firstHref(block: AttentionBlock): string | null {
@@ -278,13 +395,18 @@ function formatDate(value: string): string {
 
 function PanelSkeleton() {
   return (
-    <div className="grid gap-3" aria-busy="true">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-        {Array.from({ length: 5 }, (_, index) => (
-          <Skeleton key={index} className="h-20 rounded-[10px]" />
+    <div className="flex flex-col gap-4" aria-busy="true">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-6 lg:grid-cols-5">
+        {TILE_SPANS.map((span, index) => (
+          <Skeleton key={index} className={cn('h-20 rounded-[10px]', span)} />
         ))}
       </div>
-      <Skeleton className="h-48 rounded-xl" />
+      <Skeleton className="h-[280px] rounded-[10px]" />
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-12">
+        <Skeleton className="h-72 rounded-[10px] lg:col-span-5" />
+        <Skeleton className="h-72 rounded-[10px] lg:col-span-4" />
+        <Skeleton className="h-72 rounded-[10px] md:col-span-2 lg:col-span-3" />
+      </div>
     </div>
   )
 }

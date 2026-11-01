@@ -352,8 +352,10 @@
     "clear": "Todo al día",
     "open": "Abrir",
     "days": "{days} d",
-    "verifactuOne": "1 registro Verifactu sin enviar desde {time}",
-    "verifactu": "{count} registros Verifactu sin enviar desde {time}",
+    "verifactuLabel": "Verifactu",
+    "verifactuSince": "Sin enviar desde las {time}",
+    "verifactuWaiting": "Registros sin enviar",
+    "verifactuClear": "Todo enviado",
     "buckets": {
       "d30": "0–30 días",
       "d60": "31–60 días",
@@ -384,8 +386,18 @@
     "noneReceivables": "Sin cobros pendientes",
     "noneContacts": "Sin contactos activos",
     "noneImported": "Sin datos importados",
-    "holdedHint": "Histórico de Holded",
-    "pendingApprovals": "Sin aprobaciones pendientes"
+    "pendingApprovals": "Sin aprobaciones pendientes",
+    "noneDeadlines": "Nada en los próximos 30 días",
+    "noneAlerts": "Sin alertas",
+    "attention": "Pendientes",
+    "period": "Ejercicio {year} · {company}",
+    "bothCompanies": "Ambas sociedades",
+    "seeAll": "Ver todo",
+    "seeReport": "Ver informe",
+    "invoiceOne": "1 factura",
+    "invoiceMany": "{count} facturas",
+    "dueOne": "1 vencimiento",
+    "dueMany": "{count} vencimientos"
   },
   "informes": {
     "title": "Informes",
