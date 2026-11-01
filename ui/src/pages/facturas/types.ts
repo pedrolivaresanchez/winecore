@@ -210,6 +210,7 @@ export type CreateInvoiceBody = {
     unit_price?: string
     discount_pct?: string
     tax_code?: string
+    lot_id?: string
     lot_code?: string
     delivery_note_line_id?: string
     order_line_id?: string

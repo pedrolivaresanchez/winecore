@@ -161,6 +161,11 @@ export function HoldedList({ me, book = 'both' }: { me: Me; book?: 'both' | 'pur
           >
             {copy.facturas.winecoreBook}
           </Button>
+          {book === 'both' && allows(me, 'billing.write') ? (
+            <Button type="button" variant="primary" size="sm" onClick={() => navigate({ pathname: '/facturas/nueva', search: params.toString() ? `?${params}` : '' })}>
+              {copy.facturas.new}
+            </Button>
+          ) : null}
         </div>
       </header>
 

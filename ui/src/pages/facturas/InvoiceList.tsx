@@ -341,7 +341,7 @@ export function InvoiceList({ me }: { me: Me }) {
             {copy.facturas.export}
           </Button>
           {canWrite ? (
-            <Button type="button" variant="primary" size="sm" onClick={() => navigate('/facturas/nueva')}>
+            <Button type="button" variant="primary" size="sm" onClick={() => navigate({ pathname: '/facturas/nueva', search: `?${params}` })}>
               {copy.facturas.new}
             </Button>
           ) : null}
@@ -381,7 +381,7 @@ export function InvoiceList({ me }: { me: Me }) {
         </div>
         <div className="flex shrink-0 items-center gap-1.5 md:hidden">
           {canWrite ? (
-            <Button type="button" variant="primary" size="sm" onClick={() => navigate('/facturas/nueva')}>
+            <Button type="button" variant="primary" size="sm" onClick={() => navigate({ pathname: '/facturas/nueva', search: `?${params}` })}>
               {copy.facturas.new}
             </Button>
           ) : null}
@@ -484,7 +484,7 @@ export function InvoiceList({ me }: { me: Me }) {
               description={filtersActive ? undefined : copy.facturas.emptyHint}
               action={
                 canWrite && !filtersActive ? (
-                  <Button type="button" variant="primary" size="sm" onClick={() => navigate('/facturas/nueva')}>
+                  <Button type="button" variant="primary" size="sm" onClick={() => navigate({ pathname: '/facturas/nueva', search: `?${params}` })}>
                     {copy.facturas.new}
                   </Button>
                 ) : undefined

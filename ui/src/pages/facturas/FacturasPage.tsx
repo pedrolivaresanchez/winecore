@@ -1,11 +1,25 @@
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
+import { CreateInvoice } from '@/pages/facturas/CreateInvoice'
 import { HoldedList } from '@/pages/facturas/HoldedList'
 import { InvoiceList } from '@/pages/facturas/InvoiceList'
 
-/** Histórico Holded por defecto. El libro Verifactu sigue en `?libro=emitidas`. */
-export function FacturasPage({ me }: { me: Me }) {
+/** Histórico Holded por defecto. El libro Verifactu sigue en `?libro=emitidas`. `/facturas/nueva` abre el alta encima del libro que toque. */
+export function FacturasPage({ me, creating = false }: { me: Me; creating?: boolean }) {
+  const navigate = useNavigate()
   const [params] = useSearchParams()
-  if (params.get('libro') === 'emitidas' || params.get('verifactu')) return <InvoiceList me={me} />
-  return <HoldedList me={me} />
+  const verifactu = params.get('libro') === 'emitidas' || Boolean(params.get('verifactu'))
+  const search = params.toString()
+  return (
+    <>
+      {verifactu ? <InvoiceList me={me} /> : <HoldedList me={me} />}
+      {creating && allows(me, 'billing.write') ? (
+        <CreateInvoice
+          onClose={() => navigate({ pathname: '/facturas', search: search ? `?${search}` : '' })}
+          onCreated={(id) => navigate(`/facturas/${id}`)}
+        />
+      ) : null}
+    </>
+  )
 }

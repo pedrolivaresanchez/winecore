@@ -6,11 +6,9 @@ import { TAX_CODES, type LineDraft } from '@/pages/facturas/types'
 export function LineEditor({
   lines,
   onChange,
-  showProduct,
 }: {
   lines: LineDraft[]
   onChange: (lines: LineDraft[]) => void
-  showProduct?: boolean
 }) {
   function update(key: string, patch: Partial<LineDraft>) {
     onChange(lines.map((line) => (line.key === key ? { ...line, ...patch } : line)))
@@ -33,16 +31,6 @@ export function LineEditor({
               </Button>
             ) : null}
           </div>
-          {showProduct ? (
-            <Field id={`producto-${line.key}`} label={copy.facturas.product}>
-              <Input
-                id={`producto-${line.key}`}
-                size="sm"
-                value={line.productId}
-                onChange={(event) => update(line.key, { productId: event.target.value })}
-              />
-            </Field>
-          ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
             <Field id={`ud-${line.key}`} label={copy.facturas.quantity}>
               <Input
