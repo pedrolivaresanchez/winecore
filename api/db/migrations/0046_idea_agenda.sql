@@ -1,4 +1,4 @@
--- WineCore · 0045_idea_agenda · dialecto DuckDB (ADR 002).
+-- WineCore · 0046_idea_agenda · dialecto DuckDB (ADR 002).
 -- Agenda de ideas: notas sueltas que luego se fechan como cita (appointment)
 -- o como proceso (process). No toca facturas, presupuestos ni códigos de IVA.
 -- En producción (Knowledge Base de Timbal) esta migración se aplica aparte:
@@ -32,7 +32,7 @@ DROP TABLE core.module_state;
 ALTER TABLE core.module_state_agenda RENAME TO module_state;
 
 INSERT INTO core.module_state (module_key, enabled, changed_by)
-SELECT 'agenda', TRUE, 'migracion 0045'
+SELECT 'agenda', TRUE, 'migracion 0046'
 WHERE NOT EXISTS (SELECT 1 FROM core.module_state WHERE module_key = 'agenda');
 
 CREATE SCHEMA agenda;
