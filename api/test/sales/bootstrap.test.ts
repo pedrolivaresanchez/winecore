@@ -44,6 +44,7 @@ describe('alta sin reglas ni series', () => {
     expect(preview.body).toBeNull();
     const sets = await json(ctx, 'GET', '/v1/billing-rules/sets');
     expect(sets.items).toEqual([]);
+    expect((await json(ctx, 'GET', '/v1/billing-rules/state')).state).toBe('empty');
   });
 
   it('el primer presupuesto abre la v1 con la entidad elegida y respeta la elección', async () => {
@@ -64,6 +65,7 @@ describe('alta sin reglas ni series', () => {
     expect(items[0]?.rules).toEqual([expect.objectContaining({ scope: 'default', issuing_entity_id: fx.po })]);
     expect((await audits('billing.billing_rule_set')).map((row) => row.action)).toEqual(['INSERT']);
     expect((await audits('billing.billing_rule')).map((row) => row.action)).toEqual(['INSERT']);
+    expect((await json(ctx, 'GET', '/v1/billing-rules/state')).state).toBe('active');
 
     const preview = await json(ctx, 'GET', `/v1/billing-rules/resolve?customer_id=${fx.other}&channel=direct`);
     expect(preview.entity_id).toBe(fx.po);

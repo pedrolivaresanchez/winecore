@@ -27,6 +27,7 @@ const CATALOG = {
   WC050: [409, 'Versión de tarifa no editable'],
   WC060: [409, 'Albarán no editable'],
   WC070: [409, 'Reglas de facturación no editables'],
+  WC_RULES_INACTIVE: [409, 'No hay reglas de facturación activas: apruébalas en Aprobaciones'],
   WC080: [409, 'Factura emitida no editable; crea una rectificativa'],
   WC090: [409, 'Factura recibida aprobada no editable'],
   WC100: [422, 'Exceso de cobro'],

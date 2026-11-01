@@ -610,7 +610,7 @@ function billingRulesCheck(sets: number | undefined, defaults: number | undefine
       'billing.rules',
       'missing',
       'Reglas de entidad',
-      'No hay un conjunto de reglas de entidad facturadora (D3) activo. Sin él no se pueden crear presupuestos, pedidos ni albaranes: apruébalo en Aprobaciones.',
+      'No hay un conjunto de reglas de entidad facturadora (D3) activo. Sin él no se confirman pedidos y cada presupuesto pide la entidad a mano: apruébalo en Aprobaciones.',
       HREF.approvals,
     );
   }

@@ -31,7 +31,7 @@ import {
   UUID_RE,
 } from './db';
 import { parseCommercialLines, resolveLinePrice, type CommercialLineInput } from './pricing';
-import { resolutionJson, resolveIssuingEntity } from './rules';
+import { draftEntity, resolutionJson, resolveIssuingEntity } from './rules';
 import { priceTotals, type PricedLine } from './totals';
 
 const SOURCES = new Set(['manual', 'edi', 'web', 'mcp', 'import']);
@@ -371,16 +371,18 @@ async function chosenEntityTrace(
 ): Promise<{ exception: Record<string, unknown> } | null> {
   if (!input.legalEntityId) return null;
   await assertActiveEntity(tx, input.legalEntityId);
-  const resolved = await resolveIssuingEntity(tx, {
+  const { rule } = await draftEntity(tx, {
     customerId: input.customerId,
     channel: input.channel,
-    bootstrap: { actorId: actor.id, entityId: input.legalEntityId },
+    actorId: actor.id,
+    entityId: input.legalEntityId,
   });
-  if (resolved.entityId === input.legalEntityId) return null;
+  if (rule?.entityId === input.legalEntityId) return null;
+  const chosen = rule ? 'Entidad elegida al crear el pedido' : 'Entidad elegida a mano sin reglas activas';
   return {
     exception: {
       legal_entity_id: input.legalEntityId,
-      reason: input.quoteId ? 'Entidad del presupuesto' : 'Entidad elegida al crear el pedido',
+      reason: input.quoteId ? 'Entidad del presupuesto' : chosen,
       at: now.toISOString(),
       by: actor.id,
     },

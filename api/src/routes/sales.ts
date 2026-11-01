@@ -5,6 +5,7 @@ import {
   getImpact,
   getResolve,
   getRuleSets,
+  getRulesState,
   postActivate,
   postRequestActivation,
   postRuleSet,
@@ -65,6 +66,7 @@ export function salesRoutes(writer: Writer, guardDeps: GuardDeps) {
     }, { beforeHandle: settings })
     .put('/v1/billing-rules/sets/:id/rules', ({ request, params }) => putRuleSet(writer, request, params.id), { beforeHandle: settings })
     .get('/v1/billing-rules/resolve', ({ request }) => getResolve(writer, request), { beforeHandle: read })
+    .get('/v1/billing-rules/state', ({ request }) => getRulesState(writer, request), { beforeHandle: read })
     .get('/v1/billing-rules/sets/:id/impact', ({ request, params }) => getImpact(writer, request, params.id), { beforeHandle: settings })
     .post('/v1/billing-rules/sets/:id/request-activation', ({ request, params }) => postRequestActivation(writer, request, params.id), { beforeHandle: settings })
     .post('/v1/billing-rules/sets/:id/activate', ({ request, params }) => postActivate(writer, request, params.id), { beforeHandle: settings })

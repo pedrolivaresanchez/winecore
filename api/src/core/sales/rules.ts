@@ -275,19 +275,34 @@ async function setRules(tx: Tx, setId: string): Promise<LoadedSet> {
   return { set, rules: await loadRules(tx, set.id) };
 }
 
+async function anyRuleSet(tx: Tx): Promise<boolean> {
+  const rows = await tx.read(sql`SELECT id FROM billing.billing_rule_set LIMIT 1`);
+  return rows.length > 0;
+}
+
 async function currentRules(tx: Tx, bootstrap?: RuleBootstrap): Promise<LoadedSet | null> {
   const pending = bootstrapped.get(tx);
   if (pending) return pending;
   const set = await activeSet(tx);
   if (set) return { set, rules: await loadRules(tx, set.id) };
-  return bootstrap ? bootstrapRuleSet(tx, bootstrap) : null;
+  if (!bootstrap || (await anyRuleSet(tx))) return null;
+  return bootstrapRuleSet(tx, bootstrap);
+}
+
+export type RulesState = 'active' | 'inactive' | 'empty';
+
+/** `inactive`: hay conjuntos (en borrador, pendientes o sustituidos) y ninguno activo. */
+export async function rulesState(tx: Tx): Promise<RulesState> {
+  if (await activeSet(tx)) return 'active';
+  return (await anyRuleSet(tx)) ? 'inactive' : 'empty';
 }
 
 /**
  * Sin conjunto activo ningún pedido sale de borrador (`billing_rule_id` es obligatorio).
- * El primer documento abre uno ya activo con una sola regla por defecto: la entidad elegida
- * o, si no hay, la primera activa por código. Queda auditado; las reglas finas siguen
- * pasando por aprobación. Hasta el commit `tx.read` no lo ve, de ahí `bootstrapped`.
+ * Solo en una instalación sin ningún conjunto, en ningún estado, el primer documento abre
+ * uno ya activo con una sola regla por defecto: la entidad elegida o, si no hay, la primera
+ * activa por código. Si ya existe alguno (por ejemplo, pendiente de aprobación) no se abre
+ * otro: eso sería saltarse la aprobación. Hasta el commit `tx.read` no lo ve, de ahí `bootstrapped`.
  */
 async function bootstrapRuleSet(tx: Tx, bootstrap: RuleBootstrap): Promise<LoadedSet> {
   const entities = await tx.read<{ id: unknown }>(bootstrap.entityId
@@ -333,6 +348,20 @@ export async function previewIssuingEntity(
 }
 
 /**
+ * Entidad de un presupuesto o de un pedido en borrador. Sin conjunto activo vale la elegida
+ * a mano y `rule` queda vacía: confirmar el pedido sigue exigiendo reglas aprobadas.
+ */
+export async function draftEntity(
+  tx: Tx,
+  input: { customerId: string; channel: string; actorId: string; entityId: string | null },
+): Promise<{ entityId: string; rule: IssuingResolution | null }> {
+  const bootstrap = { actorId: input.actorId, entityId: input.entityId };
+  if (input.entityId && !(await currentRules(tx, bootstrap))) return { entityId: input.entityId, rule: null };
+  const rule = await resolveIssuingEntity(tx, { customerId: input.customerId, channel: input.channel, bootstrap });
+  return { entityId: input.entityId ?? rule.entityId, rule };
+}
+
+/**
  * Cliente > canal > defecto. `setId` prueba un borrador; si falta, usa el conjunto activo.
  * Con `bootstrap`, la falta de conjunto activo abre uno en vez de fallar.
  */
@@ -341,7 +370,7 @@ export async function resolveIssuingEntity(
   input: { customerId: string; channel: string; setId?: string; bootstrap?: RuleBootstrap },
 ): Promise<IssuingResolution> {
   const loaded = input.setId ? await setRules(tx, input.setId) : await currentRules(tx, input.bootstrap);
-  if (!loaded) fail('No hay un conjunto de reglas activo');
+  if (!loaded) throw domainError('WC_RULES_INACTIVE');
   const { set, rules } = loaded;
   const customer = await loadCustomer(tx, input.customerId);
   const customerRule = rules.find((rule) => rule.scope === 'customer' && rule.customer_id === input.customerId) ?? null;

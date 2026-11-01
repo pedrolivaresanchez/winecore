@@ -11,6 +11,7 @@ import {
   requestActivation,
   resolutionJson,
   ruleImpact,
+  rulesState,
 } from '../core/sales/rules';
 import { businessDate } from '../core/time';
 
@@ -52,6 +53,11 @@ export async function getResolve(writer: Writer, request: Request) {
     });
     return resolved ? resolutionJson(resolved) : null;
   });
+}
+
+export async function getRulesState(writer: Writer, request: Request) {
+  sessionOf(request);
+  return { state: await writer.withWrite(systemActor(), (tx) => rulesState(tx)) };
 }
 
 export async function getImpact(writer: Writer, request: Request, id: string) {

@@ -32,7 +32,7 @@ import {
 import { createSalesOrder } from './orders';
 import { parseCommercialLines, resolveLinePrice } from './pricing';
 import { renderQuotePdf } from './proforma';
-import { resolveIssuingEntity } from './rules';
+import { draftEntity, previewIssuingEntity } from './rules';
 import { priceTotals, type PricedLine } from './totals';
 
 type ReadDb = Pick<Tx, 'read'>;
@@ -146,12 +146,7 @@ export async function createQuote(writer: Writer, request: Request): Promise<{ s
     const customer = await loadCustomer(tx, customerId);
     if (!customer.is_customer) fail('El contacto no es cliente', { customer_id: customerId });
     if (explicitEntity) await assertActiveEntity(tx, explicitEntity);
-    const resolved = await resolveIssuingEntity(tx, {
-      customerId,
-      channel,
-      bootstrap: { actorId: actor.id, entityId: explicitEntity },
-    });
-    const entityId = explicitEntity ?? resolved.entityId;
+    const { entityId, rule } = await draftEntity(tx, { customerId, channel, actorId: actor.id, entityId: explicitEntity });
     const priced = await priceQuoteLines(tx, parsed, issueDate, customer.default_price_list_id, channel);
     const totals = priceTotals(priced.totals);
     tx.write(sql`
@@ -178,7 +173,9 @@ export async function createQuote(writer: Writer, request: Request): Promise<{ s
         is_proforma: isProforma,
         legal_entity_id: entityId,
         total: totals.total,
-        ...(entityId === resolved.entityId ? {} : { rule_entity_id: resolved.entityId, rule_id: resolved.ruleId }),
+        ...(rule === null
+          ? { entity_choice: 'manual', rule_id: null }
+          : entityId === rule.entityId ? {} : { rule_entity_id: rule.entityId, rule_id: rule.ruleId }),
       },
     });
     return quoteJson({
@@ -538,8 +535,8 @@ async function prepareQuotePatch(tx: Tx, quoteId: string, raw: Record<string, un
     if (!customer.is_customer) fail('El contacto no es cliente', { customer_id: customerId });
     priceListId = customer.default_price_list_id;
     if (customerChanged || channelChanged) {
-      const resolved = await resolveIssuingEntity(tx, { customerId, channel });
-      entityId = resolved.entityId;
+      const resolved = await previewIssuingEntity(tx, { customerId, channel });
+      if (resolved) entityId = resolved.entityId;
     }
   }
 
