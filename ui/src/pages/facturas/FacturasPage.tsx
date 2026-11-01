@@ -1,11 +1,7 @@
-import { useSearchParams } from 'react-router-dom'
 import type { Me } from '@/lib/types'
-import { HoldedList } from '@/pages/facturas/HoldedList'
-import { InvoiceList } from '@/pages/facturas/InvoiceList'
+import { SalesDocumentList } from '@/pages/documents/SalesDocumentList'
 
-/** Histórico Holded por defecto. El libro Verifactu sigue en `?libro=emitidas`. */
+/** Holded y WineCore en una sola lista; Verifactu y envío son filtros de la misma. */
 export function FacturasPage({ me }: { me: Me }) {
-  const [params] = useSearchParams()
-  if (params.get('libro') === 'emitidas' || params.get('verifactu')) return <InvoiceList me={me} />
-  return <HoldedList me={me} />
+  return <SalesDocumentList me={me} kind="invoice" />
 }

@@ -3308,6 +3308,64 @@
     "toOrder": "Convertir en pedido",
     "rectify": "Rectificar"
   },
+  "salesDocs": {
+    "titles": {
+      "invoice": "Facturas",
+      "purchase": "Gastos",
+      "quote": "Presupuestos",
+      "delivery_note": "Albaranes"
+    },
+    "files": {
+      "invoice": "facturas",
+      "purchase": "gastos",
+      "quote": "presupuestos",
+      "delivery_note": "albaranes"
+    },
+    "empty": {
+      "invoice": "Aún no hay facturas",
+      "purchase": "Aún no hay gastos",
+      "quote": "Aún no hay presupuestos",
+      "delivery_note": "Aún no hay albaranes"
+    },
+    "number": "Número",
+    "date": "Fecha",
+    "customer": "Cliente",
+    "supplier": "Proveedor",
+    "entity": "Sociedad",
+    "total": "Total",
+    "pending": "Pendiente",
+    "due": "Vencimiento",
+    "validUntil": "Válido hasta",
+    "status": "Estado",
+    "origin": "Origen",
+    "verifactu": "Verifactu",
+    "delivery": "Envío",
+    "draft": "Borrador",
+    "holded": "Holded",
+    "holdedTip": "Histórico importado de Holded. No pasa por Verifactu.",
+    "columns": "Columnas",
+    "search": "Buscar número o cliente",
+    "searchSupplier": "Buscar número o proveedor",
+    "noMatch": "Nada coincide con los filtros",
+    "openRecord": "Abrir documento",
+    "sum": "Total",
+    "verifactuStates": {
+      "pending": "Pendiente",
+      "accepted": "Aceptada",
+      "rejected": "Rechazada"
+    },
+    "deliveryStates": {
+      "pending": "Pendiente de envío",
+      "sent": "Enviada",
+      "failed": "Fallida",
+      "no_recipient": "Sin destinatario",
+      "none": "Sin enviar"
+    },
+    "issueDrafts": "Emitir borradores",
+    "issueNeedsDrafts": "Elige solo borradores de WineCore de una misma sociedad",
+    "bookNeedsEntity": "Elige P.O o CVPO para exportar el libro",
+    "openExpense": "Se abre en su ficha de gasto"
+  },
   "assistant": {
     "title": "Asistente",
     "ask": "Preguntar al asistente",

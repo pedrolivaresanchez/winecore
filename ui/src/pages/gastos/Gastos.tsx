@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from 'react-router-dom'
 import { NoPermission } from '@/components/NoPermission'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
-import { HoldedList } from '@/pages/facturas/HoldedList'
+import { SalesDocumentList } from '@/pages/documents/SalesDocumentList'
 import { ExpenseCapture } from '@/pages/gastos/ExpenseCapture'
 import { ExpenseList } from '@/pages/gastos/ExpenseList'
 import { ExpenseReview } from '@/pages/gastos/ExpenseReview'
@@ -22,5 +22,5 @@ export function Gastos({ me }: { me: Me }) {
   if (rest === 'capturar') return <ExpenseCapture me={me} />
   if (rest) return <ExpenseReview me={me} id={decodeURIComponent(rest)} />
   if (search.get('libro') === 'nuevos') return <ExpenseList me={me} />
-  return <HoldedList me={me} book="purchases" />
+  return <SalesDocumentList me={me} kind="invoice" direction="purchase" />
 }
