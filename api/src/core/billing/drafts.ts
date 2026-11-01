@@ -19,6 +19,7 @@ import {
   today,
 } from './format';
 import { DomainError } from '../errors';
+import { quoteListCode } from '../catalog/pricing';
 import { sameVersion } from '../party/contacts';
 import {
   findDefaultSeries,
@@ -233,7 +234,7 @@ async function buildNew(tx: Tx, input: CreateInput, now: Date): Promise<Built> {
   const manual = input.lines ?? [];
   const draftLines = [...sourced.lines, ...manual];
   const priceOn = input.issueDate ?? input.operationDate ?? today(now);
-  const enriched = await enrichLines(tx, draftLines, customer, priceOn, input.rectificationKind);
+  const enriched = await enrichLines(tx, draftLines, customer, channel, priceOn, input.rectificationKind);
   const targets = input.rectifies ? await loadTargets(tx, input.rectifies) : [];
   assertRectificationEntity(input, entity.taxId, entity.id, targets);
   const year = Number((input.issueDate ?? today(now)).slice(0, 4));
@@ -329,7 +330,7 @@ async function buildUpdate(
       if (!isUuid(line.productId)) throw domainError('WC_VALIDATION', { product_id: 'El producto es obligatorio' });
     }
   }
-  const enriched = await enrichLines(tx, sourceLines.filter((line) => isUuid(line.productId)), customer, priceOn, current.rectificationKind);
+  const enriched = await enrichLines(tx, sourceLines.filter((line) => isUuid(line.productId)), customer, channel, priceOn, current.rectificationKind);
   const priced = applyTotals(enriched, await loadTaxCodes(tx), terms, priceOn, language);
   const physical = physicalReturnOf(current, patch);
   const keptIds = patch.lines ? null : await loadLines(tx, current.id);
@@ -436,6 +437,7 @@ async function enrichLines(
   tx: Tx,
   lines: readonly ManualLine[],
   customer: CustomerView,
+  channel: string | null,
   priceOn: string,
   kind: 'S' | 'I' | null,
 ): Promise<BuiltLine[]> {
@@ -455,7 +457,7 @@ async function enrichLines(
     }
     const unitPrice = line.unitPrice
       ? scale(line.unitPrice, 6)
-      : await unitPriceOf(tx, product.id, customer.defaultPriceListId, priceOn, quantity.abs());
+      : await unitPriceOf(tx, product.id, customer.defaultPriceListId, channel, priceOn, quantity.abs());
     if (unitPrice.isNeg()) throw domainError('WC_VALIDATION', { unit_price: 'El precio no puede ser negativo' });
     const taxCode = line.taxCode ?? product.defaultTaxCode;
     if (!taxCode) throw domainError('WC_VALIDATION', { tax_code: 'Indica el código de impuesto' });
@@ -490,13 +492,18 @@ async function unitPriceOf(
   tx: Tx,
   productId: string,
   priceListId: string | null,
+  channel: string | null,
   on: string,
   qty: Decimal,
 ): Promise<Decimal> {
   let listId = priceListId;
   if (!listId) {
+    const code = quoteListCode(channel);
     const lists = await tx.read<{ id: unknown; tax_included: unknown }>(sql`
-      SELECT id, tax_included FROM catalog.price_list WHERE code = 'final' AND is_active LIMIT 1
+      SELECT id, tax_included FROM catalog.price_list
+      WHERE code IN (${code}, 'final') AND is_active
+      ORDER BY code = 'final'
+      LIMIT 1
     `);
     const list = lists[0];
     if (!list) throw domainError('WC_INV_PRICE', { product_id: 'No hay precio para el producto' });

@@ -37,23 +37,10 @@ const LIST_PATCH = ['name', 'currency', 'tax_included', 'is_active'] as const;
 const VERSION_FIELDS = ['valid_from', 'valid_to', 'notes'] as const;
 const ITEM_FIELDS = ['product_id', 'min_qty', 'unit_price'] as const;
 
+/** La tabla canal → tarifa es la de ventas (`sales/pricing.ts`); sin canal, o con uno sin tarifa, la general. */
 export function quoteListCode(channel: string | null | undefined): string {
-  if (!channel) return 'final';
-  return CHANNEL_LIST[channel] ?? 'final';
+  return (channel ? priceListCodeForChannel(channel) : null) ?? 'final';
 }
-
-const CHANNEL_LIST: Record<string, string> = {
-  direct: 'final',
-  distributor: 'distributor',
-  horeca: 'final',
-  eci_edi: 'distributor',
-  web: 'shop',
-  fair: 'final',
-  cellar_shop: 'shop',
-  export: 'final',
-  institutional: 'final',
-  intercompany: 'distributor',
-};
 
 export interface PriceList {
   id: string;
@@ -661,10 +648,10 @@ async function resolveList(
     throw domainError('WC_VALIDATION', { channel: 'No hay tarifa para este canal' });
   }
   const channel = contact.default_channel;
-  if (channel && !(channel in CHANNEL_LIST)) {
+  if (channel && !priceListCodeForChannel(channel)) {
     throw domainError('WC_VALIDATION', { customer_id: 'Canal sin tarifa' });
   }
-  const code = channel ? CHANNEL_LIST[channel] ?? 'final' : 'final';
+  const code = quoteListCode(channel);
   const found = await listByCode(db, code);
   if (found) return found;
   if (code !== 'final') {

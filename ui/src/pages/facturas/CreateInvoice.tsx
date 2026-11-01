@@ -53,9 +53,6 @@ const SOURCE_HINTS: Record<SourceKind, string> = {
   notes: copy.facturas.sourceNotesHint,
 }
 
-/** The catalog falls back to the channel list when the customer has none; `direct` is the `final` list the API invoices at. */
-const PRICE_CHANNEL = 'direct'
-
 type Totals = { base: number; tax: number; surcharge: number; total: number }
 type Priced = { quantity: string; price: string | null; discount: string | null; tax: string | null }
 
@@ -79,7 +76,8 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
   const customerOptions = useMemo(() => customers.map(customerOption), [customers])
   const customer = customers.find((item) => item.id === customerId)
   const issuer = useIssuer(customerId, '', 'invoice')
-  const offer = useSalesOffer({ customerId: customerId || undefined, channel: PRICE_CHANNEL, date: todayMadrid() })
+  // No channel: like the invoice itself, prices follow the customer's tariff, then its default channel's.
+  const offer = useSalesOffer({ customerId: customerId || undefined, date: todayMadrid() })
   const docs = useCustomerDocs(customerId, source)
   const { priceOf, taxOf, rateOf } = offer
 

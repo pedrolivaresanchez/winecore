@@ -82,8 +82,10 @@ describe('catálogo de ventas y presupuestos', () => {
     expect(productsOf(general).find((item) => item.id === bare)?.price).toBeNull();
 
     const horeca = await json(ctx, 'GET', '/v1/sales/catalog?channel=horeca&date=2026-10-31');
-    expect(horeca.price_list_id).toBe(finalList);
-    expect(productsOf(horeca).find((item) => item.id === fx.product)?.price).toMatchObject({ unit_price: '12.000000' });
+    expect(horeca.price_list_id).toBe(fx.priceList);
+    expect(productsOf(horeca).find((item) => item.id === fx.product)?.price).toMatchObject({ unit_price: '9.500000' });
+    const direct = await json(ctx, 'GET', '/v1/sales/catalog?channel=direct&date=2026-10-31');
+    expect(direct.price_list_id).toBe(finalList);
 
     const edi = await json(ctx, 'GET', '/v1/sales/catalog?channel=eci_edi&date=2026-10-31');
     expect(edi.price_list_id).toBe(fx.priceList);
@@ -120,6 +122,34 @@ describe('catálogo de ventas y presupuestos', () => {
     expect(shop.status).toBe(422);
     const unknown = await call(ctx, 'GET', `${query}&channel=marte`);
     expect(unknown.status).toBe(422);
+  });
+
+  it('sin canal en la petición, catálogo, precio y factura usan el canal del cliente con la tabla de ventas', async () => {
+    const restaurant = newId();
+    await ctx.writer.withWrite({ type: 'system', id: 'catalog-customer-channel', requestId: newId() }, async (tx) => {
+      tx.write(sql`
+        INSERT INTO party.contact (
+          id, kind, legal_name, tax_id, tax_id_type, tax_id_country, country_code, is_customer, default_channel, created_by
+        ) VALUES (
+          CAST(${restaurant} AS UUID), 'company', 'Restaurante Ejemplo', ${companyCif()}, 'nif', 'ES', 'ES', TRUE, 'horeca', 'test'
+        )
+      `);
+    });
+
+    const catalog = await json(ctx, 'GET', `/v1/sales/catalog?customer_id=${restaurant}&date=2026-10-31`);
+    expect(catalog.price_list_id).toBe(fx.priceList);
+    const quote = await json(ctx, 'GET', `/v1/price-quote?customer_id=${restaurant}&product_id=${fx.product}&qty=24&date=2026-10-31`);
+    expect(quote).toMatchObject({ unit_price: '9.000000', price_list_id: fx.priceList });
+
+    const invoice = await json(ctx, 'POST', '/v1/invoices', {
+      customer_id: restaurant,
+      legal_entity_id: fx.po,
+      invoice_type: 'F1',
+      issue_date: '2026-10-31',
+      lines: [{ product_id: fx.product, quantity: '24' }],
+    });
+    expect(invoice.channel).toBe('horeca');
+    expect(Number((invoice.lines as { unit_price: string }[])[0]?.unit_price)).toBe(Number(quote.unit_price));
   });
 
   it('edita el borrador y acepta o rechaza', async () => {

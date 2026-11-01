@@ -73,9 +73,10 @@ export async function salesCatalog(writer: Writer, url: URL, now: Date): Promise
 
   let customerId: string | null = null;
   let listId: string | null = null;
+  let customerChannel: string | null = null;
   if (customerRaw !== '') {
     const rows = await writer.read<Record<string, unknown>>(sql`
-      SELECT id, is_customer, default_price_list_id
+      SELECT id, is_customer, default_price_list_id, default_channel
       FROM party.contact
       WHERE id = CAST(${customerRaw} AS UUID) AND archived_at IS NULL AND merged_into_id IS NULL
     `);
@@ -84,9 +85,10 @@ export async function salesCatalog(writer: Writer, url: URL, now: Date): Promise
     if (!flag(row.is_customer)) throw domainError('WC_VALIDATION', { customer_id: 'El contacto no es cliente' });
     customerId = String(row.id).toLowerCase();
     listId = row.default_price_list_id == null ? null : String(row.default_price_list_id).toLowerCase();
+    customerChannel = row.default_channel == null ? null : String(row.default_channel);
   }
   if (!customerId) listId = await defaultListId(writer, channel);
-  else if (!listId && channel) listId = await listIdForChannel(writer, channel);
+  else if (!listId) listId = channel ? await listIdForChannel(writer, channel) : await defaultListId(writer, customerChannel);
 
   const [products, lots, taxes] = await Promise.all([
     loadProducts(writer, listId, day),
