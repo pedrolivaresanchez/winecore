@@ -13,7 +13,7 @@ import { formatDateTime } from '@/lib/format'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
 import { Alert, Button, DatePicker, Input, MenuItem, Select, Skeleton, Textarea, useToast } from '@/ui'
-import { discardInvoice, fetchInvoicePdf, issueInvoice, patchInvoice, validateInvoice, voidInvoice } from '@/pages/facturas/api'
+import { discardInvoice, issueInvoice, patchInvoice, validateInvoice, voidInvoice } from '@/pages/facturas/api'
 import {
   FactList,
   InvoiceBadges,
@@ -29,6 +29,8 @@ import { DATE_LABELS, day, daysLabel, draftsFrom, entityLabel, invoiceTitle, isO
 import { LineEditor } from '@/pages/facturas/lines'
 import type { AuditItem, DeliveryStatus, Invoice, LineDraft, ValidationResult, VoidReason } from '@/pages/facturas/types'
 import { RecordSkeleton } from '@/components/RecordSkeleton'
+import { PdfActions, PdfPreview } from '@/pages/documents/PdfPreview'
+import { usePdf } from '@/pages/documents/pdf'
 
 const TABS = [
   { id: 'factura', label: copy.facturas.lines },
@@ -367,65 +369,17 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
 }
 
 function PdfPane({ id, issued, number }: { id: string; issued: boolean; number: string | null }) {
-  const [url, setUrl] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    if (!issued) return
-    const controller = new AbortController()
-    let active = true
-    setLoading(true)
-    setError(null)
-    fetchInvoicePdf(id, controller.signal)
-      .then((blob) => {
-        if (!active) return
-        const next = URL.createObjectURL(blob)
-        setUrl((current) => {
-          if (current) URL.revokeObjectURL(current)
-          return next
-        })
-      })
-      .catch((err: unknown) => {
-        if (!active || (err instanceof DOMException && err.name === 'AbortError')) return
-        setError(err instanceof ApiError ? err.message : copy.error.load)
-      })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
-    return () => {
-      active = false
-      controller.abort()
-    }
-  }, [id, issued])
-
-  useEffect(() => () => {
-    if (url) URL.revokeObjectURL(url)
-  }, [url])
+  const frameRef = useRef<HTMLIFrameElement>(null)
+  const pdf = usePdf(issued ? `/v1/invoices/${id}/pdf` : null, number ? `${number}.pdf` : 'factura.pdf')
 
   if (!issued) return <p className="text-label text-text-secondary">{copy.facturas.noPdf}</p>
-  if (loading && !url) return <Skeleton className="h-80 w-full" />
-  if (error) return <ErrorState title={error} />
-  if (!url) return null
 
   return (
     <div className="grid gap-3">
-      <div className="flex justify-end">
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={() => {
-            const link = document.createElement('a')
-            link.href = url
-            link.download = number ? `${number}.pdf` : 'factura.pdf'
-            link.click()
-          }}
-        >
-          {copy.facturas.download}
-        </Button>
+      <PdfActions pdf={pdf} frameRef={frameRef} className="justify-end" />
+      <div className="h-[70vh] overflow-hidden rounded-2xl border border-border-subtle bg-surface">
+        <PdfPreview pdf={pdf} title={copy.facturas.pdf} frameRef={frameRef} className="h-full" />
       </div>
-      <iframe title={copy.facturas.pdf} src={url} className="h-[70vh] w-full rounded-2xl border border-border-subtle bg-surface" />
     </div>
   )
 }

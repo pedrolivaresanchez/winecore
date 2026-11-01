@@ -31,6 +31,8 @@ import {
   type BadgeTone,
   type GridColumn,
 } from '@/ui'
+import { DocumentModal } from '@/pages/documents/DocumentModal'
+import { useDocParam } from '@/pages/documents/use-doc-param'
 import { exportBook, listInvoices, listPendingDeliveries, requestBatch } from '@/pages/facturas/api'
 import { DATE_LABELS, day, deliveryLabel, deliveryTone, entityLabel, money, paymentLabel, statusLabel, statusTone, verifactuLabel } from '@/pages/facturas/format'
 import type { DeliveryStatus, InvoiceListItem, InvoiceQuery } from '@/pages/facturas/types'
@@ -80,6 +82,7 @@ export function InvoiceList({ me }: { me: Me }) {
   const columnsMenu = useMenuOpen()
   const { filter: rail, entities } = useEntity()
   const [params, setParams] = useSearchParams()
+  const doc = useDocParam()
   const canWrite = allows(me, 'billing.write')
   const status = params.get('status') ?? ''
   const entityCode = entityCodeOf(params, rail)
@@ -473,7 +476,7 @@ export function InvoiceList({ me }: { me: Me }) {
           onResize={(id, width) => setWidths((current) => ({ ...current, [id]: width }))}
           selected={picked}
           onSelectedChange={setPicked}
-          onOpenRow={(row) => navigate(`/facturas/${row.id}`)}
+          onOpenRow={(row) => doc.open(row.id)}
           rowHref={(row) => `/facturas/${row.id}`}
           total={debounced || deliveryFilter ? visible.length : total}
           loading={loading}
@@ -513,6 +516,16 @@ export function InvoiceList({ me }: { me: Me }) {
           ) : null}
         </div>
       ) : null}
+
+      <DocumentModal
+        me={me}
+        source="invoice"
+        id={doc.id}
+        ids={visible.map((row) => row.id)}
+        onNavigate={doc.move}
+        onClose={doc.close}
+        onChanged={() => setAttempt((value) => value + 1)}
+      />
     </div>
   )
 }
