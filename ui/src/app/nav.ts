@@ -25,7 +25,8 @@ import type { Me } from '@/lib/types'
 import type { GlyphTint } from '@/ui/object-glyph'
 
 export type RailGroupId = 'inicio' | 'comercial' | 'bodega' | 'gestion'
-export type RailTier = 'primary' | 'more'
+/** `palette` places have no row in the rail; Cmd-K finds them by name. */
+export type RailTier = 'primary' | 'more' | 'palette'
 
 export type RailItem = {
   id: string
@@ -38,6 +39,8 @@ export type RailItem = {
   tier: RailTier
   /** Record lists wear SDR's object glyph; screens keep a plain icon. */
   tint?: GlyphTint
+  /** Other words Cmd-K should find the place by. */
+  keywords?: string
 }
 
 export type RailGroup = {
@@ -56,7 +59,7 @@ export const railGroups: RailGroup[] = [
     label: copy.nav.groups.inicio,
     items: [
       { id: 'panel', label: copy.nav.panel, icon: Home, path: '/', exact: ['/'], tier: 'primary' },
-      { id: 'approvals', label: copy.nav.approvals, icon: Check, path: '/aprobaciones', tier: 'more' },
+      { id: 'approvals', label: copy.nav.approvals, icon: Check, path: '/aprobaciones', tier: 'palette', keywords: 'aprobar pendientes firmar' },
     ],
   },
   {

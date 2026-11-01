@@ -136,7 +136,8 @@ export function CommandPalette({
         hint: group.label,
         icon: item.icon,
         tint: item.tint,
-        secondary: item.tier === 'more',
+        keywords: item.keywords,
+        secondary: item.tier !== 'primary',
         run: go(item.path),
       })),
     )
