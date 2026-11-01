@@ -38,6 +38,16 @@ export function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () 
         >
           {keys.palette}
         </Row>
+        <Row
+          keys={
+            <>
+              <Kbd>{isMac() ? '⌘' : 'Ctrl'}</Kbd>
+              <Kbd>J</Kbd>
+            </>
+          }
+        >
+          {copy.assistant.shortcut}
+        </Row>
         <Row keys={<Kbd>/</Kbd>}>{keys.search}</Row>
         <Row keys={<Kbd>[</Kbd>}>{keys.rail}</Row>
         <Row keys={<Kbd>?</Kbd>}>{keys.help}</Row>
