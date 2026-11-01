@@ -1,6 +1,6 @@
 # 13 · Catálogo de herramientas MCP
 
-> Generado con `bun run scripts/mcp-catalog.ts` (en `api/`). 436 herramientas, 210 de escritura en dos pasos (`_prepare` y `_commit`). Reglas y exclusiones: `13-mcp.md`.
+> Generado con `bun run scripts/mcp-catalog.ts` (en `api/`). 442 herramientas, 214 de escritura en dos pasos (`_prepare` y `_commit`). Reglas y exclusiones: `13-mcp.md`.
 
 ## Sistema y búsqueda (15)
 
@@ -517,3 +517,14 @@
 | `regulatory_submission_request_approval_prepare` / `_commit` | escritura | Pedir aprobación del envío SILICIE |
 | `regulatory_submission_validate_prepare` / `_commit` | escritura | Validar envío SILICIE |
 | `regulatory_submissions_list` | lectura | Presentaciones regulatorias |
+
+## Agenda de ideas (6)
+
+| Herramienta | Tipo | Qué hace |
+|---|---|---|
+| `agenda_idea_calendar_export_prepare` / `_commit` | escritura | Pedir exportar la cita al calendario |
+| `agenda_idea_create_prepare` / `_commit` | escritura | Nueva idea |
+| `agenda_idea_delete_prepare` / `_commit` | escritura | Archivar idea |
+| `agenda_idea_get` | lectura | Ver idea |
+| `agenda_idea_list` | lectura | Listar ideas |
+| `agenda_idea_update_prepare` / `_commit` | escritura | Editar idea |

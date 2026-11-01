@@ -46,7 +46,7 @@
 
 ## 4. Catálogo
 
-> Las tablas de esta sección son las herramientas de la versión 1 y siguen existiendo. La lista completa de la versión 2 (436 herramientas) está en `13-mcp-catalogo.md`, generada desde el código; cada cliente ve en `tools/list` solo las que le permiten sus alcances, la persona representada y los módulos activos.
+> Las tablas de esta sección son las herramientas de la versión 1 y siguen existiendo. La lista completa (442 herramientas) está en `13-mcp-catalogo.md`, generada desde el código; cada cliente ve en `tools/list` solo las que le permiten sus alcances, la persona representada y los módulos activos. La agenda de ideas (`agenda_idea_*`) está en ese catálogo: el calendario de Outlook es un placeholder y no llama a ningún servicio externo.
 
 ### 4.1 Sistema y aprobaciones (M1)
 

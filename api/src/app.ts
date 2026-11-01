@@ -59,6 +59,7 @@ import { enologyRoutes } from './routes/enology';
 import { lotDesignRoutes } from './routes/lot-design';
 import { tastingRoutes } from './routes/tasting';
 import { hygieneRoutes } from './routes/hygiene';
+import { agendaRoutes } from './routes/agenda';
 import {
   archiveAddress,
   archiveContact,
@@ -946,6 +947,7 @@ export function createApp(deps: AppDeps) {
     .use(cellarAssetRoutes({ writer: deps.writer, guard: guardDeps }))
     .use(lotDesignRoutes({ writer: deps.writer, guard: guardDeps }))
     .use(tastingRoutes({ writer: deps.writer, guard: guardDeps }))
-    .use(hygieneRoutes({ writer: deps.writer, guard: guardDeps }));
+    .use(hygieneRoutes({ writer: deps.writer, guard: guardDeps }))
+    .use(agendaRoutes({ writer: deps.writer, guard: guardDeps }));
   return app;
 }
