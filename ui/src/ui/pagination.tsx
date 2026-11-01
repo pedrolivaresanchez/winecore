@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { ChevronLeft, ChevronRight } from './icons'
 import { FRAME_GUTTER } from './frame'
 import { Select } from './select'
@@ -22,6 +23,8 @@ export type PaginationProps = {
   sizes?: readonly number[]
   onPageSizeChange?: (size: number) => void
   loading?: boolean
+  /** After the range, from `md` up: a sum of what the page shows — litres, units. */
+  detail?: ReactNode
   className?: string
 }
 
@@ -49,6 +52,7 @@ export function Pagination({
   sizes = PAGE_SIZES,
   onPageSizeChange,
   loading = false,
+  detail,
   className,
 }: PaginationProps) {
   const labels = useUiLabels().lists.pagination
@@ -67,7 +71,10 @@ export function Pagination({
       data-pagination=""
       className={cn('flex h-10 shrink-0 items-center justify-between gap-3 border-t border-border-subtle', FRAME_GUTTER, className)}
     >
-      <span className="min-w-0 truncate text-label tabular-nums text-text-tertiary">{range}</span>
+      <span className="min-w-0 truncate text-label tabular-nums text-text-tertiary">
+        {range}
+        {detail ? <span className="max-md:hidden"> · {detail}</span> : null}
+      </span>
       <div className="flex shrink-0 items-center gap-1">
         {hasPrev || hasNext ? (
           <>

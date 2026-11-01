@@ -216,7 +216,7 @@ export function MovesPage({ me }: { me: Me }) {
       }
       bar={
         <FilterBar
-          leading={<BookControl value={book} onChange={(value) => assign({ book: value === 'physical' ? null : value, move_type: null })} />}
+          controls={<BookControl value={book} onChange={(value) => assign({ book: value === 'physical' ? null : value, move_type: null })} />}
           search={{ value: q, onChange: setQ, placeholder: copy.stock.searchMoves }}
           filters={filters}
           values={{ date: from || to ? { from: from || to, to: to || from } : null, move_type: moveType }}

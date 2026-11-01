@@ -72,8 +72,13 @@ export type FilterBarProps = {
   grid?: GridFilterLink
   /** While rows are ticked, the bar hands its row to their actions. */
   selection?: SelectionBarProps
-  /** Before the search: an object switcher on a phone. */
+  /** Before the search, fixed: an object switcher on a phone. */
   leading?: ReactNode
+  /**
+   * Before the search, scrolling with the chips: what cuts the list without being a filter
+   * chip — a book switch, the instant a balance is read at.
+   */
+  controls?: ReactNode
   /** After the chips: Columnas, the view's own controls. */
   trailing?: ReactNode
   className?: string
@@ -95,7 +100,18 @@ export function FilterBar({ selection, ...props }: FilterBarProps) {
 const ADD = '\u0000add'
 const columnMenu = (id: string) => `\u0000column:${id}`
 
-function FilterRow({ search, filters = [], values = {}, onChange, onClear, grid, leading, trailing, className }: Omit<FilterBarProps, 'selection'>) {
+function FilterRow({
+  search,
+  filters = [],
+  values = {},
+  onChange,
+  onClear,
+  grid,
+  leading,
+  controls,
+  trailing,
+  className,
+}: Omit<FilterBarProps, 'selection'>) {
   const labels = useUiLabels().lists.filters
   const columns = useGridFilters(grid)
   const [openId, setOpenId] = useState<string | null>(null)
@@ -135,6 +151,7 @@ function FilterRow({ search, filters = [], values = {}, onChange, onClear, grid,
       {/* The search scrolls with the chips: on a phone the page's own buttons keep their
           place at the end, and the row is still one strip. */}
       <div className={cn(FRAME_STRIP_SCROLL, '[&>*]:shrink-0')}>
+        {controls}
         {search ? (
           <Input
             id={search.id}
