@@ -163,6 +163,8 @@ import {
   submitInventoryCountRoute,
 } from './routes/stock-counts';
 import { salesRoutes } from './routes/sales';
+import { getSalesDocuments } from './routes/sales-documents';
+import { SALES_DOCUMENTS_READ } from './core/sales-documents/list';
 import { stockBalances, stockFiscalBalances, stockInspection, stockMoves } from './routes/stock';
 import { listRegulatoryObligations, postSyncObligations } from './routes/regulatory-obligations';
 import {
@@ -314,6 +316,10 @@ export function createApp(deps: AppDeps) {
     })
     .get('/v1/legacy/products', ({ request }) => getLegacyProducts(deps.writer, request), {
       beforeHandle: requireAnyPermission(guardDeps, ['catalog.read', 'reports.read', 'finance.read', 'sales.read']),
+    })
+    // Holded y WineCore en una sola lista; cada libro exige su permiso de lectura.
+    .get('/v1/sales-documents', ({ request }) => getSalesDocuments(deps.writer, request, guardDeps.now?.() ?? new Date()), {
+      beforeHandle: requireAnyPermission(guardDeps, SALES_DOCUMENTS_READ),
     })
     .get('/v1/reports/sales.csv', ({ request }) => getReport(deps.writer, request, 'sales'), {
       beforeHandle: requirePermission(guardDeps, 'reports.read'),

@@ -6,6 +6,7 @@ import type { Tx } from '../db/writer';
 export type Reader = { read: Tx['read'] };
 import { domainError } from '../errors';
 import { newId } from '../ids';
+import { contactLinkCtes, contactLinkSql, type ContactMatch } from '../legacy/contactLink';
 import { bytesOfBlob, openIban } from './ibanSeal';
 import {
   dateOnly,
@@ -22,6 +23,10 @@ export interface PayableDocument {
   counterpartyId: string | null;
   counterpartyName: string | null;
   counterpartyKind: string | null;
+  /** En Holded el contacto puede venir del NIF o del nombre, no solo del guardado al importar. */
+  counterpartyMatch: ContactMatch | null;
+  /** Nombre escrito en el documento de origen (Holded); null en los de WineCore. */
+  sourceName: string | null;
   direction: 'in' | 'out';
   documentNumber: string;
   total: Decimal;
@@ -75,15 +80,11 @@ export async function listOpenDocuments(tx: Reader, entityId: string | null): Pr
       AND s.total > s.amount_paid
       AND (${entityId} IS NULL OR s.legal_entity_id = CAST(${entityId} AS UUID))
   `);
-  const openItems = await tx.read<Record<string, unknown>>(sql`
-    SELECT o.id, o.entity_id, o.counterparty_contact_id, c.legal_name, c.kind,
-           o.direction, o.document_number, o.document_date, o.due_date, o.amount, o.amount_paid, o.status
-    FROM legacy.open_item o
-    LEFT JOIN party.contact c ON c.id = o.counterparty_contact_id
-    WHERE o.status IN ('open', 'partially_paid')
+  const openItems = await tx.read<Record<string, unknown>>(openItemQuery(sql`
+    o.status IN ('open', 'partially_paid')
       AND o.amount > o.amount_paid
       AND (${entityId} IS NULL OR o.entity_id = CAST(${entityId} AS UUID))
-  `);
+  `));
   return [
     ...invoices.map(invoiceOf),
     ...suppliers.map(supplierOf),
@@ -281,15 +282,32 @@ async function oneSupplier(tx: Reader, id: string): Promise<PayableDocument | nu
 }
 
 async function oneOpenItem(tx: Reader, id: string): Promise<PayableDocument | null> {
-  const rows = await tx.read<Record<string, unknown>>(sql`
-    SELECT o.id, o.entity_id, o.counterparty_contact_id, c.legal_name, c.kind,
-           o.direction, o.document_number, o.document_date, o.due_date, o.amount, o.amount_paid, o.status
-    FROM legacy.open_item o
-    LEFT JOIN party.contact c ON c.id = o.counterparty_contact_id
-    WHERE o.id = CAST(${id} AS UUID)
-  `);
+  const rows = await tx.read<Record<string, unknown>>(openItemQuery(sql`o.id = CAST(${id} AS UUID)`));
   const row = rows[0];
   return row ? openItemOf(row) : null;
+}
+
+/** Sin contacto guardado, la partida se enlaza por NIF o nombre único; el cobro valida la contraparte contra este enlace. */
+function openItemQuery(where: string): string {
+  const link = contactLinkSql({
+    alias: 'o',
+    stored: 'COALESCE(o.counterparty_contact_id, h.counterparty_contact_id)',
+    entity: 'h.entity_id',
+    kind: 'h.kind',
+    number: 'h.number',
+    date: 'h.issue_date',
+    name: 'h.counterparty_name',
+  });
+  return `
+    WITH ${contactLinkCtes(['sale', 'purchase'])}
+    SELECT o.id, o.entity_id, ${link.id} AS counterparty_contact_id, ${link.match} AS contact_match,
+           c.legal_name, c.kind, COALESCE(NULLIF(trim(h.counterparty_name), ''), ${link.lineName}) AS source_name,
+           o.direction, o.document_number, o.document_date, o.due_date, o.amount, o.amount_paid, o.status
+    FROM legacy.open_item o
+    JOIN legacy.holded_invoice h ON h.id = o.holded_invoice_id
+    ${link.joins}
+    LEFT JOIN party.contact c ON c.id = CAST(${link.id} AS UUID)
+    WHERE ${where}`;
 }
 
 function invoiceOf(row: Record<string, unknown>): PayableDocument {
@@ -304,6 +322,8 @@ function invoiceOf(row: Record<string, unknown>): PayableDocument {
     counterpartyId: row.customer_id == null ? null : String(row.customer_id).toLowerCase(),
     counterpartyName: textOf(row.legal_name),
     counterpartyKind: textOf(row.kind),
+    counterpartyMatch: row.customer_id == null ? null : 'contact',
+    sourceName: null,
     direction: 'in',
     documentNumber: textOf(row.number) ?? '',
     total,
@@ -328,6 +348,8 @@ function supplierOf(row: Record<string, unknown>): PayableDocument {
     counterpartyId: row.supplier_id == null ? null : String(row.supplier_id).toLowerCase(),
     counterpartyName: textOf(row.legal_name),
     counterpartyKind: textOf(row.kind),
+    counterpartyMatch: row.supplier_id == null ? null : 'contact',
+    sourceName: null,
     direction: 'out',
     documentNumber: textOf(row.supplier_invoice_number) ?? '',
     total,
@@ -346,13 +368,17 @@ function openItemOf(row: Record<string, unknown>): PayableDocument {
   const amountPaid = decimalOf(row.amount_paid ?? 0);
   const status = String(row.status);
   const direction = row.direction === 'payable' ? 'out' : 'in';
+  const match = row.contact_match;
+  const sourceName = textOf(row.source_name);
   return {
     targetTable: 'legacy.open_item',
     targetId: String(row.id).toLowerCase(),
     legalEntityId: String(row.entity_id).toLowerCase(),
     counterpartyId: row.counterparty_contact_id == null ? null : String(row.counterparty_contact_id).toLowerCase(),
-    counterpartyName: textOf(row.legal_name),
+    counterpartyName: textOf(row.legal_name) ?? sourceName,
     counterpartyKind: textOf(row.kind),
+    counterpartyMatch: match === 'contact' || match === 'tax_id' || match === 'name' ? match : null,
+    sourceName,
     direction,
     documentNumber: String(row.document_number),
     total,
