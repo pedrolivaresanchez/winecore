@@ -3224,6 +3224,15 @@
       "deactivateBody": "Dejarán de ofrecerse en pedidos, pero no se borran. Los importados de Holded no cambian.",
       "deactivatedDone": "{n} productos desactivados",
       "reactivatedDone": "{n} productos reactivados"
+    },
+    "stock": {
+      "date": "Fecha",
+      "type": "Tipo",
+      "state": "Estado",
+      "location": "Ubicación",
+      "materials": "Materiales",
+      "kind": "Tipo de aforo",
+      "status": "Estado"
     }
   }
 }

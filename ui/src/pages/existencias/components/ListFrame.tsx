@@ -24,6 +24,7 @@ export function ListFrame({
   actions,
   toolbar,
   filters,
+  bar,
   children,
 }: {
   screen: string
@@ -31,8 +32,10 @@ export function ListFrame({
   section: StockSection
   icon: ReactNode
   actions?: ReactNode
-  toolbar: ReactNode
+  toolbar?: ReactNode
   filters?: ReactNode
+  /** A `FilterBar` in place of the toolbar and filter rows. */
+  bar?: ReactNode
   children: ReactNode
 }) {
   useChromeTitle(title)
@@ -70,14 +73,18 @@ export function ListFrame({
         </GlassMenu>
         {actions ? <div className="ml-auto flex shrink-0 items-center gap-1.5">{actions}</div> : <span className="ml-auto" />}
       </header>
-      <div className={cn('flex h-11 shrink-0 items-center gap-1.5 border-b border-border-subtle', FRAME_GUTTER)}>
-        {toolbar}
-      </div>
-      {filters ? (
-        <div className={cn('flex h-10 shrink-0 items-center gap-1.5 border-b border-border-subtle bg-surface-subtle', FRAME_GUTTER)}>
-          {filters}
-        </div>
-      ) : null}
+      {bar ?? (
+        <>
+          <div className={cn('flex h-11 shrink-0 items-center gap-1.5 border-b border-border-subtle', FRAME_GUTTER)}>
+            {toolbar}
+          </div>
+          {filters ? (
+            <div className={cn('flex h-10 shrink-0 items-center gap-1.5 border-b border-border-subtle bg-surface-subtle', FRAME_GUTTER)}>
+              {filters}
+            </div>
+          ) : null}
+        </>
+      )}
       {children}
     </div>
   )

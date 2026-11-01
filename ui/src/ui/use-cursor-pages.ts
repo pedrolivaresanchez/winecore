@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from 'react'
 import { PAGE_SIZES, type PaginationProps } from './pagination'
 
 export type CursorPage<T> = { items: T[]; next_cursor?: string | null; total?: number | null }
@@ -41,25 +41,43 @@ function storageName(key: string): string {
   return `winecore.pageSize.${key}`
 }
 
+/** Chosen this visit, so every list under one key agrees even when storage is blocked. */
+const chosenSizes = new Map<string, number>()
+const sizeListeners = new Map<string, Set<() => void>>()
+
+function currentSize(key: string, sizes: readonly number[], defaultSize: number): number {
+  const held = chosenSizes.get(key)
+  if (held !== undefined) return sizes.includes(held) ? held : defaultSize
+  try {
+    const stored = Number(localStorage.getItem(storageName(key)))
+    return sizes.includes(stored) ? stored : defaultSize
+  } catch {
+    return defaultSize
+  }
+}
+
 /** The page length somebody chose for this list, kept across visits. The default is not stored. */
 export function usePageSize(storageKey: string, sizes: readonly number[] = PAGE_SIZES, defaultSize = 50) {
-  const [size, setSize] = useState(() => {
-    try {
-      const stored = Number(localStorage.getItem(storageName(storageKey)))
-      return sizes.includes(stored) ? stored : defaultSize
-    } catch {
-      return defaultSize
-    }
-  })
+  const subscribe = useCallback(
+    (notify: () => void) => {
+      const listeners = sizeListeners.get(storageKey) ?? new Set()
+      listeners.add(notify)
+      sizeListeners.set(storageKey, listeners)
+      return () => listeners.delete(notify)
+    },
+    [storageKey],
+  )
+  const size = useSyncExternalStore(subscribe, () => currentSize(storageKey, sizes, defaultSize))
   const choose = useCallback(
     (next: number) => {
-      setSize(next)
+      chosenSizes.set(storageKey, next)
       try {
         if (next === defaultSize) localStorage.removeItem(storageName(storageKey))
         else localStorage.setItem(storageName(storageKey), String(next))
       } catch {
         /* Storage can be blocked; the choice still holds for this visit. */
       }
+      sizeListeners.get(storageKey)?.forEach((notify) => notify())
     },
     [storageKey, defaultSize],
   )
