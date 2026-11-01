@@ -9,6 +9,7 @@ interface ImportMetaEnv {
   readonly VITE_TIMBAL_ORG_ID?: string;
   readonly VITE_TIMBAL_PROJECT_ID?: string;
   readonly VITE_AUTH_TIMBAL_IAM?: string;
+  readonly VITE_ASSISTANT_WORKFORCE?: string;
 }
 
 interface ImportMeta {

@@ -14,6 +14,13 @@ export default defineConfig(({ mode }) => {
       port,
       allowedHosts: true,
       proxy: {
+        // The assistant is a Timbal agent, not part of the API: in production the gateway serves
+        // /api/workforce/<member>/..., and here it goes to that member's own server (`timbal start`).
+        "/api/workforce": {
+          target: env.VITE_WORKFORCE_PROXY_TARGET || "http://localhost:4455",
+          changeOrigin: true,
+          rewrite: (requestPath) => requestPath.replace(/^\/api\/workforce\/[^/]+/, "") || "/",
+        },
         "/api": {
           target: env.VITE_API_PROXY_TARGET || "http://localhost:3000",
           changeOrigin: true,
