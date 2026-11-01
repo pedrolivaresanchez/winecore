@@ -8,21 +8,22 @@ test("Ventas: presupuesto, pedido, albarán y factura con PDF", async ({ page })
   let customer = "";
 
   await test.step("Crear un presupuesto", async () => {
+    const customers = await page.request.get("/api/v1/contacts?role=customer&archived=false&limit=20");
+    const items = ((await customers.json()) as { items: { legal_name: string; city: string | null; country_code: string }[] }).items;
+    customer = items.find((item) => item.city && item.country_code === "ES")?.legal_name ?? "";
+    if (!customer) omitir("El seed de demostración no trae clientes.");
     await page.goto("/ventas/presupuestos?libro=winecore");
     await page.getByRole("button", { name: "Nuevo presupuesto" }).click();
     await page.locator('[data-screen="ventas-dialogo"]').waitFor();
-    const product = page.getByRole("combobox", { name: "Producto" });
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("combobox", { name: "Cliente" }).fill(customer);
+    await dialog.getByRole("listbox", { name: "Cliente" }).getByRole("option").filter({ hasText: customer }).first().click();
+    const product = dialog.getByRole("combobox", { name: "Producto" });
     await expect.poll(async () => product.locator("option").count(), { timeout: 8_000 }).toBeGreaterThan(1);
-    const optionCount = await product.locator("option").count();
-    const customerBox = page.getByRole("combobox", { name: "Cliente" });
-    customer = (await customerBox.locator("option").nth(1).textContent())?.trim() ?? "";
-    await customerBox.selectOption({ index: 1 });
-    const price = page.getByRole("textbox", { name: "Precio" });
     await product.selectOption({ index: 1 });
-    await price.fill("12");
-    const reason = page.getByRole("textbox", { name: /motivo/i });
-    await expect(reason).toBeVisible();
-    await reason.fill("Precio de la prueba");
+    await dialog.getByRole("textbox", { name: "Precio" }).fill("12");
+    const reason = dialog.getByRole("textbox", { name: /motivo/i });
+    if (await reason.isVisible()) await reason.fill("Precio de la prueba");
     const created = page.waitForResponse(
       (response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/v1/quotes",
     );
@@ -70,8 +71,17 @@ test("Ventas: presupuesto, pedido, albarán y factura con PDF", async ({ page })
   await test.step("Facturar el albarán, emitir y abrir el PDF", async () => {
     const noteId = page.url().split("/").pop() ?? "";
     await page.goto("/facturas/nueva");
-    await page.locator("#albaranes-factura").fill(noteId);
-    await page.getByRole("button", { name: "Crear borrador" }).click();
+    await page.locator('[data-screen="facturas-nueva"]').waitFor();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("combobox", { name: "Cliente" }).fill(customer);
+    await dialog.getByRole("listbox", { name: "Cliente" }).getByRole("option").filter({ hasText: customer }).first().click();
+    await dialog.getByRole("radio", { name: "Desde albaranes" }).click();
+    const elsewhere = dialog.getByRole("button", { name: /^Hay \d+ en / });
+    const note = dialog.getByRole("checkbox").first();
+    await expect(note.or(elsewhere).first()).toBeVisible();
+    if (await elsewhere.isVisible()) await elsewhere.click();
+    await note.check();
+    await dialog.getByRole("button", { name: "Crear borrador" }).click();
     await page.waitForURL(/\/facturas\/[0-9a-f-]+$/i);
     await page.getByRole("button", { name: "Emitir" }).click();
     await page.getByRole("dialog").getByRole("button", { name: "Emitir" }).click();
