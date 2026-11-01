@@ -258,7 +258,7 @@ export const cellarOperationGet = defineReadTool({
         notes: line.notes ? untrustedText(line.notes) : null,
       })),
       links: { web: webLink(ctx, `/bodega/operaciones/${operation.id}`) },
-      warnings: operation.status === "draft" ? ["Sigue en borrador. Se confirma en la web."] : [],
+      warnings: operation.status === "draft" ? ["Sigue en borrador: se confirma con cellar_operation_confirm o en la web."] : [],
     };
   },
 });
@@ -269,7 +269,7 @@ export const cellarOperationDraft = defineWriteTool({
   scope: "cellar.operate",
   extraScopes: ["write:cellar.operation_draft"],
   title: "Borrador de operación",
-  description: "Prepara un borrador de operación de bodega. No confirma el movimiento: eso se hace en la web.",
+  description: "Prepara un borrador de operación de bodega por códigos de lote y recipiente y litros. No mueve vino: se confirma después con cellar_operation_confirm o en la web.",
   input: draftInput,
   prepare: async (ctx, input) => {
     const writer = requireWriter(ctx);
@@ -301,7 +301,7 @@ export const cellarOperationDraft = defineWriteTool({
       payload,
       summary_es: payload.incident
         ? `Borrador de ${input.op_type}. Hay una merma por incidencia: se pedirá aprobación y no se confirma el movimiento.`
-        : `Borrador de ${input.op_type}. El movimiento no se confirma: quedará para revisarlo en la web.`,
+        : `Borrador de ${input.op_type}. El movimiento no se confirma: queda en borrador hasta confirmarlo.`,
     };
   },
   commit: async (ctx, raw) => {
