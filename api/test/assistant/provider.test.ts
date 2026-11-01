@@ -40,7 +40,7 @@ describe('parseProviderStep', () => {
 });
 
 describe('timbalAssistant', () => {
-  test('envía messages, tools y context con el token y lee el modelo enrutado', async () => {
+  test('envía conversation, catalog y screen con el token y lee el modelo enrutado', async () => {
     const seen: { url?: string; auth?: string | null; body?: unknown } = {};
     const provider = timbalAssistant({
       url: 'https://workforce.example/run',
@@ -56,7 +56,11 @@ describe('timbalAssistant', () => {
     });
     const step = await provider.next(INPUT, new AbortController().signal);
     expect(step).toEqual({ reply: 'Hay un lote.', tool_calls: [], model: 'proveedor/modelo' });
-    expect(seen).toEqual({ url: 'https://workforce.example/run', auth: 'Bearer token-sintetico', body: INPUT });
+    expect(seen).toEqual({
+      url: 'https://workforce.example/run',
+      auth: 'Bearer token-sintetico',
+      body: { conversation: INPUT.messages, catalog: INPUT.tools, screen: INPUT.context },
+    });
   });
 
   test('errores de red, HTTP o JSON se convierten en WC_ASSISTANT_FAILED', async () => {
@@ -78,6 +82,27 @@ describe('timbalAssistant', () => {
     expect(provider.available).toBe(false);
     expect(await codeOf(provider.next(INPUT, new AbortController().signal))).toBe('WC_ASSISTANT_UNAVAILABLE');
     expect(assistantFromConfig({ assistantUrl: 'https://workforce.example/run', assistantToken: null }).available).toBe(true);
+  });
+
+  test('sin token propio, un workflow del host de Timbal usa la credencial del proyecto y otro host no', async () => {
+    const auth: Array<string | null> = [];
+    const fetchImpl = async (_url: string | URL | Request, init?: RequestInit) => {
+      auth.push(new Headers(init?.headers).get('authorization'));
+      return Response.json({ reply: 'Hecho.' });
+    };
+    const signal = new AbortController().signal;
+    const base = { assistantToken: null, timbalApiHost: 'api.timbal.ai', timbalToken: 'credencial-sintetica' };
+    const own = assistantFromConfig(
+      { ...base, assistantUrl: 'https://api.timbal.ai/orgs/1/projects/2/workforce/asistente/run?rev=main' },
+      fetchImpl,
+    );
+    const other = assistantFromConfig({ ...base, assistantUrl: 'https://workforce.example/run' }, fetchImpl);
+    const explicit = assistantFromConfig(
+      { ...base, assistantToken: 'token-propio', assistantUrl: 'https://api.timbal.ai/run' },
+      fetchImpl,
+    );
+    for (const provider of [own, other, explicit]) await provider.next(INPUT, signal);
+    expect(auth).toEqual(['Bearer credencial-sintetica', null, 'Bearer token-propio']);
   });
 });
 

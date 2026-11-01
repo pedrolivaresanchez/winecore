@@ -5,6 +5,10 @@ herramientas MCP visibles para la persona y el contexto de pantalla. Devuelve un
 respuesta o las herramientas que hay que ejecutar; nunca las ejecuta él.
 Despliegue: miembro de la workforce del proyecto; la API lo encuentra con
 `WINECORE_ASSISTANT_URL` (y `WINECORE_ASSISTANT_TOKEN` si el endpoint lo exige).
+
+Entrada: `conversation`, `catalog` y `screen`. Timbal reserva `messages` (lo toma el
+paso del agente y lo convierte en objetos Message) y `context` (el servidor lo saca
+de la petición como contexto de ejecución), así que no sirven como nombres.
 """
 
 from __future__ import annotations
@@ -52,14 +56,14 @@ planner = Agent(
 
 
 def intake(
-    messages: list[dict[str, Any]],
-    tools: list[dict[str, Any]] | None = None,
-    context: dict[str, Any] | None = None,
+    conversation: list[dict[str, Any]],
+    catalog: list[dict[str, Any]] | None = None,
+    screen: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
-        "messages": normalize_messages(messages),
-        "tools": normalize_tools(tools),
-        "context": normalize_context(context),
+        "messages": normalize_messages(conversation),
+        "tools": normalize_tools(catalog),
+        "context": normalize_context(screen),
     }
 
 

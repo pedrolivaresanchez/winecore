@@ -210,6 +210,17 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(len(own_id), 1)
         self.assertNotIn(own_id[0], ocr)
 
+    def test_intake_does_not_use_names_reserved_by_timbal(self) -> None:
+        import ast
+
+        tree = ast.parse((ROOT / "workflow.py").read_text(encoding="utf-8"))
+        intake = next(
+            node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == "intake"
+        )
+        names = {arg.arg for arg in intake.args.args}
+        self.assertEqual(names, {"conversation", "catalog", "screen"})
+        self.assertFalse(names & {"messages", "context", "prompt", "run_context"})
+
 
 if __name__ == "__main__":
     unittest.main()
