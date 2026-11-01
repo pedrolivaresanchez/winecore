@@ -119,6 +119,8 @@ describe('detalle de documentos Holded', () => {
       paid: '10.00',
       pending: '6.94',
       status_holded: 'Pendiente',
+      status: 'overdue',
+      status_label: 'Vencida',
       kind: 'sale',
       entity_code: 'CVPO',
       legal_entity_id: cvpo,
@@ -242,12 +244,15 @@ describe('detalle de documentos Holded', () => {
     expect(quoteResponse.status).toBe(200);
     const quoteBody = await quoteResponse.json() as {
       kind: string;
+      status: string;
+      status_label: string;
       due_date: string | null;
       withholding: string | null;
       counterparty_contact_id: string | null;
       lines: { description: string }[];
     };
     expect(quoteBody.kind).toBe('quote');
+    expect([quoteBody.status, quoteBody.status_label]).toEqual(['expired', 'Caducado']);
     expect(quoteBody.due_date).toBe('2026-05-31');
     expect(quoteBody.withholding).toBeNull();
     expect(quoteBody.counterparty_contact_id).toBe(contact);
@@ -275,11 +280,13 @@ describe('detalle de documentos Holded', () => {
     expect(noteResponse.status).toBe(200);
     const noteBody = await noteResponse.json() as {
       kind: string;
+      status_label: string;
       counterparty_name: string;
       withholding: string;
       lines: { description: string; quantity: string; line_base: string }[];
     };
     expect(noteBody.kind).toBe('delivery_note');
+    expect(noteBody.status_label).toBe('Emitido');
     expect(noteBody.counterparty_name).toBe('Bodega ejemplo');
     expect(noteBody.withholding).toBe('0.00');
     expect(noteBody.lines).toEqual([

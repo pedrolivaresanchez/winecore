@@ -17,8 +17,8 @@ export function getLegacyInvoices(writer: Writer, request: Request) {
   return listLegacyInvoices(writer, sessionOf(request), new URL(request.url));
 }
 
-export function getLegacyInvoice(writer: Writer, request: Request, id: string) {
-  return loadLegacyInvoice(writer, sessionOf(request), id);
+export function getLegacyInvoice(writer: Writer, request: Request, id: string, now = new Date()) {
+  return loadLegacyInvoice(writer, sessionOf(request), id, now);
 }
 
 export async function getLegacyInvoicePdf(writer: Writer, request: Request, id: string): Promise<Response> {
@@ -62,8 +62,8 @@ async function storedPdf(writer: Writer, table: string, id: string, roles: strin
   return null;
 }
 
-export function getLegacyDocument(writer: Writer, request: Request, id: string) {
-  return loadLegacyDocument(writer, sessionOf(request), id);
+export function getLegacyDocument(writer: Writer, request: Request, id: string, now = new Date()) {
+  return loadLegacyDocument(writer, sessionOf(request), id, now);
 }
 
 export function getLegacyProducts(writer: Writer, request: Request) {

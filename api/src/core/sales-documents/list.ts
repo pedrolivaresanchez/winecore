@@ -202,6 +202,39 @@ export async function listSalesDocuments(writer: Writer, user: UserCtx, url: URL
   return page;
 }
 
+export interface HoldedDocumentState {
+  status: string;
+  status_label: string;
+  pending: string | null;
+}
+
+const HOLDED_BOOK: Record<Origin, Codes> = { holded: { po: true, cvpo: true }, winecore: { po: false, cvpo: false } };
+
+/**
+ * Estado común de un documento de Holded, con la misma consulta que la lista para que el visor
+ * y la fila no se contradigan. Quien llama ya ha comprobado la sociedad del documento.
+ */
+export async function holdedDocumentState(
+  writer: Writer,
+  kind: DocumentKind,
+  direction: Direction,
+  id: string,
+  now: Date,
+): Promise<HoldedDocumentState | null> {
+  const rows = await writer.read<Record<string, unknown>>(`
+    ${rowsCte({ kind, direction }, HOLDED_BOOK, businessDate(now))}
+    SELECT status, CAST(pending AS VARCHAR) AS pending FROM rows WHERE id = ${sql`${id}`}
+  `);
+  const row = rows[0];
+  if (!row) return null;
+  const status = String(row.status);
+  return {
+    status,
+    status_label: statusLabel(kind, status, direction),
+    pending: row.pending == null ? null : money2(row.pending),
+  };
+}
+
 function readableBooks(user: UserCtx, kind: DocumentKind, direction: Direction, scope: LegacyScope): Record<Origin, Codes> {
   const native: readonly Permission[] = kind !== 'invoice'
     ? ['sales.read']
@@ -237,7 +270,7 @@ function readable(codes: Codes): boolean {
   return codes.po || codes.cvpo;
 }
 
-function rowsCte(query: Query, books: Record<Origin, Codes>, today: string): string {
+function rowsCte(query: Pick<Query, 'kind' | 'direction'>, books: Record<Origin, Codes>, today: string): string {
   const branches: string[] = [];
   const holded = readable(books.holded) ? entityPredicate(scopeOf(books.holded)) : null;
   const native = readable(books.winecore) ? entityPredicate(scopeOf(books.winecore)) : null;
