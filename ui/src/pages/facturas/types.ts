@@ -95,6 +95,8 @@ export type Invoice = {
   customer_id: string | null
   customer_name: string | null
   customer_snapshot: CustomerSnapshot | null
+  ship_to: Record<string, unknown> | null
+  customer_references: string | null
   channel: string | null
   sales_order_id: string | null
   currency: string
@@ -127,6 +129,7 @@ export type LineDraft = {
   productId: string
   description: string
   quantity: string
+  unit: string
   unitPrice: string
   discountPct: string
   taxCode: string
@@ -204,10 +207,13 @@ export type CreateInvoiceBody = {
   notes?: string | null
   from_delivery_notes?: string[]
   from_order?: string
+  ship_to?: Record<string, string> | null
+  customer_references?: string | null
   lines?: {
     product_id: string
     description?: string
     quantity: string
+    unit?: string
     unit_price?: string
     discount_pct?: string
     tax_code?: string

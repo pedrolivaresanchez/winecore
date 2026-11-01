@@ -13,12 +13,12 @@ const PEDRO_OWNER = '01a1964b-983d-7287-9926-4014235bf55d';
 const OTHER = '01a1964b-983d-7287-9926-4014235bf000';
 const ALL = ['approve:*', 'count:*', 'deliver:*', 'issue:*', 'manage:*', 'operate:*', 'prepare:*', 'read:*', 'void:*', 'write:*'];
 
-describe('0042: alcances del cliente MCP pedro-owner', () => {
+describe('0043: alcances del cliente MCP pedro-owner', () => {
   it('amplía sus alcances a todo sin tocar su token ni a otros clientes, y enciende los módulos', async () => {
-    const before = await mkdtemp(join(tmpdir(), 'winecore-0042-'));
+    const before = await mkdtemp(join(tmpdir(), 'winecore-0043-'));
     const client = await createLocalClient(':memory:');
     try {
-      for (const name of (await readdir(migrations)).filter((file) => file.endsWith('.sql') && file < '0042')) {
+      for (const name of (await readdir(migrations)).filter((file) => file.endsWith('.sql') && file < '0043')) {
         await copyFile(join(migrations, name), join(before, name));
       }
       await migrate(client, { dir: before });
@@ -36,7 +36,7 @@ describe('0042: alcances del cliente MCP pedro-owner', () => {
       const clientsBefore = await client.query(`SELECT * FROM core.api_client ORDER BY code`);
 
       const applied = await migrate(client);
-      expect(applied.pending[0]).toBe('0042_mcp_owner_scopes.sql');
+      expect(applied.pending[0]).toBe('0043_mcp_owner_scopes.sql');
 
       expect(await client.query(`SELECT * FROM core.api_token`)).toEqual(tokenBefore);
       expect(await client.query(`SELECT * FROM core.api_client ORDER BY code`)).toEqual(clientsBefore);

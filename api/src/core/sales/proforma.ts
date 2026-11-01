@@ -1,6 +1,7 @@
-import { sql } from '../db/sql';
 import type { Tx } from '../db/writer';
+import { loadCustomerParty, loadSellerContext, loadTaxRates } from '../pdf/context';
 import { renderDocumentPdf, type DocumentPdfLang } from '../pdf/document';
+import { shipToFrom } from '../pdf/ship-to';
 import { decOf } from './db';
 
 type ReadDb = Pick<Tx, 'read'>;
@@ -29,24 +30,23 @@ export async function renderQuotePdf(db: ReadDb, quote: Record<string, unknown>)
   const lang: DocumentPdfLang = quote.language === 'en' ? 'en' : 'es';
   const english = lang === 'en';
   const proforma = quote.is_proforma === true;
-  const sellers = await db.read<Record<string, unknown>>(sql`
-    SELECT legal_name, tax_id, address_line, postal_code, city, province
-    FROM core.legal_entity WHERE id = CAST(${String(quote.legal_entity_id)} AS UUID)
-  `);
-  const customers = await db.read<{ legal_name: string }>(sql`
-    SELECT legal_name FROM party.contact WHERE id = CAST(${String(quote.customer_id)} AS UUID)
-  `);
-  const seller = sellers[0] ?? {};
+  const { seller, profile } = await loadSellerContext(db, String(quote.legal_entity_id));
+  const customer = await loadCustomerParty(db, String(quote.customer_id));
+  const rates = await loadTaxRates(db);
   const raw = Array.isArray(quote.lines) ? (quote.lines as Record<string, unknown>[]) : [];
   const lines = raw.map((line) => {
     const discount = decOf(line.discount_pct ?? '0');
     const base = decOf(line.quantity).mul(decOf(line.unit_price)).mul(decOf(100).sub(discount)).div(100);
+    const taxCode = line.tax_code == null ? null : String(line.tax_code);
     return {
-      description: discount.isZero() ? String(line.description) : `${String(line.description)} (-${discount.toString()} %)`,
+      description: String(line.description),
       quantity: String(line.quantity),
       unit_price: String(line.unit_price),
       line_base: base.toFixed(2),
-      tax_code: line.tax_code == null ? null : String(line.tax_code),
+      tax_code: taxCode,
+      tax_rate: taxCode == null ? null : rates.get(taxCode) ?? null,
+      discount_pct: discount.toString(),
+      unit: line.unit == null ? null : String(line.unit),
     };
   });
   const title = proforma ? 'Proforma' : (english ? 'Quote' : 'Presupuesto');
@@ -54,22 +54,19 @@ export async function renderQuotePdf(db: ReadDb, quote: Record<string, unknown>)
   const bytes = await renderDocumentPdf({
     lang,
     title,
-    number: number ?? (english ? 'Draft' : 'Borrador'),
+    number,
     issueDate: typeof quote.issue_date === 'string' ? quote.issue_date : null,
     dueLabel: english ? 'Valid until' : 'Válido hasta',
     dueDate: typeof quote.valid_until === 'string' ? quote.valid_until : null,
     status: STATUS[lang][String(quote.status)] ?? String(quote.status),
     meta: typeof quote.incoterm === 'string' && quote.incoterm !== '' ? [`Incoterm ${quote.incoterm}`] : [],
     partyLabel: english ? 'Customer' : 'Cliente',
-    seller: {
-      legalName: text(seller.legal_name),
-      taxId: text(seller.tax_id),
-      addressLine: text(seller.address_line),
-      postalCode: text(seller.postal_code),
-      city: text(seller.city),
-      province: text(seller.province),
-    },
-    customerName: customers[0] ? String(customers[0].legal_name) : (english ? 'Customer' : 'Cliente'),
+    seller,
+    profile,
+    customer,
+    customerName: customer?.legalName ?? (english ? 'Customer' : 'Cliente'),
+    shipTo: shipToFrom(quote.ship_to),
+    customerReferences: typeof quote.customer_references === 'string' ? quote.customer_references : null,
     description: typeof quote.notes === 'string' && quote.notes.trim() !== '' ? quote.notes : null,
     lines,
     totals: {
@@ -83,10 +80,6 @@ export async function renderQuotePdf(db: ReadDb, quote: Record<string, unknown>)
   });
   const stem = proforma ? 'proforma' : (english ? 'quote' : 'presupuesto');
   return { bytes, filename: `${stem}-${safeName(number ?? (english ? 'draft' : 'borrador'))}.pdf` };
-}
-
-function text(value: unknown): string {
-  return value == null ? '' : String(value);
 }
 
 function safeName(value: string): string {

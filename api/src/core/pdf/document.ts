@@ -1,69 +1,106 @@
-import Decimal from 'decimal.js';
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
+import { Decimal } from 'decimal.js';
+import {
+  HoldedSheet,
+  formatAmount,
+  formatNumber,
+  formatPercent,
+  formatUnitPrice,
+  type NoteLine,
+  type PdfLang,
+  type TableColumn,
+  type TableRow,
+  type TotalRow,
+} from './holded-layout';
+import { logPdfFallback, renderFallbackPdf } from './fallback';
+import { customerSpec, issuerSpec, type PartyLike } from './parties';
+import { EMPTY_DOCUMENT_PROFILE, type DocumentProfileView, type DocumentVariant } from './profile';
+import { shipToLines, type ShipToView } from './ship-to';
 
-const PAGE_W = 595.28;
-const PAGE_H = 841.89;
-const MARGIN = 42;
-const RIGHT = PAGE_W - MARGIN;
-const INK = rgb(0.12, 0.12, 0.12);
-const MUTED = rgb(0.38, 0.36, 0.34);
-const RULE = rgb(0.78, 0.75, 0.72);
-const BAND = rgb(0.95, 0.93, 0.9);
-const ACCENT = rgb(0.45, 0.12, 0.16);
+export type DocumentPdfLang = PdfLang;
 
-const COL = {
-  units: 360,
-  price: 432,
-  base: 498,
-  tax: RIGHT,
-};
+interface Labels {
+  date: string;
+  status: string;
+  notes: string;
+  draft: string;
+  ref: string;
+  lot: string;
+  discount: string;
+  taxable: string;
+  vat: string;
+  withholding: string;
+  total: string;
+  paid: string;
+  pending: string;
+  shipTo: string;
+  noLines: string;
+  discountShort: string;
+  columns: Record<'concept' | 'price' | 'units' | 'discount' | 'vat' | 'total' | 'subtotal', string>;
+}
 
-export type DocumentPdfLang = 'es' | 'en';
-
-const LABELS = {
+const LABELS: Record<DocumentPdfLang, Labels> = {
   es: {
-    number: 'Número',
     date: 'Fecha',
     status: 'Estado',
-    seller: 'Emisor',
-    taxId: 'NIF',
-    description: 'Descripción',
-    units: 'Unidades',
-    price: 'Precio',
-    base: 'Base',
-    tax: 'Impuesto',
-    noLines: 'Sin líneas.',
-    subtotal: 'Base imponible',
+    notes: 'Notas',
+    draft: 'BORRADOR',
+    ref: 'Ref.',
+    lot: 'LOTE',
+    discount: 'DESCUENTO POR ITEM',
+    taxable: 'BASE IMPONIBLE',
     vat: 'IVA',
-    withholding: 'Retención',
-    total: 'Total',
-    paid: 'Pagado',
-    pending: 'Pendiente',
-    continued: 'continuación',
+    withholding: 'RETENCIÓN',
+    total: 'TOTAL',
+    paid: 'PAGADO',
+    pending: 'PENDIENTE',
+    shipTo: 'Dirección de envío',
+    noLines: 'Sin líneas.',
+    discountShort: 'Dto.',
+    columns: {
+      concept: 'CONCEPTO',
+      price: 'PRECIO',
+      units: 'UNIDADES',
+      discount: 'DTO.',
+      vat: 'IVA',
+      total: 'TOTAL',
+      subtotal: 'SUBTOTAL',
+    },
   },
   en: {
-    number: 'Number',
     date: 'Date',
     status: 'Status',
-    seller: 'From',
-    taxId: 'Tax ID',
-    description: 'Description',
-    units: 'Units',
-    price: 'Price',
-    base: 'Net',
-    tax: 'Tax',
-    noLines: 'No lines.',
-    subtotal: 'Subtotal',
+    notes: 'Notes',
+    draft: 'DRAFT',
+    ref: 'Ref.',
+    lot: 'LOT',
+    discount: 'DISCOUNT PER ITEM',
+    taxable: 'TAXABLE AMOUNT',
     vat: 'VAT',
-    withholding: 'Withholding',
-    total: 'Total',
-    paid: 'Paid',
-    pending: 'Pending',
-    continued: 'continued',
+    withholding: 'WITHHOLDING',
+    total: 'TOTAL',
+    paid: 'PAID',
+    pending: 'PENDING',
+    shipTo: 'Shipping address',
+    noLines: 'No lines.',
+    discountShort: 'Disc.',
+    columns: {
+      concept: 'DESCRIPTION',
+      price: 'PRICE',
+      units: 'QUANTITY',
+      discount: 'DISC.',
+      vat: 'VAT',
+      total: 'TOTAL',
+      subtotal: 'SUBTOTAL',
+    },
   },
-} as const;
+};
 
-type Labels = (typeof LABELS)[DocumentPdfLang];
+/** Mismos anchos que las plantillas de Holded; la maqueta los amplía si un importe no cabe. */
+const PRICED_WIDTHS: Record<DocumentVariant, readonly number[]> = {
+  po: [265.4, 56.1, 56.1, 51, 40.8, 40.6],
+  cvpo: [132.7, 89.7, 77.1, 82.5, 57.3, 70.6],
+};
+const UNPRICED_WIDTHS: readonly number[] = [409.4, 100.6];
 
 export interface DocumentPdfSeller {
   legalName: string;
@@ -72,6 +109,10 @@ export interface DocumentPdfSeller {
   postalCode: string;
   city: string;
   province: string;
+  tradeName?: string | null;
+  addressLine2?: string | null;
+  /** Sin país se entiende España y no se imprime. */
+  countryCode?: string | null;
 }
 
 export interface DocumentPdfLine {
@@ -80,23 +121,33 @@ export interface DocumentPdfLine {
   quantity: string | null;
   unit_price: string | null;
   line_base: string | null;
+  /** Etiqueta del impuesto; si no hay `tax_rate`, se intenta leer el porcentaje de aquí («21%»). */
   tax_code: string | null;
+  unit?: string | null;
+  discount_pct?: string | null;
+  /** Porcentaje numérico del impuesto (21 para el IVA general). */
+  tax_rate?: string | null;
+  lot?: string | null;
 }
 
 export interface DocumentPdfInput {
   lang?: DocumentPdfLang;
+  /** «Presupuesto», «Albarán»…; se imprime en mayúsculas junto al número. */
   title: string;
-  number: string;
+  /** Sin número el documento es un borrador y el título lo dice. */
+  number: string | null;
   issueDate: string | null;
   /** Sin etiqueta, la cabecera no lleva segunda fecha (el albarán no vence). */
   dueLabel: string | null;
   dueDate: string | null;
   status: string;
-  /** Líneas de cabecera después del estado, ya traducidas (incoterm, origen, destino). */
+  /** Líneas de datos ya traducidas (incoterm, origen, destino); van juntas en las notas del pie. */
   meta?: string[];
   partyLabel: string;
   seller: DocumentPdfSeller;
   customerName: string;
+  /** Domicilio y contacto del cliente cuando se conocen; sin ellos, solo el nombre. */
+  customer?: PartyLike | null;
   description: string | null;
   lines: DocumentPdfLine[];
   /** Sin precios, la tabla solo lleva descripción y unidades. */
@@ -106,392 +157,304 @@ export interface DocumentPdfInput {
   /** Solo las facturas llevan cobrado y pendiente. */
   settlement: { paid: string | null; pending: string | null } | null;
   note: string;
+  currency?: string;
+  profile?: DocumentProfileView | null;
+  shipTo?: ShipToView | null;
+  customerReferences?: string | null;
 }
 
-interface Ctx {
-  pdf: PDFDocument;
-  page: PDFPage;
-  pages: PDFPage[];
-  y: number;
-  bottom: number;
-  regular: PDFFont;
-  bold: PDFFont;
-  title: string;
-  number: string;
-  lang: DocumentPdfLang;
-  labels: Labels;
-  priced: boolean;
-  footer: string[];
-}
-
-/** Documento A4 con cabecera, partes, tabla de líneas y totales. No emite ni altera Verifactu. */
+/**
+ * Documento A4 con la maqueta de Holded. Nunca lanza: si la maqueta completa falla (logotipo
+ * ilegible, dato raro en una línea), la repite sin logotipo, cliente ni envío, y si aun así falla
+ * pinta una hoja sencilla. Un PDF que se abre desde la pantalla no puede acabar en un 500.
+ */
 export async function renderDocumentPdf(input: DocumentPdfInput): Promise<Uint8Array> {
-  const lang = input.lang ?? 'es';
-  const pdf = await PDFDocument.create({ updateMetadata: false });
-  const regular = await pdf.embedFont(StandardFonts.Helvetica);
-  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-  const footer = footerLines(input, regular);
-  const page = pdf.addPage([PAGE_W, PAGE_H]);
-  const ctx: Ctx = {
-    pdf,
-    page,
-    pages: [page],
-    y: PAGE_H - MARGIN - 16,
-    bottom: 28 + footer.length * 11 + 10,
-    regular,
-    bold,
-    title: input.title,
-    number: input.number,
-    lang,
-    labels: LABELS[lang],
-    priced: input.priced ?? true,
-    footer,
-  };
-  paintHeader(ctx, input);
-  paintParties(ctx, input);
-  paintTable(ctx, input.lines);
-  paintTotals(ctx, input);
-  for (const page of ctx.pages) paintFooter(page, ctx);
+  try {
+    return await renderDocumentPdfStrict(input);
+  } catch (error) {
+    logPdfFallback('layout', error);
+  }
+  try {
+    return await renderDocumentPdfStrict({ ...input, profile: null, customer: null, shipTo: null, customerReferences: null });
+  } catch (error) {
+    logPdfFallback('bare-layout', error);
+  }
+  return renderFallbackPdf(input);
+}
+
+/**
+ * Documento A4 con la maqueta de Holded (la misma que la factura): cabecera con logotipo,
+ * emisor, caja del cliente, tabla de líneas y totales. No emite ni altera Verifactu.
+ */
+export async function renderDocumentPdfStrict(input: DocumentPdfInput): Promise<Uint8Array> {
+  const lang: DocumentPdfLang = input.lang === 'en' ? 'en' : 'es';
+  const labels = LABELS[lang];
+  const profile = input.profile ?? EMPTY_DOCUMENT_PROFILE;
+  const variant = profile.variant;
+  const currency = input.currency ?? 'EUR';
+  const priced = input.priced ?? true;
+  const sheet = await HoldedSheet.create({ lang, logo: profile.logo });
+
+  const number = input.number?.trim() ?? '';
+  const shownTitle = input.title.toLocaleUpperCase(lang === 'es' ? 'es' : 'en');
+  const title = number === '' ? `${shownTitle} (${labels.draft})` : `${shownTitle} #${number}`;
+  const dateLines: string[] = [];
+  if (input.issueDate) dateLines.push(`${labels.date}: ${civilDate(input.issueDate, lang)}`);
+  if (input.dueLabel && input.dueDate) dateLines.push(`${input.dueLabel}: ${civilDate(input.dueDate, lang)}`);
+  if (input.status.trim() !== '') dateLines.push(`${labels.status}: ${input.status.trim()}`);
+  const brand = input.seller.tradeName?.trim() ?? '';
+  sheet.header({
+    title,
+    dateLines,
+    brandText: brand !== '' && brand !== input.seller.legalName ? brand : null,
+  });
+
+  const ship = input.shipTo ? shipToLines(input.shipTo, lang) : [];
+  const customer = customerSpec(input.customer ?? bareParty(input.customerName), lang);
+  sheet.parties({
+    issuer: issuerSpec(sellerParty(input.seller), profile, lang),
+    ship: ship.length > 0 ? { heading: labels.shipTo, lines: ship } : null,
+    customer: { ...customer, name: input.customerName.trim() === '' ? customer.name : input.customerName, label: `${input.partyLabel}:` },
+  });
+  sheet.references(textLines(input.customerReferences));
+
+  const columns = columnsFor(variant, priced, labels);
+  const rows = input.lines.length === 0
+    ? [{ concept: { title: labels.noLines, detail: [] }, cells: columns.slice(1).map(() => '') }]
+    : input.lines.map((line) => rowFor(line, variant, priced, labels, lang, currency));
+  sheet.table(columns, rows);
+
+  if (input.totals) sheet.totals(totalRows(input, labels, lang, currency));
+  sheet.notes(noteLines(input, profile, labels));
+
   const issued = utcMidnight(input.issueDate);
-  pdf.setTitle(`${input.title} ${input.number}`.slice(0, 120));
-  pdf.setCreator('WineCore');
-  pdf.setProducer('WineCore');
-  pdf.setLanguage(lang === 'en' ? 'en-GB' : 'es-ES');
-  pdf.setCreationDate(issued);
-  pdf.setModificationDate(issued);
-  return pdf.save({ useObjectStreams: false, updateFieldAppearances: false });
-}
-
-function paintHeader(ctx: Ctx, input: DocumentPdfInput): void {
-  ctx.page.drawRectangle({
-    x: MARGIN,
-    y: ctx.y + 22,
-    width: 72,
-    height: 3,
-    color: ACCENT,
-    borderWidth: 0,
+  return sheet.finish({
+    title: `${input.title} ${number}`.trim(),
+    author: input.seller.legalName,
+    subject: number === '' ? undefined : number,
+    createdAt: issued,
+    fingerprint: { variant, priced },
   });
-  const title = encode(ctx.bold, input.title);
-  ctx.page.drawText(title, { x: MARGIN, y: ctx.y, size: 18, font: ctx.bold, color: INK });
-  const meta = [
-    `${ctx.labels.number} ${blank(input.number)}`,
-    `${ctx.labels.date} ${civilDate(input.issueDate, ctx.lang)}`,
-    ...(input.dueLabel ? [`${input.dueLabel} ${civilDate(input.dueDate, ctx.lang)}`] : []),
-    `${ctx.labels.status} ${blank(input.status)}`,
-    ...(input.meta ?? []).filter((line) => line.trim() !== ''),
-  ];
-  let metaY = ctx.y + 4;
-  for (const line of meta) {
-    const shown = encode(ctx.regular, line);
-    ctx.page.drawText(shown, { x: 360, y: metaY, size: 9, font: ctx.regular, color: INK });
-    metaY -= 13;
-  }
-  ctx.y = Math.min(ctx.y - 28, metaY - 8);
 }
 
-function paintParties(ctx: Ctx, input: DocumentPdfInput): void {
-  const seller = input.seller;
-  const place = [seller.postalCode, seller.city].filter((part) => part.trim() !== '').join(' ');
-  const locality = [place, seller.province.trim() !== '' ? `(${seller.province.trim()})` : ''].filter((part) => part !== '').join(' ');
-  drawBlock(ctx, ctx.labels.seller, [
-    seller.legalName,
-    seller.taxId.trim() === '' ? '' : `${ctx.labels.taxId} ${seller.taxId.trim()}`,
-    seller.addressLine,
-    locality,
-  ]);
-  drawBlock(ctx, input.partyLabel, [input.customerName], true);
-  if (input.description) drawBlock(ctx, ctx.labels.description, [input.description]);
+function sellerParty(seller: DocumentPdfSeller): PartyLike {
+  return {
+    legalName: seller.legalName,
+    taxId: seller.taxId,
+    address: {
+      line1: seller.addressLine,
+      line2: seller.addressLine2 ?? null,
+      postalCode: seller.postalCode,
+      city: seller.city,
+      province: seller.province.trim() === '' ? null : seller.province,
+      countryCode: (seller.countryCode ?? 'ES').toUpperCase(),
+    },
+  };
 }
 
-function paintTable(ctx: Ctx, lines: DocumentPdfLine[]): void {
-  ctx.y -= 8;
-  drawTableHeader(ctx);
-  if (lines.length === 0) {
-    drawRow(ctx, [ctx.labels.noLines], '—', '—', '—', '—');
-  }
-  const width = (ctx.priced ? COL.units : COL.tax) - MARGIN - 72;
-  for (const line of lines) {
-    const description = line.description ?? line.sku ?? '—';
-    const wrapped = wrap(ctx.regular, description, 8, width);
-    drawRow(
-      ctx,
-      wrapped.length > 0 ? wrapped : ['—'],
-      line.quantity == null ? '—' : plain(line.quantity, ctx.lang),
-      line.unit_price == null ? '—' : money(line.unit_price, ctx.lang),
-      line.line_base == null ? '—' : money(line.line_base, ctx.lang),
-      line.tax_code ?? '—',
-    );
-  }
-  ctx.y -= 6;
+function bareParty(name: string): PartyLike {
+  return {
+    legalName: name,
+    taxId: '',
+    address: { line1: '', line2: null, postalCode: '', city: '', province: null, countryCode: '' },
+  };
 }
 
-function paintTotals(ctx: Ctx, input: DocumentPdfInput): void {
+function columnsFor(variant: DocumentVariant, priced: boolean, labels: Labels): TableColumn[] {
+  const c = labels.columns;
+  if (!priced) {
+    return [c.concept, c.units].map((header, index) => ({
+      header,
+      width: UNPRICED_WIDTHS[index] ?? 100,
+      align: index === 0 ? 'left' : 'right',
+    }));
+  }
+  const names = variant === 'po'
+    ? [c.concept, c.price, c.units, c.discount, c.vat, c.total]
+    : [c.concept, c.units, c.price, c.subtotal, c.vat, c.total];
+  return names.map((header, index) => ({
+    header,
+    width: PRICED_WIDTHS[variant][index] ?? 60,
+    align: index === 0 ? 'left' : 'right',
+  }));
+}
+
+function decimal(value: string | null | undefined): Decimal | null {
+  if (value == null || value.trim() === '') return null;
+  try {
+    const parsed = new Decimal(value);
+    return parsed.isFinite() ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function round2(value: Decimal): Decimal {
+  return value.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+}
+
+/** Porcentaje del impuesto de la línea: el numérico si viene; si no, el «21%» de la etiqueta. */
+function rateOf(line: DocumentPdfLine): Decimal | null {
+  const direct = decimal(line.tax_rate);
+  if (direct) return direct;
+  const match = /(\d+(?:[.,]\d+)?)\s*%/u.exec(line.tax_code ?? '');
+  return match?.[1] ? decimal(match[1].replace(',', '.')) : null;
+}
+
+function baseOf(line: DocumentPdfLine): Decimal | null {
+  const given = decimal(line.line_base);
+  if (given) return given;
+  const quantity = decimal(line.quantity);
+  const price = decimal(line.unit_price);
+  if (!quantity || !price) return null;
+  const discount = decimal(line.discount_pct) ?? new Decimal(0);
+  return round2(quantity.mul(price).mul(new Decimal(100).sub(discount)).div(100));
+}
+
+function unitLabel(unit: string | null | undefined, lang: DocumentPdfLang): string {
+  const value = unit?.trim() ?? '';
+  if (value === 'ud' && lang === 'en') return 'pcs';
+  return value;
+}
+
+function rowFor(
+  line: DocumentPdfLine,
+  variant: DocumentVariant,
+  priced: boolean,
+  labels: Labels,
+  lang: DocumentPdfLang,
+  currency: string,
+): TableRow {
+  const title = (line.description ?? line.sku ?? '—').trim() || '—';
+  const detail: string[] = [];
+  if (line.sku && line.sku !== title) detail.push(`${labels.ref} ${line.sku}`);
+  if (line.lot) detail.push(`${labels.lot}: ${line.lot}`);
+  const quantity = formatNumber(line.quantity, lang, 3);
+  const unit = unitLabel(line.unit, lang);
+  const withUnit = `${quantity} ${unit}`.trim();
+  if (!priced) return { concept: { title, detail }, cells: [withUnit] };
+
+  const base = baseOf(line);
+  const rate = rateOf(line);
+  const total = base ? (rate ? base.add(round2(base.mul(rate).div(100))) : base) : null;
+  const discount = decimal(line.discount_pct);
+  const discountText = discount && !discount.isZero() ? formatPercent(discount, lang) : '';
+  const price = formatUnitPrice(line.unit_price, lang, currency);
+  const vat = rate ? formatPercent(rate, lang) : (line.tax_code ?? '');
+  const totalText = total ? formatAmount(total, lang, currency) : '';
+  if (variant === 'po') {
+    return { concept: { title, detail }, cells: [price, quantity, discountText, vat, totalText] };
+  }
+  if (discountText !== '') detail.push(`${labels.discountShort} ${discountText}`);
+  return {
+    concept: { title, detail },
+    cells: [withUnit, price, base ? formatAmount(base, lang, currency) : '', vat, totalText],
+  };
+}
+
+function nonZero(value: string | null | undefined): boolean {
+  const parsed = decimal(value);
+  return parsed !== null && !parsed.isZero();
+}
+
+function totalRows(input: DocumentPdfInput, labels: Labels, lang: DocumentPdfLang, currency: string): TotalRow[] {
   const totals = input.totals;
-  if (!totals) return;
-  ensure(ctx, 96);
-  ctx.page.drawLine({
-    start: { x: RIGHT - 220, y: ctx.y + 12 },
-    end: { x: RIGHT, y: ctx.y + 12 },
-    thickness: 0.6,
-    color: RULE,
-  });
-  pair(ctx, ctx.labels.subtotal, money(totals.subtotal, ctx.lang), false);
-  pair(ctx, ctx.labels.vat, money(totals.vat, ctx.lang), false);
-  if (nonZero(totals.withholding)) pair(ctx, ctx.labels.withholding, money(totals.withholding, ctx.lang), false);
-  pair(ctx, ctx.labels.total, money(totals.total, ctx.lang), true);
-  if (!input.settlement) return;
-  pair(ctx, ctx.labels.paid, input.settlement.paid == null ? '—' : money(input.settlement.paid, ctx.lang), false);
-  pair(ctx, ctx.labels.pending, input.settlement.pending == null ? '—' : money(input.settlement.pending, ctx.lang), false);
-}
+  if (!totals) return [];
+  const rows: TotalRow[] = [];
 
-function drawBlock(ctx: Ctx, label: string, lines: string[], always = false): void {
-  const body = lines.flatMap((line) => wrap(ctx.regular, line, 9, RIGHT - MARGIN)).filter((line) => line !== '');
-  if (body.length === 0 && !always) return;
-  ensure(ctx, 14 + body.length * 12);
-  const heading = encode(ctx.bold, label);
-  ctx.page.drawText(heading, { x: MARGIN, y: ctx.y, size: 9, font: ctx.bold, color: INK });
-  ctx.y -= 13;
-  for (const line of body) {
-    ensure(ctx, 12);
-    ctx.page.drawText(line, { x: MARGIN, y: ctx.y, size: 9, font: ctx.regular, color: INK });
-    ctx.y -= 12;
-  }
-  ctx.y -= 6;
-}
-
-function drawTableHeader(ctx: Ctx): void {
-  ensure(ctx, 22);
-  const top = ctx.y + 12;
-  ctx.page.drawRectangle({
-    x: MARGIN,
-    y: ctx.y - 6,
-    width: RIGHT - MARGIN,
-    height: 18,
-    color: BAND,
-    borderWidth: 0,
-  });
-  const size = 8;
-  ctx.page.drawText(encode(ctx.bold, ctx.labels.description), { x: MARGIN + 4, y: ctx.y, size, font: ctx.bold, color: INK });
-  if (ctx.priced) {
-    drawRight(ctx, ctx.bold, ctx.labels.units, COL.units, ctx.y, size);
-    drawRight(ctx, ctx.bold, ctx.labels.price, COL.price, ctx.y, size);
-    drawRight(ctx, ctx.bold, ctx.labels.base, COL.base, ctx.y, size);
-    drawRight(ctx, ctx.bold, ctx.labels.tax, COL.tax, ctx.y, size);
-  } else {
-    drawRight(ctx, ctx.bold, ctx.labels.units, COL.tax, ctx.y, size);
-  }
-  ctx.y = top - 24;
-}
-
-function drawRow(ctx: Ctx, description: string[], units: string, price: string, base: string, tax: string): void {
-  const size = 8;
-  const leading = 11;
-  let index = 0;
-  let first = true;
-  while (index < description.length) {
-    const room = ctx.y - ctx.bottom;
-    const fit = Math.max(1, Math.floor(room / leading));
-    const slice = description.slice(index, index + fit);
-    const height = slice.length * leading + 4;
-    if (ctx.y - height < ctx.bottom) {
-      freshPage(ctx, true);
-      drawTableHeader(ctx);
-      continue;
+  let discount = new Decimal(0);
+  let complete = input.lines.length > 0;
+  for (const line of input.lines) {
+    const quantity = decimal(line.quantity);
+    const price = decimal(line.unit_price);
+    const base = baseOf(line);
+    if (!quantity || !price || !base) {
+      complete = false;
+      break;
     }
-    const baseline = ctx.y;
-    for (let line = 0; line < slice.length; line += 1) {
-      const shown = encode(ctx.regular, slice[line] ?? '');
-      ctx.page.drawText(shown, {
-        x: MARGIN + 4,
-        y: baseline - line * leading,
-        size,
-        font: ctx.regular,
-        color: INK,
+    discount = discount.add(round2(quantity.mul(price)).sub(base));
+  }
+  if (complete && discount.gt(0)) rows.push({ label: labels.discount, value: formatAmount(discount, lang, currency) });
+
+  rows.push({ label: labels.taxable, value: formatAmount(totals.subtotal, lang, currency) });
+  const breakdown = vatBreakdown(input.lines, totals.vat);
+  if (breakdown) {
+    for (const item of breakdown) {
+      rows.push({
+        label: `${labels.vat} ${formatPercent(item.rate, lang)}`,
+        value: formatAmount(item.quota, lang, currency),
       });
     }
-    if (first) {
-      if (ctx.priced) {
-        drawRight(ctx, ctx.regular, units, COL.units, baseline, size);
-        drawRight(ctx, ctx.regular, price, COL.price, baseline, size);
-        drawRight(ctx, ctx.regular, base, COL.base, baseline, size);
-        drawRight(ctx, ctx.regular, tax, COL.tax, baseline, size);
-      } else {
-        drawRight(ctx, ctx.regular, units, COL.tax, baseline, size);
-      }
-      first = false;
-    }
-    ctx.y = baseline - slice.length * leading - 3;
-    ctx.page.drawLine({
-      start: { x: MARGIN, y: ctx.y + 2 },
-      end: { x: RIGHT, y: ctx.y + 2 },
-      thickness: 0.3,
-      color: RULE,
-    });
-    index += slice.length;
+  } else {
+    rows.push({ label: labels.vat, value: formatAmount(totals.vat, lang, currency) });
   }
-}
-
-function pair(ctx: Ctx, label: string, value: string, strong: boolean): void {
-  const font = strong ? ctx.bold : ctx.regular;
-  const size = strong ? 11 : 9;
-  ensure(ctx, size + 6);
-  ctx.page.drawText(encode(font, label), { x: RIGHT - 220, y: ctx.y, size, font, color: INK });
-  drawRight(ctx, font, value, RIGHT, ctx.y, size);
-  ctx.y -= size + 5;
-}
-
-function paintFooter(page: PDFPage, ctx: Ctx): void {
-  let y = 22 + (ctx.footer.length - 1) * 11;
-  page.drawLine({
-    start: { x: MARGIN, y: y + 14 },
-    end: { x: RIGHT, y: y + 14 },
-    thickness: 0.4,
-    color: RULE,
-  });
-  for (const line of ctx.footer) {
-    page.drawText(line, { x: MARGIN, y, size: 8, font: ctx.regular, color: MUTED });
-    y -= 11;
+  if (nonZero(totals.withholding)) {
+    const held = decimal(totals.withholding)?.abs();
+    if (held) rows.push({ label: labels.withholding, value: formatAmount(held.neg(), lang, currency) });
   }
-}
-
-function footerLines(input: DocumentPdfInput, font: PDFFont): string[] {
-  const seller = input.seller;
-  const place = [seller.postalCode, seller.city].filter((part) => part.trim() !== '').join(' ');
-  const locality = [place, seller.province.trim()].filter((part) => part !== '').join(' ');
-  const address = [seller.addressLine.trim(), locality].filter((part) => part !== '').join(' · ');
-  const lines = address === '' ? [] : wrap(font, address, 8, RIGHT - MARGIN);
-  lines.push(...wrap(font, input.note, 8, RIGHT - MARGIN));
-  return lines;
-}
-
-function freshPage(ctx: Ctx, continued: boolean): void {
-  ctx.page = ctx.pdf.addPage([PAGE_W, PAGE_H]);
-  ctx.pages.push(ctx.page);
-  ctx.y = PAGE_H - MARGIN - 16;
-  if (!continued) return;
-  const note = encode(ctx.regular, `${ctx.title} ${ctx.number} (${ctx.labels.continued})`);
-  ctx.page.drawText(note, { x: MARGIN, y: ctx.y, size: 9, font: ctx.regular, color: MUTED });
-  ctx.y -= 18;
-}
-
-function ensure(ctx: Ctx, height: number): void {
-  if (ctx.y - height >= ctx.bottom) return;
-  freshPage(ctx, true);
-}
-
-function drawRight(ctx: Ctx, font: PDFFont, value: string, right: number, y: number, size: number): void {
-  const shown = encode(font, value);
-  const width = font.widthOfTextAtSize(shown, size);
-  ctx.page.drawText(shown, { x: right - width, y, size, font, color: INK });
-}
-
-function wrap(font: PDFFont, value: string, size: number, width: number): string[] {
-  const text = encode(font, value).replace(/\s+/gu, ' ').trim();
-  if (text === '') return [];
-  const lines: string[] = [];
-  let current = '';
-  for (const word of text.split(' ')) {
-    if (current === '') {
-      current = breakWord(font, word, size, width, lines);
-      continue;
-    }
-    const next = `${current} ${word}`;
-    if (font.widthOfTextAtSize(next, size) <= width) {
-      current = next;
-      continue;
-    }
-    lines.push(current);
-    current = breakWord(font, word, size, width, lines);
-  }
-  if (current !== '') lines.push(current);
-  return lines;
-}
-
-function breakWord(font: PDFFont, word: string, size: number, width: number, lines: string[]): string {
-  if (font.widthOfTextAtSize(word, size) <= width) return word;
-  let chunk = '';
-  for (const char of word) {
-    const next = chunk + char;
-    if (chunk !== '' && font.widthOfTextAtSize(next, size) > width) {
-      lines.push(chunk);
-      chunk = char;
-    } else {
-      chunk = next;
+  rows.push({ label: labels.total, value: formatAmount(totals.total, lang, currency) });
+  if (input.settlement) {
+    if (input.settlement.paid != null) rows.push({ label: labels.paid, value: formatAmount(input.settlement.paid, lang, currency) });
+    if (input.settlement.pending != null) {
+      rows.push({ label: labels.pending, value: formatAmount(input.settlement.pending, lang, currency) });
     }
   }
-  return chunk;
+  return rows;
 }
 
-function encode(font: PDFFont, value: string): string {
-  let out = '';
-  for (const char of value) {
-    if (char === '\n' || char === '\r' || char === '\t') {
-      out += ' ';
-      continue;
-    }
-    try {
-      font.encodeText(char);
-      out += char;
-    } catch {
-      out += '?';
-    }
+/** Cuota por tipo solo si todas las líneas traen su porcentaje y la suma cuadra con el IVA del documento. */
+function vatBreakdown(lines: readonly DocumentPdfLine[], documentVat: string): { rate: Decimal; quota: Decimal }[] | null {
+  if (lines.length === 0) return null;
+  const bases = new Map<string, { rate: Decimal; base: Decimal }>();
+  for (const line of lines) {
+    const rate = rateOf(line);
+    const base = baseOf(line);
+    if (!rate || !base) return null;
+    const key = rate.toFixed();
+    const current = bases.get(key);
+    bases.set(key, { rate, base: (current?.base ?? new Decimal(0)).add(base) });
   }
+  const groups = [...bases.values()]
+    .sort((left, right) => left.rate.comparedTo(right.rate))
+    .map(({ rate, base }) => ({ rate, quota: round2(base.mul(rate).div(100)) }));
+  const sum = groups.reduce((total, group) => total.add(group.quota), new Decimal(0));
+  const expected = decimal(documentVat);
+  if (!expected || !round2(expected).equals(sum)) return null;
+  return groups;
+}
+
+function noteLines(input: DocumentPdfInput, profile: DocumentProfileView, labels: Labels): NoteLine[] {
+  const out: NoteLine[] = [];
+  const group = (items: readonly NoteLine[]): void => {
+    if (items.length === 0) return;
+    if (out.length > 0) out.push('');
+    out.push(...items);
+  };
+  group(profile.footerLines.map((line) => line.trim()));
+
+  const extra: string[] = [];
+  const meta = (input.meta ?? []).map((line) => line.trim()).filter((line) => line !== '');
+  if (meta.length > 0) extra.push(meta.join(' · '));
+  textLines(input.description).forEach((line, index) => extra.push(index === 0 ? `${labels.notes}: ${line}` : line));
+  group(extra);
+
+  const note = input.note.trim();
+  if (note !== '') group([note]);
   return out;
 }
 
-function grouped(whole: string, lang: DocumentPdfLang): string {
-  return whole.replace(/\B(?=(\d{3})+(?!\d))/gu, lang === 'en' ? ',' : '.');
-}
-
-function money(value: string | null, lang: DocumentPdfLang): string {
-  if (value == null || value.trim() === '') return '—';
-  try {
-    const decimal = new Decimal(value);
-    if (!decimal.isFinite()) return '—';
-    const sign = decimal.isNeg() ? '-' : '';
-    const [whole, frac] = decimal.abs().toFixed(2).split('.');
-    return `${sign}${grouped(whole ?? '0', lang)}${lang === 'en' ? '.' : ','}${frac ?? '00'} EUR`;
-  } catch {
-    return '—';
-  }
-}
-
-/** Cantidades sin ceros de relleno: 12.000 se ve como 12. */
-function plain(value: string, lang: DocumentPdfLang): string {
-  try {
-    const decimal = new Decimal(value);
-    if (!decimal.isFinite()) return value;
-    const sign = decimal.isNeg() ? '-' : '';
-    const [whole, frac] = decimal.abs().toFixed().split('.');
-    const shown = grouped(whole ?? '0', lang);
-    return frac ? `${sign}${shown}${lang === 'en' ? '.' : ','}${frac}` : `${sign}${shown}`;
-  } catch {
-    return value;
-  }
-}
-
-function nonZero(value: string | null): value is string {
-  if (value == null || value.trim() === '') return false;
-  try {
-    return !new Decimal(value).isZero();
-  } catch {
-    return false;
-  }
+function textLines(value: string | null | undefined): string[] {
+  if (!value) return [];
+  return value.split(/\r?\n/u).map((line) => line.trim()).filter((line) => line !== '');
 }
 
 const MONTHS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-function civilDate(value: string | null, lang: DocumentPdfLang): string {
-  if (value == null || value.trim() === '') return '—';
+function civilDate(value: string, lang: DocumentPdfLang): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})/u.exec(value);
   if (!match) return value;
   if (lang === 'en') return `${Number(match[3])} ${MONTHS_EN[Number(match[2]) - 1] ?? match[2]} ${match[1]}`;
   return `${match[3]}/${match[2]}/${match[1]}`;
-}
-
-function blank(value: string): string {
-  const text = value.trim();
-  return text === '' ? '—' : text;
 }
 
 function utcMidnight(iso: string | null): Date {

@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { copy } from '@/i18n'
 import { ApiError, api, isAbortError } from '@/lib/api'
-import { deliveryStatusLabel, docPath, lineBase, quoteStatusLabel, statusTone as salesTone, type DeliveryNote, type Quote } from '@/lib/sales'
+import { deliveryStatusLabel, docPath, lineBase, orderStatusLabel, quoteStatusLabel, statusTone as salesTone, type DeliveryNote, type Quote, type SalesOrder } from '@/lib/sales'
 import { statusTone as commonTone, type StatusTone } from '@/lib/status-tones'
 import type { Me } from '@/lib/types'
 import { day, entityLabel, hasAmount, invoiceTitle, money, qty, statusLabel, statusTone as invoiceTone } from '@/pages/facturas/format'
 import { linesOf, moneySum } from '@/pages/facturas/holded-detail'
 import type { Invoice } from '@/pages/facturas/types'
-export type DocSource = 'holded-invoice' | 'holded-document' | 'invoice' | 'quote' | 'delivery'
+export type DocSource = 'holded-invoice' | 'holded-document' | 'invoice' | 'quote' | 'order' | 'delivery'
 
 type HoldedInvoiceDetail = {
   id: string
@@ -38,6 +38,7 @@ export type DocRecord =
   | { source: 'holded-document'; data: HoldedDocumentDetail }
   | { source: 'invoice'; data: Invoice }
   | { source: 'quote'; data: Quote }
+  | { source: 'order'; data: SalesOrder }
   | { source: 'delivery'; data: DeliveryNote }
 
 export type DocLine = { key: string; description: string; quantity: string; price: string; base: string }
@@ -64,6 +65,7 @@ const BASE: Record<DocSource, string> = {
   'holded-document': '/v1/legacy/documents',
   invoice: '/v1/invoices',
   quote: '/v1/quotes',
+  order: '/v1/sales-orders',
   delivery: '/v1/delivery-notes',
 }
 
@@ -265,6 +267,36 @@ function quoteView(data: Quote, me: Me, partyName: string | null): DocView {
   }
 }
 
+function orderView(data: SalesOrder, me: Me, partyName: string | null): DocView {
+  return {
+    title: data.number ?? copy.sales.draft,
+    kind: copy.documents.kinds.order,
+    holded: false,
+    entity: entityOf(me, data.legal_entity_id),
+    status: { label: orderStatusLabel(data.status), tone: salesTone(data.status) },
+    party: { label: copy.documents.customer, name: partyName ?? '—', contactId: data.customer_id },
+    dates: [
+      { label: copy.documents.issueDate, value: day(data.order_date) },
+      ...(data.requested_date ? [{ label: copy.documents.requestedDate, value: day(data.requested_date) }] : []),
+    ],
+    totals: [
+      { label: copy.documents.base, value: money(data.subtotal) },
+      { label: copy.documents.tax, value: money(data.tax_total) },
+      { label: copy.documents.total, value: money(data.total), strong: true },
+    ],
+    lines: data.lines.map((line) => ({
+      key: line.id,
+      description: line.description || '—',
+      quantity: qty(line.quantity),
+      price: money(line.unit_price),
+      base: money(lineBase(line.quantity, line.unit_price, line.discount_pct)),
+    })),
+    pdfPath: earlyPdfPath('order', data.id),
+    pdfName: data.number ? `pedido-${data.number}.pdf` : 'pedido.pdf',
+    record: `${docPath('order')}/${data.id}`,
+  }
+}
+
 function deliveryView(data: DeliveryNote, me: Me, partyName: string | null): DocView {
   const valued = data.lines.some((line) => line.unit_price != null && line.unit_price !== '')
   return {
@@ -292,6 +324,7 @@ function deliveryView(data: DeliveryNote, me: Me, partyName: string | null): Doc
 /** The contact a WineCore quote or delivery note points at; the record carries only its id. */
 export function partyIdOf(record: DocRecord | null): string | null {
   if (record?.source === 'quote') return record.data.customer_id
+  if (record?.source === 'order') return record.data.customer_id
   if (record?.source === 'delivery') return record.data.customer_id
   return null
 }
@@ -306,6 +339,8 @@ export function viewOf(record: DocRecord, me: Me, partyName: string | null): Doc
       return invoiceView(record.data)
     case 'quote':
       return quoteView(record.data, me, partyName)
+    case 'order':
+      return orderView(record.data, me, partyName)
     case 'delivery':
       return deliveryView(record.data, me, partyName)
   }

@@ -65,7 +65,7 @@ CREATE TABLE cellar.operation (
   CHECK (op_type NOT IN ('destruction') OR reason IS NOT NULL),
   CHECK (rectifies_operation_id IS NULL OR reason IS NOT NULL)
 );
--- Sin índice en occurred_at desde la migración 0043: en DuckDB impedía cambiar la fecha de un borrador con líneas.
+-- Sin índice en occurred_at desde la migración 0044: en DuckDB impedía cambiar la fecha de un borrador con líneas.
 CREATE TRIGGER operation_no_delete BEFORE DELETE ON cellar.operation FOR EACH ROW EXECUTE FUNCTION core.forbid_delete();
 
 ALTER TABLE inventory.lot

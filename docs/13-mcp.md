@@ -22,7 +22,7 @@
 - Desde la versión 2 hay herramienta para **cada ruta de la app** (`/v1`), aprobar, emitir, anular y marcar como enviado incluidos. Toda escritura va en dos pasos (§3) y los verbos de decisión (`approve`, `issue`, `void`, `send`, `delete`, `decide`, `reject`, `cancel`, `revoke`) solo pueden aparecer en herramientas `_prepare`/`_commit`.
 - Quedan fuera, con su motivo en `api/src/mcp/parity.ts`: inicio de sesión y passkeys, claves de máquina (`/v1/mcp/clients`), el propio chat del asistente, los ajustes de seguridad de aprobaciones y el alta o cambio de personas y roles. Se hacen en la app con la passkey del propietario. Ninguna herramienta lee secretos.
 - Si el propietario activa «Aprobaciones: pedir passkey o código», la API rechaza las aprobaciones por MCP (`WC_STEP_UP_REQUIRED`) y CVBOT da el enlace a la bandeja.
-- Alcances extra de un cliente sin tocar su token: tabla `core.api_client_grant` (DuckDB no permite actualizar la lista `core.api_client.scopes` de un cliente con tokens). Migración 0042: `pedro-owner` recibe `read:*`, `write:*`, `manage:*`, `approve:*`, `issue:*`, `void:*`, `deliver:*`, `count:*`, `operate:*` y `prepare:*`. Los alcances efectivos son la unión de las dos listas; los permisos de la persona representada siguen mandando.
+- Alcances extra de un cliente sin tocar su token: tabla `core.api_client_grant` (DuckDB no permite actualizar la lista `core.api_client.scopes` de un cliente con tokens). Migración 0043: `pedro-owner` recibe `read:*`, `write:*`, `manage:*`, `approve:*`, `issue:*`, `void:*`, `deliver:*`, `count:*`, `operate:*` y `prepare:*`. Los alcances efectivos son la unión de las dos listas; los permisos de la persona representada siguen mandando.
 
 ## 3. Escritura con confirmación (dos pasos)
 
@@ -46,7 +46,7 @@
 
 ## 4. Catálogo
 
-> Las tablas de esta sección son las herramientas de la versión 1 y siguen existiendo. La lista completa de la versión 2 (429 herramientas) está en `13-mcp-catalogo.md`, generada desde el código; cada cliente ve en `tools/list` solo las que le permiten sus alcances, la persona representada y los módulos activos.
+> Las tablas de esta sección son las herramientas de la versión 1 y siguen existiendo. La lista completa de la versión 2 (436 herramientas) está en `13-mcp-catalogo.md`, generada desde el código; cada cliente ve en `tools/list` solo las que le permiten sus alcances, la persona representada y los módulos activos.
 
 ### 4.1 Sistema y aprobaciones (M1)
 

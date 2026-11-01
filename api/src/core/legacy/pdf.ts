@@ -1,11 +1,19 @@
 import Decimal from 'decimal.js';
 import type { DocumentPdfInput } from '../pdf/document';
+import type { PartyLike } from '../pdf/parties';
+import type { DocumentProfileView } from '../pdf/profile';
 import type { HoldedDocumentLoaded, HoldedInvoiceLoaded } from './detail';
 
 const INVOICE_NOTE = 'Copia generada desde el histórico de Holded. No es un registro Verifactu.';
 const DOCUMENT_NOTE = 'Copia generada desde el histórico de Holded.';
 
-export function holdedPdfInput(loaded: HoldedInvoiceLoaded): DocumentPdfInput {
+/** Lo que el histórico no guarda y el PDF sí imprime: el perfil de la sociedad y el cliente enlazado. */
+export interface HoldedPdfExtras {
+  profile?: DocumentProfileView | null;
+  customer?: PartyLike | null;
+}
+
+export function holdedPdfInput(loaded: HoldedInvoiceLoaded, extras: HoldedPdfExtras = {}): DocumentPdfInput {
   const detail = loaded.detail;
   return {
     title: holdedInvoiceTitle(detail.number, detail.total),
@@ -16,6 +24,8 @@ export function holdedPdfInput(loaded: HoldedInvoiceLoaded): DocumentPdfInput {
     status: detail.status_holded,
     partyLabel: detail.kind === 'purchase' ? 'Proveedor' : 'Cliente',
     seller: loaded.seller,
+    profile: extras.profile ?? null,
+    customer: extras.customer ?? null,
     customerName: detail.counterparty_name,
     description: detail.description,
     lines: detail.lines,
@@ -25,7 +35,7 @@ export function holdedPdfInput(loaded: HoldedInvoiceLoaded): DocumentPdfInput {
   };
 }
 
-export function holdedDocumentPdfInput(loaded: HoldedDocumentLoaded): DocumentPdfInput {
+export function holdedDocumentPdfInput(loaded: HoldedDocumentLoaded, extras: HoldedPdfExtras = {}): DocumentPdfInput {
   const detail = loaded.detail;
   const quote = detail.kind === 'quote';
   return {
@@ -37,6 +47,8 @@ export function holdedDocumentPdfInput(loaded: HoldedDocumentLoaded): DocumentPd
     status: detail.status_holded,
     partyLabel: quote ? 'Cliente' : 'Destino',
     seller: loaded.seller,
+    profile: extras.profile ?? null,
+    customer: extras.customer ?? null,
     customerName: detail.counterparty_name,
     description: detail.description,
     lines: detail.lines,

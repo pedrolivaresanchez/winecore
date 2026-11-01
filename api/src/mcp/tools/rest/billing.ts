@@ -27,6 +27,29 @@ const invoiceLine = z.object({
   lot_code: z.string().min(1).max(120).optional().describe("Lote; obligatorio en las líneas de vino"),
   delivery_note_line_id: id.optional(),
   order_line_id: id.optional(),
+  unit: z.string().max(30).optional().describe("Unidad que se imprime en la línea (botella, caja…); sin ella, la del producto"),
+}).strict();
+
+const addressText = z.string().max(160);
+const shipTo = z.object({
+  name: addressText.optional().describe("Destinatario"),
+  line1: addressText.optional().describe("Dirección"),
+  line2: addressText.optional(),
+  postal_code: addressText.optional(),
+  city: addressText.optional(),
+  province: addressText.optional(),
+  country_code: z.string().regex(/^[A-Za-z]{2}$/).optional(),
+}).strict().describe("Dirección de envío impresa en la factura; sin ella, la del albarán o pedido de origen");
+const customerReferences = z.string().max(1000)
+  .describe("Referencias del cliente (pedido, centro, proveedor…), hasta 10 líneas; se imprimen en la factura");
+
+const entityCode = z.string().regex(/^[A-Za-z][A-Za-z0-9_]{1,15}$/).describe("Código de la sociedad: PO, CVPO…");
+const profileFields = z.object({
+  variant: z.enum(["po", "cvpo"]).optional().describe("Maqueta de los PDF: po o cvpo"),
+  email: z.string().max(200).nullable().optional().describe("Correo del membrete; null para quitarlo"),
+  phone: z.string().max(60).nullable().optional().describe("Teléfono del membrete; null para quitarlo"),
+  website: z.string().max(200).nullable().optional().describe("Web del membrete; null para quitarla"),
+  footer_lines: z.array(z.string().max(200)).max(12).nullable().optional().describe("Líneas del pie (hasta 12); null o [] para dejarlo vacío"),
 }).strict();
 
 const rectifiedInvoice = z.union([
@@ -69,6 +92,8 @@ const invoiceCreate = z.object({
   operation_date: day.optional(),
   issue_date: day.optional().describe("Fecha de expedición; si falta, la del día de emisión"),
   incoterm: incoterm.optional(),
+  ship_to: shipTo.optional(),
+  customer_references: customerReferences.optional(),
   ...invoiceFields,
 }).strict();
 
@@ -81,6 +106,8 @@ const invoiceChanges = z.object({
   operation_date: day.nullable().optional(),
   issue_date: day.nullable().optional(),
   incoterm: incoterm.nullable().optional(),
+  ship_to: shipTo.nullable().optional().describe("null quita la dirección de envío"),
+  customer_references: customerReferences.nullable().optional(),
   lines: z.array(invoiceLine).optional().describe("Sustituye todas las líneas del borrador"),
   no_physical_return: z.boolean().nullable().optional().describe("Solo rectificativas"),
   return_delivery_note: z.string().max(80).nullable().optional().describe("Solo rectificativas"),
@@ -459,7 +486,7 @@ export const billingRestTools: readonly AnyTool[] = [
     title: "Editar datos fiscales de la sociedad",
     description: "Cambia la razón social, el NIF, la dirección fiscal o el EORI de una sociedad. Solo hace falta mandar lo que cambia; salen en las facturas que se emitan desde ahora. El EORI no se quita si ya hay exportaciones.",
     input: z.object({
-      code: z.string().regex(/^[A-Za-z][A-Za-z0-9_]{1,15}$/).describe("Código de la sociedad: PO, CVPO…"),
+      code: entityCode,
       changes: z.object({
         legal_name: z.string().min(2).max(120).optional(),
         tax_id: z.string().min(1).max(20).optional().describe("CIF de la sociedad o NIF/NIE si es persona física"),
@@ -474,6 +501,83 @@ export const billingRestTools: readonly AnyTool[] = [
     route: "PATCH /v1/legal-entities/:code",
     send: (input) => input.changes,
     summary: (input) => `Cambiar ${Object.keys(input.changes).join(", ") || "los datos"} de la sociedad ${input.code.toUpperCase()}. Saldrá así en las facturas que se emitan desde ahora; las ya emitidas no cambian. ¿Confirmas?`,
+  }),
+  defineRestRead({
+    name: "billing_legal_entities_document_profile_get",
+    module: "billing",
+    scope: "settings.manage",
+    title: "Membrete de la sociedad",
+    description: "Cómo salen los PDF de una sociedad: maqueta (po o cvpo), correo, teléfono, web, líneas del pie y logotipo, como en Ajustes.",
+    input: z.object({ code: entityCode }).strict(),
+    route: "GET /v1/legal-entities/:code/document-profile",
+  }),
+  defineRestWrite({
+    name: "billing_legal_entities_document_profile_update",
+    module: "billing",
+    scope: "settings.manage",
+    title: "Editar el membrete de la sociedad",
+    description: "Cambia la maqueta, el correo, el teléfono, la web o las líneas del pie que salen en los PDF de la sociedad. Solo hace falta mandar lo que cambia; las líneas del pie se sustituyen enteras. Prueba antes con billing_legal_entities_document_sample_pdf.",
+    input: z.object({
+      code: entityCode,
+      changes: profileFields,
+    }).strict(),
+    route: "PUT /v1/legal-entities/:code/document-profile",
+    current: { route: "GET /v1/legal-entities/:code/document-profile" },
+    send: (input) => input.changes,
+    summary: (input) => `Cambiar ${Object.keys(input.changes).join(", ") || "el membrete"} en los PDF de la sociedad ${input.code.toUpperCase()}. Los documentos ya emitidos conservan el suyo. ¿Confirmas?`,
+  }),
+  defineRestRead({
+    name: "billing_legal_entities_document_logo_get",
+    module: "billing",
+    scope: "settings.manage",
+    title: "Logotipo de la sociedad",
+    description: "El logotipo que sale en los PDF de la sociedad (PNG o JPEG en base64).",
+    input: z.object({ code: entityCode }).strict(),
+    route: "GET /v1/legal-entities/:code/document-profile/logo",
+  }),
+  defineRestWrite({
+    name: "billing_legal_entities_document_logo_upload",
+    module: "billing",
+    scope: "settings.manage",
+    title: "Cambiar el logotipo de la sociedad",
+    description: "Sube el logotipo (PNG o JPEG, máx. 2 MB) que sale en los PDF de la sociedad. Sustituye al anterior; los documentos ya emitidos conservan el suyo.",
+    input: z.object({
+      code: entityCode,
+      file_base64: z.string().min(1).describe("La imagen en base64"),
+      filename: z.string().trim().min(1).max(180),
+      content_type: z.string().trim().min(1).max(100).describe("image/png o image/jpeg"),
+    }).strict(),
+    route: "PUT /v1/legal-entities/:code/document-profile/logo",
+    current: { route: "GET /v1/legal-entities/:code/document-profile" },
+    upload: { field: "file" },
+    summary: (input) => `Poner ${input.filename} como logotipo de la sociedad ${input.code.toUpperCase()}. ¿Confirmas?`,
+  }),
+  defineRestWrite({
+    name: "billing_legal_entities_document_logo_remove",
+    module: "billing",
+    scope: "settings.manage",
+    title: "Quitar el logotipo de la sociedad",
+    description: "Quita el logotipo de los PDF que emita la sociedad desde ahora; los ya emitidos conservan el suyo.",
+    input: z.object({ code: entityCode }).strict(),
+    route: "DELETE /v1/legal-entities/:code/document-profile/logo",
+    current: { route: "GET /v1/legal-entities/:code/document-profile" },
+    summary: (input) => `Quitar el logotipo de los PDF de la sociedad ${input.code.toUpperCase()}. ¿Confirmas?`,
+  }),
+  defineRestRead({
+    name: "billing_legal_entities_document_sample_pdf",
+    module: "billing",
+    scope: "settings.manage",
+    title: "PDF de muestra con el membrete",
+    description: "Un PDF de ejemplo (factura, abono, rectificativa, con retención, de varias páginas, presupuesto, pedido o albarán) con el membrete de la sociedad. Lo que se mande en maqueta, contacto o pie se prueba sin guardarlo; el logotipo es el guardado.",
+    input: z.object({
+      code: entityCode,
+      kind: z.enum(["invoice", "discount", "corrective", "withholding", "multipage", "quote", "order", "delivery_note"]).optional()
+        .describe("Tipo de documento; por defecto, factura"),
+      lang: z.enum(["es", "en"]).optional().describe("Idioma; por defecto, español"),
+      ...profileFields.shape,
+    }).strict(),
+    route: "POST /v1/legal-entities/:code/document-profile/sample",
+    computeOnly: "Genera un PDF de ejemplo al vuelo; no guarda nada.",
   }),
 
   defineRestRead({

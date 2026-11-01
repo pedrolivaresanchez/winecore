@@ -1,6 +1,6 @@
 # 13 · Catálogo de herramientas MCP
 
-> Generado con `bun run scripts/mcp-catalog.ts` (en `api/`). 429 herramientas, 207 de escritura en dos pasos (`_prepare` y `_commit`). Reglas y exclusiones: `13-mcp.md`.
+> Generado con `bun run scripts/mcp-catalog.ts` (en `api/`). 436 herramientas, 210 de escritura en dos pasos (`_prepare` y `_commit`). Reglas y exclusiones: `13-mcp.md`.
 
 ## Sistema y búsqueda (15)
 
@@ -106,7 +106,7 @@
 | `catalog_wine_update_prepare` / `_commit` | escritura | Editar vino |
 | `catalog_wines_list` | lectura | Vinos |
 
-## Ventas: presupuestos, pedidos y albaranes (48)
+## Ventas: presupuestos, pedidos y albaranes (49)
 
 | Herramienta | Tipo | Qué hace |
 |---|---|---|
@@ -130,7 +130,7 @@
 | `sales_delivery_note_mark_not_invoiceable_prepare` / `_commit` | escritura | Marcar albarán como no facturable |
 | `sales_delivery_note_pdf_get` | lectura | PDF del albarán |
 | `sales_delivery_note_return_create_prepare` / `_commit` | escritura | Crear devolución |
-| `sales_delivery_note_update_prepare` / `_commit` | escritura | Cambiar líneas del albarán |
+| `sales_delivery_note_update_prepare` / `_commit` | escritura | Editar albarán |
 | `sales_delivery_note_void_prepare` / `_commit` | escritura | Anular albarán |
 | `sales_delivery_notes_list` | lectura | Lista de albaranes |
 | `sales_delivery_notes_uninvoiced_lines_list` | lectura | Líneas de albarán sin facturar |
@@ -147,6 +147,7 @@
 | `sales_order_delivery_note_create_prepare` / `_commit` | escritura | Crear albarán del pedido |
 | `sales_order_entity_exception_set_prepare` / `_commit` | escritura | Cambiar sociedad que factura |
 | `sales_order_get` | lectura | Ver pedido |
+| `sales_order_pdf_get` | lectura | PDF del pedido |
 | `sales_order_update_prepare` / `_commit` | escritura | Editar pedido |
 | `sales_orders_list` | lectura | Lista de pedidos |
 | `sales_quote_accept_prepare` / `_commit` | escritura | Aceptar presupuesto |
@@ -159,7 +160,7 @@
 | `sales_quote_update_prepare` / `_commit` | escritura | Editar presupuesto |
 | `sales_quotes_list` | lectura | Lista de presupuestos |
 
-## Facturación, series y sociedades (38)
+## Facturación, series y sociedades (44)
 
 | Herramienta | Tipo | Qué hace |
 |---|---|---|
@@ -193,6 +194,12 @@
 | `billing_legacy_invoices_list` | lectura | Facturas históricas de Holded |
 | `billing_legacy_overview_get` | lectura | Resumen del histórico de Holded |
 | `billing_legacy_products_list` | lectura | Productos históricos de Holded |
+| `billing_legal_entities_document_logo_get` | lectura | Logotipo de la sociedad |
+| `billing_legal_entities_document_logo_remove_prepare` / `_commit` | escritura | Quitar el logotipo de la sociedad |
+| `billing_legal_entities_document_logo_upload_prepare` / `_commit` | escritura | Cambiar el logotipo de la sociedad |
+| `billing_legal_entities_document_profile_get` | lectura | Membrete de la sociedad |
+| `billing_legal_entities_document_profile_update_prepare` / `_commit` | escritura | Editar el membrete de la sociedad |
+| `billing_legal_entities_document_sample_pdf` | lectura | PDF de muestra con el membrete |
 | `billing_legal_entities_list` | lectura | Sociedades |
 | `billing_legal_entities_update_prepare` / `_commit` | escritura | Editar datos fiscales de la sociedad |
 | `billing_series_bulk_create_prepare` / `_commit` | escritura | Abrir varias series a la vez |

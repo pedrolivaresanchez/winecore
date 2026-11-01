@@ -24,6 +24,7 @@ export type SalesLine = {
   lot_id?: string | null
   order_line_id?: string | null
   external_line_ref?: string | null
+  unit?: string | null
 }
 
 export type Quote = {
@@ -41,6 +42,8 @@ export type Quote = {
   is_proforma: boolean
   incoterm: string | null
   notes: string | null
+  ship_to?: unknown
+  customer_references?: string | null
   subtotal: string
   tax_total: string
   total: string
@@ -82,6 +85,7 @@ export type SalesOrder = {
   issuing_preview: IssuingPreview | null
   currency: string
   notes: string | null
+  customer_references?: string | null
   subtotal: string
   tax_total: string
   total: string
@@ -102,6 +106,7 @@ export type DeliveryNote = {
   from_location_id: string
   to_location_id: string | null
   ship_to: unknown
+  customer_references?: string | null
   incoterm: string | null
   is_valued: boolean
   tracking_ref: string | null
@@ -134,6 +139,7 @@ export type LineInput = {
   description?: string
   lot_id?: string
   order_line_id?: string
+  unit?: string
 }
 
 export const CHANNELS = Object.keys(copy.sales.channels) as ChannelCode[]
@@ -445,10 +451,10 @@ export function createDelivery(body: Record<string, unknown>) {
   return api<DeliveryNote>('/v1/delivery-notes', { method: 'POST', body: JSON.stringify(body) })
 }
 
-export function patchDelivery(id: string, lines: LineInput[]) {
+export function patchDelivery(id: string, lines: LineInput[] | null, header: Record<string, unknown> = {}) {
   return api<DeliveryNote>(`/v1/delivery-notes/${id}`, {
     method: 'PATCH',
-    body: JSON.stringify({ lines }),
+    body: JSON.stringify(lines ? { ...header, lines } : header),
   })
 }
 

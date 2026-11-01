@@ -34,6 +34,8 @@ import {
 } from '@/lib/sales'
 import type { Me } from '@/lib/types'
 import { Button, DatePicker, Input, MenuItem, Select, Textarea, useToast } from '@/ui'
+import { DocumentModal } from '@/pages/documents/DocumentModal'
+import { useDocParam } from '@/pages/documents/use-doc-param'
 import { RecordSkeleton } from '@/components/RecordSkeleton'
 import {
   DocLink,
@@ -48,6 +50,8 @@ import {
 } from '@/pages/ventas/chrome'
 import { DeliveryFromOrder, ReasonDialog } from '@/pages/ventas/dialogs'
 import { LineEditor } from '@/pages/ventas/lines'
+import { ShippingFields } from '@/pages/ventas/shipping'
+import { referencesPayload, shipToDraftOf, shipToPayload, shippingRows, type ShipToDraft } from '@/lib/shipping'
 
 const DATE_LABELS = { clear: 'Quitar', today: 'Hoy' }
 
@@ -70,6 +74,7 @@ export function OrderPage({ me }: { me: Me }) {
 function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: () => void }) {
   const navigate = useNavigate()
   const toast = useToast()
+  const opened = useDocParam()
   const notes = useApi<SalesPage<DeliveryNote>>('/v1/delivery-notes?limit=100')
   const related = (notes.data?.items ?? []).filter((item) => item.sales_order_id === order.id)
   const aliases = productAliases(order.lines)
@@ -86,6 +91,8 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
   const [department, setDepartment] = useState(order.customer_department ?? '')
   const [costCenter, setCostCenter] = useState(order.customer_cost_center ?? '')
   const [ship, setShip] = useState(shipCountry(order.ship_to))
+  const [shipTo, setShipTo] = useState<ShipToDraft>(() => shipToDraftOf(order.ship_to))
+  const [references, setReferences] = useState(order.customer_references ?? '')
   const [dialog, setDialog] = useState<null | 'cancel' | 'close' | 'exception' | 'delivery'>(null)
   const [entityId, setEntityId] = useState(me.entities[0]?.id ?? '')
   const stamps = useRef<Record<string, string>>({})
@@ -155,7 +162,8 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
         customer_cost_center: costCenter || null,
         incoterm: incoterm || null,
         notes: notesText || null,
-        ship_to: ship ? { country_code: ship } : null,
+        ship_to: shipToPayload({ ...shipTo, country_code: ship }),
+        customer_references: referencesPayload(references),
         lines: built.ok,
       })
       toast(copy.sales.toast.saved)
@@ -182,7 +190,8 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
         </>
       }
       actions={
-        canWrite ? (
+        <>
+          {canWrite ? (
           <>
             {editing ? (
               <>
@@ -196,7 +205,14 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
             ) : (
               <>
                 {draft ? (
-                  <Button type="button" variant="secondary" size="sm" onClick={() => { setLines(draftsFrom(order.lines)); setEditing(true); setTab('lines') }}>
+                  <Button type="button" variant="secondary" size="sm" onClick={() => {
+                    setLines(draftsFrom(order.lines))
+                    setShipTo(shipToDraftOf(order.ship_to))
+                    setShip(shipCountry(order.ship_to))
+                    setReferences(order.customer_references ?? '')
+                    setEditing(true)
+                    setTab('lines')
+                  }}>
                     {copy.sales.edit}
                   </Button>
                 ) : null}
@@ -230,7 +246,13 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
               </MoreMenu>
             ) : null}
           </>
-        ) : null
+          ) : null}
+          {editing ? null : (
+            <Button type="button" variant="secondary" size="sm" onClick={() => opened.open(order.id)}>
+              {copy.sales.pdf}
+            </Button>
+          )}
+        </>
       }
       tabs={[
         { id: 'lines', label: copy.sales.lines },
@@ -305,6 +327,14 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
               <Field id="notas-pedido" label={copy.sales.notes}>
                 <Textarea id="notas-pedido" value={notesText} onChange={(event) => setNotesText(event.target.value)} />
               </Field>
+              <ShippingFields
+                idPrefix="pedido"
+                shipTo={shipTo}
+                onShipTo={setShipTo}
+                references={references}
+                onReferences={setReferences}
+                hideCountry
+              />
             </div>
           ) : (
             <FactList
@@ -317,6 +347,7 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
                 { label: copy.sales.incoterm, value: order.incoterm || '—' },
                 { label: copy.sales.shipCountry, value: shipCountry(order.ship_to) || '—' },
                 { label: copy.sales.notes, value: order.notes || '—' },
+                ...shippingRows(order.ship_to, order.customer_references),
                 {
                   label: copy.sales.relatedQuote,
                   value: order.quote_id ? <DocLink to={`${docPath('quote')}/${order.quote_id}`}>{copy.sales.quotes}</DocLink> : '—',
@@ -402,6 +433,7 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
           }}
         />
       ) : null}
+      <DocumentModal me={me} source="order" id={opened.id} onClose={opened.close} onChanged={onReload} />
     </RecordFrame>
   )
 }

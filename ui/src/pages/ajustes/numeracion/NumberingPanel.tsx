@@ -25,6 +25,7 @@ import {
   type TableColumn,
 } from '@/ui'
 import { FISCAL_DOCS, deactivateSeries, patchEntity, type FiscalDoc, type LegalEntity, type Series } from './api'
+import { DocumentProfileDialog } from '../documentos/DocumentProfileDialog'
 import { canManageNumbering, docLabel } from './model'
 import { NumberingChoice } from './NumberingChoice'
 
@@ -41,6 +42,7 @@ export function NumberingPanel({ me }: { me: Me }) {
   const series = useApi<{ items: Series[] }>(manage ? '/v1/number-series' : null)
   const [editing, setEditing] = useState<LegalEntity | null>(null)
   const [creating, setCreating] = useState<LegalEntity | null>(null)
+  const [documenting, setDocumenting] = useState<LegalEntity | null>(null)
   const [retiring, setRetiring] = useState<Series | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -110,6 +112,7 @@ export function NumberingPanel({ me }: { me: Me }) {
           series={byEntity.get(entity.id) ?? []}
           onEdit={() => setEditing(entity)}
           onCreate={() => setCreating(entity)}
+          onDocuments={() => setDocumenting(entity)}
           onRetire={setRetiring}
         />
       ))}
@@ -133,6 +136,7 @@ export function NumberingPanel({ me }: { me: Me }) {
           }}
         />
       ) : null}
+      {documenting ? <DocumentProfileDialog entity={documenting} onClose={() => setDocumenting(null)} /> : null}
       <ConfirmDialog
         open={retiring !== null}
         title={fill(copy.numbering.deactivateTitle, { prefix: retiring?.prefix ?? '' })}
@@ -156,12 +160,14 @@ function EntitySection({
   series,
   onEdit,
   onCreate,
+  onDocuments,
   onRetire,
 }: {
   entity: LegalEntity
   series: Series[]
   onEdit: () => void
   onCreate: () => void
+  onDocuments: () => void
   onRetire: (series: Series) => void
 }) {
   const place = [entity.address_line, [entity.postal_code, entity.city].filter(Boolean).join(' '), entity.province, entity.country_code]
@@ -195,9 +201,12 @@ function EntitySection({
           <p className="mt-0.5 text-caption text-text-secondary">{`${copy.numbering.taxId} ${entity.tax_id}`}</p>
           {place ? <p className="text-caption text-text-tertiary">{place}</p> : null}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button type="button" variant="secondary" size="sm" onClick={onEdit}>
             {copy.numbering.edit}
+          </Button>
+          <Button type="button" variant="secondary" size="sm" onClick={onDocuments}>
+            {copy.numbering.documents}
           </Button>
           <Button type="button" variant="secondary" size="sm" onClick={onCreate}>
             {copy.numbering.newSeries}

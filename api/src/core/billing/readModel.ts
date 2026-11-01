@@ -31,6 +31,8 @@ export interface HeaderView {
   operationDate: string | null;
   customerId: string | null;
   customerSnapshot: Record<string, unknown> | null;
+  shipTo: Record<string, unknown> | null;
+  customerReferences: string | null;
   channel: string | null;
   salesOrderId: string | null;
   currency: string;
@@ -128,6 +130,9 @@ export interface CustomerView {
   defaultChannel: string | null;
   archived: boolean;
   vatValidatedAt: string | null;
+  /** Teléfono y correo de la persona de contacto (la que recibe facturas, si la hay). */
+  phone: string | null;
+  email: string | null;
   address: {
     line1: string;
     line2: string | null;
@@ -202,6 +207,8 @@ export function headerOf(row: Record<string, unknown>): HeaderView {
     operationDate: day(row.operation_date),
     customerId: row.customer_id == null ? null : idOf(row.customer_id),
     customerSnapshot: jsonObject(row.customer_snapshot),
+    shipTo: jsonObject(row.ship_to),
+    customerReferences: text(row.customer_references),
     channel: text(row.channel),
     salesOrderId: row.sales_order_id == null ? null : idOf(row.sales_order_id),
     currency: String(row.currency),
@@ -336,6 +343,13 @@ export async function loadCustomer(tx: Read, id: string): Promise<CustomerView |
     LIMIT 1
   `);
   const address = addresses[0];
+  const people = await tx.read(sql`
+    SELECT email, phone FROM party.contact_person
+    WHERE contact_id = CAST(${id} AS UUID) AND archived_at IS NULL
+    ORDER BY receives_invoices DESC, created_at
+  `);
+  const email = people.map((person) => text(person.email)).find((value) => value !== null) ?? null;
+  const phone = people.map((person) => text(person.phone)).find((value) => value !== null) ?? null;
   return {
     id: idOf(row.id),
     legalName: String(row.legal_name),
@@ -352,6 +366,8 @@ export async function loadCustomer(tx: Read, id: string): Promise<CustomerView |
     defaultChannel: text(row.default_channel),
     archived: row.archived_at != null,
     vatValidatedAt: stamp(row.vat_id_validated_at),
+    phone,
+    email,
     address: address ? {
       line1: String(address.line1),
       line2: text(address.line2),
@@ -528,6 +544,8 @@ export function presentInvoice(
     customer_id: header.customerId,
     customer_name: snapshotName ?? view.customer?.legalName ?? null,
     customer_snapshot: header.customerSnapshot,
+    ship_to: header.shipTo,
+    customer_references: header.customerReferences,
     channel: header.channel,
     sales_order_id: header.salesOrderId,
     currency: header.currency,

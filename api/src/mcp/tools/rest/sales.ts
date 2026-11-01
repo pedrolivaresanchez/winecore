@@ -16,9 +16,19 @@ const channel = z.enum([
 ]).describe("Canal de venta: direct, distributor, horeca (restauración), eci_edi (El Corte Inglés), web, fair (ferias), cellar_shop (tienda de la bodega), export, institutional, intercompany");
 const incoterm = z.enum(["EXW", "FCA", "CPT", "CIP", "DAP", "DPU", "DDP", "FAS", "FOB", "CFR", "CIF"]);
 const taxCode = z.string().min(2).max(20).describe("Código de impuesto: IVA21, IVA21_RE (con recargo), EXP_E2 (exportación), INTRA_E5 (intracomunitaria), NS_LOC… Sin él, el del producto");
+const addressText = z.string().max(160);
 const shipTo = z.object({
-  country_code: country.describe("País de entrega; fuera de España el pedido exige Incoterm y la expedición, DAE"),
-}).strict();
+  name: addressText.optional().describe("Destinatario"),
+  line1: addressText.optional().describe("Dirección"),
+  line2: addressText.optional(),
+  postal_code: addressText.optional(),
+  city: addressText.optional(),
+  province: addressText.optional(),
+  country_code: country.optional().describe("País de entrega; fuera de España el pedido exige Incoterm y la expedición, DAE"),
+}).strict().describe("Dirección de envío que se imprime en el documento");
+const customerReferences = z.string().max(1000)
+  .describe("Referencias del cliente (pedido, centro, proveedor…), hasta 10 líneas; se imprimen en el documento");
+const lineUnit = z.string().max(30).optional().describe("Unidad que se imprime en la línea (botella, caja…); sin ella, la del producto");
 
 const commercialLine = z.object({
   product_id: id,
@@ -28,6 +38,7 @@ const commercialLine = z.object({
   price_reason: z.string().trim().min(3).max(300).optional().describe("Motivo del precio; obligatorio si no es el de tarifa"),
   tax_code: taxCode.optional(),
   description: z.string().max(250).optional().describe("Texto de la línea; sin él, el nombre del producto"),
+  unit: lineUnit,
 }).strict();
 
 const deliveryLine = z.object({
@@ -39,6 +50,7 @@ const deliveryLine = z.object({
   discount_pct: percent.optional(),
   tax_code: taxCode.optional(),
   description: z.string().max(250).optional(),
+  unit: lineUnit,
 }).strict();
 
 const quoteFields = {
@@ -49,6 +61,8 @@ const quoteFields = {
   incoterm: incoterm.optional(),
   valid_until: isoDate.optional().describe("Válido hasta, AAAA-MM-DD"),
   notes: z.string().max(2000).optional(),
+  ship_to: shipTo.optional(),
+  customer_references: customerReferences.optional(),
 };
 
 const quoteChanges = z.object({
@@ -59,12 +73,14 @@ const quoteChanges = z.object({
   incoterm: incoterm.nullable().optional(),
   valid_until: isoDate.nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
+  ship_to: shipTo.nullable().optional().describe("null quita la dirección de envío"),
+  customer_references: customerReferences.nullable().optional(),
   lines: z.array(commercialLine).min(1).optional().describe("Si se manda, sustituye todas las líneas"),
 }).strict();
 
 const ORDER_KEYS = [
   "customer_id", "channel", "order_date", "requested_date", "customer_order_ref", "customer_department",
-  "customer_cost_center", "external_ref", "ship_to", "incoterm", "notes",
+  "customer_cost_center", "external_ref", "ship_to", "incoterm", "notes", "customer_references",
 ] as const;
 
 const orderText = z.string().max(80);
@@ -79,6 +95,7 @@ const orderChanges = z.object({
   customer_cost_center: orderText.nullable().optional().describe("Centro de coste (El Corte Inglés)"),
   external_ref: orderText.nullable().optional(),
   ship_to: shipTo.nullable().optional(),
+  customer_references: customerReferences.nullable().optional(),
   incoterm: incoterm.nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
   lines: z.array(commercialLine).min(1).optional()
@@ -200,6 +217,7 @@ function keptOrderLines(current: unknown): Fields[] {
     const out: Fields = { product_id: row.product_id, quantity: row.quantity, discount_pct: row.discount_pct };
     if (typeof row.tax_code === "string") out.tax_code = row.tax_code;
     if (typeof row.description === "string") out.description = row.description;
+    if (typeof row.unit === "string") out.unit = row.unit;
     return out;
   });
 }
@@ -264,7 +282,7 @@ const quoteTools: readonly AnyTool[] = [
     module: "sales",
     scope: "sales.write",
     title: "Editar presupuesto",
-    description: "Cambia un presupuesto en borrador: cliente, canal, idioma, proforma, Incoterm, validez, notas o líneas. Solo hace falta mandar lo que cambia; las líneas, si se mandan, sustituyen a todas. Cambiar cliente, canal o líneas recalcula los precios con la tarifa.",
+    description: "Cambia un presupuesto en borrador: cliente, canal, idioma, proforma, Incoterm, validez, dirección de envío, referencias del cliente, notas o líneas. Solo hace falta mandar lo que cambia; las líneas, si se mandan, sustituyen a todas. Cambiar cliente, canal o líneas recalcula los precios con la tarifa.",
     input: z.object({ id, changes: quoteChanges }).strict(),
     route: "PATCH /v1/quotes/:id",
     current: quoteCurrent,
@@ -348,6 +366,16 @@ const orderTools: readonly AnyTool[] = [
     route: "GET /v1/sales-orders/:id",
     web: orderLink,
   }),
+  defineRestRead({
+    name: "sales_order_pdf_get",
+    module: "sales",
+    scope: "sales.read",
+    title: "PDF del pedido",
+    description: "El PDF del pedido o de su confirmación, el mismo que se descarga en la app (en base64).",
+    input: z.object({ id }).strict(),
+    route: "GET /v1/sales-orders/:id/pdf",
+    web: orderLink,
+  }),
   defineRestWrite({
     name: "sales_order_create",
     module: "sales",
@@ -366,6 +394,7 @@ const orderTools: readonly AnyTool[] = [
       customer_cost_center: orderText.optional().describe("Centro de coste (obligatorio para El Corte Inglés)"),
       external_ref: orderText.optional().describe("Referencia en el sistema de origen; única por origen"),
       ship_to: shipTo.optional(),
+      customer_references: customerReferences.optional(),
       incoterm: incoterm.optional().describe("Obligatorio al confirmar si se entrega fuera de España"),
       notes: z.string().max(2000).optional(),
       quote_id: id.optional().describe("Presupuesto del que viene"),
@@ -379,7 +408,7 @@ const orderTools: readonly AnyTool[] = [
     module: "sales",
     scope: "sales.write",
     title: "Editar pedido",
-    description: "Cambia un pedido en borrador: cliente, canal, fechas, referencias, departamento y centro de coste, país de entrega, Incoterm, notas o líneas. Solo hace falta mandar lo que cambia. Como al guardar en la app, las líneas se vuelven a valorar con la tarifa; para mantener un precio distinto, manda las líneas con unit_price y price_reason.",
+    description: "Cambia un pedido en borrador: cliente, canal, fechas, referencias del cliente, departamento y centro de coste, dirección de envío, Incoterm, notas o líneas (con su unidad). Solo hace falta mandar lo que cambia. Como al guardar en la app, las líneas se vuelven a valorar con la tarifa; para mantener un precio distinto, manda las líneas con unit_price y price_reason.",
     input: z.object({ id, changes: orderChanges }).strict(),
     route: "PATCH /v1/sales-orders/:id",
     current: orderCurrent,
@@ -454,7 +483,8 @@ const orderTools: readonly AnyTool[] = [
       from_location_id: id.describe("Almacén de salida"),
       kind: deliveryKind.optional().describe("sale por defecto"),
       to_location_id: id.optional().describe("Almacén de destino (depósito o traspaso)"),
-      ship_to: shipTo.optional(),
+      ship_to: shipTo.optional().describe("Sin ella, la del pedido"),
+      customer_references: customerReferences.optional().describe("Sin ellas, las del pedido"),
       incoterm: incoterm.optional(),
       notes: z.string().max(2000).optional(),
       lines: z.array(deliveryLine).min(1),
@@ -537,6 +567,7 @@ const deliveryTools: readonly AnyTool[] = [
       legal_entity_id: id.optional().describe("Sociedad; sin ella, la que controla el almacén de salida"),
       channel: channel.optional(),
       ship_to: shipTo.optional(),
+      customer_references: customerReferences.optional(),
       incoterm: incoterm.optional(),
       notes: z.string().max(2000).optional(),
       lines: z.array(deliveryLine).min(1),
@@ -548,9 +579,14 @@ const deliveryTools: readonly AnyTool[] = [
     name: "sales_delivery_note_update",
     module: "sales",
     scope: "sales.write",
-    title: "Cambiar líneas del albarán",
-    description: "Sustituye todas las líneas de un albarán en borrador (producto o línea de pedido, cantidad, lote, precio).",
-    input: z.object({ id, lines: z.array(deliveryLine).min(1) }).strict(),
+    title: "Editar albarán",
+    description: "Cambia un albarán en borrador: dirección de envío, referencias del cliente o líneas. Solo hace falta mandar lo que cambia; las líneas, si se mandan, sustituyen a todas (producto o línea de pedido, cantidad, lote, precio, unidad).",
+    input: z.object({
+      id,
+      ship_to: shipTo.nullable().optional().describe("null quita la dirección de envío"),
+      customer_references: customerReferences.nullable().optional(),
+      lines: z.array(deliveryLine).min(1).optional(),
+    }).strict(),
     route: "PATCH /v1/delivery-notes/:id",
     current: deliveryCurrent,
     web: deliveryLink,

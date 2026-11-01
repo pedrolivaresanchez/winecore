@@ -172,4 +172,37 @@ describe('MCP de facturación sobre las rutas de la app', () => {
       expect(result.error ? `${name}: ${JSON.stringify(result.data)}` : 'ok').toBe('ok');
     }
   });
+
+  test('membrete de la sociedad: datos, logotipo y PDF de muestra', async () => {
+    const empty = await tool('billing_legal_entities_document_profile_get', { code: 'po' });
+    expect(empty.error ? JSON.stringify(empty.data) : 'ok').toBe('ok');
+    expect(empty.data.logo).toBeNull();
+
+    const updated = await write('billing_legal_entities_document_profile_update', {
+      code: 'PO',
+      changes: { variant: 'cvpo', email: 'bodega@example.com', footer_lines: ['Línea de pie de ejemplo'] },
+    });
+    expect((updated.prepared.preview as { route: string }).route).toBe('PUT /v1/legal-entities/PO/document-profile');
+    expect(updated.committed).toMatchObject({ variant: 'cvpo', email: 'bodega@example.com', footer_lines: ['Línea de pie de ejemplo'] });
+    const stored = await rest('/v1/legal-entities/PO/document-profile');
+    expect(stored.variant).toBe('cvpo');
+
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    const uploaded = await write('billing_legal_entities_document_logo_upload', {
+      code: 'PO', file_base64: png, filename: 'logo-ejemplo.png', content_type: 'image/png',
+    });
+    expect(uploaded.committed.logo).toMatchObject({ filename: 'logo-ejemplo.png', mime_type: 'image/png' });
+    const logo = await tool('billing_legal_entities_document_logo_get', { code: 'PO' });
+    expect(logo.error ? JSON.stringify(logo.data) : 'ok').toBe('ok');
+    expect(logo.data).toMatchObject({ content_type: 'image/png', base64: png });
+
+    const sample = await tool('billing_legal_entities_document_sample_pdf', { code: 'PO', kind: 'order', website: 'https://example.com' });
+    expect(sample.error ? JSON.stringify(sample.data) : 'ok').toBe('ok');
+    expect(sample.data.content_type).toBe('application/pdf');
+    expect((await rest('/v1/legal-entities/PO/document-profile')).website).toBeNull();
+
+    const removed = await write('billing_legal_entities_document_logo_remove', { code: 'PO' });
+    expect(removed.committed.logo).toBeNull();
+    expect((await rest('/v1/legal-entities/PO/document-profile')).logo).toBeNull();
+  });
 });

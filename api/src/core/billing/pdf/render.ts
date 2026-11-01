@@ -1,37 +1,31 @@
-import { createHash } from 'node:crypto';
-import {
-  PDFDocument,
-  PDFHexString,
-  StandardFonts,
-  rgb,
-  type PDFFont,
-  type PDFImage,
-  type PDFPage,
-} from 'pdf-lib';
-import { canonicalJson } from '../../db/audit';
+import { Decimal } from 'decimal.js';
 import { domainError } from '../../errors';
+import { money } from '../../money';
+import {
+  HoldedSheet,
+  formatAmount,
+  formatNumber,
+  formatPercent,
+  formatUnitPrice,
+  type NoteLine,
+  type TableColumn,
+  type TableRow,
+  type TotalRow,
+} from '../../pdf/holded-layout';
+import { customerSpec, issuerSpec } from '../../pdf/parties';
+import { isDocumentVariant, type DocumentVariant } from '../../pdf/profile';
+import { shipToLines } from '../../pdf/ship-to';
 import {
   addAmounts,
   assertLang,
-  countryName,
   formatDate,
-  formatMoney,
-  formatPlain,
-  formatPrice,
   isZeroAmount,
   paymentLabel,
   sameAmount,
   subAmounts,
-  taxIdLabel,
   utcMidnight,
 } from './format';
-import {
-  QR_LABEL,
-  QR_LEGEND,
-  QR_TEXT_SIZE,
-  qrSlot,
-  type QrSlot,
-} from './qr';
+import { QR_LABEL, QR_LEGEND } from './qr';
 import type {
   InvoiceLang,
   InvoiceLineView,
@@ -40,234 +34,183 @@ import type {
   VerifactuSlot,
 } from './types';
 
-const PAGE_WIDTH = 595.28;
-const PAGE_HEIGHT = 841.89;
-const CONTENT_X = 40;
-const BOTTOM = 48;
-const BODY = 9;
-const TITLE = 11;
-const INK = rgb(0.12, 0.12, 0.12);
-const DEFAULT_ACCENT: readonly [number, number, number] = [0.45, 0.12, 0.16];
-
 const SIMPLIFIED = new Set(['F2', 'R5']);
+const DEFAULT_DESCRIPTION = 'Venta de vino';
+
+interface Labels {
+  invoice: string;
+  corrective: string;
+  simplified: string;
+  date: string;
+  operationDate: string;
+  shipTo: string;
+  lot: string;
+  ref: string;
+  discount: string;
+  taxable: string;
+  vat: string;
+  surcharge: string;
+  withholding: string;
+  total: string;
+  amountDue: string;
+  dueOne: string;
+  dueMany: string;
+  payment: string;
+  incoterm: string;
+  notes: string;
+  operation: string;
+  registry: string;
+  deliveryNote: string;
+  deliveryNotes: string;
+  reason: string;
+  columns: Record<'concept' | 'price' | 'units' | 'discount' | 'vat' | 'total' | 'subtotal', string>;
+  discountShort: string;
+}
+
+const LABELS: Record<InvoiceLang, Labels> = {
+  es: {
+    invoice: 'FACTURA',
+    corrective: 'FACTURA RECTIFICATIVA',
+    simplified: 'FACTURA SIMPLIFICADA',
+    date: 'Fecha',
+    operationDate: 'Fecha de operación',
+    shipTo: 'Dirección de envío',
+    lot: 'LOTE',
+    ref: 'Ref.',
+    discount: 'DESCUENTO POR ITEM',
+    taxable: 'BASE IMPONIBLE',
+    vat: 'IVA',
+    surcharge: 'RECARGO DE EQUIVALENCIA',
+    withholding: 'RETENCIÓN IRPF',
+    total: 'TOTAL',
+    amountDue: 'TOTAL A PAGAR',
+    dueOne: 'Vencimiento',
+    dueMany: 'Vencimientos',
+    payment: 'Forma de pago',
+    incoterm: 'Incoterm',
+    notes: 'Notas',
+    operation: 'Operación',
+    registry: 'Datos registrales',
+    deliveryNote: 'Albarán:',
+    deliveryNotes: 'Albaranes:',
+    reason: 'Motivo',
+    columns: {
+      concept: 'CONCEPTO',
+      price: 'PRECIO',
+      units: 'UNIDADES',
+      discount: 'DTO.',
+      vat: 'IVA',
+      total: 'TOTAL',
+      subtotal: 'SUBTOTAL',
+    },
+    discountShort: 'Dto.',
+  },
+  en: {
+    invoice: 'INVOICE',
+    corrective: 'CORRECTIVE INVOICE',
+    simplified: 'SIMPLIFIED INVOICE',
+    date: 'Date',
+    operationDate: 'Operation date',
+    shipTo: 'Shipping address',
+    lot: 'LOT',
+    ref: 'Ref.',
+    discount: 'DISCOUNT PER ITEM',
+    taxable: 'TAXABLE AMOUNT',
+    vat: 'VAT',
+    surcharge: 'EQUIVALENCE SURCHARGE',
+    withholding: 'INCOME TAX WITHHOLDING',
+    total: 'TOTAL',
+    amountDue: 'AMOUNT DUE',
+    dueOne: 'Due date',
+    dueMany: 'Due dates',
+    payment: 'Payment method',
+    incoterm: 'Incoterm',
+    notes: 'Notes',
+    operation: 'Operation',
+    registry: 'Registry',
+    deliveryNote: 'Delivery note:',
+    deliveryNotes: 'Delivery notes:',
+    reason: 'Reason',
+    columns: {
+      concept: 'DESCRIPTION',
+      price: 'PRICE',
+      units: 'QUANTITY',
+      discount: 'DISC.',
+      vat: 'VAT',
+      total: 'TOTAL',
+      subtotal: 'SUBTOTAL',
+    },
+    discountShort: 'Disc.',
+  },
+};
+
+/** Anchos de las dos plantillas de Holded (PO y CVPO). */
+const COLUMN_WIDTHS: Record<DocumentVariant, readonly number[]> = {
+  po: [265.4, 56.1, 56.1, 51, 40.8, 40.6],
+  cvpo: [132.7, 89.7, 77.1, 82.5, 57.3, 70.6],
+};
 
 /**
- * Immutable invoice PDF. Same invoice and language always produce the same bytes.
- * The QR and the Verifactu legends are drawn only when the installation is active.
+ * PDF inmutable de la factura emitida. La misma factura y el mismo idioma dan siempre los
+ * mismos bytes. El QR y las leyendas de Verifactu solo se pintan con la instalación activa.
  */
 export async function renderInvoicePdf(
   invoice: IssuedInvoice,
   lang: InvoiceLang,
 ): Promise<Uint8Array> {
   assertLang(lang);
-  const activeQr = requireQr(invoice.verifactu);
-  assertInvoice(invoice, lang);
+  const qr = requireQr(invoice.verifactu);
+  assertInvoice(invoice);
 
-  const pdf = await PDFDocument.create({ updateMetadata: false });
-  const regular = await pdf.embedFont(StandardFonts.Helvetica);
-  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-  const logoBytes = invoice.branding.logo ? new Uint8Array(invoice.branding.logo) : null;
-  const logo = logoBytes ? await embedLogo(pdf, logoBytes) : null;
-  const accent = accentOf(invoice.branding.accentRgb);
-  const page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-  const slot = qrSlot(PAGE_HEIGHT);
-  const recorded: string[] = [];
-
-  const state = { page, y: paintQr(page, slot, activeQr, bold, recorded) };
-  const width = PAGE_WIDTH - CONTENT_X * 2;
-
-  const draw = (value: string, font: PDFFont, size: number, gap = 3): void => {
-    const text = clean(value);
-    if (text === '') return;
-    for (const line of wrap(font, text, size, width)) {
-      if (state.y < BOTTOM + size) {
-        state.page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-        state.y = PAGE_HEIGHT - CONTENT_X;
-        const continued = lang === 'es'
-          ? `Factura ${invoice.number} (continuación)`
-          : `Invoice ${invoice.number} (continued)`;
-        state.page.drawText(continued, { x: CONTENT_X, y: state.y, size: BODY, font: regular, color: INK });
-        recorded.push(continued);
-        state.y -= BODY + 6;
-      }
-      state.page.drawText(line, { x: CONTENT_X, y: state.y, size, font, color: INK });
-      recorded.push(line);
-      state.y -= size + gap;
-    }
-  };
-
-  const gap = (points: number): void => {
-    state.y -= points;
-  };
-
-  page.drawRectangle({
-    x: CONTENT_X,
-    y: state.y - 3,
-    width: 72,
-    height: 3,
-    color: rgb(accent[0], accent[1], accent[2]),
-    borderWidth: 0,
-  });
-  state.y -= 14;
-
-  const brand = invoice.issuer.tradeName?.trim() || '';
-  if (logo) {
-    const height = 28;
-    const ratio = logo.height === 0 ? 1 : logo.width / logo.height;
-    const imageWidth = Math.min(160, height * ratio);
-    state.page.drawImage(logo, {
-      x: CONTENT_X,
-      y: state.y - height,
-      width: imageWidth,
-      height,
-    });
-    state.y -= height + 8;
-  } else if (brand !== '' && brand !== invoice.issuer.legalName) {
-    draw(brand, bold, TITLE, 4);
-  }
-
-  draw(titleFor(invoice.invoiceType, lang), bold, TITLE, 4);
-  draw(lang === 'es' ? `Serie: ${invoice.seriesCode}` : `Series: ${invoice.seriesCode}`, regular, BODY);
-  draw(lang === 'es' ? `Número: ${invoice.number}` : `Number: ${invoice.number}`, regular, BODY);
-  for (const rectification of sortRectifications(invoice.rectifications)) {
-    draw(rectificationLine(rectification, lang), regular, BODY);
-    draw(lang === 'es' ? `Motivo: ${rectification.reason}` : `Reason: ${rectification.reason}`, regular, BODY);
-  }
-  draw(
-    lang === 'es'
-      ? `Fecha de expedición: ${formatDate(invoice.issueDate, lang)}`
-      : `Issue date: ${formatDate(invoice.issueDate, lang)}`,
-    regular,
-    BODY,
-  );
-  if (invoice.operationDate && invoice.operationDate !== invoice.issueDate) {
-    draw(
-      lang === 'es'
-        ? `Fecha de operación: ${formatDate(invoice.operationDate, lang)}`
-        : `Operation date: ${formatDate(invoice.operationDate, lang)}`,
-      regular,
-      BODY,
-    );
-  }
-  gap(6);
-  draw(lang === 'es' ? 'Emisor' : 'Issuer', bold, BODY, 2);
-  drawPartyLines(draw, regular, invoice.issuer, lang, true);
-  gap(6);
-  draw(lang === 'es' ? 'Cliente' : 'Customer', bold, BODY, 2);
-  drawPartyLines(draw, regular, invoice.customer, lang, !SIMPLIFIED.has(invoice.invoiceType));
-  gap(6);
-  draw(lang === 'es' ? 'Descripción de la operación' : 'Description of the operation', bold, BODY, 2);
-  draw(invoice.description, regular, BODY);
-  gap(6);
-  draw(lineHeader(lang), bold, BODY, 2);
-  for (const line of sortLines(invoice.lines)) draw(lineText(line, lang, invoice.currency), regular, BODY, 2);
-  gap(6);
-
+  const labels = LABELS[lang];
+  const profile = invoice.profile;
+  const variant = profile.variant;
+  const sheet = await HoldedSheet.create({ lang, logo: profile.logo });
+  const currency = invoice.currency;
   const taxes = sortTaxes(invoice.taxes);
-  const showSurcharge = taxes.some((tax) => !isZeroAmount(tax.surchargeQuota) || !isZeroAmount(tax.surchargeRate));
-  const showWithholding = taxes.some((tax) => !isZeroAmount(tax.withholding) || !isZeroAmount(tax.withholdingRate));
-  draw(taxHeader(lang, showSurcharge, showWithholding), bold, BODY, 2);
-  for (const tax of taxes) draw(taxText(tax, lang, invoice.currency, showSurcharge, showWithholding), regular, BODY, 2);
+  const lines = sortLines(invoice.lines);
 
-  const mentions = mentionsFor(invoice, taxes, lang);
-  if (mentions.length > 0) {
-    gap(4);
-    for (const mention of mentions) draw(mention, regular, BODY, 2);
+  const brand = invoice.issuer.tradeName?.trim() ?? '';
+  const dateLines = [`${labels.date}: ${formatDate(invoice.issueDate, lang)}`];
+  if (invoice.operationDate && invoice.operationDate !== invoice.issueDate) {
+    dateLines.push(`${labels.operationDate}: ${formatDate(invoice.operationDate, lang)}`);
   }
-  gap(6);
-  draw(
-    lang === 'es'
-      ? `Base imponible: ${formatMoney(invoice.subtotal, lang, invoice.currency)}`
-      : `Taxable amount: ${formatMoney(invoice.subtotal, lang, invoice.currency)}`,
-    regular,
-    BODY,
-  );
-  draw(
-    lang === 'es'
-      ? `IVA: ${formatMoney(invoice.taxTotal, lang, invoice.currency)}`
-      : `VAT: ${formatMoney(invoice.taxTotal, lang, invoice.currency)}`,
-    regular,
-    BODY,
-  );
-  if (!isZeroAmount(invoice.surchargeTotal)) {
-    draw(
-      lang === 'es'
-        ? `Recargo de equivalencia: ${formatMoney(invoice.surchargeTotal, lang, invoice.currency)}`
-        : `Equivalence surcharge: ${formatMoney(invoice.surchargeTotal, lang, invoice.currency)}`,
-      regular,
-      BODY,
-    );
-  }
-  if (!isZeroAmount(invoice.withholdingTotal)) {
-    draw(
-      lang === 'es'
-        ? `Retención IRPF: ${formatMoney(invoice.withholdingTotal, lang, invoice.currency)}`
-        : `Income tax withholding: ${formatMoney(invoice.withholdingTotal, lang, invoice.currency)}`,
-      regular,
-      BODY,
-    );
-  }
-  draw(
-    lang === 'es'
-      ? `Importe total de la factura: ${formatMoney(invoice.importeTotal, lang, invoice.currency)}`
-      : `Invoice total amount: ${formatMoney(invoice.importeTotal, lang, invoice.currency)}`,
-    bold,
-    TITLE,
-    4,
-  );
-  if (!isZeroAmount(invoice.withholdingTotal)) {
-    draw(
-      lang === 'es'
-        ? `Total a pagar: ${formatMoney(invoice.totalToPay, lang, invoice.currency)}`
-        : `Amount due: ${formatMoney(invoice.totalToPay, lang, invoice.currency)}`,
-      bold,
-      TITLE,
-      4,
-    );
-  }
-  gap(4);
-  for (const due of [...invoice.dues].sort((left, right) => left.seq - right.seq)) {
-    draw(
-      lang === 'es'
-        ? `Vencimiento: ${formatDate(due.dueDate, lang)} ${formatMoney(due.amount, lang, invoice.currency)}`
-        : `Due date: ${formatDate(due.dueDate, lang)} ${formatMoney(due.amount, lang, invoice.currency)}`,
-      regular,
-      BODY,
-    );
-  }
-  if (invoice.paymentMethod) {
-    draw(
-      lang === 'es'
-        ? `Forma de pago: ${paymentLabel(invoice.paymentMethod, lang)}`
-        : `Payment method: ${paymentLabel(invoice.paymentMethod, lang)}`,
-      regular,
-      BODY,
-    );
-  }
-  if (invoice.incoterm) draw(`Incoterm: ${invoice.incoterm}`, regular, BODY);
-  if (invoice.notes) draw(lang === 'es' ? `Notas: ${invoice.notes}` : `Notes: ${invoice.notes}`, regular, BODY);
-
-  const issuedAt = utcMidnight(invoice.issueDate);
-  pdf.setTitle(lang === 'es' ? `Factura ${invoice.number}` : `Invoice ${invoice.number}`);
-  pdf.setAuthor(invoice.issuer.legalName);
-  pdf.setSubject(invoice.number);
-  pdf.setCreator('WineCore');
-  pdf.setProducer('WineCore');
-  pdf.setLanguage(lang === 'es' ? 'es-ES' : 'en-GB');
-  pdf.setCreationDate(issuedAt);
-  pdf.setModificationDate(issuedAt);
-
-  const material = canonicalJson({
-    lang,
-    lines: recorded,
-    logo: logoBytes ? sha256(logoBytes) : null,
-    accent: [accent[0], accent[1], accent[2]],
-    qr: activeQr ? { url: activeQr.url, modules: moduleKey(activeQr.modules) } : null,
+  sheet.header({
+    title: `${titleFor(invoice.invoiceType, labels)} #${invoice.number}`,
+    dateLines,
+    brandText: brand !== '' && brand !== invoice.issuer.legalName ? brand : null,
   });
-  const id = sha256(new TextEncoder().encode(material));
-  pdf.context.trailerInfo.ID = pdf.context.obj([PDFHexString.of(id), PDFHexString.of(id)]);
+  if (qr) sheet.qr({ url: qr.url, modules: qr.modules, label: QR_LABEL, legend: QR_LEGEND });
 
-  return pdf.save({ useObjectStreams: false, updateFieldAppearances: false });
+  const ship = invoice.shipTo ? shipToLines(invoice.shipTo, lang) : [];
+  sheet.parties({
+    issuer: issuerSpec(invoice.issuer, profile, lang),
+    ship: ship.length > 0 ? { heading: labels.shipTo, lines: ship } : null,
+    customer: customerSpec(invoice.customer, lang),
+  });
+
+  const references: string[] = [];
+  for (const rectification of sortRectifications(invoice.rectifications)) {
+    references.push(rectificationLine(rectification, lang), `${labels.reason}: ${rectification.reason}`);
+  }
+  references.push(...textLines(invoice.customerReferences));
+  sheet.references(references);
+
+  const rates = new Map(taxes.map((tax) => [tax.taxCode, tax.rate]));
+  const discounted = lines.some((line) => !isZeroAmount(line.discountPct));
+  sheet.table(columnsFor(variant, labels), lines.map((line) => rowFor(line, variant, rates, labels, lang, currency)));
+  sheet.totals(totalRows(invoice, taxes, lines, labels, lang, discounted));
+
+  sheet.legal(mentionsFor(invoice, taxes, lang));
+  sheet.notes(noteLines(invoice, labels, lang));
+
+  return sheet.finish({
+    title: lang === 'es' ? `Factura ${invoice.number}` : `Invoice ${invoice.number}`,
+    author: invoice.issuer.legalName,
+    subject: invoice.number,
+    createdAt: utcMidnight(invoice.issueDate),
+    fingerprint: { variant },
+  });
 }
 
 function requireQr(slot: VerifactuSlot): { url: string; modules: readonly (readonly boolean[])[] } | null {
@@ -286,51 +229,7 @@ function requireQr(slot: VerifactuSlot): { url: string; modules: readonly (reado
   return { url: slot.qrUrl, modules: slot.qrModules };
 }
 
-function paintQr(
-  page: PDFPage,
-  slot: QrSlot,
-  active: { url: string; modules: readonly (readonly boolean[])[] } | null,
-  font: PDFFont,
-  recorded: string[],
-): number {
-  page.drawRectangle({
-    x: slot.x,
-    y: slot.y,
-    width: slot.size,
-    height: slot.size,
-    color: rgb(1, 1, 1),
-    borderWidth: 0,
-  });
-  if (!active) return slot.contentTop;
-  const n = active.modules.length;
-  const cell = slot.size / n;
-  for (let row = 0; row < n; row += 1) {
-    const moduleRow = active.modules[row];
-    if (!moduleRow) continue;
-    for (let col = 0; col < n; col += 1) {
-      if (!moduleRow[col]) continue;
-      page.drawRectangle({
-        x: slot.x + col * cell,
-        y: slot.y + (n - 1 - row) * cell,
-        width: cell,
-        height: cell,
-        color: rgb(0, 0, 0),
-        borderWidth: 0,
-      });
-    }
-  }
-  page.drawText(QR_LABEL, { x: slot.x, y: slot.labelBaseline, size: QR_TEXT_SIZE, font, color: INK });
-  recorded.push(QR_LABEL);
-  let legendY = slot.legendBaseline;
-  for (const line of wrap(font, QR_LEGEND, QR_TEXT_SIZE, PAGE_WIDTH - slot.x * 2)) {
-    page.drawText(line, { x: slot.x, y: legendY, size: QR_TEXT_SIZE, font, color: INK });
-    recorded.push(line);
-    legendY -= QR_TEXT_SIZE + 2;
-  }
-  return Math.min(slot.contentTop, legendY - 4);
-}
-
-function assertInvoice(invoice: IssuedInvoice, lang: InvoiceLang): void {
+function assertInvoice(invoice: IssuedInvoice): void {
   if (!/^[A-Z]{3}$/.test(invoice.currency)) {
     throw domainError('WC_VALIDATION', { currency: 'Moneda no válida' });
   }
@@ -348,6 +247,9 @@ function assertInvoice(invoice: IssuedInvoice, lang: InvoiceLang): void {
   }
   if (invoice.taxes.length === 0) {
     throw domainError('WC_VALIDATION', { taxes: 'Falta el desglose de impuestos' });
+  }
+  if (!isDocumentVariant(invoice.profile.variant)) {
+    throw domainError('WC_VALIDATION', { variant: 'La variante de plantilla no es válida' });
   }
   assertParty(invoice.issuer, 'issuer', true);
   assertParty(invoice.customer, 'customer', !SIMPLIFIED.has(invoice.invoiceType));
@@ -381,8 +283,6 @@ function assertInvoice(invoice: IssuedInvoice, lang: InvoiceLang): void {
   if (!sameAmount(subAmounts(invoice.importeTotal, invoice.withholdingTotal), invoice.totalToPay)) {
     throw domainError('WC_VALIDATION', { total: 'El total a pagar no cuadra' });
   }
-  // Touch lang so a caller cannot skip the labels that carry the amounts.
-  formatMoney(invoice.importeTotal, lang, invoice.currency);
 }
 
 function assertParty(
@@ -404,61 +304,161 @@ function assertParty(
   }
 }
 
-function titleFor(invoiceType: string, lang: InvoiceLang): string {
-  if (invoiceType.startsWith('R')) return lang === 'es' ? 'FACTURA RECTIFICATIVA' : 'CORRECTIVE INVOICE';
-  if (invoiceType === 'F2') return lang === 'es' ? 'FACTURA SIMPLIFICADA' : 'SIMPLIFIED INVOICE';
-  return lang === 'es' ? 'FACTURA' : 'INVOICE';
+function titleFor(invoiceType: string, labels: Labels): string {
+  if (invoiceType.startsWith('R')) return labels.corrective;
+  if (invoiceType === 'F2') return labels.simplified;
+  return labels.invoice;
 }
 
-function lineHeader(lang: InvoiceLang): string {
-  return lang === 'es'
-    ? 'Descripción | Cantidad | Unidad | Precio | Descuento | Impuesto | Base'
-    : 'Description | Quantity | Unit | Price | Discount | Tax | Base';
+function columnsFor(variant: DocumentVariant, labels: Labels): TableColumn[] {
+  const widths = COLUMN_WIDTHS[variant];
+  const names = variant === 'po'
+    ? [labels.columns.concept, labels.columns.price, labels.columns.units, labels.columns.discount, labels.columns.vat, labels.columns.total]
+    : [labels.columns.concept, labels.columns.units, labels.columns.price, labels.columns.subtotal, labels.columns.vat, labels.columns.total];
+  return names.map((header, index) => ({
+    header,
+    width: widths[index] ?? 60,
+    align: index === 0 ? 'left' : 'right',
+  }));
 }
 
-function lineText(line: InvoiceLineView, lang: InvoiceLang, currency: string): string {
-  const lot = line.lotCode ? (lang === 'es' ? `Lote ${line.lotCode}` : `Lot ${line.lotCode}`) : null;
-  const description = [line.sku, line.description, lot].filter((part) => part && part.trim() !== '').join(' | ');
-  return [
-    description,
-    formatPlain(line.quantity, lang),
-    line.unit,
-    formatPrice(line.unitPrice, lang, currency),
-    `${formatPlain(line.discountPct, lang)} %`,
-    line.taxCode,
-    formatMoney(line.lineBase, lang, currency),
-  ].join(' | ');
-}
-
-function taxHeader(lang: InvoiceLang, surcharge: boolean, withholding: boolean): string {
-  const base = lang === 'es'
-    ? ['Impuesto', 'Base', 'Tipo', 'Cuota']
-    : ['Tax', 'Base', 'Rate', 'VAT'];
-  if (surcharge) base.push(lang === 'es' ? 'Recargo' : 'Surcharge', lang === 'es' ? 'Cuota recargo' : 'Surcharge quota');
-  if (withholding) base.push(lang === 'es' ? 'Retención' : 'Withholding', lang === 'es' ? 'Cuota retención' : 'Withholding quota');
-  return base.join(' | ');
-}
-
-function taxText(
-  tax: InvoiceTaxView,
+function rowFor(
+  line: InvoiceLineView,
+  variant: DocumentVariant,
+  rates: ReadonlyMap<string, string>,
+  labels: Labels,
   lang: InvoiceLang,
   currency: string,
-  surcharge: boolean,
-  withholding: boolean,
-): string {
-  const cells = [
-    tax.taxCode,
-    formatMoney(tax.base, lang, currency),
-    `${formatPlain(tax.rate, lang)} %`,
-    formatMoney(tax.quota, lang, currency),
-  ];
-  if (surcharge) {
-    cells.push(`${formatPlain(tax.surchargeRate, lang)} %`, formatMoney(tax.surchargeQuota, lang, currency));
+): TableRow {
+  const rate = rates.get(line.taxCode) ?? '0';
+  const total = money.toString(
+    money.add(money.fromString(line.lineBase), money.round2(money.mul(money.fromString(line.lineBase), new Decimal(rate).div(100)))),
+  );
+  const discount = isZeroAmount(line.discountPct) ? '' : formatPercent(line.discountPct, lang);
+  const detail: string[] = [];
+  if (line.sku) detail.push(`${labels.ref} ${line.sku}`);
+  if (line.lotCode) detail.push(`${labels.lot}: ${line.lotCode}`);
+  const quantity = formatNumber(line.quantity, lang, 3);
+  const price = formatUnitPrice(line.unitPrice, lang, currency);
+  const vat = formatPercent(rate, lang);
+  if (variant === 'po') {
+    return {
+      concept: { title: line.description, detail },
+      cells: [price, quantity, discount, vat, formatAmount(total, lang, currency)],
+    };
   }
-  if (withholding) {
-    cells.push(`${formatPlain(tax.withholdingRate, lang)} %`, formatMoney(tax.withholding, lang, currency));
+  if (discount !== '') detail.push(`${labels.discountShort} ${discount}`);
+  return {
+    concept: { title: line.description, detail },
+    cells: [
+      `${quantity} ${unitLabel(line.unit, lang)}`.trim(),
+      price,
+      formatAmount(line.lineBase, lang, currency),
+      vat,
+      formatAmount(total, lang, currency),
+    ],
+  };
+}
+
+function unitLabel(unit: string, lang: InvoiceLang): string {
+  const value = unit.trim();
+  if (value === 'ud' && lang === 'en') return 'pcs';
+  return value;
+}
+
+function totalRows(
+  invoice: IssuedInvoice,
+  taxes: readonly InvoiceTaxView[],
+  lines: readonly InvoiceLineView[],
+  labels: Labels,
+  lang: InvoiceLang,
+  discounted: boolean,
+): TotalRow[] {
+  const currency = invoice.currency;
+  const rows: TotalRow[] = [];
+  if (discounted) {
+    const discount = lines.reduce((sum, line) => {
+      const gross = money.round2(money.mul(money.fromString(line.quantity), money.fromString(line.unitPrice)));
+      return money.add(sum, money.sub(gross, money.fromString(line.lineBase)));
+    }, money.fromString('0'));
+    if (discount.gt(0)) rows.push({ label: labels.discount, value: formatAmount(money.toString(discount), lang, currency) });
   }
-  return cells.join(' | ');
+  rows.push({ label: labels.taxable, value: formatAmount(invoice.subtotal, lang, currency) });
+
+  const byRate = (pick: (tax: InvoiceTaxView) => { rate: string; amount: string }): { rate: string; amount: string }[] => {
+    const grouped = new Map<string, string>();
+    for (const tax of taxes) {
+      const { rate, amount } = pick(tax);
+      const key = new Decimal(rate).toFixed();
+      grouped.set(key, addAmounts([grouped.get(key) ?? '0', amount]));
+    }
+    return [...grouped.entries()]
+      .sort((left, right) => new Decimal(left[0]).comparedTo(new Decimal(right[0])))
+      .map(([rate, amount]) => ({ rate, amount }));
+  };
+  for (const { rate, amount } of byRate((tax) => ({ rate: tax.rate, amount: tax.quota }))) {
+    rows.push({ label: `${labels.vat} ${formatPercent(rate, lang)}`, value: formatAmount(amount, lang, currency) });
+  }
+  if (!isZeroAmount(invoice.surchargeTotal)) {
+    for (const { rate, amount } of byRate((tax) => ({ rate: tax.surchargeRate, amount: tax.surchargeQuota }))) {
+      if (isZeroAmount(amount)) continue;
+      rows.push({ label: `${labels.surcharge} ${formatPercent(rate, lang)}`, value: formatAmount(amount, lang, currency) });
+    }
+  }
+  rows.push({ label: labels.total, value: formatAmount(invoice.importeTotal, lang, currency) });
+  if (!isZeroAmount(invoice.withholdingTotal)) {
+    for (const { rate, amount } of byRate((tax) => ({ rate: tax.withholdingRate, amount: tax.withholding }))) {
+      if (isZeroAmount(amount)) continue;
+      rows.push({
+        label: `${labels.withholding} ${formatPercent(rate, lang)}`,
+        value: formatAmount(subAmounts('0', amount), lang, currency),
+      });
+    }
+    rows.push({ label: labels.amountDue, value: formatAmount(invoice.totalToPay, lang, currency) });
+  }
+  return rows;
+}
+
+function noteLines(invoice: IssuedInvoice, labels: Labels, lang: InvoiceLang): NoteLine[] {
+  const currency = invoice.currency;
+  const out: NoteLine[] = [];
+  const group = (items: readonly NoteLine[]): void => {
+    if (items.length === 0) return;
+    if (out.length > 0) out.push('');
+    out.push(...items);
+  };
+
+  const payment: string[] = [];
+  const dues = [...invoice.dues].sort((left, right) => left.seq - right.seq);
+  if (dues.length > 0) {
+    const shown = dues.map((due) => `${formatDate(due.dueDate, lang)} ${formatAmount(due.amount, lang, currency)}`);
+    payment.push(`${dues.length === 1 ? labels.dueOne : labels.dueMany}: ${shown.join(' · ')}`);
+  }
+  if (invoice.paymentMethod) payment.push(`${labels.payment}: ${paymentLabel(invoice.paymentMethod, lang)}`);
+  group(payment);
+
+  group(invoice.profile.footerLines.map((line) => line.trim()));
+
+  const extra: string[] = [];
+  if (invoice.incoterm) extra.push(`${labels.incoterm}: ${invoice.incoterm}`);
+  if (invoice.description.trim() !== '' && invoice.description.trim() !== DEFAULT_DESCRIPTION) {
+    extra.push(`${labels.operation}: ${invoice.description.trim()}`);
+  }
+  const notes = textLines(invoice.notes);
+  notes.forEach((line, index) => extra.push(index === 0 ? `${labels.notes}: ${line}` : line));
+  if (invoice.issuer.registryData) extra.push(`${labels.registry}: ${invoice.issuer.registryData}`);
+  group(extra);
+
+  const delivery = [...new Set(invoice.deliveryNoteNumbers.map((number) => number.trim()).filter((number) => number !== ''))].sort();
+  if (delivery.length > 0) {
+    group([{ label: delivery.length === 1 ? labels.deliveryNote : labels.deliveryNotes, text: delivery.join(', ') }]);
+  }
+  return out;
+}
+
+function textLines(value: string | null): string[] {
+  if (!value) return [];
+  return value.split(/\r?\n/u).map((line) => line.trim()).filter((line) => line !== '');
 }
 
 function mentionsFor(invoice: IssuedInvoice, taxes: readonly InvoiceTaxView[], lang: InvoiceLang): string[] {
@@ -510,81 +510,4 @@ function cmp(left: string, right: string): number {
   if (left < right) return -1;
   if (left > right) return 1;
   return 0;
-}
-
-function drawPartyLines(
-  draw: (value: string, font: PDFFont, size: number, gap?: number) => void,
-  regular: PDFFont,
-  party: IssuedInvoice['issuer'],
-  lang: InvoiceLang,
-  requireTaxId: boolean,
-): void {
-  draw(party.legalName, regular, BODY, 2);
-  if (requireTaxId || party.taxId.trim() !== '') {
-    draw(`${taxIdLabel(party.taxIdType, lang)} ${party.taxId}`, regular, BODY, 2);
-  }
-  draw(party.address.line1, regular, BODY, 2);
-  if (party.address.line2) draw(party.address.line2, regular, BODY, 2);
-  draw(`${party.address.postalCode} ${party.address.city}`, regular, BODY, 2);
-  if (party.address.province) draw(party.address.province, regular, BODY, 2);
-  draw(countryName(party.address.countryCode, lang), regular, BODY, 2);
-  if (party.registryData) {
-    draw(lang === 'es' ? `Datos registrales: ${party.registryData}` : `Registry: ${party.registryData}`, regular, BODY, 2);
-  }
-}
-
-async function embedLogo(pdf: PDFDocument, bytes: Uint8Array): Promise<PDFImage> {
-  try {
-    return await pdf.embedPng(bytes);
-  } catch {
-    try {
-      return await pdf.embedJpg(bytes);
-    } catch {
-      throw domainError('WC_VALIDATION', { logo: 'El logotipo debe ser PNG o JPEG' });
-    }
-  }
-}
-
-function accentOf(value: readonly [number, number, number] | null): readonly [number, number, number] {
-  if (!value) return DEFAULT_ACCENT;
-  for (const component of value) {
-    if (!Number.isFinite(component) || component < 0 || component > 1) {
-      throw domainError('WC_VALIDATION', { branding: 'El color de la entidad no es válido' });
-    }
-  }
-  return value;
-}
-
-function clean(value: string): string {
-  return value
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
-    .replace(/[\r\n\t]+/gu, ' ')
-    .replace(/ {2,}/gu, ' ')
-    .trim();
-}
-
-function wrap(font: PDFFont, text: string, size: number, maxWidth: number): string[] {
-  if (font.widthOfTextAtSize(text, size) <= maxWidth) return [text];
-  const lines: string[] = [];
-  let current = '';
-  for (const word of text.split(' ')) {
-    if (word === '') continue;
-    const next = current === '' ? word : `${current} ${word}`;
-    if (font.widthOfTextAtSize(next, size) <= maxWidth) {
-      current = next;
-      continue;
-    }
-    if (current !== '') lines.push(current);
-    current = word;
-  }
-  if (current !== '') lines.push(current);
-  return lines.length === 0 ? [text] : lines;
-}
-
-function moduleKey(modules: readonly (readonly boolean[])[]): string {
-  return modules.map((row) => row.map((cell) => (cell ? '1' : '0')).join('')).join('\n');
-}
-
-function sha256(bytes: Uint8Array): string {
-  return createHash('sha256').update(bytes).digest('hex');
 }

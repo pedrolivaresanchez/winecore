@@ -153,8 +153,13 @@ describe('detalle de documentos Holded', () => {
     const bytes = new Uint8Array(await pdf.arrayBuffer());
     expect(Buffer.from(bytes.subarray(0, 4)).toString('ascii')).toBe('%PDF');
     const text = extractPdfText(bytes);
-    expect(text).toContain('Factura');
-    expect(text).not.toContain('rectificativa');
+    expect(text).toContain('FACTURA #F-9001');
+    expect(text).toContain('Fecha: 01/06/2026');
+    expect(text).toContain('Vencimiento: 01/07/2026');
+    expect(text).toContain('CONCEPTO');
+    expect(text).toContain('BASE IMPONIBLE');
+    expect(text).toContain('Pág. 1 de 1');
+    expect(text).not.toContain('RECTIFICATIVA');
     expect(text).toContain('Cliente Ejemplo');
     expect(text).toContain('Botella ejemplo');
     expect(text).toContain('Caja ejemplo');
@@ -169,7 +174,7 @@ describe('detalle de documentos Holded', () => {
 
     const creditPdf = await ctx.app.handle(new Request(`http://localhost/v1/legacy/invoices/${credit}/pdf`));
     expect(creditPdf.status).toBe(200);
-    expect(extractPdfText(new Uint8Array(await creditPdf.arrayBuffer()))).toContain('Factura rectificativa');
+    expect(extractPdfText(new Uint8Array(await creditPdf.arrayBuffer()))).toContain('FACTURA RECTIFICATIVA #');
     await ctx.writer.withWrite({ type: 'system', id: 'holded-detail-scan', requestId: newId() }, (tx) =>
       putAttachment(tx, { bytes: PNG, mime: 'image/png', name: 'escaneo.png' }, {
         table: 'legacy.holded_invoice',
@@ -179,7 +184,7 @@ describe('detalle de documentos Holded', () => {
       }));
     const negativePdf = await ctx.app.handle(new Request(`http://localhost/v1/legacy/invoices/${negative}/pdf`));
     expect(negativePdf.headers.get('content-type')).toContain('application/pdf');
-    expect(extractPdfText(new Uint8Array(await negativePdf.arrayBuffer()))).toContain('Factura rectificativa');
+    expect(extractPdfText(new Uint8Array(await negativePdf.arrayBuffer()))).toContain('FACTURA RECTIFICATIVA #');
 
     const missing = await ctx.app.handle(new Request(`http://localhost/v1/legacy/invoices/${newId()}`));
     expect(missing.status).toBe(404);
@@ -265,8 +270,8 @@ describe('detalle de documentos Holded', () => {
     const quoteBytes = new Uint8Array(await quotePdf.arrayBuffer());
     expect(Buffer.from(quoteBytes.subarray(0, 4)).toString('ascii')).toBe('%PDF');
     const quoteText = extractPdfText(quoteBytes);
-    expect(quoteText).toContain('Presupuesto');
-    expect(quoteText).toContain('Válido hasta 31/05/2026');
+    expect(quoteText).toContain('PRESUPUESTO #P-9001');
+    expect(quoteText).toContain('Válido hasta: 31/05/2026');
     expect(quoteText).toContain('Cliente Ejemplo');
     expect(quoteText).toContain('Linea de presupuesto');
     expect(quoteText).toContain('Comercializadora (CVPO)');
@@ -275,6 +280,8 @@ describe('detalle de documentos Holded', () => {
     expect(quoteText).not.toContain('Verifactu');
     expect(quoteText).not.toContain('Pendiente 0,00');
     expect(quoteText).not.toContain('Factura');
+    expect(quoteText).not.toContain('FACTURA');
+    expect(quoteText).not.toContain('PAGADO');
 
     const noteResponse = await ctx.app.handle(new Request(`http://localhost/v1/legacy/documents/${note}`));
     expect(noteResponse.status).toBe(200);
@@ -297,7 +304,7 @@ describe('detalle de documentos Holded', () => {
     expect(notePdf.status).toBe(200);
     expect(notePdf.headers.get('content-disposition')).toBe('inline; filename="albaran-A-9001.pdf"');
     const noteText = extractPdfText(new Uint8Array(await notePdf.arrayBuffer()));
-    expect(noteText).toContain('Albarán');
+    expect(noteText).toContain('ALBARÁN #A-9001');
     expect(noteText).toContain('Destino');
     expect(noteText).toContain('Bodega ejemplo');
     expect(noteText).toContain('Linea de albaran');
@@ -348,8 +355,8 @@ describe('detalle de documentos Holded', () => {
     const response = await ctx.app.handle(new Request(`http://localhost/v1/legacy/documents/${quote}/pdf`));
     expect(response.status).toBe(200);
     const text = extractPdfText(new Uint8Array(await response.arrayBuffer()));
-    expect(text).toContain('Presupuesto');
-    expect(text).toContain('Número P-9102');
+    expect(text).toContain('PRESUPUESTO #P-9102');
     expect(text).toContain('Productor (P.O)');
+    expect(text).toContain('Sin líneas.');
   });
 });

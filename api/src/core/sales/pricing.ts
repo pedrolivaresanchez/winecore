@@ -77,6 +77,7 @@ export type CommercialLineInput = {
   priceReason: string | null;
   taxCode: string | null;
   description: string | null;
+  unit: string | null;
 };
 
 export function parseCommercialLines(raw: unknown): CommercialLineInput[] {
@@ -98,12 +99,13 @@ export function parseCommercialLines(raw: unknown): CommercialLineInput[] {
     const taxCode = row.tax_code == null || row.tax_code === '' ? null : (typeof row.tax_code === 'string' ? row.tax_code : null);
     if (row.tax_code != null && row.tax_code !== '' && taxCode == null) fields[`${prefix}.tax_code`] = 'Debe ser texto';
     const description = optionalText(row.description, `${prefix}.description`, fields, 250);
+    const unit = optionalText(row.unit, `${prefix}.unit`, fields, 30);
     if (quantity && quantity.lte(0)) fields[`${prefix}.quantity`] = 'La cantidad debe ser mayor que cero';
     if (discount && (discount.lt(0) || discount.gt(100))) fields[`${prefix}.discount_pct`] = 'El descuento debe estar entre 0 y 100';
     if (unitPrice && unitPrice.lt(0)) fields[`${prefix}.unit_price`] = 'El precio no puede ser negativo';
     throwIf(fields);
     if (!productId || !quantity || !discount) fail('Línea no válida');
-    return { productId, quantity, discountPct: discount, unitPrice, priceReason, taxCode, description };
+    return { productId, quantity, discountPct: discount, unitPrice, priceReason, taxCode, description, unit };
   });
 }
 

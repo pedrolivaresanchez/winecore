@@ -28,7 +28,7 @@ WHERE id = CAST('01a1964b-983d-7287-9926-4014235bf55d' AS UUID)
 -- ninguna de estas pantallas. Se activan los que no tienen fila; uno que el propietario haya
 -- desactivado sigue desactivado.
 INSERT INTO core.module_state (module_key, enabled, changed_by)
-SELECT m.module_key, TRUE, 'migracion 0042'
+SELECT m.module_key, TRUE, 'migracion 0043'
 FROM (VALUES ('contacts'), ('catalog'), ('sales'), ('billing'), ('purchasing'),
              ('inventory'), ('cellar'), ('vineyard'), ('finance')) AS m(module_key)
 WHERE NOT EXISTS (SELECT 1 FROM core.module_state s WHERE s.module_key = m.module_key);

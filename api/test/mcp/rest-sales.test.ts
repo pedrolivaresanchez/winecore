@@ -114,7 +114,8 @@ describe('MCP de ventas sobre las rutas de la app', () => {
       customer_id: fx.customer,
       channel: 'horeca',
       customer_order_ref: 'SINT-0001',
-      lines: [{ product_id: fx.product, quantity: '6', description: 'Tinto sintético de prueba' }],
+      customer_references: 'Pedido cliente 0001\nDepartamento de compras',
+      lines: [{ product_id: fx.product, quantity: '6', description: 'Tinto sintético de prueba', unit: 'botella' }],
     });
     const orderId = String(order.committed.id);
     expect((await rest(`/v1/sales-orders/${orderId}`)).customer_order_ref).toBe('SINT-0001');
@@ -127,10 +128,17 @@ describe('MCP de ventas sobre las rutas de la app', () => {
     expect(edited.requested_date).toBe('2027-01-15');
     expect(edited.notes).toBe('Bodegas Sintéticas: entregar por la mañana');
     expect(JSON.stringify(edited.ship_to)).toContain('ES');
-    const lines = edited.lines as { id: string; quantity: string; description: string }[];
+    expect(edited.customer_references).toBe('Pedido cliente 0001\nDepartamento de compras');
+    const lines = edited.lines as { id: string; quantity: string; description: string; unit: string | null }[];
     expect(lines).toHaveLength(1);
     expect(lines[0]?.quantity).toBe('6.000');
     expect(lines[0]?.description).toBe('Tinto sintético de prueba');
+    expect(lines[0]?.unit).toBe('botella');
+
+    const orderPdf = await tool('sales_order_pdf_get', { id: orderId });
+    expect(orderPdf.error ? JSON.stringify(orderPdf.data) : 'ok').toBe('ok');
+    expect(orderPdf.data.content_type).toBe('application/pdf');
+    expect(Buffer.from(String(orderPdf.data.base64), 'base64').subarray(0, 4).toString()).toBe('%PDF');
 
     const confirmed = await write('sales_order_confirm', { id: orderId });
     expect(String(confirmed.prepared.summary_es)).toContain('ya no se podrá editar');
