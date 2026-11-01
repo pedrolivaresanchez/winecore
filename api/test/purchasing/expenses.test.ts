@@ -505,20 +505,61 @@ describe('gastos', () => {
     }
   });
 
-  it('sin miembro, un PDF no crea el gasto', async () => {
+  it('sin miembro, un PDF crea un gasto vacío que se rellena a mano y se aprueba', async () => {
     const ctx = await createTestApp();
     try {
+      await supplier(ctx);
+      const contacts = await json(await ctx.app.handle(new Request('http://localhost/v1/contacts?role=supplier', {
+        headers: { 'X-Dev-User': ADMIN },
+      })));
+      const supplierId = String((contacts.items as { id: string }[])[0]?.id);
       const form = new FormData();
       form.set('file', new File([new TextEncoder().encode('%PDF-1.4\n')], 'factura.pdf'));
+      form.set('entity', 'CVPO');
       const response = await ctx.app.handle(new Request('http://localhost/v1/supplier-invoices/capture', {
         method: 'POST',
-        headers: { 'Idempotency-Key': 'captura-pdf-vacio', 'X-Dev-User': ADMIN },
+        headers: { 'Idempotency-Key': 'captura-pdf-manual', 'X-Dev-User': ADMIN },
         body: form,
       }));
-      expect(response.status).toBe(503);
-      expect((await json(response)).code).toBe('WC_OCR_UNAVAILABLE');
-      const rows = await ctx.writer.read<{ total: number }>('SELECT count(*)::INTEGER AS total FROM purchasing.supplier_invoice');
-      expect(Number(rows[0]?.total ?? 0)).toBe(0);
+      expect(response.status).toBe(201);
+      const created = await json(response);
+      expect(created.status).toBe('captured');
+      expect(created.extractor).toBe('manual');
+      expect(created.legal_entity_code).toBe('CVPO');
+      expect(created.supplier_invoice_number).toBeNull();
+      expect(created.lines).toEqual([]);
+      expect(created.attachment_id).toBeTruthy();
+
+      const early = await post(ctx, `/v1/supplier-invoices/${String(created.id)}/validate`, String(created.updated_at), ADMIN);
+      expect(early.status).toBe(422);
+
+      const filled = await ctx.app.handle(new Request(`http://localhost/v1/supplier-invoices/${String(created.id)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'If-Match': String(created.updated_at),
+          'X-Dev-User': ADMIN,
+        },
+        body: JSON.stringify({
+          supplier_id: supplierId,
+          supplier_invoice_number: 'MAN-1',
+          issue_date: '2027-02-10',
+          category_code: 'oenological',
+          subtotal: '20.00',
+          tax_total: '4.20',
+          withholding_total: '0.00',
+          total: '24.20',
+          lines: [{ description: 'Ácido tartárico', line_base: '20.00', vat_rate: '21.00', vat_quota: '4.20' }],
+        }),
+      }));
+      expect(filled.status).toBe(200);
+      const draft = await json(filled);
+      expect(draft.totals_ok).toBe(true);
+      const validated = await json(await post(ctx, `/v1/supplier-invoices/${String(created.id)}/validate`, String(draft.updated_at), ADMIN));
+      expect(validated.status).toBe('validated');
+      const approved = await json(await post(ctx, `/v1/supplier-invoices/${String(created.id)}/approve`, String(validated.updated_at)));
+      expect(approved.status).toBe('approved');
+      expect(approved.total).toBe('24.20');
     } finally {
       await ctx.close();
     }

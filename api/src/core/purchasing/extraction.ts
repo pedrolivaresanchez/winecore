@@ -35,7 +35,7 @@ export type ExtractedVat = {
 };
 
 export type Extraction = {
-  extractor: 'facturae' | 'ubl' | 'timbal-ocr';
+  extractor: 'facturae' | 'ubl' | 'timbal-ocr' | 'manual';
   model: string | null;
   supplier_name: string | null;
   supplier_tax_id: string | null;
@@ -252,6 +252,11 @@ export function buildExtraction(raw: RawExtraction): Extraction {
     overall: clamp01(overall),
     totals_ok: totalsOk,
   };
+}
+
+/** Sin lectura automática el gasto nace vacío y se rellena a mano mirando el documento. */
+export function manualExtraction(): Extraction {
+  return buildExtraction({ extractor: 'manual' });
 }
 
 function asString(value: unknown): string | null {

@@ -18,8 +18,13 @@ function amount(value: string): number {
 
 const DATE_LABELS = { clear: 'Borrar', today: 'Hoy' }
 
+/** A manual draft was never read, so a 0 % mark on every field would only be noise. */
+function marksOf(expense: Expense): Expense['confidence'] {
+  return expense.extractor === 'manual' ? {} : expense.confidence
+}
+
 function hintFor(key: Parameters<typeof confidenceMark>[0], expense: Expense): string | undefined {
-  return confidenceMark(key, expense.confidence)
+  return confidenceMark(key, marksOf(expense))
 }
 
 function Confidence({ text }: { text?: string }) {
@@ -44,7 +49,7 @@ export function ExpenseForm({
   onChange: (next: ExpenseDraft) => void
   onCreateSupplier: () => void
 }) {
-  const low = Object.values(expense.confidence).some((value) => confidenceLow(value))
+  const low = Object.values(marksOf(expense)).some((value) => confidenceLow(value))
 
   function setLine(index: number, patch: Partial<ExpenseLine>, quotaFromRate: boolean) {
     const lines = draft.lines.map((line, lineIndex) => {
