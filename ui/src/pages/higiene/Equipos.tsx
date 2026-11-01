@@ -265,7 +265,7 @@ function EquipmentDialog({ onClose, onSaved }: { onClose: () => void; onSaved: (
       <DialogHeader titleId="equipo-nuevo" title={copy.higiene.newEquipment} onClose={onClose} />
       <DialogBody>
         <form
-          id="equipo-nuevo"
+          id="equipo-nuevo-form"
           data-screen="higiene-dialogo-equipo"
           className="grid gap-4 pb-2"
           onSubmit={(event) => {
@@ -313,7 +313,7 @@ function EquipmentDialog({ onClose, onSaved }: { onClose: () => void; onSaved: (
         <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={saving}>
           {copy.higiene.cancel}
         </Button>
-        <Button type="submit" form="equipo-nuevo" variant="primary" size="sm" loading={saving}>
+        <Button type="submit" form="equipo-nuevo-form" variant="primary" size="sm" loading={saving}>
           {copy.higiene.save}
         </Button>
       </DialogFooter>

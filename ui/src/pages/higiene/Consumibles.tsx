@@ -268,7 +268,7 @@ function RegisterDialog({ taken, onClose, onSaved }: { taken: Set<string>; onClo
       <DialogHeader titleId="consumible-nuevo" title={copy.higiene.register} onClose={onClose} />
       <DialogBody>
         <form
-          id="consumible-nuevo"
+          id="consumible-nuevo-form"
           data-screen="higiene-dialogo-consumible"
           className="grid gap-4 pb-2"
           onSubmit={(event) => {
@@ -302,7 +302,7 @@ function RegisterDialog({ taken, onClose, onSaved }: { taken: Set<string>; onClo
         <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={saving}>
           {copy.higiene.cancel}
         </Button>
-        <Button type="submit" form="consumible-nuevo" variant="primary" size="sm" loading={saving}>
+        <Button type="submit" form="consumible-nuevo-form" variant="primary" size="sm" loading={saving}>
           {copy.higiene.save}
         </Button>
       </DialogFooter>
@@ -372,7 +372,7 @@ function ReceiptDialog({
       <DialogHeader titleId="entrada-consumible" title={copy.higiene.receipt} onClose={onClose} />
       <DialogBody>
         <form
-          id="entrada-consumible"
+          id="entrada-consumible-form"
           data-screen="higiene-dialogo-entrada"
           className="grid gap-4 pb-2"
           onSubmit={(event) => {
@@ -425,7 +425,7 @@ function ReceiptDialog({
         <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={saving}>
           {copy.higiene.cancel}
         </Button>
-        <Button type="submit" form="entrada-consumible" variant="primary" size="sm" loading={saving}>
+        <Button type="submit" form="entrada-consumible-form" variant="primary" size="sm" loading={saving}>
           {copy.higiene.save}
         </Button>
       </DialogFooter>
