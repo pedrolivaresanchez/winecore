@@ -446,7 +446,7 @@ function PricePanel({
     <section className="overflow-hidden rounded-2xl border border-border-subtle bg-surface">
       <div className="flex items-center justify-between gap-3 border-b border-border-subtle px-4 py-2">
         <h2 className="text-caption text-text-tertiary">Precios vigentes</h2>
-        <Link to="/catalogo/tarifas" className="text-caption text-text-tertiary underline max-sm:-my-3 max-sm:py-3">
+        <Link to="/catalogo/tarifas" className="text-caption text-text-tertiary underline max-sm:-mx-2 max-sm:-my-3.5 max-sm:px-2 max-sm:py-3.5">
           Tarifas
         </Link>
       </div>
@@ -455,9 +455,9 @@ function PricePanel({
       ) : (
         <ul>
           {prices.map((price) => (
-            <li key={`${price.price_list_id}-${price.min_qty}`} className="flex items-baseline justify-between gap-3 border-b border-border-subtle px-4 py-2 last:border-b-0">
+            <li key={`${price.price_list_id}-${price.min_qty}`} className="flex items-baseline justify-between gap-3 border-b border-border-subtle px-4 py-2 last:border-b-0 max-sm:py-0 max-sm:pb-3">
               <div className="min-w-0">
-                <Link to={`/catalogo/tarifas/${price.price_list_id}`} className="text-label font-medium text-ink-900">
+                <Link to={`/catalogo/tarifas/${price.price_list_id}`} className="text-label font-medium text-ink-900 max-sm:block max-sm:pt-3.5 max-sm:pb-2.5">
                   {price.price_list_name}
                 </Link>
                 <p className="text-caption text-text-tertiary">

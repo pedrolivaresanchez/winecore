@@ -495,7 +495,7 @@ function IdentityCard({ contact }: { contact: Contact }) {
         ) : null}
         <Fact label={copy.contactRecord.email}>
           {contact.email ? (
-            <a href={`mailto:${contact.email}`} title={contact.email} className={cn(link, 'block truncate')}>
+            <a href={`mailto:${contact.email}`} title={contact.email} className={cn(link, 'block truncate max-sm:overflow-visible max-sm:break-all max-sm:whitespace-normal')}>
               {contact.email}
             </a>
           ) : (

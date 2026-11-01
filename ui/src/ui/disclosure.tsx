@@ -239,7 +239,7 @@ export function Reveal({
         aria-controls={bodyId}
         onClick={() => setOpen((current) => !current)}
         className={cn(
-          'group -mx-1 flex min-w-0 items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-label text-text-secondary outline-none',
+          'group -mx-1 flex min-w-0 items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-label text-text-secondary outline-none max-sm:min-h-11',
           'transition-colors duration-(--duration-quick) ease-(--ease-smooth-out)',
           'hover:text-ink-900 focus-visible:shadow-(--shadow-focus)',
         )}
@@ -306,7 +306,7 @@ export function StatusChip({
     >
       <button
         type="button"
-        className="inline-flex rounded-full outline-none focus-visible:shadow-(--shadow-focus)"
+        className="touch-hit inline-flex rounded-full outline-none focus-visible:shadow-(--shadow-focus)"
       >
         <Badge tone={tone} dot={dot} className="cursor-default">
           {children}

@@ -74,7 +74,7 @@ export function StockPanel({
       <div className="rounded-2xl border border-border-subtle bg-surface p-3">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-label font-medium text-ink-900">Reparto</h3>
-          <Link to={`/stock?product_id=${productId}`} className="text-caption text-text-tertiary underline">
+          <Link to={`/stock?product_id=${productId}`} className="text-caption text-text-tertiary underline max-sm:-my-3.5 max-sm:py-3.5">
             Existencias
           </Link>
         </div>

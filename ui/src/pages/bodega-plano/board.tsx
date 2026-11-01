@@ -170,7 +170,7 @@ export function PlanBoard({
               role="button"
               aria-label={copy.plano.resize}
               tabIndex={-1}
-              className="absolute right-1 bottom-1 z-sticky size-7 cursor-nwse-resize rounded-full border-2 border-ink-900 bg-surface shadow-(--shadow-card)"
+              className="absolute right-1 bottom-1 z-sticky size-7 cursor-nwse-resize rounded-full border-2 border-ink-900 bg-surface shadow-(--shadow-card) max-sm:after:absolute max-sm:after:-inset-2 max-sm:after:content-['']"
               onPointerDown={(event) => begin(event, 'resize', marker)}
             />
           </div>

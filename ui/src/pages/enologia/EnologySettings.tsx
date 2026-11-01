@@ -413,7 +413,7 @@ function ParameterRow({
             <span className="text-label font-medium text-ink-900">{parameterLabel(row.code)}</span>
             <StatusMark basis={row.basis} confirm={row.confirm} />
           </span>
-          <button type="button" className="mt-0.5 block w-full truncate text-left text-caption text-text-tertiary" onClick={onOpen}>
+          <button type="button" className="mt-0.5 block w-full truncate text-left text-caption text-text-tertiary max-sm:mt-0 max-sm:py-3.5" onClick={onOpen}>
             {row.source}
           </button>
         </div>
@@ -486,7 +486,7 @@ function So2Row({
             </span>
             <StatusMark basis={row.basis} confirm={row.confirm} />
           </span>
-          <button type="button" className="mt-0.5 block w-full truncate text-left text-caption text-text-tertiary" onClick={onOpen}>
+          <button type="button" className="mt-0.5 block w-full truncate text-left text-caption text-text-tertiary max-sm:mt-0 max-sm:py-3.5" onClick={onOpen}>
             {row.source}
           </button>
         </div>
