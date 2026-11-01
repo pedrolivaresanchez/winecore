@@ -1798,7 +1798,27 @@
       "asc": "Ascendente",
       "desc": "Descendente",
       "column": "Opciones de columna"
-    }
+    },
+    "pickCustomer": "Elige un cliente de la lista.",
+    "pickProduct": "Elige un producto de la lista en cada línea.",
+    "needLine": "Añade al menos un producto.",
+    "needQuantity": "Pon una cantidad mayor que cero en cada línea.",
+    "needDepartment": "Este canal necesita departamento y centro de coste.",
+    "needIncoterm": "Un envío fuera de España necesita incoterm.",
+    "pickOrigin": "Elige el origen del albarán.",
+    "pickDestination": "Elige el destino del albarán.",
+    "noCustomers": "No hay clientes que coincidan.",
+    "noProductsMatch": "No hay productos que coincidan.",
+    "findProduct": "Buscar producto",
+    "manualPrice": "Precio manual (sin tarifa)",
+    "noTariff": "Sin tarifa: escribe el precio.",
+    "tariffPrice": "Tarifa: {price}",
+    "createHint": "Elige cliente y producto. El precio sale de la tarifa; si no hay, escríbelo.",
+    "reasonRequired": "Escribe un motivo de al menos 3 letras.",
+    "priceReasonHint": "Obligatorio: por qué cambias el precio de la tarifa",
+    "rulesInactive": "Todavía no están activas las reglas de facturación. Apruébalas en Aprobaciones (Activación de reglas de facturación) y vuelve a intentarlo.",
+    "seriesMissing": "Falta la serie de numeración de este documento. Créala en Ajustes, Puesta en marcha.",
+    "noTariffServer": "Un producto no tiene tarifa: escribe su precio en la línea."
   },
   "gastos": {
     "title": "Gastos",
@@ -1974,9 +1994,9 @@
     "surcharge": "Recargo",
     "withholding": "Retención",
     "create": "Crear borrador",
-    "sourceNotes": "Albaranes",
-    "sourceOrder": "Pedido",
-    "sourceLines": "Líneas",
+    "sourceNotes": "Desde albaranes",
+    "sourceOrder": "Desde un pedido",
+    "sourceLines": "Productos",
     "noteIds": "Albaranes",
     "orderId": "Pedido",
     "description": "Descripción",
@@ -2069,7 +2089,18 @@
     "gridAsc": "Ascendente",
     "gridDesc": "Descendente",
     "gridColumn": "Opciones de columna",
-    "amount": "Importe"
+    "amount": "Importe",
+    "pickCustomer": "Elige un cliente de la lista.",
+    "pickProduct": "Elige un producto de la lista en cada línea.",
+    "needPrice": "Escribe el precio de cada línea.",
+    "pickEntity": "Elige quién emite la factura.",
+    "findProduct": "Buscar producto",
+    "findCustomer": "Buscar cliente",
+    "pickNotes": "Marca al menos un albarán.",
+    "pickOrder": "Elige un pedido.",
+    "noNotes": "No hay albaranes pendientes de facturar.",
+    "noOrders": "No hay pedidos para facturar.",
+    "lotOptional": "Lote (opcional)"
   },
   "enology": {
     "title": "Calculadoras",
@@ -3151,5 +3182,9 @@
       "polymerization_index": "IP",
       "turbidity": "Turbidez"
     }
+  },
+  "combobox": {
+    "more": "{count} más. Sigue escribiendo para acotar.",
+    "empty": "Sin resultados"
   }
 }

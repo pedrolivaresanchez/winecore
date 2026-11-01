@@ -54,15 +54,22 @@ function trimQty(value: string): string {
   return String(n)
 }
 
-export function commercialLines(lines: DraftLine[]): { ok: LineInput[]; error: string | null } {
+export type BuiltLines = { ok: LineInput[]; error: string | null; badKey: string | null }
+
+export function commercialLines(lines: DraftLine[]): BuiltLines {
   const ok: LineInput[] = []
   for (const line of lines) {
-    if (!line.productId && !line.orderLineId) continue
+    const typedSomething = line.touched || line.unitPrice !== ''
+    if (!line.productId && !line.orderLineId) {
+      if (typedSomething) return { ok: [], error: copy.sales.pickProduct, badKey: line.key }
+      continue
+    }
     const qty = Number(line.quantity)
-    if (!Number.isFinite(qty) || qty <= 0) return { ok: [], error: copy.sales.quantity }
+    if (!Number.isFinite(qty) || qty <= 0) return { ok: [], error: copy.sales.needQuantity, badKey: line.key }
     const override = line.touched && line.unitPrice !== '' && (line.quoted == null || pricesDiffer(line.unitPrice, line.quoted))
-    if (override && line.reason.trim().length < 3) {
-      return { ok: [], error: copy.sales.priceReasonRequired }
+    const reason = line.quoted == null ? line.reason.trim() || copy.sales.manualPrice : line.reason.trim()
+    if (override && reason.length < 3) {
+      return { ok: [], error: copy.sales.priceReasonRequired, badKey: line.key }
     }
     const payload: LineInput = {
       quantity: line.quantity,
@@ -74,10 +81,10 @@ export function commercialLines(lines: DraftLine[]): { ok: LineInput[]; error: s
     if (line.lotId) payload.lot_id = line.lotId
     if (override) {
       payload.unit_price = line.unitPrice
-      payload.price_reason = line.reason.trim()
+      payload.price_reason = reason
     }
     ok.push(payload)
   }
-  if (ok.length === 0) return { ok: [], error: copy.sales.lines }
-  return { ok, error: null }
+  if (ok.length === 0) return { ok: [], error: copy.sales.needLine, badKey: lines[0]?.key ?? null }
+  return { ok, error: null, badKey: null }
 }

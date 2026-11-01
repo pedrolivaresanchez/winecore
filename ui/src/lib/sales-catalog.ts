@@ -68,7 +68,7 @@ export function useSalesCatalog(aliases?: ReadonlyMap<string, string>) {
   }
 }
 
-async function loadCustomers(signal: AbortSignal): Promise<ContactSummary[]> {
+export async function loadCustomers(signal: AbortSignal): Promise<ContactSummary[]> {
   const items: ContactSummary[] = []
   let cursor: string | undefined
   for (let page = 0; page < 4; page += 1) {
@@ -80,7 +80,7 @@ async function loadCustomers(signal: AbortSignal): Promise<ContactSummary[]> {
   return items
 }
 
-function customersOf(items: ContactSummary[]): CatalogCustomer[] {
+export function customersOf(items: ContactSummary[]): CatalogCustomer[] {
   return items
     .filter((item) => item.is_customer && !item.archived_at)
     .map((item) => ({ id: item.id, name: item.legal_name, country: item.country_code }))
@@ -254,4 +254,23 @@ export function productAliases(lines: { product_id: string | null; description: 
     if (line.product_id && line.description) map.set(line.product_id, line.description)
   }
   return map
+}
+
+/** Todos los clientes activos, para elegirlos escribiendo en una lista. */
+export function useCustomers() {
+  const [customers, setCustomers] = useState<CatalogCustomer[]>([])
+  const [loading, setLoading] = useState(true)
+  useEffect(() => {
+    const controller = new AbortController()
+    loadCustomers(controller.signal)
+      .then((items) => {
+        setCustomers(customersOf(items))
+        setLoading(false)
+      })
+      .catch((err: unknown) => {
+        if (!isAbortError(err)) setLoading(false)
+      })
+    return () => controller.abort()
+  }, [])
+  return { customers, loading }
 }
