@@ -8,6 +8,7 @@ import type { Writer } from '../core/db/writer';
 import { asDomainError, domainError, errorBody } from '../core/errors';
 import { safeLogMessage } from '../core/redact';
 import { contextForUser } from '../mcp/context';
+import type { RestDispatch } from '../mcp/registry';
 import { RateLimiter } from '../mcp/rate';
 import { visibleToolCatalogue } from '../mcp/server';
 
@@ -24,6 +25,7 @@ export interface AssistantRouteDeps {
   provider: AssistantProvider;
   limiter: RateLimiter;
   log?: (line: string) => void;
+  rest?: RestDispatch;
 }
 
 async function readBody(request: Request): Promise<unknown> {
@@ -125,7 +127,7 @@ export function assistantRoutes(deps: AssistantRouteDeps) {
       const session = sessionOf(request);
       if (!turns.allow(session.id, deps.now().getTime())) throw domainError('WC_RATE_LIMITED');
       const requestId = requestIdFor(request);
-      const ctx = await contextForUser(deps.writer, session, { now: deps.now, webBaseUrl: '', requestId });
+      const ctx = await contextForUser(deps.writer, session, { now: deps.now, webBaseUrl: '', requestId, rest: deps.rest });
       const turn: TurnDeps = {
         ctx,
         writer: deps.writer,

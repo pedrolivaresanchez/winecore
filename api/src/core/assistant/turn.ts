@@ -3,7 +3,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { auditDeniedCall } from '../../mcp/context';
 import type { RateLimiter } from '../../mcp/rate';
 import type { AnyTool, McpContext } from '../../mcp/registry';
-import { baseTools, callTool, toolKindOf, visibleToolCatalogue, type ToolDescriptor } from '../../mcp/server';
+import { baseTools, callTool, coreToolNames, toolKindOf, visibleToolCatalogue, type ToolDescriptor } from '../../mcp/server';
 import type { Writer } from '../db/writer';
 import { domainError, type ErrorCode } from '../errors';
 import { businessDate } from '../time';
@@ -13,9 +13,61 @@ import type { AssistantProvider, ProviderMessage, ToolCall, ToolSpec } from './p
 
 export const MAX_STEPS = 6;
 export const MAX_CALLS_PER_STEP = 4;
+/** The prompt carries every schema; hundreds would drown the model. The rest is reachable through `system_tools_search`. */
+export const MAX_TOOL_SPECS = 70;
 const MAX_RESULT_CHARS = 12_000;
 const MAX_LINKS = 8;
 const TOOL_NAME = /^[a-z][a-z0-9_]{1,79}$/;
+const SEARCH_TOOL = 'system_tools_search';
+
+/** Tool name prefixes that matter on each screen (first segment of the web path). */
+const SCREEN_TOOLS: Readonly<Record<string, readonly string[]>> = {
+  '': ['dashboard_', 'reports_', 'approvals_'],
+  ajustes: ['settings_', 'billing_series_', 'billing_legal_entities_', 'system_users_'],
+  aprobaciones: ['approvals_'],
+  bodega: ['cellar_', 'hygiene_', 'tasting_', 'lot_', 'recipes_'],
+  catalogo: ['catalog_'],
+  cobros: ['finance_'],
+  contactos: ['contacts_'],
+  facturas: ['billing_', 'sales_documents_'],
+  gastos: ['purchasing_'],
+  informes: ['reports_', 'dashboard_'],
+  intercompania: ['finance_intercompany_'],
+  lotes: ['cellar_', 'lot_', 'recipes_', 'tasting_'],
+  regulatorio: ['regulatory_'],
+  stock: ['inventory_'],
+  ventas: ['sales_', 'billing_'],
+  vinedo: ['vineyard_'],
+};
+
+function screenOf(path: string | null | undefined): string {
+  return (path ?? '').replace(/^\/+/, '').split(/[/?#]/)[0] ?? '';
+}
+
+/**
+ * The search tool first, then what the current screen needs, then the general tools,
+ * up to MAX_TOOL_SPECS. The offered commit is always kept.
+ */
+export function focusCatalogue(
+  catalogue: readonly ToolDescriptor[],
+  path: string | null | undefined,
+  core: ReadonlySet<string>,
+  keep?: string,
+): ToolDescriptor[] {
+  const prefixes = SCREEN_TOOLS[screenOf(path)] ?? [];
+  const baseName = (tool: ToolDescriptor) => tool.name.replace(/_(prepare|commit)$/, '');
+  const ranked = [
+    ...catalogue.filter((tool) => tool.name === SEARCH_TOOL || tool.name === keep),
+    ...catalogue.filter((tool) => prefixes.some((prefix) => tool.name.startsWith(prefix))),
+    ...catalogue.filter((tool) => core.has(baseName(tool))),
+  ];
+  const chosen = new Map<string, ToolDescriptor>();
+  for (const tool of ranked) {
+    if (chosen.size >= MAX_TOOL_SPECS) break;
+    chosen.set(tool.name, tool);
+  }
+  return [...chosen.values()];
+}
 
 export const STEP_CAP_REPLY =
   'He llegado al límite de pasos para esta pregunta sin una respuesta completa. Acótala un poco o pídeme que siga.';
@@ -183,8 +235,21 @@ export async function runAssistantTurn(deps: TurnDeps, request: ChatRequest): Pr
   const catalogue = visibleToolCatalogue(ctx, tools).filter((tool) => (
     tool.kind === 'read' || tool.kind === 'prepare' || (tool.kind === 'commit' && tool.name === offered?.tool)
   ));
-  const specs = catalogue.map(toSpec);
+  const byName = new Map(catalogue.map((tool) => [tool.name, tool]));
+  const focused = deps.tools ? catalogue : focusCatalogue(catalogue, request.path, coreToolNames, offered?.tool);
+  const specs = focused.map(toSpec);
+  const offeredSpecs = new Set(specs.map((spec) => spec.name));
   const titles = new Map(catalogue.map((tool) => [tool.name, tool.title]));
+  /** Tools found by `system_tools_search` join the list for the next rounds. */
+  function discover(data: Record<string, unknown>): void {
+    const items = Array.isArray(data.items) ? data.items : [];
+    for (const item of items) {
+      const found = isRecord(item) && typeof item.name === 'string' ? byName.get(item.name) : undefined;
+      if (!found || found.kind === 'commit' || offeredSpecs.has(found.name)) continue;
+      offeredSpecs.add(found.name);
+      specs.push(toSpec(found));
+    }
+  }
   const messages = providerHistory(request.messages, offered);
   const context = {
     path: request.path,
@@ -239,6 +304,7 @@ export async function runAssistantTurn(deps: TurnDeps, request: ChatRequest): Pr
       };
     }
     const data = isRecord(result.structuredContent) ? result.structuredContent : {};
+    if (call.name === SEARCH_TOOL) discover(data);
     collectLinks(data, kind === 'commit' ? CREATED_LINK_LABEL : title, links);
     if (kind === 'prepare') {
       const summary = typeof data.summary_es === 'string' ? data.summary_es : title;

@@ -2,6 +2,7 @@ import { Decimal } from 'decimal.js';
 import { sql } from '../db/sql';
 import type { Actor, Tx, Writer } from '../db/writer';
 import { DomainError, domainError } from '../errors';
+import { parseCustomerReferences } from '../pdf/ship-to';
 import type { ProductState, StockMove } from '../inventory/types';
 import { toMadridOffsetString, businessDate } from '../time';
 import {
@@ -46,6 +47,7 @@ type NoteLine = {
   unit_price: string | null;
   discount_pct: string;
   tax_code: string | null;
+  unit: string | null;
 };
 
 export async function issueDeliveryNote(tx: Tx, input: { id: string; actor: Actor }): Promise<Record<string, unknown>> {
@@ -201,6 +203,13 @@ export async function createDeliveryNote(tx: Tx, actor: Actor, raw: unknown): Pr
   const channel = typeof body.channel === 'string' ? body.channel : null;
   const incoterm = parseIncoterm(body.incoterm, 'incoterm', fields);
   const notes = optionalText(body.notes, 'notes', fields, 2000);
+  let customerReferences: string | null = null;
+  try {
+    customerReferences = parseCustomerReferences(body.customer_references);
+  } catch (error) {
+    if (error instanceof DomainError) Object.assign(fields, error.fields ?? { customer_references: error.message });
+    else throw error;
+  }
   throwIf(fields);
   if (!fromId) fail('La ubicación de origen es obligatoria', { from_location_id: 'Obligatorio' });
   const from = await loadLocation(tx, fromId);
@@ -216,6 +225,9 @@ export async function createDeliveryNote(tx: Tx, actor: Actor, raw: unknown): Pr
   let entityId = entityInput;
   let resolvedCustomer = customerId;
   let resolvedChannel = channel;
+  let shipTo: Record<string, unknown> | null = body.ship_to && typeof body.ship_to === 'object' && !Array.isArray(body.ship_to)
+    ? body.ship_to as Record<string, unknown>
+    : null;
   if (orderId) {
     const order = await loadOrder(tx, orderId);
     const orderStatus = String(order.status);
@@ -225,6 +237,8 @@ export async function createDeliveryNote(tx: Tx, actor: Actor, raw: unknown): Pr
     entityId = idOf(order.legal_entity_id);
     resolvedCustomer = idOf(order.customer_id);
     resolvedChannel = String(order.channel);
+    if (!shipTo && order.ship_to != null) shipTo = shipToJson(order.ship_to);
+    if (!customerReferences) customerReferences = textOf(order.customer_references);
   }
   if (!entityId) entityId = from.controlling_entity_id;
   await assertEntity(tx, entityId);
@@ -240,14 +254,14 @@ export async function createDeliveryNote(tx: Tx, actor: Actor, raw: unknown): Pr
   tx.write(sql`
     INSERT INTO sales.delivery_note (
       id, legal_entity_id, kind, status, customer_id, sales_order_id, channel, from_location_id,
-      to_location_id, ship_to, incoterm, is_valued, notes, created_by, created_at, updated_at
+      to_location_id, ship_to, customer_references, incoterm, is_valued, notes, created_by, created_at, updated_at
     ) VALUES (
       CAST(${id} AS UUID), CAST(${entityId} AS UUID), ${kind}, 'draft',
       CASE WHEN ${resolvedCustomer} IS NULL THEN NULL ELSE CAST(${resolvedCustomer} AS UUID) END,
       CASE WHEN ${orderId} IS NULL THEN NULL ELSE CAST(${orderId} AS UUID) END,
       ${resolvedChannel}, CAST(${fromId} AS UUID),
       CASE WHEN ${toId} IS NULL THEN NULL ELSE CAST(${toId} AS UUID) END,
-      ${body.ship_to && typeof body.ship_to === 'object' ? sql.json(body.ship_to) : null},
+      ${shipTo ? sql.json(shipTo) : null}, ${customerReferences},
       ${incoterm}, ${valued}, ${notes}, ${actor.id}, ${now}, ${now}
     )
   `);
@@ -266,7 +280,8 @@ export async function createDeliveryNote(tx: Tx, actor: Actor, raw: unknown): Pr
     issue_date: null,
     from_location_id: fromId,
     to_location_id: toId,
-    ship_to: body.ship_to && typeof body.ship_to === 'object' ? body.ship_to : null,
+    ship_to: shipTo,
+    customer_references: customerReferences,
     incoterm,
     is_valued: valued,
     tracking_ref: null,
@@ -307,6 +322,7 @@ export async function createReturn(tx: Tx, actor: Actor, sourceId: string, raw: 
       unitPrice: sourceLine.unit_price == null ? null : decOf(sourceLine.unit_price),
       discountPct: decOf(sourceLine.discount_pct),
       taxCode: sourceLine.tax_code,
+      unit: sourceLine.unit,
     });
   }
   let fromId = idOf(source.from_location_id);
@@ -340,6 +356,7 @@ export async function createReturn(tx: Tx, actor: Actor, sourceId: string, raw: 
       unit_price: line.unitPrice ? priceText(line.unitPrice) : null,
       discount_pct: line.discountPct.toFixed(2),
       tax_code: line.taxCode,
+      unit: line.unit,
     })),
   });
 }
@@ -348,6 +365,39 @@ export async function patchDelivery(tx: Tx, id: string, raw: unknown): Promise<R
   const note = await loadNote(tx, id);
   if (String(note.status) !== 'draft') throw domainError('WC060');
   const body = asRecord(raw);
+  let header = note;
+  if ('ship_to' in body || 'customer_references' in body) {
+    const fields: Record<string, string> = {};
+    let shipTo: Record<string, unknown> | null = shipToJson(note.ship_to);
+    if ('ship_to' in body) {
+      if (body.ship_to == null) shipTo = null;
+      else if (typeof body.ship_to !== 'object' || Array.isArray(body.ship_to)) fields.ship_to = 'Debe ser un objeto';
+      else shipTo = body.ship_to as Record<string, unknown>;
+    }
+    let customerReferences = textOf(note.customer_references);
+    if ('customer_references' in body) {
+      try {
+        customerReferences = parseCustomerReferences(body.customer_references);
+      } catch (error) {
+        if (error instanceof DomainError) Object.assign(fields, error.fields ?? { customer_references: error.message });
+        else throw error;
+      }
+    }
+    throwIf(fields);
+    tx.write(sql`
+      UPDATE sales.delivery_note
+      SET ship_to = ${shipTo ? sql.json(shipTo) : null}, customer_references = ${customerReferences}, updated_at = ${new Date()}
+      WHERE id = CAST(${id} AS UUID) AND status = 'draft'
+    `);
+    tx.audit({
+      table: 'sales.delivery_note',
+      rowId: id,
+      action: 'UPDATE',
+      before: { ship_to: shipToJson(note.ship_to), customer_references: textOf(note.customer_references) },
+      after: { ship_to: shipTo, customer_references: customerReferences },
+    });
+    header = { ...note, ship_to: shipTo, customer_references: customerReferences };
+  }
   if (body.lines != null) {
     const parsed = parseDeliveryLines(body.lines);
     const previous = await loadLines(tx, id);
@@ -356,9 +406,9 @@ export async function patchDelivery(tx: Tx, id: string, raw: unknown): Promise<R
       tx.audit({ table: 'sales.delivery_note_line', rowId: line.id, action: 'DELETE', before: line, after: null });
     }
     const stored = await insertLines(tx, id, parsed, idOrNull(note.sales_order_id));
-    return presentNote(note, stored);
+    return presentNote(header, stored);
   }
-  return presentNote(note, await loadLines(tx, id));
+  return presentNote(header, await loadLines(tx, id));
 }
 
 export async function markNotInvoiceable(tx: Tx, id: string, reason: string): Promise<Record<string, unknown>> {
@@ -835,7 +885,7 @@ async function loadNote(db: Pick<Tx, 'read'>, id: string): Promise<Record<string
 
 async function loadLines(db: Pick<Tx, 'read'>, id: string): Promise<NoteLine[]> {
   const rows = await db.read<Record<string, unknown>>(sql`
-    SELECT id, line_no, order_line_id, product_id, lot_id, description, quantity, unit_price, discount_pct, tax_code
+    SELECT id, line_no, order_line_id, product_id, lot_id, description, quantity, unit_price, discount_pct, tax_code, unit
     FROM sales.delivery_note_line WHERE delivery_note_id = CAST(${id} AS UUID) ORDER BY line_no
   `);
   return rows.map((row) => ({
@@ -849,6 +899,7 @@ async function loadLines(db: Pick<Tx, 'read'>, id: string): Promise<NoteLine[]> 
     unit_price: row.unit_price == null ? null : priceText(decOf(row.unit_price)),
     discount_pct: decOf(row.discount_pct).toFixed(2),
     tax_code: textOf(row.tax_code),
+    unit: textOf(row.unit),
   }));
 }
 
@@ -879,6 +930,7 @@ function presentNote(note: Record<string, unknown>, lines: NoteLine[]): Record<s
     from_location_id: idOf(note.from_location_id),
     to_location_id: idOrNull(note.to_location_id),
     ship_to: note.ship_to ?? null,
+    customer_references: textOf(note.customer_references),
     incoterm: textOf(note.incoterm),
     is_valued: boolOf(note.is_valued),
     tracking_ref: textOf(note.tracking_ref),
@@ -901,6 +953,7 @@ type ParsedLine = {
   unitPrice: Decimal | null;
   discountPct: Decimal;
   taxCode: string | null;
+  unit: string | null;
 };
 
 function parseDeliveryLines(raw: unknown): ParsedLine[] {
@@ -918,12 +971,13 @@ function parseDeliveryLines(raw: unknown): ParsedLine[] {
     const discount = row.discount_pct == null || row.discount_pct === '' ? new Decimal(0) : parseDecimal(row.discount_pct, `${prefix}.discount_pct`, fields, true);
     const description = optionalText(row.description, `${prefix}.description`, fields, 250);
     const taxCode = row.tax_code == null || row.tax_code === '' ? null : (typeof row.tax_code === 'string' ? row.tax_code : null);
+    const unit = optionalText(row.unit, `${prefix}.unit`, fields, 30);
     const id = typeof row.id === 'string' && UUID_RE.test(row.id) ? row.id.toLowerCase() : undefined;
     if (quantity && quantity.lte(0)) fields[`${prefix}.quantity`] = 'La cantidad debe ser mayor que cero';
     if (!productId && !orderLineId) fields[`${prefix}.product_id`] = 'El producto es obligatorio';
     throwIf(fields);
     if (!quantity || !discount) fail('Línea no válida');
-    return { id, orderLineId, productId: productId ?? '', lotId, description, quantity, unitPrice, discountPct: discount, taxCode };
+    return { id, orderLineId, productId: productId ?? '', lotId, description, quantity, unitPrice, discountPct: discount, taxCode, unit };
   });
 }
 
@@ -937,9 +991,10 @@ async function insertLines(tx: Tx, noteId: string, lines: ParsedLine[], orderId:
     let unitPrice = line.unitPrice;
     let discount = line.discountPct;
     let taxCode = line.taxCode;
+    let unit = line.unit;
     if (line.orderLineId) {
       const rows = await tx.read<Record<string, unknown>>(sql`
-        SELECT product_id, description, unit_price, discount_pct, tax_code, order_id
+        SELECT product_id, description, unit_price, discount_pct, tax_code, order_id, unit
         FROM sales.sales_order_line WHERE id = CAST(${line.orderLineId} AS UUID)
       `);
       const row = rows[0];
@@ -950,6 +1005,7 @@ async function insertLines(tx: Tx, noteId: string, lines: ParsedLine[], orderId:
       unitPrice = unitPrice ?? decOf(row.unit_price);
       discount = line.discountPct.eq(0) ? decOf(row.discount_pct) : line.discountPct;
       taxCode = taxCode ?? String(row.tax_code);
+      unit = unit ?? textOf(row.unit);
     }
     if (!productId) fail('El producto es obligatorio');
     const product = await loadProduct(tx, productId);
@@ -958,7 +1014,7 @@ async function insertLines(tx: Tx, noteId: string, lines: ParsedLine[], orderId:
     tx.write(sql`
       INSERT INTO sales.delivery_note_line (
         id, delivery_note_id, line_no, order_line_id, product_id, lot_id, description,
-        quantity, unit_price, discount_pct, tax_code
+        quantity, unit_price, discount_pct, tax_code, unit
       ) VALUES (
         CAST(${id} AS UUID), CAST(${noteId} AS UUID), ${index + 1},
         CASE WHEN ${line.orderLineId} IS NULL THEN NULL ELSE CAST(${line.orderLineId} AS UUID) END,
@@ -967,7 +1023,7 @@ async function insertLines(tx: Tx, noteId: string, lines: ParsedLine[], orderId:
         ${description}, CAST(${qtyText(line.quantity)} AS DECIMAL(14,3)),
         CASE WHEN ${unitPrice == null ? null : priceText(unitPrice)} IS NULL THEN NULL
              ELSE CAST(${unitPrice == null ? '0' : priceText(unitPrice)} AS DECIMAL(14,6)) END,
-        CAST(${discount.toFixed(2)} AS DECIMAL(5,2)), ${taxCode}
+        CAST(${discount.toFixed(2)} AS DECIMAL(5,2)), ${taxCode}, ${unit}
       )
     `);
     tx.audit({
@@ -988,6 +1044,7 @@ async function insertLines(tx: Tx, noteId: string, lines: ParsedLine[], orderId:
       unit_price: unitPrice == null ? null : priceText(unitPrice),
       discount_pct: discount.toFixed(2),
       tax_code: taxCode,
+      unit,
     });
   }
   return stored;
@@ -1095,6 +1152,11 @@ function jsonRecord(value: unknown): Record<string, unknown> {
   }
   if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
   return {};
+}
+
+function shipToJson(value: unknown): Record<string, unknown> | null {
+  const record = jsonRecord(value);
+  return Object.keys(record).length === 0 ? null : record;
 }
 
 async function entityFilter(writer: Writer, raw: string | null): Promise<string | null> {

@@ -11,7 +11,7 @@ async function enable(ctx: Awaited<ReturnType<typeof createTestApp>>, modules: r
     async (tx) => {
       for (const key of modules) {
         tx.write(sql`
-          INSERT INTO core.module_state (module_key, enabled, changed_by)
+          INSERT OR REPLACE INTO core.module_state (module_key, enabled, changed_by)
           VALUES (${key}, TRUE, ${'test'})
         `);
       }

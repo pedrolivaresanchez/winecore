@@ -29,6 +29,7 @@ import {
   throwIf,
   UUID_RE,
 } from './db';
+import { parseCustomerReferences, parseShipTo, shipToRecord } from '../pdf/ship-to';
 import { createSalesOrder } from './orders';
 import { parseCommercialLines, resolveLinePrice } from './pricing';
 import { renderQuotePdf } from './proforma';
@@ -46,6 +47,7 @@ type QuoteLine = {
   unit_price: string;
   discount_pct: string;
   tax_code: string;
+  unit: string | null;
 };
 
 async function loadQuote(tx: ReadDb, id: string): Promise<Record<string, unknown>> {
@@ -59,7 +61,7 @@ async function loadQuote(tx: ReadDb, id: string): Promise<Record<string, unknown
 
 async function loadQuoteLines(tx: ReadDb, id: string): Promise<QuoteLine[]> {
   const rows = await tx.read<Record<string, unknown>>(sql`
-    SELECT id, line_no, product_id, description, quantity, unit_price, discount_pct, tax_code
+    SELECT id, line_no, product_id, description, quantity, unit_price, discount_pct, tax_code, unit
     FROM sales.quote_line WHERE quote_id = CAST(${id} AS UUID) ORDER BY line_no
   `);
   return rows.map((row) => ({
@@ -71,6 +73,7 @@ async function loadQuoteLines(tx: ReadDb, id: string): Promise<QuoteLine[]> {
     unit_price: priceText(decOf(row.unit_price)),
     discount_pct: decOf(row.discount_pct).toFixed(2),
     tax_code: String(row.tax_code),
+    unit: textOf(row.unit),
   }));
 }
 
@@ -90,6 +93,8 @@ function quoteJson(row: Record<string, unknown>, lines: QuoteLine[]): Record<str
     is_proforma: boolOf(row.is_proforma),
     incoterm: textOf(row.incoterm),
     notes: textOf(row.notes),
+    ship_to: shipToRecord(row.ship_to),
+    customer_references: textOf(row.customer_references),
     subtotal: decOf(row.subtotal).toFixed(2),
     tax_total: decOf(row.tax_total).toFixed(2),
     total: decOf(row.total).toFixed(2),
@@ -129,6 +134,8 @@ export async function createQuote(writer: Writer, request: Request): Promise<{ s
   const isProforma = raw.is_proforma === true;
   const incoterm = parseIncoterm(raw.incoterm, 'incoterm', fields);
   const notes = optionalText(raw.notes, 'notes', fields, 2000);
+  const shipTo = parseShipToField(raw.ship_to, fields);
+  const customerReferences = parseReferencesField(raw.customer_references, fields);
   const validUntil = parseDate(raw.valid_until, 'valid_until', fields, false);
   const explicitEntity = optionalId(raw.legal_entity_id, 'legal_entity_id', fields);
   const lines = Array.isArray(raw.lines) ? raw.lines : null;
@@ -152,10 +159,12 @@ export async function createQuote(writer: Writer, request: Request): Promise<{ s
     tx.write(sql`
       INSERT INTO sales.quote (
         id, legal_entity_id, status, customer_id, channel, currency, language, is_proforma,
-        incoterm, notes, valid_until, subtotal, tax_total, total, created_by, created_at, updated_at
+        incoterm, notes, ship_to, customer_references, valid_until, subtotal, tax_total, total,
+        created_by, created_at, updated_at
       ) VALUES (
         CAST(${id} AS UUID), CAST(${entityId} AS UUID), 'draft', CAST(${customerId} AS UUID),
         ${channel}, 'EUR', ${language}, ${isProforma}, ${incoterm}, ${notes},
+        ${shipTo ? sql.json(shipTo) : null}, ${customerReferences},
         CASE WHEN ${validUntil} IS NULL THEN NULL ELSE CAST(${validUntil} AS DATE) END,
         CAST(${totals.subtotal} AS DECIMAL(14,2)), CAST(${totals.tax_total} AS DECIMAL(14,2)),
         CAST(${totals.total} AS DECIMAL(14,2)), ${actor.id}, ${now}, ${now}
@@ -193,6 +202,8 @@ export async function createQuote(writer: Writer, request: Request): Promise<{ s
       is_proforma: isProforma,
       incoterm,
       notes,
+      ship_to: shipTo,
+      customer_references: customerReferences,
       subtotal: totals.subtotal,
       tax_total: totals.tax_total,
       total: totals.total,
@@ -234,12 +245,12 @@ function insertQuoteLines(
     const id = newRowId();
     tx.write(sql`
       INSERT INTO sales.quote_line (
-        id, quote_id, line_no, product_id, description, quantity, unit_price, discount_pct, tax_code
+        id, quote_id, line_no, product_id, description, quantity, unit_price, discount_pct, tax_code, unit
       ) VALUES (
         CAST(${id} AS UUID), CAST(${quoteId} AS UUID), ${index + 1}, CAST(${entry.line.productId} AS UUID),
         ${entry.price.description}, CAST(${qtyText(entry.line.quantity)} AS DECIMAL(14,3)),
         CAST(${priceText(entry.price.unitPrice)} AS DECIMAL(14,6)),
-        CAST(${entry.line.discountPct.toFixed(2)} AS DECIMAL(5,2)), ${entry.price.taxCode}
+        CAST(${entry.line.discountPct.toFixed(2)} AS DECIMAL(5,2)), ${entry.price.taxCode}, ${entry.line.unit}
       )
     `);
     tx.audit({
@@ -258,6 +269,7 @@ function insertQuoteLines(
       unit_price: priceText(entry.price.unitPrice),
       discount_pct: entry.line.discountPct.toFixed(2),
       tax_code: entry.price.taxCode,
+      unit: entry.line.unit,
     };
   });
 }
@@ -323,6 +335,8 @@ export async function quoteToOrder(writer: Writer, request: Request, id: string)
       order_date: businessDate(new Date()),
       incoterm: textOf(fresh.incoterm),
       notes: textOf(fresh.notes),
+      ship_to: shipToRecord(fresh.ship_to),
+      customer_references: textOf(fresh.customer_references),
       quote_id: quoteId,
       lines: lines.map((line) => ({
         product_id: line.product_id,
@@ -331,6 +345,7 @@ export async function quoteToOrder(writer: Writer, request: Request, id: string)
         discount_pct: line.discount_pct,
         tax_code: line.tax_code,
         description: line.description,
+        unit: line.unit,
         price_reason: 'Precio del presupuesto',
       })),
     });
@@ -429,6 +444,8 @@ export async function patchQuote(writer: Writer, request: Request, id: string): 
           is_proforma = ${plan.isProforma},
           incoterm = ${plan.incoterm},
           notes = ${plan.notes},
+          ship_to = ${plan.shipTo ? sql.json(plan.shipTo) : null},
+          customer_references = ${plan.customerReferences},
           valid_until = CASE WHEN ${plan.validUntil} IS NULL THEN NULL ELSE CAST(${plan.validUntil} AS DATE) END,
           subtotal = CAST(${plan.subtotal} AS DECIMAL(14,2)),
           tax_total = CAST(${plan.taxTotal} AS DECIMAL(14,2)),
@@ -445,6 +462,8 @@ export async function patchQuote(writer: Writer, request: Request, id: string): 
           is_proforma = ${plan.isProforma},
           incoterm = ${plan.incoterm},
           notes = ${plan.notes},
+          ship_to = ${plan.shipTo ? sql.json(plan.shipTo) : null},
+          customer_references = ${plan.customerReferences},
           valid_until = CASE WHEN ${plan.validUntil} IS NULL THEN NULL ELSE CAST(${plan.validUntil} AS DATE) END,
           subtotal = CAST(${plan.subtotal} AS DECIMAL(14,2)),
           tax_total = CAST(${plan.taxTotal} AS DECIMAL(14,2)),
@@ -473,6 +492,8 @@ export async function patchQuote(writer: Writer, request: Request, id: string): 
       is_proforma: plan.isProforma,
       incoterm: plan.incoterm,
       notes: plan.notes,
+      ship_to: plan.shipTo,
+      customer_references: plan.customerReferences,
       valid_until: plan.validUntil,
       subtotal: plan.subtotal,
       tax_total: plan.taxTotal,
@@ -514,6 +535,10 @@ async function prepareQuotePatch(tx: Tx, quoteId: string, raw: Record<string, un
   if (has('incoterm')) incoterm = parseIncoterm(raw.incoterm, 'incoterm', fields);
   let notes = textOf(row.notes);
   if (has('notes')) notes = optionalText(raw.notes, 'notes', fields, 2000);
+  let shipTo = shipToRecord(row.ship_to);
+  if (has('ship_to')) shipTo = parseShipToField(raw.ship_to, fields);
+  let customerReferences = textOf(row.customer_references);
+  if (has('customer_references')) customerReferences = parseReferencesField(raw.customer_references, fields);
   let validUntil = row.valid_until == null ? null : dateOf(row.valid_until);
   if (has('valid_until')) validUntil = parseDate(raw.valid_until, 'valid_until', fields, false);
   if (has('lines') && !Array.isArray(raw.lines)) fields.lines = 'Hace falta al menos una línea';
@@ -523,7 +548,8 @@ async function prepareQuotePatch(tx: Tx, quoteId: string, raw: Record<string, un
   const channelChanged = channel !== String(row.channel);
   const replaceLines = has('lines');
   const reprice = replaceLines || customerChanged || channelChanged;
-  if (!reprice && !has('language') && !has('is_proforma') && !has('incoterm') && !has('notes') && !has('valid_until')) {
+  if (!reprice && !has('language') && !has('is_proforma') && !has('incoterm') && !has('notes') && !has('valid_until')
+    && !has('ship_to') && !has('customer_references')) {
     return null;
   }
 
@@ -557,6 +583,7 @@ async function prepareQuotePatch(tx: Tx, quoteId: string, raw: Record<string, un
             priceReason: null,
             taxCode: line.tax_code,
             description: line.description,
+            unit: line.unit,
           };
         });
     priced = await priceQuoteLines(tx, commercial, businessDate(new Date()), priceListId, channel);
@@ -578,6 +605,8 @@ async function prepareQuotePatch(tx: Tx, quoteId: string, raw: Record<string, un
     isProforma,
     incoterm,
     notes,
+    shipTo,
+    customerReferences,
     validUntil,
     subtotal,
     taxTotal,
@@ -586,6 +615,30 @@ async function prepareQuotePatch(tx: Tx, quoteId: string, raw: Record<string, un
     beforeChannel: String(row.channel),
     beforeTotal: decOf(row.total).toFixed(2),
   };
+}
+
+function parseShipToField(value: unknown, fields: Record<string, string>): Record<string, string> | null {
+  try {
+    return parseShipTo(value);
+  } catch (error) {
+    if (error instanceof DomainError) {
+      Object.assign(fields, error.fields ?? { ship_to: error.message });
+      return null;
+    }
+    throw error;
+  }
+}
+
+function parseReferencesField(value: unknown, fields: Record<string, string>): string | null {
+  try {
+    return parseCustomerReferences(value);
+  } catch (error) {
+    if (error instanceof DomainError) {
+      Object.assign(fields, error.fields ?? { customer_references: error.message });
+      return null;
+    }
+    throw error;
+  }
 }
 
 function dropQuoteLines(tx: Tx, quoteId: string, lines: QuoteLine[]): void {

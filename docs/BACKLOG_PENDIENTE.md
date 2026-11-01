@@ -36,9 +36,9 @@ Crear un presupuesto, un pedido o un albarán necesita tres cosas que no se pued
 | Requisito | Estado | Quién lo cierra |
 |---|---|---|
 | Series de numeración de presupuesto (PR), pedido (PE), albarán (AL), proforma (PF) y aforo (AF) de 2026 y 2027 para P.O y CVPO | Creadas | Hecho |
-| Conjunto de reglas de entidad facturadora activo (por defecto CVPO, El Corte Inglés a P.O, según la propuesta Q-025) | Borrador creado y solicitud de activación pendiente en Aprobaciones | Pedro: registrar una passkey o el código TOTP en Ajustes, Seguridad, y aprobar «Activación de reglas de facturación». Al aprobar, el conjunto queda activo solo |
-| Series de factura (FA, RC, FS, FI), con Verifactu | Sin crear a propósito | Pedro: decidir si la numeración continúa la de Holded o empieza en 1, y luego pulsar «Crear series» en Puesta en marcha |
-| NIF y dirección de P.O y CVPO (siguen en PENDIENTE) | Sin datos | Pedro: Ajustes, Entidades y usuarios |
+| Conjunto de reglas de entidad facturadora activo (por defecto CVPO, El Corte Inglés a P.O, exportaciones e-DA a P.O, según la propuesta Q-025) | Activo desde el 1-11-2026 (Pedro lo autorizó; pedir passkey o código para aprobar es ahora un ajuste del propietario, apagado) | Hecho |
+| Series de factura y rectificativa de 2026 y 2027 para P.O y CVPO, con la numeración de Holded (`F26NNNN` y `CN26NNNN`; 2027 empieza en `F270001` y `CN270001`) | Abiertas el 1-11-2026: P.O sigue en `F260087` y `CN260002`; CVPO en `F260248` y `CN260009`. Si Holded emite más facturas antes del cambio, el primer número se corrige al abrir la serie | Hecho. Revisar el primer número el día del cambio |
+| NIF y dirección de P.O y CVPO | Cargados en Entidades el 1-11-2026 desde las facturas de Holded y el registro público; las fuentes y las dudas están en el informe a Pedro | Hecho. Pedro confirma |
 | Stock envasado para sacar albaranes con lote | Solo hay 17 aperturas a granel | Carga del stock envasado, aún por recibir |
 
 ## Cómo conectar CVBOT (MCP)

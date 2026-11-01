@@ -24,6 +24,7 @@ interface CreateBody {
 export async function listMcpClients(writer: Writer) {
   const rows = await writer.read<Record<string, unknown>>(`
     SELECT c.id::VARCHAR AS id, c.code, c.role_code, c.description, c.scopes,
+           g.scopes AS granted_scopes,
            c.on_behalf_of_user_id::VARCHAR AS on_behalf_of_user_id,
            u.display_name AS on_behalf_of_display_name,
            c.created_at, c.revoked_at,
@@ -31,6 +32,7 @@ export async function listMcpClients(writer: Writer) {
            used.last_used_at
     FROM core.api_client c
     LEFT JOIN core.app_user u ON u.id = c.on_behalf_of_user_id
+    LEFT JOIN core.api_client_grant g ON g.client_id = c.id
     LEFT JOIN core.api_token t
       ON t.client_id = c.id AND t.revoked_at IS NULL AND t.expires_at > now()
     LEFT JOIN (
@@ -47,7 +49,7 @@ export async function listMcpClients(writer: Writer) {
       code: String(row.code),
       role_code: String(row.role_code),
       description: String(row.description),
-      scopes: asScopes(row.scopes),
+      scopes: [...new Set([...asScopes(row.scopes), ...asScopes(row.granted_scopes)])],
       on_behalf_of_user_id: row.on_behalf_of_user_id ? String(row.on_behalf_of_user_id) : null,
       on_behalf_of_display_name: row.on_behalf_of_display_name == null ? null : String(row.on_behalf_of_display_name),
       created_at: iso(row.created_at),

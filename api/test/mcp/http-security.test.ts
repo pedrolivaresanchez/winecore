@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { sha256Bytes } from '../../src/core/auth/stepup/crypto';
 import { sql } from '../../src/core/db/sql';
 import { MCP_RATE_PER_MINUTE, RateLimiter } from '../../src/mcp/rate';
+import { DECISION_VERB } from '../../src/mcp/registry';
 import { createTestApp } from '../helpers';
 
 const EMAIL = 'cliente.sintetico@example.com';
@@ -16,7 +17,7 @@ async function enableModules(
     async (tx) => {
       for (const key of modules) {
         tx.write(sql`
-          INSERT INTO core.module_state (module_key, enabled, changed_by)
+          INSERT OR REPLACE INTO core.module_state (module_key, enabled, changed_by)
           VALUES (${key}, TRUE, ${'test'})
         `);
       }
@@ -167,7 +168,8 @@ describe('MCP HTTP', () => {
       const names = ((hidden.json as { result: { tools: { name: string }[] } }).result.tools).map((tool) => tool.name);
       expect(names).not.toContain('contacts_search');
       expect(names).toContain('inventory_stock_at');
-      expect(names.some((name) => /approve|issue|void|send|delete|module|role|secret/i.test(name))).toBe(false);
+      expect(names.some((name) => /module|role|secret/i.test(name))).toBe(false);
+      expect(names.filter((name) => DECISION_VERB.test(name)).every((name) => /_(prepare|commit)$/.test(name))).toBe(true);
       const forbidden = await callTool(ctx.app, 'contacts_search', {}, narrowToken);
       expect(forbidden.error).toBe(true);
       expect(forbidden.data?.code).toBe('WC_FORBIDDEN');

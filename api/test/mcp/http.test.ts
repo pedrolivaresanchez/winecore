@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { handleMcpRequest } from "../../src/mcp/http";
+import { DECISION_VERB } from "../../src/mcp/registry";
 import { CLIENT_A, makeCtx } from "./fixture";
 
 const ctx = makeCtx();
@@ -40,7 +41,8 @@ describe("streamable http", () => {
     expect(names).toContain("system_whoami");
     expect(names).not.toContain("system_modules");
     expect(names).toContain("approvals_get_link");
-    expect(names.some((name) => /approve|issue|void|send|delete|secret|decide|reject/i.test(name))).toBe(false);
+    expect(names.some((name) => /secret|module|role/i.test(name))).toBe(false);
+    expect(names.filter((name) => DECISION_VERB.test(name)).every((name) => /_(prepare|commit)$/.test(name))).toBe(true);
 
     const call = await rpc(3, "tools/call", { name: "system_whoami", arguments: {} });
     expect(call.status).toBe(200);

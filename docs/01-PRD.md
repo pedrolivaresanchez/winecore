@@ -363,7 +363,7 @@ CRM con embudos, proyectos y horas, RR. HH. y nóminas, FACe (no se usa), la tie
 
 **US-MCP-01 · Consultar** (M1) — Cuando CVBOT pregunta por facturas vencidas · Entonces recibe la lista que Pedro puede ver, con enlaces.
 **US-MCP-02 · Escribir con confirmación** (M1–M2) — Cuando CVBOT prepara un pedido · Entonces recibe una vista previa y un token; solo al confirmar se crea; un token caducado o reutilizado no hace nada.
-**US-MCP-03 · Nunca aprobar por chat** (M1) — Cuando CVBOT intenta aprobar · Entonces no existe herramienta; recibe el enlace a la bandeja.
+**US-MCP-03 · Aprobar por chat con confirmación** (revisado el 01-11-2026 a petición de Pedro) — Cuando CVBOT aprueba o rechaza · Entonces lo hace en dos pasos (`approvals_request_approve_prepare` → «sí» → `_commit`) con los permisos de la persona; si el propietario exige passkey para aprobar, la API lo rechaza y CVBOT da el enlace a la bandeja.
 
 ### 4.21 Asistente y agentes (ASIS)
 
