@@ -134,6 +134,22 @@ describe('viñedo y entrada de uva', () => {
     }
   });
 
+  it('edita una parcela con variedades y no deja cambiar su SIGPAC', async () => {
+    const ctx = await createTestApp();
+    try {
+      expectOk(await call(ctx, 'POST', '/v1/grape-varieties', { code: 'BOBAL', name: 'Bobal', color: 'red' }), 201);
+      expectOk(await call(ctx, 'POST', '/v1/parcels', parcel('P-01', '23:50:0:0:1:1:1', '1.0000', 'organic', 'BOBAL', '1.0000')), 201);
+      const edited = expectOk(await call(ctx, 'PATCH', '/v1/parcels/P-01', { name: 'Paraje Alto', altitude_m: 720 }), 200);
+      expect(edited.name).toBe('Paraje Alto');
+      expect(edited.sigpac).toBe('23:50:0:0:1:1:1');
+      const moved = await call(ctx, 'PATCH', '/v1/parcels/P-01', { sigpac: '23:50:0:0:2:1:1' });
+      expect(moved.status).toBe(422);
+      expect((moved.body.fields as Record<string, string>).sigpac).toContain('no se puede cambiar');
+    } finally {
+      await ctx.close();
+    }
+  });
+
   it('registra un día de vendimia, el stock, el asiento A02 y el cierre', async () => {
     const ctx = await createTestApp();
     try {

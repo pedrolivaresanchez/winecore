@@ -103,9 +103,7 @@ describe('MCP del viñedo sobre las rutas de la app', () => {
     }
   });
 
-  // PATCH /v1/parcels/:code responde 500: DuckDB rechaza el UPDATE de vineyard.parcel mientras
-  // vineyard.parcel_variety la referencia por clave foránea. Pasará a `test` cuando se corrija updateParcel.
-  test.failing('edita una parcela con prepare/commit y lo comprueba en la ficha', async () => {
+  test('edita una parcela con prepare/commit y lo comprueba en la ficha', async () => {
     const t = await createTestApp();
     try {
       await seedVineyard(t);
