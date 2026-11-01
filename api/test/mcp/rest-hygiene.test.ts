@@ -204,7 +204,8 @@ describe('MCP · higiene', () => {
 
     const report = await read('hygiene_appcc_report_get', { from: '2026-06-01', to: '2026-06-30' });
     expect(report.title).toBe('Registro APPCC de bodega');
-    expect((report.disinfections as unknown[]).length).toBeGreaterThan(0);
+    expect((report.equipment_maintenance as unknown[]).length).toBe(1);
+    expect((report.filtrations as unknown[]).length).toBe(1);
     const csv = await read('hygiene_appcc_report_get', { from: '2026-06-01', to: '2026-06-30', format: 'csv' });
     expect(csv.content_type).toBe('text/csv');
     expect(String(csv.text).length).toBeGreaterThan(20);
