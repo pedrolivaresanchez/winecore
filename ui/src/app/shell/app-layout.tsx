@@ -45,15 +45,19 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
   const openRef = useRef(open)
   const settingsRef = useRef(settings)
   const mobileRef = useRef(mobile)
+  const settingsPath = useRef(location.pathname)
+  const pathRef = useRef(location.pathname)
   openRef.current = open
   settingsRef.current = settings
   mobileRef.current = mobile
+  pathRef.current = location.pathname
 
   useEffect(() => {
     function onFocus(event: Event) {
       const detail = (event as CustomEvent<string>).detail
       if (detail !== 'security' && detail !== 'approvals') return
       if (!settingsRef.current) before.current = openRef.current
+      settingsPath.current = pathRef.current
       setSettings(true)
       setArea(detail === 'approvals' ? 'policies' : 'security')
       setOpen(!mobileRef.current)
@@ -84,10 +88,19 @@ export function Shell({ me, children }: { me: Me; children: ReactNode }) {
 
   function openSettings() {
     if (!settings) before.current = open
+    settingsPath.current = location.pathname
     setSettings(true)
     setArea('entities')
     setOpen(!mobile)
   }
+
+  // Ajustes se abre encima de la página sin cambiar la ruta. Si algo dentro navega a otra
+  // pantalla, Ajustes debe dejar paso a esa pantalla; si no, parece que el enlace no hace nada.
+  useEffect(() => {
+    if (!settingsRef.current || settingsPath.current === location.pathname) return
+    setSettings(false)
+    if (before.current != null) setSidebarOpen(before.current)
+  }, [location.pathname])
 
   function closeSettings() {
     setSettings(false)

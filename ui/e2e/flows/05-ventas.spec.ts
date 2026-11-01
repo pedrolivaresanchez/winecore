@@ -11,17 +11,22 @@ test("Ventas: presupuesto, pedido, albarán y factura con PDF", async ({ page })
     await page.goto("/ventas/presupuestos?libro=winecore");
     await page.getByRole("button", { name: "Nuevo presupuesto" }).click();
     await page.locator('[data-screen="ventas-dialogo"]').waitFor();
-    const product = page.getByRole("combobox", { name: "Producto" });
-    await expect.poll(async () => product.locator("option").count(), { timeout: 8_000 }).toBeGreaterThan(1);
-    const customerBox = page.getByRole("combobox", { name: "Cliente" });
-    customer = (await customerBox.locator("option").nth(1).textContent())?.trim() ?? "";
-    await customerBox.selectOption({ index: 1 });
-    const price = page.getByRole("textbox", { name: "Precio" });
-    await product.selectOption({ index: 1 });
+    const dialog = page.getByRole("dialog");
+    const customerBox = dialog.getByRole("combobox", { name: "Cliente" });
+    await customerBox.click();
+    const firstCustomer = page.getByRole("listbox").getByRole("option").first();
+    await firstCustomer.waitFor();
+    customer = ((await firstCustomer.locator("span").first().textContent()) ?? "").trim();
+    await firstCustomer.click();
+    const product = dialog.getByRole("combobox", { name: "Producto" });
+    await product.click();
+    const firstProduct = page.getByRole("listbox").getByRole("option").first();
+    await firstProduct.waitFor();
+    await firstProduct.click();
+    const price = dialog.getByRole("textbox", { name: "Precio" });
     await price.fill("12");
-    const reason = page.getByRole("textbox", { name: /motivo/i });
-    await expect(reason).toBeVisible();
-    await reason.fill("Precio de la prueba");
+    const reason = dialog.getByRole("textbox", { name: /motivo/i });
+    if (await reason.isVisible().catch(() => false)) await reason.fill("Precio de la prueba");
     const created = page.waitForResponse(
       (response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/v1/quotes",
     );

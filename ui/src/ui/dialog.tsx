@@ -260,7 +260,19 @@ export function DialogBody({ children, className }: { children: ReactNode; class
   )
 }
 
-export function DialogFooter({ children, className }: { children: ReactNode; className?: string }) {
+export function DialogFooter({
+  children,
+  className,
+  error,
+}: {
+  children: ReactNode
+  className?: string
+  /**
+   * A refusal belongs where the button that caused it is. The body scrolls, so a message at
+   * the end of the form is out of sight exactly when the person has pressed Create.
+   */
+  error?: string | null
+}) {
   return (
     <div
       className={cn(
@@ -268,6 +280,14 @@ export function DialogFooter({ children, className }: { children: ReactNode; cla
         className,
       )}
     >
+      {error ? (
+        <p
+          role="alert"
+          className="mb-1 w-full rounded-md border border-danger-500/30 bg-danger-50 px-3 py-2 text-label text-danger-700"
+        >
+          {error}
+        </p>
+      ) : null}
       {children}
     </div>
   )
