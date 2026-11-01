@@ -1943,7 +1943,9 @@
     "seriesMissing": "Falta la serie de numeración de este documento. Créala en Ajustes, Sociedades y numeración.",
     "noTariffServer": "Un producto no tiene tarifa: escribe su precio en la línea.",
     "entityPick": "Las reglas de facturación esperan aprobación en Aprobaciones. Elige la entidad a mano.",
-    "entityManual": "Sin reglas activas: {entity} queda elegida a mano."
+    "entityManual": "Sin reglas activas: {entity} queda elegida a mano.",
+    "unit": "Unidad (opcional)",
+    "unitPlaceholder": "Botellas"
   },
   "gastos": {
     "title": "Gastos",
@@ -3653,5 +3655,20 @@
       "quote": "Presupuesto",
       "delivery_note": "Albarán"
     }
+  },
+  "shipping": {
+    "summary": "Envío y referencias del cliente",
+    "address": "Dirección de envío",
+    "name": "Nombre o sitio de entrega",
+    "line1": "Dirección",
+    "line2": "Dirección (2.ª línea)",
+    "postal": "Código postal",
+    "city": "Localidad",
+    "province": "Provincia",
+    "country": "País",
+    "references": "Referencias del cliente",
+    "referencesHint": "Su pedido, centro o proveedor: una por línea, hasta 10. Salen en el PDF.",
+    "referencesPlaceholder": "Pedido 0001",
+    "fromSource": "Si lo dejas vacío se toma del pedido o del albarán."
   }
 }

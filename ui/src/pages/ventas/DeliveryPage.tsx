@@ -48,6 +48,8 @@ import {
 } from '@/pages/ventas/chrome'
 import { IncidentDialog, ReasonDialog, ReturnDialog } from '@/pages/ventas/dialogs'
 import { LineEditor } from '@/pages/ventas/lines'
+import { ShippingFields } from '@/pages/ventas/shipping'
+import { referencesPayload, shipToDraftOf, shipToPayload, shippingRows, type ShipToDraft } from '@/lib/shipping'
 
 export function DeliveryPage({ me }: { me: Me }) {
   const { id = '' } = useParams()
@@ -84,6 +86,8 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(false)
   const [lines, setLines] = useState<DraftLine[]>(() => draftsFrom(note.lines))
+  const [shipTo, setShipTo] = useState<ShipToDraft>(() => shipToDraftOf(note.ship_to))
+  const [references, setReferences] = useState(note.customer_references ?? '')
   const [tracking, setTracking] = useState(note.tracking_ref ?? '')
   const [dialog, setDialog] = useState<null | 'issue' | 'void' | 'return' | 'incident' | 'skip'>(null)
   const [issueError, setIssueError] = useState<string | null>(null)
@@ -116,7 +120,10 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
     }
     setBusy(true)
     try {
-      await patchDelivery(note.id, built.ok)
+      await patchDelivery(note.id, built.ok, {
+        ship_to: shipToPayload(shipTo),
+        customer_references: referencesPayload(references),
+      })
       toast(copy.sales.toast.saved)
       setEditing(false)
       onReload()
@@ -156,7 +163,13 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
             ) : (
               <>
                 {draft ? (
-                  <Button type="button" variant="secondary" size="sm" onClick={() => { setLines(draftsFrom(note.lines)); setEditing(true); setTab('lines') }}>
+                  <Button type="button" variant="secondary" size="sm" onClick={() => {
+                    setLines(draftsFrom(note.lines))
+                    setShipTo(shipToDraftOf(note.ship_to))
+                    setReferences(note.customer_references ?? '')
+                    setEditing(true)
+                    setTab('lines')
+                  }}>
                     {copy.sales.edit}
                   </Button>
                 ) : null}
@@ -219,16 +232,25 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
     >
       {tab === 'lines' ? (
         editing ? (
-          <LineEditor
-            lines={lines}
-            products={products}
-            lots={offer.lots}
-            locations={places}
-            showLot
-            locationId={note.from_location_id}
-            onChange={setLines}
-            onPrice={() => undefined}
-          />
+          <div className="grid gap-5">
+            <LineEditor
+              lines={lines}
+              products={products}
+              lots={offer.lots}
+              locations={places}
+              showLot
+              locationId={note.from_location_id}
+              onChange={setLines}
+              onPrice={() => undefined}
+            />
+            <ShippingFields
+              idPrefix="albaran"
+              shipTo={shipTo}
+              onShipTo={setShipTo}
+              references={references}
+              onReferences={setReferences}
+            />
+          </div>
         ) : (
           <LineTable
             lines={note.lines}
@@ -254,6 +276,7 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
               { label: copy.sales.incoterm, value: note.incoterm || '—' },
               { label: copy.sales.tracking, value: note.tracking_ref || '—' },
               { label: copy.sales.notes, value: note.notes || '—' },
+              ...shippingRows(note.ship_to, note.customer_references),
               {
                 label: copy.sales.relatedOrder,
                 value: note.sales_order_id ? <DocLink to={`${docPath('order')}/${note.sales_order_id}`}>{copy.sales.orders}</DocLink> : '—',

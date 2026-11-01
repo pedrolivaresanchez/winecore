@@ -14,6 +14,7 @@ export type DraftLine = {
   lotId: string
   lotCode: string
   orderLineId: string
+  unit: string
 }
 
 export function blankLine(): DraftLine {
@@ -30,6 +31,7 @@ export function blankLine(): DraftLine {
     lotId: '',
     lotCode: '',
     orderLineId: '',
+    unit: '',
   }
 }
 
@@ -48,6 +50,7 @@ export function draftsFrom(lines: SalesLine[]): DraftLine[] {
     lotId: line.lot_id ?? '',
     lotCode: '',
     orderLineId: line.order_line_id ?? '',
+    unit: line.unit ?? '',
   }))
 }
 
@@ -89,6 +92,7 @@ export function commercialLines(lines: DraftLine[]): BuiltLines {
     if (line.orderLineId) payload.order_line_id = line.orderLineId
     if (line.taxCode) payload.tax_code = line.taxCode
     if (line.lotId) payload.lot_id = line.lotId
+    if (line.unit.trim()) payload.unit = line.unit.trim()
     if (override) {
       payload.unit_price = line.unitPrice
       payload.price_reason = reason

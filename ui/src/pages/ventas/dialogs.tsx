@@ -44,6 +44,8 @@ import {
 } from '@/ui'
 import { useIssuer } from '@/pages/ventas/issuer'
 import { LineEditor } from '@/pages/ventas/lines'
+import { ShippingFields } from '@/pages/ventas/shipping'
+import { emptyShipTo, referencesPayload, shipToPayload, type ShipToDraft } from '@/lib/shipping'
 
 const DATE_LABELS = { clear: 'Quitar', today: 'Hoy' }
 
@@ -71,6 +73,8 @@ export function CreateDocument({
   const [department, setDepartment] = useState('')
   const [costCenter, setCostCenter] = useState('')
   const [ship, setShip] = useState('')
+  const [shipTo, setShipTo] = useState<ShipToDraft>(emptyShipTo)
+  const [references, setReferences] = useState('')
   const [lines, setLines] = useState<DraftLine[]>([blankLine()])
   const [error, setError] = useState<string | null>(null)
   const [badLine, setBadLine] = useState<string | null>(null)
@@ -196,6 +200,8 @@ export function CreateDocument({
           incoterm: incoterm || null,
           valid_until: validUntil,
           notes: notes || null,
+          ship_to: shipToPayload(shipTo),
+          customer_references: referencesPayload(references),
           lines: built.ok,
         })
         onCreated(created.id)
@@ -211,7 +217,8 @@ export function CreateDocument({
           customer_cost_center: costCenter || null,
           incoterm: incoterm || null,
           notes: notes || null,
-          ship_to: ship ? { country_code: ship } : null,
+          ship_to: shipToPayload({ ...shipTo, country_code: ship }),
+          customer_references: referencesPayload(references),
           lines: built.ok,
         })
         onCreated(created.id)
@@ -372,6 +379,14 @@ export function CreateDocument({
           <Field id="notas" label={copy.sales.notes}>
             <Textarea id="notas" rows={2} value={notes} onChange={(event) => setNotes(event.target.value)} />
           </Field>
+          <ShippingFields
+            idPrefix={doc}
+            shipTo={shipTo}
+            onShipTo={setShipTo}
+            references={references}
+            onReferences={setReferences}
+            hideCountry={doc === 'order'}
+          />
         </form>
       </DialogBody>
       <DialogFooter error={error}>
@@ -400,6 +415,8 @@ export function CreateDelivery({
   const [channel, setChannel] = useState<ChannelCode>('horeca')
   const [fromChoice, setFromChoice] = useState<string | null>(null)
   const [toId, setToId] = useState('')
+  const [shipTo, setShipTo] = useState<ShipToDraft>(emptyShipTo)
+  const [references, setReferences] = useState('')
   const [lines, setLines] = useState<DraftLine[]>([blankLine()])
   const [error, setError] = useState<string | null>(null)
   const [badLine, setBadLine] = useState<string | null>(null)
@@ -458,6 +475,8 @@ export function CreateDelivery({
         channel,
         from_location_id: fromId,
         to_location_id: needsTo ? toId : null,
+        ship_to: needsCustomer ? shipToPayload(shipTo) : null,
+        customer_references: needsCustomer ? referencesPayload(references) : null,
         lines: built.ok,
       })
       onCreated(created.id)
@@ -557,6 +576,15 @@ export function CreateDelivery({
             onPrice={() => undefined}
             invalidKey={badLine}
           />
+          {needsCustomer ? (
+            <ShippingFields
+              idPrefix="albaran"
+              shipTo={shipTo}
+              onShipTo={setShipTo}
+              references={references}
+              onReferences={setReferences}
+            />
+          ) : null}
         </form>
       </DialogBody>
       <DialogFooter error={error}>
