@@ -885,8 +885,8 @@
    mide, y un pseudoelemento centrado recoge el toque. Para casillas, interruptores e iconos
    sueltos que viven en filas densas donde crecer de verdad rompería la fila. */
 @utility touch-hit {
-  position: relative;
   @media (max-width: 639px) {
+    position: relative;
     &::after {
       content: '';
       position: absolute;

@@ -71,7 +71,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           ref={ref}
           disabled={disabled}
           aria-invalid={invalid || undefined}
-          className="h-full min-w-0 w-full bg-transparent text-control outline-none placeholder:text-text-tertiary disabled:cursor-not-allowed"
+          className="w-full bg-transparent text-control max-sm:h-full max-sm:min-w-0 outline-none placeholder:text-text-tertiary disabled:cursor-not-allowed"
           {...props}
         />
         {suffix && <span className="flex shrink-0 items-center text-control">{suffix}</span>}
