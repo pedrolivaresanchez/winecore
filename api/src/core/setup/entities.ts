@@ -206,6 +206,19 @@ function requiredText(
   return trimmed;
 }
 
+export async function listLegalEntities(db: Pick<Tx, 'read'>): Promise<(LegalEntityView & { id: string })[]> {
+  const rows = await db.read<Record<string, unknown>>(sql`
+    SELECT id, code, legal_name, tax_id, person_type, address_line, postal_code, city, province, country_code, eori
+    FROM core.legal_entity
+    WHERE is_active
+    ORDER BY code
+  `);
+  return rows.map((row) => {
+    const entity = currentOf(row);
+    return { id: entity.id, ...view(entity) };
+  });
+}
+
 async function readEntity(tx: Tx, code: string): Promise<Current | null> {
   const rows = await tx.read<Record<string, unknown>>(sql`
     SELECT id, code, legal_name, tax_id, person_type, address_line, postal_code, city, province, country_code, eori
@@ -214,7 +227,10 @@ async function readEntity(tx: Tx, code: string): Promise<Current | null> {
     LIMIT 1
   `);
   const row = rows[0];
-  if (!row) return null;
+  return row ? currentOf(row) : null;
+}
+
+function currentOf(row: Record<string, unknown>): Current {
   return {
     id: String(row.id).toLowerCase(),
     code: String(row.code),

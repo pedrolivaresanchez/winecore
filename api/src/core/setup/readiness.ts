@@ -3,6 +3,7 @@ import { sql } from '../db/sql';
 import { validateEori } from '../billing/export/eori';
 import { normalizeTaxId } from '../party/taxId';
 import type { DocType } from '../series/numbering';
+import { PLAN_PADDING, SERIES_PLAN, planPrefix } from '../series/plan';
 import { businessDate } from '../time';
 
 type Read = Writer['read'];
@@ -22,19 +23,6 @@ const DOC_LABEL: Record<DocType, string> = {
   proforma: 'proformas',
   cellar_operation: 'operaciones de bodega',
   inventory_count: 'aforos',
-};
-
-const SERIES_PLAN: Record<DocType, { code: string; verifactu: boolean }> = {
-  invoice: { code: 'FA', verifactu: true },
-  credit_note: { code: 'RC', verifactu: true },
-  simplified_invoice: { code: 'FS', verifactu: true },
-  intercompany_invoice: { code: 'FI', verifactu: true },
-  delivery_note: { code: 'AL', verifactu: false },
-  quote: { code: 'PR', verifactu: false },
-  sales_order: { code: 'PE', verifactu: false },
-  proforma: { code: 'PF', verifactu: false },
-  cellar_operation: { code: 'OB', verifactu: false },
-  inventory_count: { code: 'AF', verifactu: false },
 };
 
 const BILLING_DOCS: DocType[] = ['invoice', 'credit_note', 'simplified_invoice', 'intercompany_invoice'];
@@ -152,7 +140,7 @@ const HREF = {
   vessels: '/bodega/depositos',
   counts: '/stock/aforos/nuevo?kind=opening',
   security: 'settings:security',
-  setup: '/ajustes/puesta-en-marcha',
+  setup: 'settings:numbering',
 } as const;
 
 export function maskCae(cae: string): string {
@@ -224,14 +212,14 @@ function buildModules(facts: Facts, clock: { year: number; month: number; hours:
     ]),
     moduleOf('facturacion_po', 'Facturación P.O', [
       ...entityChecks(producers, exportsExist, 'PO'),
-      seriesCheck('series.billing.po', 'Series de facturación', HREF.invoices, producers, BILLING_DOCS, years, facts.series),
+      seriesCheck('series.billing.po', 'Series de facturación', HREF.setup, producers, BILLING_DOCS, years, facts.series),
       rules,
       hours,
       passkey,
     ]),
     moduleOf('facturacion_cvpo', 'Facturación CVPO', [
       ...entityChecks(companies, exportsExist, 'CVPO'),
-      seriesCheck('series.billing.cvpo', 'Series de facturación', HREF.invoices, companies, BILLING_DOCS, years, facts.series),
+      seriesCheck('series.billing.cvpo', 'Series de facturación', HREF.setup, companies, BILLING_DOCS, years, facts.series),
       rules,
       hours,
       passkey,
@@ -747,8 +735,8 @@ function seriesCheck(
           doc_type: doc,
           code: plan.code,
           year,
-          prefix: `${plan.code}${String(year).slice(2)}-`,
-          padding: 4,
+          prefix: planPrefix(doc, year),
+          padding: PLAN_PADDING,
           is_default: true,
           verifactu: plan.verifactu,
         });
@@ -760,14 +748,12 @@ function seriesCheck(
   }
   const labels = [...new Set(seeds.map((seed) => DOC_LABEL[seed.doc_type]))];
   const who = [...new Set(seeds.map((seed) => entityLabel(seed.legal_entity_code)))];
-  return item(
-    id,
-    'missing',
-    title,
-    `Faltan ${seeds.length} series (${joinEs(labels)}) de ${years[0]} y ${years[1]} para ${joinEs(who)}.`,
-    href,
-    { kind: 'create_series', items: seeds },
-  );
+  const detail = `Faltan ${seeds.length} series (${joinEs(labels)}) de ${years[0]} y ${years[1]} para ${joinEs(who)}.`;
+  // La numeración fiscal se elige (seguir la de Holded o empezar una nueva): sin alta en bloque.
+  if (seeds.some((seed) => seed.verifactu)) {
+    return item(id, 'missing', title, `${detail} Elígelas en Ajustes, Sociedades y numeración.`, href);
+  }
+  return item(id, 'missing', title, detail, href, { kind: 'create_series', items: seeds });
 }
 
 function bankCheck(banks: BankFact[] | undefined, entities: EntityFact[] | undefined): SetupCheck {

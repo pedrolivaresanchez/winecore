@@ -114,7 +114,7 @@ ALTER TABLE sales.delivery_note_line ADD CONSTRAINT delivery_note_line_tax_fk FO
 CREATE TABLE billing.invoice (
   id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   legal_entity_id      uuid NOT NULL REFERENCES core.legal_entity(id),
-  series_id            uuid NOT NULL REFERENCES core.number_series(id),
+  series_id            uuid REFERENCES core.number_series(id),              -- NULL en borrador hasta elegir numeración
   number               text CHECK (length(number) <= 60),                   -- NumSerieFactura (Verifactu ≤ 60)
   status               text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','pending_approval','issued','voided','discarded')),
   invoice_type         char(2) NOT NULL CHECK (invoice_type IN ('F1','F2','F3','R1','R2','R3','R4','R5')),

@@ -58,23 +58,26 @@ export async function issueInvoice(
   input: { invoiceId: string; actor: Actor; fromBatch?: boolean; fromIntercompany?: boolean; now?: Date },
 ): Promise<IssueResult> {
   const now = input.now ?? new Date();
-  const view = await loadInvoice(tx, input.invoiceId);
-  if (view.header.status === 'issued') return resultFromView(view);
-  if (view.header.status === 'voided' || view.header.status === 'discarded') throw domainError('WC080');
-  if (view.header.status === 'pending_approval') {
-    if (input.fromIntercompany) await assertIntercompanyApproval(tx, view, now);
-    else if (input.fromBatch) await assertBatchApproval(tx, view, now);
+  const loaded = await loadInvoice(tx, input.invoiceId);
+  if (loaded.header.status === 'issued') return resultFromView(loaded);
+  if (loaded.header.status === 'voided' || loaded.header.status === 'discarded') throw domainError('WC080');
+  if (loaded.header.status === 'pending_approval') {
+    if (input.fromIntercompany) await assertIntercompanyApproval(tx, loaded, now);
+    else if (input.fromBatch) await assertBatchApproval(tx, loaded, now);
     else throw domainError('WC_INV_APPROVAL_REQUIRED');
-  } else if (view.header.status !== 'draft') {
+  } else if (loaded.header.status !== 'draft') {
     throw domainError('WC_INV_NOT_DRAFT');
   }
   if (!isUuid(input.actor.id)) throw domainError('WC_VALIDATION', { actor: 'El emisor no es un usuario' });
 
-  const validation = await validateInvoice(tx, view.header.id, now);
+  const validation = await validateInvoice(tx, loaded.header.id, now);
   const first = validation.errors[0];
   if (first) raiseIssue(first);
   const computed = validation.computed;
   if (!computed) raiseIssue({ code: 'WC_INV_LINES_REQUIRED', message: 'La factura necesita al menos una línea', field: 'lines' });
+  const series = validation.series;
+  if (!series) throw domainError('WC_INV_SERIES');
+  const view: InvoiceView = { ...loaded, header: { ...loaded.header, seriesId: series.id }, series };
   const issueDate = validation.issueDate;
   const customer = view.customer;
   if (!customer) throw domainError('WC_INV_TAX_ID_REQUIRED');
@@ -98,7 +101,7 @@ export async function issueInvoice(
     legalEntityId: view.header.legalEntityId,
     docType: seriesDocType(view.header.invoiceType),
     date: instantOn(issueDate),
-    seriesId: view.header.seriesId,
+    seriesId: series.id,
   });
   const blow = injected;
   injected = null;
@@ -177,6 +180,7 @@ export async function issueInvoice(
   tx.write(sql`
     UPDATE billing.invoice SET
       number = ${number},
+      series_id = CAST(${series.id} AS UUID),
       status = 'issued',
       issue_date = CAST(${issueDate} AS DATE),
       customer_snapshot = ${sql.json(snapshot)},
@@ -194,8 +198,8 @@ export async function issueInvoice(
     table: 'billing.invoice',
     rowId: view.header.id,
     action: 'UPDATE',
-    before: { status: view.header.status, number: null },
-    after: { status: 'issued', number, issue_date: issueDate, total: totals.total },
+    before: { status: view.header.status, number: null, series_id: loaded.header.seriesId },
+    after: { status: 'issued', number, series_id: series.id, issue_date: issueDate, total: totals.total },
   });
   writeDeliveryStatuses(tx, deliveries, now);
   if (view.header.salesOrderId && !otherOrder[0]) {

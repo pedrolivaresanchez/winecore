@@ -18,3 +18,10 @@ export {
   type SeriesFilter,
   type SeriesJson,
 } from './numbering';
+export { AUTOMATIC_SERIES, SERIES_PLAN, planPrefix } from './plan';
+export {
+  HOLDED_CODE,
+  numberingProposal,
+  openNumbering,
+  type NumberingProposal,
+} from './proposal';

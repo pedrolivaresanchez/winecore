@@ -1,7 +1,12 @@
 import { requestIdFor, sessionOf } from '../auth/guard';
 import type { Writer } from '../core/db/writer';
 import { domainError } from '../core/errors';
-import { patchLegalEntity } from '../core/setup/entities';
+import { listLegalEntities, patchLegalEntity } from '../core/setup/entities';
+
+export async function getLegalEntitiesRoute(writer: Writer, request: Request) {
+  sessionOf(request);
+  return { items: await listLegalEntities(writer) };
+}
 
 export async function patchLegalEntityRoute(writer: Writer, request: Request, code: string) {
   const user = sessionOf(request);

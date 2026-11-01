@@ -222,7 +222,7 @@ CREATE TABLE core.number_series (
   code            text NOT NULL CHECK (code ~ '^[A-Z]{1,4}$'),
   year            smallint NOT NULL CHECK (year BETWEEN 2020 AND 2100),
   prefix          text NOT NULL CHECK (length(prefix) BETWEEN 1 AND 12),
-  padding         smallint NOT NULL DEFAULT 4 CHECK (padding BETWEEN 3 AND 8),
+  padding         smallint NOT NULL DEFAULT 4 CHECK (padding BETWEEN 2 AND 8),
   next_value      integer NOT NULL DEFAULT 1 CHECK (next_value >= 1),
   is_default      boolean NOT NULL DEFAULT false,
   verifactu       boolean NOT NULL DEFAULT false,

@@ -58,7 +58,7 @@ export async function loadInvoiceDocument(reader: SqlReader, id: string): Promis
       ) AS qr_url
     FROM billing.invoice i
     JOIN core.legal_entity e ON e.id = i.legal_entity_id
-    JOIN core.number_series s ON s.id = i.series_id
+    LEFT JOIN core.number_series s ON s.id = i.series_id
     WHERE i.id = CAST(${id} AS UUID)
   `);
   const header = headers[0];

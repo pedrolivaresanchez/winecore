@@ -10,11 +10,14 @@ import {
   type RectTarget,
 } from './rectify';
 import {
+  findDefaultSeries,
   lastIssuedDate,
   loadInvoice,
   loadTaxCodes,
+  seriesFits,
   type InvoiceView,
   type LineView,
+  type SeriesView,
 } from './readModel';
 import type { TaxCode } from './taxCodes';
 
@@ -23,7 +26,14 @@ export interface ValidationResult {
   warnings: IssueItem[];
   computed: ComputedInvoice | null;
   issueDate: string;
+  series: SeriesView | null;
 }
+
+const NUMBERED: Record<string, string> = {
+  invoice: 'factura',
+  credit_note: 'rectificativa',
+  simplified_invoice: 'factura simplificada',
+};
 
 const MILLION = decimalOf('1000000');
 const MIN_ISSUE_DATE = '2024-10-28';
@@ -49,11 +59,20 @@ function holdedAmounts(view: InvoiceView, number: string, issueDate: string): {
 }
 
 export async function validateInvoice(tx: Tx, invoiceId: string, now = new Date()): Promise<ValidationResult> {
-  const view = await loadInvoice(tx, invoiceId);
+  const loaded = await loadInvoice(tx, invoiceId);
+  const view = { ...loaded, series: await issueSeries(tx, loaded, now) };
   const taxCodes = await loadTaxCodes(tx);
   const targets = await targetsOf(tx, view);
-  const lastDate = await lastIssuedDate(tx, view.header.seriesId, view.header.id);
+  const lastDate = view.series ? await lastIssuedDate(tx, view.series.id, view.header.id) : null;
   return validateView(view, taxCodes, targets, lastDate, now, tx);
+}
+
+/** La serie del borrador o, si no tiene, la de por defecto del año de emisión. */
+async function issueSeries(tx: Tx, view: InvoiceView, now: Date): Promise<SeriesView | null> {
+  if (view.header.seriesId) return view.series;
+  const year = Number((view.header.issueDate ?? today(now)).slice(0, 4));
+  if (!Number.isInteger(year)) return null;
+  return findDefaultSeries(tx, view.header.legalEntityId, seriesDocType(view.header.invoiceType), year);
 }
 
 async function targetsOf(tx: Tx, view: InvoiceView): Promise<RectTarget[]> {
@@ -165,7 +184,12 @@ export async function validateView(
 
   const year = Number(issueDate.slice(0, 4));
   const expectedType = seriesDocType(header.invoiceType);
-  if (!view.series || !view.series.active || view.series.legalEntityId !== header.legalEntityId || view.series.docType !== expectedType || view.series.year !== year) {
+  if (!view.series && !header.seriesId && Number.isInteger(year)) {
+    errors.push({
+      ...issue('WC_INV_NUMBERING', `Primera ${NUMBERED[expectedType] ?? 'factura'} de ${view.entity.code} en ${year}: elige la numeración`, 'series_id'),
+      details: { legal_entity_id: header.legalEntityId, entity_code: view.entity.code, doc_type: expectedType, year },
+    });
+  } else if (!seriesFits(view.series, header.legalEntityId, expectedType, year)) {
     errors.push(issue('WC_INV_SERIES', 'No hay una serie activa para el año de la factura', 'series_id'));
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(issueDate)) {
@@ -232,7 +256,7 @@ export async function validateView(
     }
   }
 
-  return { errors, warnings, computed, issueDate };
+  return { errors, warnings, computed, issueDate, series: view.series };
 }
 
 function computeQuiet(

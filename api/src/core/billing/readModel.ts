@@ -22,7 +22,7 @@ type Read = Pick<Tx, 'read'>;
 export interface HeaderView {
   id: string;
   legalEntityId: string;
-  seriesId: string;
+  seriesId: string | null;
   number: string | null;
   status: string;
   invoiceType: string;
@@ -193,7 +193,7 @@ export function headerOf(row: Record<string, unknown>): HeaderView {
   return {
     id: idOf(row.id),
     legalEntityId: idOf(row.legal_entity_id),
-    seriesId: idOf(row.series_id),
+    seriesId: row.series_id == null ? null : idOf(row.series_id),
     number: text(row.number),
     status: String(row.status),
     invoiceType: String(row.invoice_type),
@@ -409,6 +409,15 @@ export async function loadSeries(tx: Read, id: string): Promise<SeriesView | nul
   };
 }
 
+export function seriesFits(
+  series: SeriesView | null,
+  entityId: string,
+  docType: string,
+  year: number,
+): series is SeriesView {
+  return series != null && series.active && series.legalEntityId === entityId && series.docType === docType && series.year === year;
+}
+
 export async function findDefaultSeries(
   tx: Read,
   entityId: string,
@@ -485,7 +494,7 @@ export async function loadInvoice(tx: Read, id: string): Promise<InvoiceView> {
     loadRectifications(tx, id),
     header.customerId ? loadCustomer(tx, header.customerId) : Promise.resolve(null),
     loadEntity(tx, header.legalEntityId),
-    loadSeries(tx, header.seriesId),
+    header.seriesId ? loadSeries(tx, header.seriesId) : Promise.resolve(null),
   ]);
   if (!entity) throw domainError('WC_VALIDATION', { legal_entity_id: 'La entidad no existe' });
   const products = new Map<string, ProductView>();

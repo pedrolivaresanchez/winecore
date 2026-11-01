@@ -5,7 +5,6 @@ import type { Actor, Tx } from '../db/writer';
 import { domainError } from '../errors';
 import { newId } from '../ids';
 import { money } from '../money';
-import { ensureDefaultSeries } from '../series';
 import { computeInvoice, InvoiceCalculationError } from './compute';
 import {
   decimalOf,
@@ -29,6 +28,7 @@ import {
   loadLines,
   loadSeries,
   loadTaxCodes,
+  seriesFits,
   type CustomerView,
   type EntityView,
   type SeriesView,
@@ -108,7 +108,7 @@ interface Built {
   id: string;
   entity: EntityView;
   customer: CustomerView;
-  series: SeriesView;
+  series: SeriesView | null;
   invoiceType: string;
   rectificationKind: 'S' | 'I' | null;
   channel: string | null;
@@ -301,13 +301,10 @@ async function buildUpdate(
   const issueDate = patch.issueDate === undefined ? current.issueDate : patch.issueDate;
   const operationDate = patch.operationDate === undefined ? current.operationDate : patch.operationDate;
   const year = Number((issueDate ?? today(now)).slice(0, 4));
-  const series = await chooseSeries(
-    tx,
-    patch.seriesId === undefined ? current.seriesId : patch.seriesId,
-    entity.id,
-    seriesDocType(current.invoiceType),
-    year,
-  );
+  const docType = seriesDocType(current.invoiceType);
+  const series = patch.seriesId === undefined
+    ? await keptSeries(tx, current.seriesId, entity.id, docType, year)
+    : await chooseSeries(tx, patch.seriesId, entity.id, docType, year);
   const terms = patch.paymentTermsDays === undefined
     ? current.paymentTermsDays ?? customer.paymentTermsDays
     : patch.paymentTermsDays;
@@ -711,24 +708,32 @@ async function requireEntity(tx: Tx, id: string): Promise<EntityView> {
   return entity;
 }
 
+/**
+ * Sin serie elegida, la de por defecto del año si existe. Si la entidad aún no tiene numeración
+ * fiscal, el borrador queda sin serie y se elige al emitir.
+ */
 async function chooseSeries(
   tx: Tx,
   explicitId: string | null,
   entityId: string,
   docType: string,
   year: number,
-): Promise<SeriesView> {
-  if (!explicitId) {
-    const fresh = await ensureDefaultSeries(tx, entityId, docType, year);
-    if (fresh) return { id: fresh.id, legalEntityId: fresh.legalEntityId, docType, year, active: true, isDefault: true };
-  }
-  const series = explicitId
-    ? await loadSeries(tx, explicitId)
-    : await findDefaultSeries(tx, entityId, docType, year);
-  if (!series || !series.active || series.legalEntityId !== entityId || series.docType !== docType || series.year !== year) {
-    throw domainError('WC_INV_SERIES');
-  }
+): Promise<SeriesView | null> {
+  if (!explicitId) return findDefaultSeries(tx, entityId, docType, year);
+  const series = await loadSeries(tx, explicitId);
+  if (!seriesFits(series, entityId, docType, year)) throw domainError('WC_INV_SERIES');
   return series;
+}
+
+async function keptSeries(
+  tx: Tx,
+  currentId: string | null,
+  entityId: string,
+  docType: string,
+  year: number,
+): Promise<SeriesView | null> {
+  const current = currentId ? await loadSeries(tx, currentId) : null;
+  return seriesFits(current, entityId, docType, year) ? current : findDefaultSeries(tx, entityId, docType, year);
 }
 
 interface RuleHit {
@@ -814,7 +819,7 @@ function insertInvoice(tx: Tx, built: Built, actor: Actor, now: Date): void {
     ) VALUES (
       CAST(${built.id} AS UUID),
       CAST(${built.entity.id} AS UUID),
-      CAST(${built.series.id} AS UUID),
+      CAST(${built.series?.id ?? null} AS UUID),
       'draft',
       ${built.invoiceType},
       ${built.rectificationKind},
@@ -855,7 +860,7 @@ function insertInvoice(tx: Tx, built: Built, actor: Actor, now: Date): void {
       invoice_type: built.invoiceType,
       legal_entity_id: built.entity.id,
       customer_id: built.customer.id,
-      series_id: built.series.id,
+      series_id: built.series?.id ?? null,
       total: built.total,
     },
   });
@@ -932,7 +937,7 @@ function updateHeader(tx: Tx, before: Awaited<ReturnType<typeof loadHeader>>, bu
   tx.write(sql`
     UPDATE billing.invoice SET
       legal_entity_id = CAST(${built.entity.id} AS UUID),
-      series_id = CAST(${built.series.id} AS UUID),
+      series_id = CAST(${built.series?.id ?? null} AS UUID),
       customer_id = CAST(${built.customer.id} AS UUID),
       channel = ${built.channel},
       issue_date = CAST(${built.issueDate} AS DATE),
@@ -958,7 +963,7 @@ function updateHeader(tx: Tx, before: Awaited<ReturnType<typeof loadHeader>>, bu
     rowId: built.id,
     action: 'UPDATE',
     before: { customer_id: before.customerId, total: before.total, series_id: before.seriesId },
-    after: { customer_id: built.customer.id, total: built.total, series_id: built.series.id },
+    after: { customer_id: built.customer.id, total: built.total, series_id: built.series?.id ?? null },
   });
 }
 

@@ -33,6 +33,10 @@ function issue(id: string) {
   return call(ctx, 'POST', `/v1/invoices/${id}/issue`, undefined, { 'Idempotency-Key': `emitir-${newId()}` });
 }
 
+function openSeries(entityId: string, docType: string, choice: 'fresh' | 'holded') {
+  return call(ctx, 'POST', '/v1/number-series/open', { legal_entity_id: entityId, doc_type: docType, year: fx.year, choice });
+}
+
 function newOrder(body: Record<string, unknown>) {
   return call(ctx, 'POST', '/v1/sales-orders', body, { 'Idempotency-Key': `pedido-${newId()}` });
 }
@@ -186,10 +190,24 @@ describe('alta sin reglas ni series', () => {
     const draft = await call(ctx, 'POST', '/v1/invoices', { invoice_type: 'F1', from_delivery_notes: [String(note.id)] });
     expect(draft.status).toBe(201);
     expect(draft.body?.legal_entity_id).toBe(fx.po);
+    expect(draft.body?.series_id).toBeNull();
+    const blocked = await issue(String(draft.body?.id));
+    expect(blocked.status).toBe(409);
+    expect(blocked.body?.code).toBe('WC_INV_NUMBERING');
+    expect(blocked.body?.message).toBe(`Primera factura de PO en ${fx.year}: elige la numeración`);
+    expect(blocked.body?.details).toEqual({ legal_entity_id: fx.po, entity_code: 'PO', doc_type: 'invoice', year: fx.year });
+    expect(await seriesOf(fx.po, 'invoice')).toEqual([]);
+
+    const opened = await openSeries(fx.po, 'invoice', 'fresh');
+    expect(opened.status).toBe(201);
+    expect(opened.body).toEqual(expect.objectContaining({
+      code: 'FA', prefix: `FA${yy}-`, padding: 4, next_value: 1, verifactu: true, is_default: true,
+    }));
     const issued = await issue(String(draft.body?.id));
     expect(issued.status).toBe(200);
-    expect(issued.body?.number).toBe(`F${yy}-0001`);
-    expect(await seriesOf(fx.po, 'invoice')).toEqual([expect.objectContaining({ code: 'F', prefix: `F${yy}-`, padding: 4 })]);
+    expect(issued.body?.number).toBe(`FA${yy}-0001`);
+    const stored = await json(ctx, 'GET', `/v1/invoices/${String(draft.body?.id)}`);
+    expect(stored.series_id).toBe(opened.body?.id);
   });
 
   it('crea y emite una factura con líneas manuales y otra desde un pedido', async () => {
@@ -201,9 +219,11 @@ describe('alta sin reglas ni series', () => {
     });
     expect(manual.status).toBe(201);
     expect(manual.body?.total).toBe('34.49');
+    expect((await issue(String(manual.body?.id))).body?.code).toBe('WC_INV_NUMBERING');
+    expect((await openSeries(fx.cvpo, 'invoice', 'fresh')).status).toBe(201);
     const issued = await issue(String(manual.body?.id));
     expect(issued.status).toBe(200);
-    expect(issued.body?.number).toBe(`F${yy}-0001`);
+    expect(issued.body?.number).toBe(`FA${yy}-0001`);
 
     const created = await newOrder({
       customer_id: fx.other,
@@ -222,7 +242,7 @@ describe('alta sin reglas ni series', () => {
     expect(lineIds).toHaveLength(1);
   });
 
-  it('la rectificativa abre su serie R', async () => {
+  it('la rectificativa pide su numeración al emitirla', async () => {
     const draft = await call(ctx, 'POST', '/v1/invoices', {
       customer_id: fx.customer,
       legal_entity_id: fx.po,
@@ -231,6 +251,7 @@ describe('alta sin reglas ni series', () => {
     });
     const issued = await issue(String(draft.body?.id));
     expect(issued.status).toBe(200);
+    expect(issued.body?.number).toBe(`FA${yy}-0002`);
     const credit = await call(ctx, 'POST', '/v1/invoices', {
       invoice_type: 'R1',
       rectification_kind: 'S',
@@ -241,7 +262,17 @@ describe('alta sin reglas ni series', () => {
       lines: [{ product_id: fx.product, quantity: '1', lot_id: fx.lot }],
     });
     expect(credit.status).toBe(201);
-    expect(await seriesOf(fx.po, 'credit_note')).toEqual([expect.objectContaining({ code: 'R', prefix: `R${yy}-` })]);
+    expect(credit.body?.series_id).toBeNull();
+    const blocked = await issue(String(credit.body?.id));
+    expect(blocked.status).toBe(409);
+    expect(blocked.body?.message).toBe(`Primera rectificativa de PO en ${fx.year}: elige la numeración`);
+    expect(blocked.body?.details).toEqual(expect.objectContaining({ doc_type: 'credit_note' }));
+    const holded = await openSeries(fx.po, 'credit_note', 'holded');
+    expect(holded.status).toBe(422);
+    expect((await openSeries(fx.po, 'credit_note', 'fresh')).body?.prefix).toBe(`RC${yy}-`);
+    const issuedCredit = await issue(String(credit.body?.id));
+    expect(issuedCredit.status).toBe(200);
+    expect(issuedCredit.body?.number).toBe(`RC${yy}-0001`);
   });
 });
 
@@ -275,32 +306,37 @@ describe('ensureDefaultSeries', () => {
     await ctx.writer.withWrite(actor, async (tx) => {
       tx.write(sql`
         INSERT INTO core.number_series (id, legal_entity_id, doc_type, code, "year", prefix, padding, is_default, is_active)
-        VALUES (CAST(${newId()} AS UUID), CAST(${fx.cvpo} AS UUID), 'simplified_invoice', 'TK', ${fx.year}, ${`TK${yy}-`}, 4, FALSE, FALSE)
+        VALUES (CAST(${newId()} AS UUID), CAST(${fx.cvpo} AS UUID), 'delivery_note', 'AX', ${fx.year}, ${`AX${yy}-`}, 4, FALSE, FALSE)
       `);
     });
-    const result = await ctx.writer.withWrite(actor, (tx) => ensureDefaultSeries(tx, fx.cvpo, 'simplified_invoice', fx.year));
+    const result = await ctx.writer.withWrite(actor, (tx) => ensureDefaultSeries(tx, fx.cvpo, 'delivery_note', fx.year));
     expect(result).toBeNull();
-    expect(await seriesOf(fx.cvpo, 'simplified_invoice')).toHaveLength(1);
+    expect(await seriesOf(fx.cvpo, 'delivery_note')).toHaveLength(1);
   });
 
   it('evita un prefijo ya usado en la entidad y repite la misma serie dentro de la escritura', async () => {
     await ctx.writer.withWrite(actor, async (tx) => {
       tx.write(sql`
         INSERT INTO core.number_series (id, legal_entity_id, doc_type, code, "year", prefix, padding, is_default, is_active)
-        VALUES (CAST(${newId()} AS UUID), CAST(${fx.po} AS UUID), 'proforma', 'X', ${fx.year}, ${`FS${yy}-`}, 4, TRUE, TRUE)
+        VALUES (CAST(${newId()} AS UUID), CAST(${fx.po} AS UUID), 'proforma', 'X', ${fx.year}, ${`PR${yy}-`}, 4, TRUE, TRUE)
       `);
     });
     const [first, second] = await ctx.writer.withWrite(actor, async (tx) => [
-      await ensureDefaultSeries(tx, fx.po, 'simplified_invoice', fx.year),
-      await ensureDefaultSeries(tx, fx.po, 'simplified_invoice', fx.year),
+      await ensureDefaultSeries(tx, fx.po, 'quote', fx.year),
+      await ensureDefaultSeries(tx, fx.po, 'quote', fx.year),
     ]);
-    expect(first?.prefix).toBe(`FS${yy}B-`);
+    expect(first?.prefix).toBe(`PR${yy}B-`);
     expect(second?.id).toBe(first?.id ?? '');
-    expect(await seriesOf(fx.po, 'simplified_invoice')).toEqual([expect.objectContaining({ code: 'FS', prefix: `FS${yy}B-` })]);
+    expect(await seriesOf(fx.po, 'quote')).toEqual([expect.objectContaining({ code: 'PR', prefix: `PR${yy}B-` })]);
   });
 
-  it('no abre series para tipos sin serie automática', async () => {
-    const result = await ctx.writer.withWrite(actor, (tx) => ensureDefaultSeries(tx, fx.po, 'cellar_operation', fx.year + 1));
-    expect(result).toBeNull();
+  it('no abre series fiscales ni de tipos sin serie automática', async () => {
+    const results = await ctx.writer.withWrite(actor, async (tx) => [
+      await ensureDefaultSeries(tx, fx.po, 'invoice', fx.year + 1),
+      await ensureDefaultSeries(tx, fx.po, 'credit_note', fx.year + 1),
+      await ensureDefaultSeries(tx, fx.po, 'simplified_invoice', fx.year + 1),
+      await ensureDefaultSeries(tx, fx.po, 'cellar_operation', fx.year + 1),
+    ]);
+    expect(results).toEqual([null, null, null, null]);
   });
 });

@@ -24,12 +24,17 @@ export function formatSeriesNumber(prefix: string, padding: number, value: numbe
   return `${prefix}${String(value).padStart(padding, '0')}`;
 }
 
-/** `CF26-` en 2027 pasa a `CF27-`. Si el prefijo no lleva el año, no se inventa. */
+/**
+ * `CF26-` en 2027 pasa a `CF27-`, el `F-2026-` de Holded a `F-2027-` y `2026/` a `2027/`.
+ * Si el prefijo no lleva el año, no se inventa.
+ */
 export function derivePrefix(prefix: string, year: number): string | null {
-  const match = /^([A-Z]{1,4})(\d{2})(\D*)$/.exec(prefix);
+  const match = /^([A-Z]{0,4})([-/ ]?)(\d{4}|\d{2})(\D*)$/.exec(prefix);
   const letters = match?.[1];
-  if (!letters) return null;
-  const next = `${letters}${String(year % 100).padStart(2, '0')}${match?.[3] ?? ''}`;
+  const digits = match?.[3];
+  if (letters === undefined || !digits) return null;
+  const shown = digits.length === 4 ? String(year) : String(year % 100).padStart(2, '0');
+  const next = `${letters}${match?.[2] ?? ''}${shown}${match?.[4] ?? ''}`;
   if (next.length < 1 || next.length > 12) return null;
   return next;
 }

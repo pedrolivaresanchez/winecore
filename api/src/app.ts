@@ -156,9 +156,16 @@ import { me } from './routes/me';
 import { getUsers, patchUserRoute, postUser } from './routes/users';
 import { listNotifications, readAllNotifications, readNotification } from './routes/notifications';
 import { getReport } from './routes/reports';
-import { patchLegalEntityRoute } from './routes/legal-entities';
+import { getLegalEntitiesRoute, patchLegalEntityRoute } from './routes/legal-entities';
 import { getReadiness } from './routes/setup';
-import { createNumberSeries, createNumberSeriesBulk, deactivateNumberSeries, listNumberSeries } from './routes/series';
+import {
+  createNumberSeries,
+  createNumberSeriesBulk,
+  deactivateNumberSeries,
+  getNumberingProposal,
+  listNumberSeries,
+  openNumberSeries,
+} from './routes/series';
 import {
   closeInventoryCountRoute,
   getInventoryCountRoute,
@@ -470,8 +477,19 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requirePermission(guardDeps, 'billing.write'),
     })
     // Series de numeración (TASK-CORE-004). Sin borrado.
+    // Sociedades y numeración (Ajustes): dirección o administración.
     .get('/v1/number-series', ({ request }) => listNumberSeries(deps.writer, request), {
-      beforeHandle: requirePermission(guardDeps, 'settings.manage'),
+      beforeHandle: requireOwnerOrAdmin(guardDeps),
+    })
+    .get('/v1/number-series/proposal', ({ request }) => getNumberingProposal(deps.writer, request), {
+      beforeHandle: requireOwnerOrAdmin(guardDeps),
+    })
+    .post('/v1/number-series/open', async ({ request, set }) => {
+      const body = await openNumberSeries(deps.writer, request);
+      set.status = 201;
+      return body;
+    }, {
+      beforeHandle: requireOwnerOrAdmin(guardDeps),
     })
     .post('/v1/number-series', async ({ request, set }) => {
       const body = await createNumberSeries(deps.writer, request);
@@ -491,11 +509,14 @@ export function createApp(deps: AppDeps) {
     .get('/v1/setup/readiness', ({ request }) => getReadiness(deps.writer, request, http.now(), deps.config.deliveryAlertHours), {
       beforeHandle: requireOwnerOrAdmin(guardDeps),
     })
+    .get('/v1/legal-entities', ({ request }) => getLegalEntitiesRoute(deps.writer, request), {
+      beforeHandle: requireOwnerOrAdmin(guardDeps),
+    })
     .patch('/v1/legal-entities/:code', ({ request, params }) => patchLegalEntityRoute(deps.writer, request, params.code), {
-      beforeHandle: requireOwner(guardDeps),
+      beforeHandle: requireOwnerOrAdmin(guardDeps),
     })
     .post('/v1/number-series/:id/deactivate', ({ request, params }) => deactivateNumberSeries(deps.writer, request, params.id), {
-      beforeHandle: requirePermission(guardDeps, 'settings.manage'),
+      beforeHandle: requireOwnerOrAdmin(guardDeps),
     })
     // Adjuntos (TASK-CORE-006). El permiso es el del módulo de la tabla enlazada.
     .post('/v1/attachments', async ({ request, set }) => {

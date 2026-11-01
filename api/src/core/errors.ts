@@ -93,6 +93,7 @@ const CATALOG = {
   WC_INV_NOT_DRAFT: [409, 'Solo se edita un borrador'],
   WC_INV_PAYMENTS: [409, 'Una factura con cobros no se puede anular; rectifícala'],
   WC_INV_SERIES: [422, 'No hay una serie activa para el año de la factura'],
+  WC_INV_NUMBERING: [409, 'Primera factura de la entidad en el año: elige la numeración'],
   WC_INV_PRICE: [422, 'No hay precio para el producto'],
   WC_INV_HASH: [409, 'El borrador cambió después de pedir la aprobación'],
   WC_INV_APPROVAL_REQUIRED: [409, 'La operación requiere una aprobación'],
