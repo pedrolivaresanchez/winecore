@@ -17,6 +17,7 @@ import { installIntegrations } from './core/wiring/integrations';
 import { asDomainError, domainError, errorBody } from './core/errors';
 import { safeLogMessage } from './core/redact';
 import type { InvoiceDocumentStore } from './core/billing/pdf/documents';
+import type { RestDispatch } from './mcp/registry';
 import { authCallback } from './routes/auth-callback';
 import { downloadInvoicePdf } from './routes/invoice-documents';
 import {
@@ -243,6 +244,10 @@ export function createApp(deps: AppDeps) {
   };
   const deliveryDeps = { writer: deps.writer, documents: deps.invoiceDocuments };
   const mcpLimiter = new RateLimiter(deps.mcpRatePerMinute);
+  const rest: RestDispatch = {
+    handle: (request: Request): Promise<Response> => app.handle(request),
+    basePath: deps.config.apiBasePath,
+  };
   const app = new Elysia(deps.config.apiBasePath ? { prefix: deps.config.apiBasePath } : {})
     .use(cors({
       origin: (request: Request) => {
@@ -905,6 +910,7 @@ export function createApp(deps: AppDeps) {
       writer: deps.writer,
       now: http.now,
       limiter: mcpLimiter,
+      rest,
     }, request), {
       beforeHandle: requireUserOrMachine(guardDeps),
     })
@@ -931,6 +937,7 @@ export function createApp(deps: AppDeps) {
       provider: deps.assistant ?? assistantFromConfig(deps.config),
       limiter: mcpLimiter,
       log,
+      rest,
     }))
     .use(vineyardRoutes(guardDeps))
     .use(winemakingRoutes({ writer: deps.writer, guard: guardDeps }))

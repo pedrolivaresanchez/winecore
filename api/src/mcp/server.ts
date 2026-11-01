@@ -6,6 +6,8 @@ import { sha256Hex } from "../core/hash";
 import { DomainError, domainError } from "../core/errors";
 import { canonicalJson, consumeConfirmation, issueConfirmation } from "./confirm";
 import {
+  defineDirectWrite,
+  defineReadTool,
   mcpNames,
   moduleActive,
   toolVisible,
@@ -15,12 +17,17 @@ import {
   type ReadTool,
   type WriteTool,
 } from "./registry";
-import { mcpTools } from "./tools";
-
-export const baseTools: readonly AnyTool[] = mcpTools;
+import { coreTools, mcpTools } from "./tools";
 
 const INSTRUCTIONS =
-  "Servidor MCP de WineCore. Las lecturas son inmediatas. Las escrituras van en dos pasos: *_prepare devuelve una vista previa y no guarda el negocio; la persona confirma; *_commit ejecuta exactamente lo previsualizado. No hay herramientas para aprobar, emitir, anular, enviar a terceros ni borrar.";
+  "Servidor MCP de WineCore: todo lo que se hace en la app se puede hacer aquí, con los permisos de la persona representada. Las lecturas son inmediatas. Toda escritura va en dos pasos: *_prepare valida y devuelve una vista previa sin guardar nada; enseña summary_es a la persona y pide un sí explícito; *_commit ejecuta exactamente lo previsualizado. Aprobar, rechazar, emitir, anular, enviar y borrar también van así, y la app aplica sus reglas (quién aprueba, passkey si el propietario la exige). Si no ves la herramienta que necesitas, búscala con system_tools_search.";
+
+export interface ToolListing {
+  /** Only the core tools and the two gateway tools. */
+  compact?: boolean;
+  /** Only these modules (system tools always). */
+  modules?: readonly string[];
+}
 
 const commitInput = z.object({
   confirmation_token: z.string().min(1),
@@ -113,13 +120,18 @@ function parseInput<T>(schema: ZodType<T>, value: unknown): T {
   return parsed.data;
 }
 
+const schemas = new WeakMap<ZodType, JsonObjectSchema>();
+
 function jsonObjectSchema(schema: ZodType): JsonObjectSchema {
+  const cached = schemas.get(schema);
+  if (cached) return cached;
   const raw = z.toJSONSchema(schema, { target: "draft-7" });
   const out: JsonObjectSchema = { type: "object" };
   if (isRecord(raw.properties)) out.properties = raw.properties as Record<string, object>;
   if (Array.isArray(raw.required) && raw.required.every((item) => typeof item === "string")) {
     out.required = raw.required;
   }
+  schemas.set(schema, out);
   return out;
 }
 
@@ -196,6 +208,85 @@ function visibleExposed(ctx: McpContext, tools: readonly AnyTool[]): ExposedTool
   }
   return listed;
 }
+
+function listed(tools: readonly AnyTool[], listing: ToolListing | undefined): readonly AnyTool[] {
+  if (!listing) return tools;
+  return tools.filter((tool) => {
+    if (listing.compact && !coreToolNames.has(tool.name)) return false;
+    if (listing.modules && tool.module !== "system" && !listing.modules.includes(tool.module)) return false;
+    return true;
+  });
+}
+
+function fold(value: string): string {
+  return value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+}
+
+const toolsSearch = defineReadTool({
+  name: "system_tools_search",
+  module: "system",
+  scope: "",
+  title: "Buscar herramientas",
+  description: "Busca entre todas las herramientas de WineCore por palabras («remesa», «factura rectificativa», «trasiego») y devuelve su nombre, qué hace y su esquema de entrada.",
+  input: z.object({
+    q: z.string().trim().min(2).max(80),
+    module: z.string().trim().max(40).optional(),
+    limit: z.number().int().min(1).max(30).optional(),
+  }),
+  handler: (ctx, input) => {
+    const words = fold(input.q).split(/[^a-z0-9_]+/).filter((word) => word.length >= 2);
+    const modules = new Map<string, string>();
+    for (const tool of baseTools) for (const name of mcpNames(tool)) modules.set(name, tool.module);
+    const scored = visibleToolCatalogue(ctx)
+      .filter((tool) => tool.kind !== "commit")
+      .filter((tool) => !input.module || modules.get(tool.name) === input.module)
+      .map((tool) => {
+        const haystack = fold(`${tool.name} ${tool.title} ${tool.description}`);
+        return { tool, score: words.filter((word) => haystack.includes(word)).length };
+      })
+      .filter((entry) => entry.score > 0)
+      .sort((a, b) => b.score - a.score || a.tool.name.localeCompare(b.tool.name));
+    return {
+      items: scored.slice(0, input.limit ?? 12).map(({ tool }) => ({
+        name: tool.name,
+        kind: tool.kind,
+        title: tool.title,
+        description: tool.description,
+        input_schema: tool.inputSchema,
+        ...(tool.kind === "prepare" ? { commit: `${tool.name.slice(0, -"_prepare".length)}_commit` } : {}),
+      })),
+    };
+  },
+});
+
+const toolRun = defineDirectWrite({
+  name: "system_tool_run",
+  module: "system",
+  scope: "",
+  title: "Usar una herramienta",
+  description: "Llama a cualquier herramienta por su nombre (de system_tools_search) con sus argumentos. Una *_commit sigue necesitando el confirmation_token de su *_prepare.",
+  input: z.object({
+    name: z.string().regex(/^[a-z][a-z0-9_]{1,79}$/),
+    arguments: z.record(z.string(), z.unknown()).optional(),
+  }),
+  handler: async (ctx, input) => {
+    if (input.name === "system_tool_run") throw domainError("WC_VALIDATION", { name: "No puede llamarse a sí misma" });
+    const result = await callTool(ctx, input.name, input.arguments ?? {});
+    if (result.isError === true) {
+      const block = result.content[0];
+      const body = block?.type === "text" ? JSON.parse(block.text) as ToolErrorBody : null;
+      throw new DomainError(body?.code ?? "WC002", 400, body?.message_es ?? "La herramienta ha fallado.", body?.fields);
+    }
+    return result.structuredContent ?? {};
+  },
+});
+
+const gatewayTools: readonly AnyTool[] = [toolsSearch, toolRun];
+
+export const baseTools: readonly AnyTool[] = [...mcpTools, ...gatewayTools];
+
+/** The curated tools plus the gateway: what `?tools=compact` lists. */
+export const coreToolNames: ReadonlySet<string> = new Set([...coreTools, ...gatewayTools].map((tool) => tool.name));
 
 type Resolved =
   | { kind: "read"; tool: ReadTool }
@@ -363,7 +454,7 @@ async function recordCall(ctx: McpContext, name: string, args: unknown, result: 
   });
 }
 
-export function createMcpServer(ctx: McpContext, tools: readonly AnyTool[] = baseTools): Server {
+export function createMcpServer(ctx: McpContext, tools: readonly AnyTool[] = baseTools, listing?: ToolListing): Server {
   const seen = new Set<string>();
   for (const name of catalogueNames(tools)) {
     if (seen.has(name)) throw new Error(`Duplicate MCP tool: ${name}`);
@@ -373,7 +464,7 @@ export function createMcpServer(ctx: McpContext, tools: readonly AnyTool[] = bas
     { name: "winecore", version: "0.1.0" },
     { capabilities: { tools: {} }, instructions: INSTRUCTIONS },
   );
-  const exposed = visibleExposed(ctx, tools);
+  const exposed = visibleExposed(ctx, listed(tools, listing));
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: exposed.map((tool) => ({
       name: tool.name,

@@ -20,7 +20,7 @@ Historias / RNF:
 - [ ] Importes con `Decimal` y redondeo HALF_UP; fechas de negocio en Europe/Madrid.
 - [ ] Cobertura ≥ 90 % en `billing`, `regulatory`, `inventory` y `cellar` (≥ 80 % en el resto del núcleo).
 - [ ] Si cambia un *golden file*: etiqueta `golden-update` y revisión de Opus.
-- [ ] Ningún envío a terceros sin aprobación (AEAT, Junta, EDI, certificadora, correo); ninguna herramienta MCP de aprobación.
+- [ ] Ningún envío a terceros sin aprobación (AEAT, Junta, EDI, certificadora, correo); toda ruta nueva tiene herramienta MCP (escrituras en dos pasos) o exclusión con motivo en `api/src/mcp/parity.ts`.
 - [ ] Si la tarea tiene escalado "sí": revisión de Opus solicitada.
 - [ ] Si algo de la especificación es ambiguo: lo indico como `BLOQUEADO: <pregunta>` y no improviso.
 

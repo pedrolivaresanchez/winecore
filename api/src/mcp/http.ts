@@ -6,15 +6,15 @@ import type { Writer } from "../core/db/writer";
 import { domainError } from "../core/errors";
 import { auditDeniedCall, contextForMachine, contextForUser } from "./context";
 import type { RateLimiter } from "./rate";
-import type { McpContext } from "./registry";
-import { createMcpServer } from "./server";
+import type { McpContext, RestDispatch } from "./registry";
+import { createMcpServer, type ToolListing } from "./server";
 
 /**
  * Stateless Streamable HTTP. One server and one transport per request, so no
  * session is kept between calls. JSON responses (the SDK also speaks SSE).
  */
-export async function handleMcpRequest(request: Request, ctx: McpContext): Promise<Response> {
-  const server = createMcpServer(ctx);
+export async function handleMcpRequest(request: Request, ctx: McpContext, listing?: ToolListing): Promise<Response> {
+  const server = createMcpServer(ctx, undefined, listing);
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
@@ -32,6 +32,20 @@ export interface McpHttpDeps {
   writer: Writer;
   now: () => Date;
   limiter: RateLimiter;
+  rest?: RestDispatch;
+}
+
+/**
+ * `?tools=compact` lists the core tools plus `system_tools_search` and `system_tool_run`;
+ * `?toolsets=sales,billing` lists only those modules. Every tool stays callable by name.
+ */
+export function listingOf(url: string): ToolListing {
+  const params = new URL(url).searchParams;
+  const modules = (params.get("toolsets") ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => /^[a-z_]{1,40}$/.test(item));
+  return { compact: params.get("tools") === "compact", modules: modules.length > 0 ? modules : undefined };
 }
 
 function toolCallOf(raw: string): { name: string; args: unknown } | null {
@@ -63,6 +77,7 @@ export async function handleAuthenticatedMcp(deps: McpHttpDeps, request: Request
     now: deps.now,
     webBaseUrl: deps.config.appPublicUrl,
     requestId: requestIdFor(request),
+    rest: deps.rest,
   };
   const ctx = machine
     ? await contextForMachine(deps.writer, machine.id, input)
@@ -72,5 +87,5 @@ export async function handleAuthenticatedMcp(deps: McpHttpDeps, request: Request
     if (call) await auditDeniedCall(deps.writer, ctx, call.name, call.args, "WC_RATE_LIMITED");
     throw domainError("WC_RATE_LIMITED");
   }
-  return handleMcpRequest(replay, ctx);
+  return handleMcpRequest(replay, ctx, listingOf(request.url));
 }

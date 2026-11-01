@@ -149,8 +149,9 @@ export const catalogFormatsList = defineReadTool({
   module: "catalog",
   scope: "catalog.read",
   title: "Formatos",
-  description: "Formatos de envase del catálogo.",
+  description: "Formatos de envase del catálogo, con volumen, unidades por caja, cajas por palé y pesos, como la lista de Formatos de la app.",
   input: z.object({ active: z.boolean().optional(), ...page }),
+  routes: ["GET /v1/formats"],
   handler: async (ctx, input) => {
     const writer = requireWriter(ctx);
     const params = new URLSearchParams();
@@ -166,9 +167,13 @@ export const catalogFormatsList = defineReadTool({
         container: item.container,
         nominal_volume_ml: item.nominal_volume_ml,
         units_per_case: item.units_per_case,
+        cases_per_pallet: item.cases_per_pallet,
+        unit_gross_weight_g: item.unit_gross_weight_g,
+        unit_net_weight_g: item.unit_net_weight_g,
         active: item.is_active,
       })),
       next_cursor: listed.next_cursor,
+      total: listed.total,
       warnings: [] as string[],
     };
   },
@@ -179,8 +184,9 @@ export const catalogPriceListsList = defineReadTool({
   module: "catalog",
   scope: "catalog.read",
   title: "Tarifas",
-  description: "Tarifas de precios. Solo lectura.",
+  description: "Tarifas de precios con su versión vigente y desde cuándo vale, como la lista de Tarifas de la app.",
   input: z.object({ active: z.boolean().optional(), ...page }),
+  routes: ["GET /v1/price-lists"],
   handler: async (ctx, input) => {
     const writer = requireWriter(ctx);
     const params = new URLSearchParams();
@@ -196,8 +202,11 @@ export const catalogPriceListsList = defineReadTool({
         currency: item.currency,
         tax_included: item.tax_included,
         active: item.is_active,
+        active_version: item.active_version ?? null,
+        active_valid_from: item.active_valid_from ?? null,
       })),
       next_cursor: listed.next_cursor,
+      total: listed.total,
       warnings: [] as string[],
     };
   },

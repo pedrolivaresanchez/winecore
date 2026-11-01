@@ -61,6 +61,7 @@ export const tastingVoteCast = defineWriteTool({
   title: "Voto de cata",
   description: "Prepara el voto de una muestra. El voto se guarda al confirmar.",
   input: castVoteInput,
+  routes: ["POST /v1/tasting-sessions/:id/votes"],
   prepare: async (ctx, input) => {
     person(ctx);
     return {

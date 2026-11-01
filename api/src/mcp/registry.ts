@@ -1,5 +1,6 @@
 import type { ZodType } from "zod";
 
+import type { UserCtx } from "../core/auth/permissions";
 import type { Writer } from "../core/db/writer";
 import type { ConfirmationStore } from "./confirm";
 
@@ -35,6 +36,14 @@ export interface McpDeps {
   writer?: Writer;
   /** When set, every tool call is written to the audit chain. Payloads stay free of secrets and PII. */
   audit?: (event: McpAuditEvent) => Promise<void>;
+  /** The app's own router. REST-backed tools replay the route the web app calls, in process. */
+  rest?: RestDispatch;
+}
+
+export interface RestDispatch {
+  handle: (request: Request) => Promise<Response>;
+  /** `API_BASE_PATH`, empty when the routes are mounted at the root. */
+  basePath: string;
 }
 
 /** One stateless MCP request. The parent injects the authenticated client and stores. */
@@ -53,6 +62,8 @@ export interface McpContext {
   requestId?: string;
   /** `user` when a person calls with their own session. */
   principal?: "user" | "agent";
+  /** The represented person as the REST guards see them. REST-backed tools need it. */
+  session?: UserCtx;
 }
 
 export interface ReadTool {
@@ -65,6 +76,10 @@ export interface ReadTool {
   readonly input: ZodType;
   /** Other accepted scope spellings, for example `write:cellar.operation_draft`. */
   readonly extraScopes?: readonly string[];
+  /** REST routes of the web app this tool is the equivalent of, as `METHOD /v1/path`. */
+  readonly routes?: readonly string[];
+  /** Why the non-GET routes it covers save nothing (a calculator, a check, a preview). */
+  readonly computeOnly?: string;
   readonly handler: (ctx: McpContext, input: unknown) => Promise<unknown> | unknown;
 }
 
@@ -83,6 +98,8 @@ export interface WriteTool {
   readonly description: string;
   readonly input: ZodType;
   readonly extraScopes?: readonly string[];
+  /** REST routes of the web app this tool is the equivalent of, as `METHOD /v1/path`. */
+  readonly routes?: readonly string[];
   readonly prepare: (ctx: McpContext, input: unknown) => Promise<PreparedWrite> | PreparedWrite;
   readonly commit: (ctx: McpContext, payload: unknown) => Promise<unknown> | unknown;
 }
@@ -97,6 +114,8 @@ export interface DirectWriteTool {
   readonly description: string;
   readonly input: ZodType;
   readonly extraScopes?: readonly string[];
+  /** REST routes of the web app this tool is the equivalent of, as `METHOD /v1/path`. */
+  readonly routes?: readonly string[];
   readonly handler: (ctx: McpContext, input: unknown) => Promise<unknown> | unknown;
 }
 
@@ -110,6 +129,8 @@ export interface ReadToolDefinition<T> {
   description: string;
   input: ZodType<T>;
   extraScopes?: readonly string[];
+  routes?: readonly string[];
+  computeOnly?: string;
   handler: (ctx: McpContext, input: T) => Promise<unknown> | unknown;
 }
 
@@ -121,6 +142,7 @@ export interface WriteToolDefinition<T, P> {
   description: string;
   input: ZodType<T>;
   extraScopes?: readonly string[];
+  routes?: readonly string[];
   prepare: (
     ctx: McpContext,
     input: T,
@@ -129,16 +151,22 @@ export interface WriteToolDefinition<T, P> {
 }
 
 const TOOL_NAME = /^[a-z][a-z0-9]*(_[a-z0-9]+)*$/;
-const FORBIDDEN_TOOL = /approve|issue|void|send|delete|secret/;
+/** Credentials, modules and roles are changed in the app with the owner's passkey, never by an agent. */
+const FORBIDDEN_TOOL = /secret|module|role/;
+/** Decisions, issuing, voiding, sending and deleting only exist as prepare/commit: the person confirms first. */
+export const DECISION_VERB = /approve|issue|void|send|delete|decide|reject|cancel|revoke/;
 
-function assertToolName(name: string): void {
+function assertToolName(name: string, kind: AnyTool["kind"]): void {
   if (!TOOL_NAME.test(name) || FORBIDDEN_TOOL.test(name)) {
     throw new Error(`Invalid MCP tool name: ${name}`);
+  }
+  if (kind !== "write" && DECISION_VERB.test(name)) {
+    throw new Error(`MCP tool ${name} decides something and must be prepare/commit`);
   }
 }
 
 export function defineReadTool<T>(definition: ReadToolDefinition<T>): ReadTool {
-  assertToolName(definition.name);
+  assertToolName(definition.name, "read");
   return {
     kind: "read",
     name: definition.name,
@@ -148,6 +176,8 @@ export function defineReadTool<T>(definition: ReadToolDefinition<T>): ReadTool {
     description: definition.description,
     input: definition.input,
     extraScopes: definition.extraScopes,
+    routes: definition.routes,
+    computeOnly: definition.computeOnly,
     handler: (ctx, input) => definition.handler(ctx, input as T),
   };
 }
@@ -160,11 +190,12 @@ export interface DirectWriteDefinition<T> {
   description: string;
   input: ZodType<T>;
   extraScopes?: readonly string[];
+  routes?: readonly string[];
   handler: (ctx: McpContext, input: T) => Promise<unknown> | unknown;
 }
 
 export function defineDirectWrite<T>(definition: DirectWriteDefinition<T>): DirectWriteTool {
-  assertToolName(definition.name);
+  assertToolName(definition.name, "direct");
   return {
     kind: "direct",
     name: definition.name,
@@ -174,12 +205,13 @@ export function defineDirectWrite<T>(definition: DirectWriteDefinition<T>): Dire
     description: definition.description,
     input: definition.input,
     extraScopes: definition.extraScopes,
+    routes: definition.routes,
     handler: (ctx, input) => definition.handler(ctx, input as T),
   };
 }
 
 export function defineWriteTool<T, P>(definition: WriteToolDefinition<T, P>): WriteTool {
-  assertToolName(definition.name);
+  assertToolName(definition.name, "write");
   return {
     kind: "write",
     name: definition.name,
@@ -189,6 +221,7 @@ export function defineWriteTool<T, P>(definition: WriteToolDefinition<T, P>): Wr
     description: definition.description,
     input: definition.input,
     extraScopes: definition.extraScopes,
+    routes: definition.routes,
     prepare: (ctx, input) => definition.prepare(ctx, input as T),
     commit: (ctx, payload) => definition.commit(ctx, payload as P),
   };
@@ -255,6 +288,10 @@ export function accessGranted(grantedScopes: readonly string[], tool: AnyTool): 
       const have = normalizeScope(scope);
       return have === "read:*" || have.startsWith("read:") || scope.endsWith(".read");
     });
+  }
+  // `write:*` on a tool: any permission that changes something (the route decides the rest).
+  if (normalizeScope(tool.scope) === "write:*") {
+    return grantedScopes.some((scope) => !normalizeScope(scope).startsWith("read:"));
   }
   return false;
 }

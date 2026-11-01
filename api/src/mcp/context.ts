@@ -4,7 +4,7 @@ import type { Actor, Writer } from "../core/db/writer";
 import { domainError } from "../core/errors";
 import { sha256Hex } from "../core/hash";
 import { canonicalJson } from "./confirm";
-import type { McpAuditEvent, McpContext } from "./registry";
+import type { McpAuditEvent, McpContext, RestDispatch } from "./registry";
 import { asStringList } from "./runtime";
 import { sqlConfirmationStore } from "./sql-confirm";
 
@@ -18,10 +18,11 @@ export async function loadActiveModules(writer: Writer): Promise<string[]> {
 async function loadUser(writer: Writer, userId: string): Promise<UserCtx | null> {
   const users = await writer.read<{
     id: string;
+    email: string;
     display_name: string;
     status: string;
   }>(sql`
-    SELECT id::VARCHAR AS id, display_name, status
+    SELECT id::VARCHAR AS id, email, display_name, status
     FROM core.app_user
     WHERE id = CAST(${userId} AS UUID)
   `);
@@ -35,7 +36,7 @@ async function loadUser(writer: Writer, userId: string): Promise<UserCtx | null>
   `);
   return {
     id: user.id,
-    email: "",
+    email: String(user.email ?? ""),
     displayName: String(user.display_name),
     roles: roles.flatMap((row) => {
       const role = String(row.role_code);
@@ -85,30 +86,35 @@ export function auditToolCall(writer: Writer, ctx: McpContext): (event: McpAudit
 export async function contextForMachine(
   writer: Writer,
   clientId: string,
-  input: { now: () => Date; webBaseUrl: string; requestId: string },
+  input: { now: () => Date; webBaseUrl: string; requestId: string; rest?: RestDispatch },
 ): Promise<McpContext> {
   const rows = await writer.read<{
     id: string;
     code: string;
     scopes: unknown;
+    granted_scopes: unknown;
     on_behalf_of_user_id: string | null;
   }>(sql`
-    SELECT id::VARCHAR AS id, code, scopes, on_behalf_of_user_id::VARCHAR AS on_behalf_of_user_id
-    FROM core.api_client
-    WHERE id = CAST(${clientId} AS UUID) AND revoked_at IS NULL
+    SELECT c.id::VARCHAR AS id, c.code, c.scopes, g.scopes AS granted_scopes,
+           c.on_behalf_of_user_id::VARCHAR AS on_behalf_of_user_id
+    FROM core.api_client c
+    LEFT JOIN core.api_client_grant g ON g.client_id = c.id
+    WHERE c.id = CAST(${clientId} AS UUID) AND c.revoked_at IS NULL
   `);
   const row = rows[0];
   if (!row) throw domainError("WC_UNAUTHENTICATED");
+  const scopes = [...new Set([...asStringList(row.scopes), ...asStringList(row.granted_scopes)])];
   const behalf = row.on_behalf_of_user_id ? await loadUser(writer, row.on_behalf_of_user_id) : null;
   if (row.on_behalf_of_user_id && !behalf) throw domainError("WC_UNAUTHENTICATED");
   const modules = await loadActiveModules(writer);
   const ctx: McpContext = {
-    client: { id: row.id, scopes: asStringList(row.scopes) },
+    client: { id: row.id, scopes },
     activeModules: modules,
     actor: behalf
       ? { id: behalf.id, name: behalf.displayName, roles: behalf.roles.map((role) => role.role) }
       : null,
     behalfGrants: behalf ? permissionsFor(behalf) : undefined,
+    session: behalf ?? undefined,
     now: input.now,
     requestId: input.requestId,
     principal: "agent",
@@ -117,6 +123,7 @@ export async function contextForMachine(
       webBaseUrl: input.webBaseUrl,
       writer,
       approvals: sqlApprovals(writer),
+      rest: input.rest,
     },
   };
   ctx.deps.audit = auditToolCall(writer, ctx);
@@ -126,13 +133,14 @@ export async function contextForMachine(
 export async function contextForUser(
   writer: Writer,
   user: UserCtx,
-  input: { now: () => Date; webBaseUrl: string; requestId: string },
+  input: { now: () => Date; webBaseUrl: string; requestId: string; rest?: RestDispatch },
 ): Promise<McpContext> {
   const modules = await loadActiveModules(writer);
   const ctx: McpContext = {
     client: { id: user.id, scopes: permissionsFor(user) },
     activeModules: modules,
     actor: { id: user.id, name: user.displayName, roles: user.roles.map((role) => role.role) },
+    session: user,
     now: input.now,
     requestId: input.requestId,
     principal: "user",
@@ -141,6 +149,7 @@ export async function contextForUser(
       webBaseUrl: input.webBaseUrl,
       writer,
       approvals: sqlApprovals(writer),
+      rest: input.rest,
     },
   };
   ctx.deps.audit = auditToolCall(writer, ctx);

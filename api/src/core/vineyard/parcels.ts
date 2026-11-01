@@ -174,6 +174,13 @@ export async function updateParcel(
   const current = await requireParcel(writer, code);
   const state = parseParcel({ ...parcelToBody(current), ...body, code: current.code }, current);
   if (body.sigpac === undefined) state.sigpac = parseRequiredSigpac(current.sigpac);
+  // DuckDB rewrites an UPDATE touching the SIGPAC unique columns as delete+insert, which the
+  // foreign keys from parcel_variety (every parcel has one) reject.
+  if (formatSigpac(state.sigpac) !== current.sigpac) {
+    throw domainError('WC_VALIDATION', {
+      sigpac: 'La referencia SIGPAC no se puede cambiar en una parcela ya creada: da de alta la parcela nueva y desactiva esta',
+    });
+  }
   await writer.withWrite(actor, async (tx) => {
     await assertUnique(tx, state, current.id);
     await assertSupplier(tx, state.supplier_contact_id);
@@ -183,13 +190,6 @@ export async function updateParcel(
         name = ${state.name},
         ownership = ${state.ownership},
         supplier_contact_id = CAST(${state.supplier_contact_id} AS UUID),
-        sigpac_province = ${state.sigpac.province},
-        sigpac_municipality = ${state.sigpac.municipality},
-        sigpac_aggregate = ${state.sigpac.aggregate},
-        sigpac_zone = ${state.sigpac.zone},
-        sigpac_polygon = ${state.sigpac.polygon},
-        sigpac_parcel = ${state.sigpac.parcel},
-        sigpac_enclosure = ${state.sigpac.enclosure},
         area_ha = CAST(${state.area_ha} AS DECIMAL(8,4)),
         vineyard_register_ref = ${state.vineyard_register_ref},
         is_organic = ${state.organic_status === 'organic'},

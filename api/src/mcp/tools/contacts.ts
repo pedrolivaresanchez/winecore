@@ -229,8 +229,9 @@ export const contactsCreate = defineWriteTool({
   module: "contacts",
   scope: "contacts.write",
   title: "Crear contacto",
-  description: "Prepara un contacto nuevo, avisa de duplicados y lo crea solo tras confirmar.",
+  description: "Prepara un contacto nuevo, avisa de duplicados y lo crea solo tras confirmar. El resto de campos de la ficha (idioma, transportista, notas, CAE, EORI…) se completan después con contacts_update.",
   input: createInput,
+  routes: ["POST /v1/contacts"],
   prepare: async (ctx, input) => {
     const writer = requireWriter(ctx);
     const country = input.country.toUpperCase();

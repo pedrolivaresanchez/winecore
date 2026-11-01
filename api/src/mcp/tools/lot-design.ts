@@ -35,6 +35,7 @@ export const lotDesignGet = defineReadTool({
   title: "Diseño de lote",
   description: "Lee el diseño de destino de un lote.",
   input: designInput,
+  routes: ["GET /v1/lots/:code/design"],
   handler: (ctx, input) => getLotDesign(requireWriter(ctx), input),
 });
 
@@ -45,6 +46,7 @@ export const recipesList = defineReadTool({
   title: "Recetas",
   description: "Lista las recetas de elaboración.",
   input: recipesInput,
+  routes: ["GET /v1/recipes"],
   handler: (ctx, input) => listRecipes(requireWriter(ctx), input),
 });
 
@@ -56,6 +58,7 @@ export const lotPlanFromRecipe = defineWriteTool({
   title: "Plan desde receta",
   description: "Prepara un plan de fechas a partir de una receta. No confirma operaciones de bodega.",
   input: planInput,
+  routes: ["POST /v1/lots/:code/plan"],
   prepare: async (ctx, input) => {
     const writer = requireWriter(ctx);
     const lot = await requireLot(writer, input.code, input.producer_entity_id ?? null);
