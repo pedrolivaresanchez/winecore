@@ -352,12 +352,16 @@ export type LotListItem = {
 
 export type Page<T> = { items: T[]; next_cursor: string | null; total: number };
 
-export function listLots(query: { q?: string; kind?: string; vintage?: string; status?: string; cursor?: string; limit?: number } = {}, signal?: AbortSignal) {
+export function listLots(
+  query: { q?: string; kind?: string; vintage?: string; status?: string; organic?: boolean; cursor?: string; limit?: number } = {},
+  signal?: AbortSignal,
+) {
   const params = new URLSearchParams();
   if (query.q) params.set("q", query.q);
   if (query.kind) params.set("kind", query.kind);
   if (query.vintage) params.set("vintage", query.vintage);
   if (query.status) params.set("status", query.status);
+  if (query.organic) params.set("organic", "true");
   if (query.cursor) params.set("cursor", query.cursor);
   params.set("limit", String(query.limit ?? 50));
   const suffix = params.toString();

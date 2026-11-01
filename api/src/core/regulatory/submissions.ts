@@ -111,15 +111,43 @@ export interface SubmissionListQuery {
   flow?: string;
   /** null = todas las entidades. Lista vacía = ninguna. */
   entityIds?: readonly string[] | null;
+  /** Un estado de `SUBMISSION_LIST_STATUSES`: `approved` incluye los que se están enviando. */
+  status?: SubmissionListStatus;
   limit: number;
   cursor?: { at: string; id: string } | null;
+}
+
+export const SUBMISSION_LIST_STATUSES = [
+  "draft",
+  "validated",
+  "pending_approval",
+  "approved",
+  "submitted",
+  "accepted",
+  "accepted_with_errors",
+  "rejected",
+  "cancelled",
+  "corrected",
+] as const;
+
+export type SubmissionListStatus = (typeof SUBMISSION_LIST_STATUSES)[number];
+
+function statusWhere(status: SubmissionListStatus): string {
+  if (status === "approved") return "s.status IN ('approved', 'submitting')";
+  if (status === "corrected") {
+    return `(s.status = 'rectified' OR EXISTS (
+      SELECT 1 FROM regulatory.submission f
+      WHERE f.rectifies_submission_id = s.id AND f.status = 'accepted'
+    ))`;
+  }
+  return sql`s.status = ${status}`;
 }
 
 export async function listSubmissionViews(
   writer: Writer,
   filter: SubmissionListQuery,
-): Promise<{ items: SubmissionView[]; next_cursor: { at: string; id: string } | null }> {
-  if (filter.entityIds && filter.entityIds.length === 0) return { items: [], next_cursor: null };
+): Promise<{ items: SubmissionView[]; next_cursor: { at: string; id: string } | null; total: number }> {
+  if (filter.entityIds && filter.entityIds.length === 0) return { items: [], next_cursor: null, total: 0 };
   const where = ["TRUE"];
   if (filter.legalEntityId) where.push(sql`s.legal_entity_id = CAST(${filter.legalEntityId} AS UUID)`);
   if (filter.entityIds) {
@@ -127,6 +155,10 @@ export async function listSubmissionViews(
     where.push(`s.legal_entity_id IN (${list})`);
   }
   if (filter.flow) where.push(sql`s.flow = ${filter.flow}`);
+  if (filter.status) where.push(statusWhere(filter.status));
+  const counted = await writer.read<{ total: string }>(
+    `SELECT count(*)::VARCHAR AS total FROM regulatory.submission s WHERE ${where.join(" AND ")}`,
+  );
   if (filter.cursor) {
     where.push(sql`(
       s.created_at < CAST(${filter.cursor.at} AS TIMESTAMPTZ)
@@ -149,6 +181,7 @@ export async function listSubmissionViews(
     next_cursor: hasMore && last
       ? { at: String(last.created_at), id: String(last.id).toLowerCase() }
       : null,
+    total: Number(counted[0]?.total ?? 0),
   };
 }
 

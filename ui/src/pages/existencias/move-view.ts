@@ -7,6 +7,7 @@ export type MoveView = {
   when: string;
   whenDetail: string | null;
   moveType: string;
+  moveTypeId: string;
   place: string;
   lot: string;
   product: string;
@@ -28,6 +29,7 @@ export function physicalView(row: PhysicalMove): MoveView {
     when: formatDateTime(row.occurred_at),
     whenDetail: null,
     moveType: physicalMoveLabel(row.move_type),
+    moveTypeId: row.move_type,
     place: row.vessel_code ? `${row.vessel_code} · ${row.location_code}` : row.location_name,
     lot: row.lot_code ?? "—",
     product: productLabel(row),
@@ -52,6 +54,7 @@ export function fiscalView(row: FiscalMove): MoveView {
     when: fiscal,
     whenDetail: physical && physical !== fiscal ? `Salida física ${physical}` : null,
     moveType: fiscalMoveLabel(row.move_type),
+    moveTypeId: row.move_type,
     place: `${classLabel(row.product_class)} · ${row.excise_product_key ?? row.tax_warehouse_name}`,
     lot: row.lot_code ?? "—",
     product: productLabel(row),

@@ -1,5 +1,7 @@
 import { entityName } from "@/lib/labels";
+import { statusTone, type StatusTone } from "@/lib/status-tones";
 import type { EntityCode } from "@/lib/types";
+import { STATUS_TAG_TONE, type TagTone } from "@/ui";
 
 export const PRODUCT_STATES = [
   { id: "wine", label: "Granel" },
@@ -60,12 +62,12 @@ export const COUNT_KINDS = [
 ] as const;
 
 export const COUNT_STATUSES = [
-  { id: "draft", label: "Borrador", tone: "neutral" },
-  { id: "counting", label: "Contando", tone: "info" },
-  { id: "review", label: "En revisión", tone: "warning" },
-  { id: "approved", label: "Aprobado", tone: "success" },
-  { id: "posted", label: "Contabilizado", tone: "success" },
-  { id: "cancelled", label: "Anulado", tone: "danger" },
+  { id: "draft", label: "Borrador" },
+  { id: "counting", label: "Contando" },
+  { id: "review", label: "En revisión" },
+  { id: "approved", label: "Aprobado" },
+  { id: "posted", label: "Contabilizado" },
+  { id: "cancelled", label: "Anulado" },
 ] as const;
 
 export const COUNT_METHODS = [
@@ -106,8 +108,32 @@ export function countStatusLabel(id: string): string {
   return labelOf(COUNT_STATUSES, id);
 }
 
-export function countStatusTone(id: string): "neutral" | "info" | "success" | "warning" | "danger" {
-  return COUNT_STATUSES.find((item) => item.id === id)?.tone ?? "neutral";
+export function countStatusTone(id: string): TagTone {
+  return STATUS_TAG_TONE[statusTone(id)];
+}
+
+const MOVE_TONE: Record<string, StatusTone> = {
+  opening: "neutral",
+  reversal: "slate",
+  loss: "danger",
+  destruction: "danger",
+  count_adjust_in: "warning",
+  count_adjust_out: "warning",
+  regularization_in: "warning",
+  regularization_out: "warning",
+  ownership_in: "violet",
+  ownership_out: "violet",
+  ledger_change_in: "violet",
+  ledger_change_out: "violet",
+};
+
+/** Entries green, exits blue, losses red, adjustments amber, a change of owner or ledger violet. */
+export function moveTypeTone(id: string): StatusTone {
+  const fixed = MOVE_TONE[id];
+  if (fixed) return fixed;
+  if (/_in$|^production$|_receipt$|_in_/.test(id)) return "mint";
+  if (/_out$|^exit_|_out_/.test(id)) return "sky";
+  return "neutral";
 }
 
 export function methodLabel(id: string | null | undefined): string {

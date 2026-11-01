@@ -300,10 +300,12 @@ export async function listLots(writer: Writer, request: Request): Promise<ListBo
   const status = optionalEnum(url.searchParams.get('status'), 'status', LOT_STATUSES);
   const vintage = optionalVintage(url.searchParams.get('vintage'));
   const q = optionalQuery(url.searchParams.get('q'));
+  const organic = optionalEnum(url.searchParams.get('organic'), 'organic', ['true', 'false'] as const);
   const filters = ['TRUE'];
   if (kind) filters.push(sql`l.kind = ${kind}`);
   if (status) filters.push(sql`l.status = ${status}`);
   if (vintage !== null) filters.push(sql`l.vintage = ${vintage}`);
+  if (organic) filters.push(organic === 'true' ? 'l.is_organic' : 'NOT l.is_organic');
   if (q) filters.push(sql`l.code ILIKE ${`%${q.replaceAll('%', '\\%').replaceAll('_', '\\_')}%`} ESCAPE '\\'`);
   if (cursor) filters.push(sql`l.code > ${cursor}`);
   const totalWhere = filters.filter((part) => !part.includes('l.code >')).join(' AND ');

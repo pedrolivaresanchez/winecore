@@ -1,7 +1,9 @@
 import { copy, fill } from "@/i18n";
 import { ApiError } from "@/lib/api";
 import { entityName, roleLabel } from "@/lib/labels";
+import { statusTone } from "@/lib/status-tones";
 import type { EntityCode, Me } from "@/lib/types";
+import { STATUS_TAG_TONE, type TagTone } from "@/ui";
 
 export type ApprovalStatus =
   | "pending"
@@ -85,8 +87,6 @@ export type PolicyInput = {
   allow_self_approval: boolean;
 };
 
-export type StatusTone = "neutral" | "success" | "warning" | "danger" | "info";
-
 export const HUMAN_ROLES = ["owner", "approver", "admin", "cellar", "field", "advisor"] as const;
 
 export const APPROVAL_KINDS = [
@@ -136,25 +136,9 @@ export function shortHash(hex: string): string {
   return `${clean.slice(0, 4).toUpperCase()}…${clean.slice(-4).toUpperCase()}`;
 }
 
-export function statusMeta(status: string): { label: string; tone: StatusTone } {
-  switch (status) {
-    case "pending":
-      return { label: statuses.pending ?? status, tone: "warning" };
-    case "approved":
-      return { label: statuses.approved ?? status, tone: "success" };
-    case "rejected":
-      return { label: statuses.rejected ?? status, tone: "danger" };
-    case "expired":
-      return { label: statuses.expired ?? status, tone: "neutral" };
-    case "cancelled":
-      return { label: statuses.cancelled ?? status, tone: "neutral" };
-    case "consumed":
-      return { label: statuses.consumed ?? status, tone: "success" };
-    case "superseded":
-      return { label: statuses.superseded ?? status, tone: "neutral" };
-    default:
-      return { label: status, tone: "neutral" };
-  }
+/** Tone in the tag palette, so a `Badge` and a `StatusPill` draw the same colour. */
+export function statusMeta(status: string): { label: string; tone: TagTone } {
+  return { label: statuses[status] ?? status, tone: STATUS_TAG_TONE[statusTone(status)] };
 }
 
 export function expiryLabel(expiresAt: string, status: string, now: number): { text: string; urgent: boolean } {
@@ -215,14 +199,6 @@ export function noteProblem(note: string): string | null {
 }
 
 /** The session user has no id on `/v1/me`. The display name is the match the API gives back. */
-export function requestedByMe(item: ApprovalSummary, me: Me): boolean {
-  const name = item.requested_by.display_name.trim().toLocaleLowerCase("es");
-  const mine = me.display_name.trim().toLocaleLowerCase("es");
-  if (name !== "" && name === mine) return true;
-  const local = me.email.split("@")[0]?.toLocaleLowerCase("es") ?? "";
-  return local !== "" && name === local;
-}
-
 export function isOwner(me: Me): boolean {
   return me.roles.some((role) => role.role === "owner");
 }

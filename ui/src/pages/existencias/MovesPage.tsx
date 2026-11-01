@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useEntity } from '@/app/entity-context'
 import { ErrorState } from '@/components/ErrorState'
 import { NoPermission } from '@/components/NoPermission'
-import { copy } from '@/i18n'
-import { cn } from '@/lib/cn'
+import { copy, fill } from '@/i18n'
+import { downloadCsv, type CsvValue } from '@/lib/csv'
 import { iconStroke } from '@/lib/motion'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
@@ -17,16 +17,30 @@ import { useCatalog } from '@/pages/existencias/catalog'
 import { periodClosedText } from '@/pages/existencias/explain'
 import { filterFiscalMoves, filterPhysicalMoves } from '@/pages/existencias/filters'
 import { GRID_LABELS } from '@/pages/existencias/grid'
-import { FISCAL_MOVE_TYPES, PHYSICAL_MOVE_TYPES } from '@/pages/existencias/labels'
+import { FISCAL_MOVE_TYPES, PHYSICAL_MOVE_TYPES, moveTypeTone } from '@/pages/existencias/labels'
 import { MovePreview } from '@/pages/existencias/MovePreview'
 import { fiscalView, physicalView, type MoveView } from '@/pages/existencias/move-view'
 import { assignParams } from '@/pages/existencias/query'
 import { useHiddenColumns } from '@/pages/existencias/use-hidden'
-import { useList } from '@/pages/existencias/use-list'
+import { asApiError, usePagedList } from '@/pages/existencias/use-list'
 import { formatMl, formatUnits } from '@/pages/existencias/volume'
-import { FRAME_GUTTER, FRAME_STRIP_SCROLL } from '@/ui/frame'
-import { List, Lock, Search } from '@/ui/icons'
-import { Badge, Button, DataGrid, DatePicker, EmptyState, InfoTip, Input, Select, useToast, type GridColumn } from '@/ui'
+import { DownloadSimple, List, Lock } from '@/ui/icons'
+import {
+  Badge,
+  Button,
+  DataGrid,
+  EmptyState,
+  FilterBar,
+  InfoTip,
+  Pagination,
+  StatusPill,
+  useGridFilterLink,
+  useToast,
+  type FilterDef,
+  type FilterValue,
+  type GridColumn,
+  type SelectionAction,
+} from '@/ui'
 
 const COLUMN_IDS = ['when', 'type', 'place', 'lot', 'product', 'volume', 'units', 'document', 'justification', 'silicie', 'user'] as const
 const COLUMN_LABELS: Record<(typeof COLUMN_IDS)[number], string> = {
@@ -42,15 +56,26 @@ const COLUMN_LABELS: Record<(typeof COLUMN_IDS)[number], string> = {
   silicie: 'Asiento SILICIE',
   user: 'Usuario',
 }
-const DATE_LABELS = { clear: copy.stock.dateClear, today: copy.stock.dateToday }
 
-function csvCell(value: string): string {
-  if (/[";\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`
-  return value
+function csvRow(row: MoveView): CsvValue[] {
+  return [
+    row.when,
+    row.moveType,
+    row.place,
+    row.lot,
+    row.product,
+    formatMl(row.volumeMl),
+    row.units ? formatUnits(row.units) : '',
+    row.document,
+    row.justification,
+    row.silicie,
+    row.user,
+  ]
 }
 
 export function MovesPage({ me }: { me: Me }) {
   const toast = useToast()
+  const gridFilters = useGridFilterLink()
   const { filter, entities } = useEntity()
   const { catalog } = useCatalog(entities)
   const ownerId = ownerEntityId(filter, entities)
@@ -62,7 +87,7 @@ export function MovesPage({ me }: { me: Me }) {
   const [q, setQ] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
   const [picked, setPicked] = useState<Set<string>>(new Set())
-  const [widths, setWidths] = useState<Record<string, number>>({ when: 180, type: 180, place: 200, document: 160 })
+  const [widths, setWidths] = useState<Record<string, number>>({ when: 180, type: 200, place: 200, document: 160 })
   const { hidden, toggle } = useHiddenColumns('winecore.columns.stock-moves', COLUMN_IDS, ['user', 'justification'])
 
   const path = movesPath({
@@ -73,12 +98,11 @@ export function MovesPage({ me }: { me: Me }) {
     ownerEntityId: book === 'physical' ? ownerId : undefined,
     legalEntityId: book === 'fiscal' ? ownerId : undefined,
   })
-  const physical = useList<unknown>(book === 'physical' ? path : null)
-  const fiscal = useList<unknown>(book === 'fiscal' ? path : null)
-  const loading = book === 'physical' ? physical.loading : fiscal.loading
-  const error = book === 'physical' ? physical.error : fiscal.error
-  const reload = book === 'physical' ? physical.reload : fiscal.reload
-  const cursor = book === 'physical' ? physical.cursor : fiscal.cursor
+  const physical = usePagedList<unknown>(book === 'physical' ? path : null, 'stock-moves')
+  const fiscal = usePagedList<unknown>(book === 'fiscal' ? path : null, 'stock-moves')
+  const pages = book === 'physical' ? physical : fiscal
+  const loading = pages.loading && pages.items.length === 0
+  const error = asApiError(pages.error)
 
   const views = useMemo<MoveView[]>(() => {
     if (book === 'physical') {
@@ -89,13 +113,38 @@ export function MovesPage({ me }: { me: Me }) {
     return filterFiscalMoves(rows, { legalEntityId: ownerId, from, to, moveType, q }).map(fiscalView)
   }, [book, catalog, fiscal.items, from, moveType, ownerId, physical.items, q, to])
 
+  useEffect(() => {
+    setPicked(new Set())
+  }, [pages.pageKey])
+
   const lockedUntil = views.find((row) => row.locked)?.lockedUntil ?? null
   const filtersOn = Boolean(q || from || to || moveType || ownerId)
   const screen = loading ? 'movimientos-cargando' : views.length === 0 && !filtersOn ? 'movimientos-vacio' : book === 'fiscal' ? 'movimientos-fiscal' : 'movimientos-physical'
+  const types = book === 'fiscal' ? FISCAL_MOVE_TYPES : PHYSICAL_MOVE_TYPES
 
   function assign(next: Record<string, string | null>) {
     setParams(assignParams(params, next))
     setSelected(null)
+  }
+
+  const filters = useMemo<FilterDef[]>(
+    () => [
+      { id: 'date', label: copy.lists.stock.date, kind: 'date' },
+      {
+        id: 'move_type',
+        label: copy.lists.stock.type,
+        kind: 'single',
+        options: types.map((item) => ({ value: item.id, label: item.label, tone: moveTypeTone(item.id) })),
+      },
+    ],
+    [types],
+  )
+
+  function setFilter(id: string, value: FilterValue) {
+    if (id === 'date') {
+      const range = value && typeof value === 'object' && !Array.isArray(value) ? value : null
+      assign({ from: range?.from ?? null, to: range?.to ?? null })
+    } else assign({ [id]: typeof value === 'string' && value ? value : null })
   }
 
   const columns = useMemo<GridColumn<MoveView>[]>(() => {
@@ -113,7 +162,12 @@ export function MovesPage({ me }: { me: Me }) {
           </span>
         ),
       },
-      { id: 'type', header: COLUMN_LABELS.type, cell: (row) => row.moveType },
+      {
+        id: 'type',
+        header: COLUMN_LABELS.type,
+        filterValue: (row) => row.moveType,
+        cell: (row) => <StatusPill tone={moveTypeTone(row.moveTypeId)}>{row.moveType}</StatusPill>,
+      },
       { id: 'place', header: book === 'fiscal' ? 'Mayor' : COLUMN_LABELS.place, cell: (row) => row.place },
       { id: 'lot', header: COLUMN_LABELS.lot, cell: (row) => row.lot },
       { id: 'product', header: COLUMN_LABELS.product, cell: (row) => row.product },
@@ -128,26 +182,26 @@ export function MovesPage({ me }: { me: Me }) {
   }, [book, hidden])
 
   const index = views.findIndex((row) => row.id === selected)
-  const types = book === 'fiscal' ? FISCAL_MOVE_TYPES : PHYSICAL_MOVE_TYPES
+  const chosen = views.filter((row) => picked.has(row.id))
 
   if (!allows(me, 'inventory.read')) return <NoPermission />
 
   function exportCsv() {
-    const header = COLUMN_IDS.map((id) => COLUMN_LABELS[id])
-    const lines = views.map((row) =>
-      [row.when, row.moveType, row.place, row.lot, row.product, formatMl(row.volumeMl), row.units ? formatUnits(row.units) : '', row.document, row.justification, row.silicie, row.user]
-        .map(csvCell)
-        .join(';'),
-    )
-    const blob = new Blob([`\uFEFF${[header.join(';'), ...lines].join('\n')}`], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `movimientos-${book}.csv`
-    link.click()
-    URL.revokeObjectURL(url)
+    downloadCsv(`movimientos-${book}.csv`, COLUMN_IDS.map((id) => COLUMN_LABELS[id]), views.map(csvRow))
     toast(copy.stock.csvDone)
   }
+
+  const actions: SelectionAction[] = [
+    {
+      id: 'export',
+      label: copy.lists.bulk.exportCsv,
+      icon: DownloadSimple,
+      onRun: () => {
+        downloadCsv(`movimientos-${book}-seleccion.csv`, COLUMN_IDS.map((id) => COLUMN_LABELS[id]), chosen.map(csvRow))
+        toast(fill(copy.lists.bulk.exported, { n: String(chosen.length) }))
+      },
+    },
+  ]
 
   return (
     <ListFrame
@@ -160,53 +214,49 @@ export function MovesPage({ me }: { me: Me }) {
           {copy.stock.exportCsv}
         </Button>
       }
-      toolbar={
-        <>
-          <div className={FRAME_STRIP_SCROLL}>
-            <BookControl value={book} onChange={(value) => assign({ book: value === 'physical' ? null : value, move_type: null })} />
-            <Input
-              size="sm"
-              type="search"
-              value={q}
-              placeholder={copy.stock.searchMoves}
-              aria-label={copy.stock.searchMoves}
-              className="w-44 shrink-0 sm:w-56"
-              prefix={<Search className="size-3.5" strokeWidth={iconStroke} />}
-              onChange={(event) => setQ(event.target.value)}
-            />
-            <ColumnMenu ids={COLUMN_IDS} labels={COLUMN_LABELS} hidden={hidden} locked="when" onToggle={toggle} />
-          </div>
-          <Button type="button" variant="secondary" size="sm" className="md:hidden" disabled={views.length === 0} onClick={exportCsv}>
-            CSV
-          </Button>
-        </>
-      }
-      filters={
-        <div className={cn(FRAME_STRIP_SCROLL, '[&>*]:shrink-0')}>
-          <DatePicker size="sm" locale="es" timeZone="Europe/Madrid" labels={DATE_LABELS} value={from || null} placeholder={copy.stock.from} className="w-40 shrink-0" onChange={(next) => assign({ from: next })} />
-          <DatePicker size="sm" locale="es" timeZone="Europe/Madrid" labels={DATE_LABELS} value={to || null} placeholder={copy.stock.to} className="w-40 shrink-0" onChange={(next) => assign({ to: next })} />
-          <Select size="sm" aria-label={copy.stock.type} value={moveType} onChange={(event) => assign({ move_type: event.target.value || null })}>
-            <option value="">{copy.stock.type}</option>
-            {types.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label}
-              </option>
-            ))}
-          </Select>
-          {views.some((row) => row.locked) ? (
-            <span className="inline-flex items-center gap-1">
-              <Badge tone="warning" size="sm" icon={<Lock strokeWidth={iconStroke} />}>
-                {copy.stock.closed}
-              </Badge>
-              <InfoTip label={copy.stock.closed}>{periodClosedText(lockedUntil)}</InfoTip>
-            </span>
-          ) : null}
-        </div>
+      bar={
+        <FilterBar
+          controls={<BookControl value={book} onChange={(value) => assign({ book: value === 'physical' ? null : value, move_type: null })} />}
+          search={{ value: q, onChange: setQ, placeholder: copy.stock.searchMoves }}
+          filters={filters}
+          values={{ date: from || to ? { from: from || to, to: to || from } : null, move_type: moveType }}
+          onChange={setFilter}
+          onClear={() => {
+            assign({ from: null, to: null, move_type: null })
+            setQ('')
+          }}
+          grid={gridFilters}
+          selection={{
+            count: picked.size,
+            pageCount: views.length,
+            onSelectAll: () => setPicked(new Set(views.map((row) => row.id))),
+            onClear: () => setPicked(new Set()),
+            actions,
+          }}
+          trailing={
+            <>
+              {views.some((row) => row.locked) ? (
+                <span className="inline-flex items-center gap-1 max-md:hidden">
+                  <Badge tone="warning" size="sm" icon={<Lock strokeWidth={iconStroke} />}>
+                    {copy.stock.closed}
+                  </Badge>
+                  <InfoTip label={copy.stock.closed}>{periodClosedText(lockedUntil)}</InfoTip>
+                </span>
+              ) : null}
+              <span className="max-md:hidden">
+                <ColumnMenu ids={COLUMN_IDS} labels={COLUMN_LABELS} hidden={hidden} locked="when" onToggle={toggle} />
+              </span>
+              <Button type="button" variant="secondary" size="sm" className="md:hidden" disabled={views.length === 0} onClick={exportCsv}>
+                CSV
+              </Button>
+            </>
+          }
+        />
       }
     >
       {error && views.length === 0 ? (
         <div className="p-4">
-          <ErrorState title={`${copy.error.load} (${error.code})`} detail={error.message} onRetry={reload} />
+          <ErrorState title={`${copy.error.load} (${error.code})`} detail={error.message} onRetry={pages.reload} />
         </div>
       ) : (
         <DataGrid
@@ -220,8 +270,9 @@ export function MovesPage({ me }: { me: Me }) {
           onSelectedChange={setPicked}
           onOpenRow={(row) => setSelected(row.id)}
           openRowKey={selected}
-          loading={loading}
-          total={book === 'physical' ? physical.total : fiscal.total}
+          loading={pages.loading}
+          total={pages.total ?? undefined}
+          filterLink={gridFilters}
           empty={
             <EmptyState
               size="sm"
@@ -232,13 +283,7 @@ export function MovesPage({ me }: { me: Me }) {
           }
         />
       )}
-      {cursor ? (
-        <div className={cn('flex h-10 shrink-0 items-center border-t border-border-subtle', FRAME_GUTTER)}>
-          <Button type="button" variant="ghost" size="sm" loading={book === 'physical' ? physical.loadingMore : fiscal.loadingMore} onClick={() => void (book === 'physical' ? physical.loadMore() : fiscal.loadMore())}>
-            {copy.stock.loadMore}
-          </Button>
-        </div>
-      ) : null}
+      <Pagination {...pages.pagination} />
       <MovePreview
         row={views.find((row) => row.id === selected) ?? null}
         index={index}

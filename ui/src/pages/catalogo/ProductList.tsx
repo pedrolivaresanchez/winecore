@@ -3,34 +3,41 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useEntity } from '@/app/entity-context'
 import { ErrorState } from '@/components/ErrorState'
 import { NoPermission } from '@/components/NoPermission'
-import { copy } from '@/i18n'
+import { copy, fill } from '@/i18n'
 import { ApiError, isAbortError } from '@/lib/api'
-import { iconStroke } from '@/lib/motion'
+import { downloadCsv } from '@/lib/csv'
 import { listLegacyProducts, type LegacyProduct } from '@/lib/legacy'
 import { allows } from '@/lib/permissions'
 import { entityFilter } from '@/lib/reports'
+import { originTone, statusTone } from '@/lib/status-tones'
 import { readStorage, writeStorage } from '@/lib/storage'
 import type { Me } from '@/lib/types'
 import { useApi } from '@/hooks/use-api'
 import {
   Badge,
   Button,
-  Chip,
   DataGrid,
   EmptyState,
+  FilterBar,
   GlassMenu,
-  Input,
   MenuChip,
   MenuItem,
-  Select,
+  Pagination,
+  StatusPill,
+  useCursorPages,
+  useGridFilterLink,
   useMenuOpen,
   useToast,
+  type CursorPage,
+  type FilterDef,
+  type FilterValue,
   type GridColumn,
+  type SelectionAction,
 } from '@/ui'
-import { Search } from '@/ui/icons'
-import { exportProducts, listProducts } from '@/pages/catalogo/api'
+import { Ban, DownloadSimple, Undo2 } from '@/ui/icons'
+import { exportProducts, listProducts, setProductActive } from '@/pages/catalogo/api'
 import { GtinScanButton } from '@/pages/catalogo/components/GtinScan'
-import { ListFrame } from '@/pages/catalogo/frame'
+import { ListFrame, MobileObjectSwitch } from '@/pages/catalogo/frame'
 import { GRID_LABELS } from '@/pages/catalogo/labels'
 import { formatAlcohol, formatQty } from '@/pages/catalogo/money'
 import {
@@ -81,10 +88,11 @@ function fromHolded(row: LegacyProduct): Listed {
 }
 
 const COLUMN_KEY = 'winecore.columns.products'
-const COLUMN_IDS = ['name', 'sku', 'wine', 'vintage', 'format', 'gtin', 'nc', 'tax', 'alcohol', 'stock', 'active', 'warnings'] as const
+const COLUMN_IDS = ['name', 'origin', 'sku', 'wine', 'vintage', 'format', 'gtin', 'nc', 'tax', 'alcohol', 'stock', 'active', 'warnings'] as const
 type ColumnId = (typeof COLUMN_IDS)[number]
 const COLUMN_LABELS: Record<ColumnId, string> = {
   name: 'Nombre',
+  origin: copy.lists.origin.label,
   sku: 'SKU',
   wine: 'Vino',
   vintage: 'Añada',
@@ -110,10 +118,60 @@ function readHidden(): Set<ColumnId> {
   }
 }
 
+const text = copy.lists.catalog
+
+const VINTAGES = (() => {
+  const year = new Date().getFullYear()
+  return Array.from({ length: 30 }, (_, index) => String(year - index))
+})()
+
+const NO_PAGE: ListPage<Product> = { items: [], next_cursor: null, total: 0 }
+
+function holdedOrNothing(err: unknown): null {
+  if (isAbortError(err)) throw err
+  return null
+}
+
+/**
+ * The catalog's own products, then the ones still only in Holded, as one paged list.
+ *
+ * Each source pages by its own keyset cursor; the combined cursor says which source the next
+ * page comes from (`n:` ours, `h:` Holded) and, once in Holded, how many of ours came before,
+ * so the total stays whole without asking our endpoint again.
+ */
+async function productPage(
+  query: ProductQuery,
+  holded: { entity: ReturnType<typeof entityFilter>; q: string } | null,
+  ownRows: boolean,
+  cursor: string | null,
+  limit: number,
+  signal: AbortSignal,
+): Promise<CursorPage<Listed>> {
+  const tail = cursor?.match(/^h:(\d+):(.*)$/)
+  if (holded && tail) {
+    const before = Number(tail[1])
+    const page = await listLegacyProducts({ ...holded, cursor: tail[2] || null, limit }, signal)
+    return { items: page.items.map(fromHolded), next_cursor: page.next_cursor ? `h:${before}:${page.next_cursor}` : null, total: before + page.total }
+  }
+  const own = ownRows ? await listProducts({ ...query, cursor: cursor?.replace(/^n:/, '') || undefined, limit }, signal) : NO_PAGE
+  if (!holded) return { items: own.items, next_cursor: own.next_cursor ? `n:${own.next_cursor}` : null, total: own.total }
+  const room = limit - own.items.length
+  const legacy = await listLegacyProducts({ ...holded, limit: own.next_cursor ? 1 : Math.max(1, room) }, signal).catch(holdedOrNothing)
+  const legacyTotal = legacy?.total ?? 0
+  if (own.next_cursor) return { items: own.items, next_cursor: `n:${own.next_cursor}`, total: own.total + legacyTotal }
+  if (room <= 0) return { items: own.items, next_cursor: legacyTotal > 0 ? `h:${own.total}:` : null, total: own.total + legacyTotal }
+  return {
+    items: [...own.items, ...(legacy?.items ?? []).map(fromHolded)],
+    next_cursor: legacy?.next_cursor ? `h:${own.total}:${legacy.next_cursor}` : null,
+    total: own.total + legacyTotal,
+  }
+}
+
 export function ProductList({ me }: { me: Me }) {
   const navigate = useNavigate()
   const toast = useToast()
   const columnsMenu = useMenuOpen()
+  const gridFilters = useGridFilterLink()
   const [params, setParams] = useSearchParams()
   const canWrite = allows(me, 'catalog.write')
   const kind = (params.get('kind') ?? '') as '' | ProductKind
@@ -123,21 +181,15 @@ export function ProductList({ me }: { me: Me }) {
   const active = (params.get('active') ?? '') as '' | 'true' | 'false'
   const organic = params.get('organic') === 'true'
   const missing = (params.get('missing') ?? '') as MissingData
+  const origin = (params.get('origin') ?? '') as '' | 'winecore' | 'holded'
   const [q, setQ] = useState(params.get('q') ?? '')
   const [debounced, setDebounced] = useState(q.trim())
   const { filter } = useEntity()
   const entity = entityFilter(filter)
-  const [items, setItems] = useState<Listed[]>([])
-  const [total, setTotal] = useState(0)
-  const [cursor, setCursor] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [loadingMore, setLoadingMore] = useState(false)
-  const [error, setError] = useState<ApiError | null>(null)
-  const [attempt, setAttempt] = useState(0)
   const [selected, setSelected] = useState<string | null>(null)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [hidden, setHidden] = useState(readHidden)
-  const [widths, setWidths] = useState<Record<string, number>>({ name: 280, origin: 200, sku: 168, warnings: 200, wine: 180, vintage: 88, format: 96, stock: 120, active: 110 })
+  const [widths, setWidths] = useState<Record<string, number>>({ name: 280, origin: 120, sku: 168, warnings: 200, wine: 180, vintage: 88, format: 96, stock: 120, active: 110 })
   const wines = useApi<ListPage<Wine>>('/v1/wines?limit=100')
   const formats = useApi<ListPage<Format>>('/v1/formats?limit=100')
   const wineRows = useMemo(() => wines.data?.items ?? [], [wines.data])
@@ -149,62 +201,82 @@ export function ProductList({ me }: { me: Me }) {
   }, [q])
 
   const query = useMemo<ProductQuery>(
-    () => ({ q: debounced, kind, wine_id: wineId, format_id: formatId, vintage, active, organic, missing, limit: 50 }),
+    () => ({ q: debounced, kind, wine_id: wineId, format_id: formatId, vintage, active, organic, missing }),
     [active, debounced, formatId, kind, missing, organic, vintage, wineId],
   )
 
   const catalogOnly = Boolean(kind || wineId || formatId || vintage || active || organic || missing)
+  const withHolded = !catalogOnly && origin !== 'winecore'
+  const ownRows = origin !== 'holded'
+
+  const pages = useCursorPages<Listed>({
+    queryKey: JSON.stringify({ query, entity, origin, withHolded }),
+    storageKey: 'products',
+    fetchPage: ({ cursor, limit, signal }) =>
+      productPage(query, withHolded ? { entity, q: debounced } : null, ownRows, cursor, limit, signal),
+  })
+  const items = pages.items
+  const loading = pages.loading && items.length === 0
+  const error = pages.error ? (pages.error instanceof ApiError ? pages.error : new ApiError(0, 'WC_ERROR', copy.error.load)) : null
 
   useEffect(() => {
-    const controller = new AbortController()
-    let live = true
-    const holded = catalogOnly
-      ? Promise.resolve({ items: [] as LegacyProduct[], total: 0 })
-      : listLegacyProducts({ entity, q: debounced, limit: 100 }, controller.signal).catch((err: unknown) => {
-          if (isAbortError(err)) throw err
-          return { items: [] as LegacyProduct[], total: 0 }
-        })
-    Promise.all([listProducts(query, controller.signal), holded])
-      .then(([page, imported]) => {
-        if (!live) return
-        setItems([...page.items, ...imported.items.map(fromHolded)])
-        setCursor(page.next_cursor)
-        setTotal(page.total + imported.total)
-        setError(null)
-        setLoading(false)
-      })
-      .catch((err: unknown) => {
-        if (!live || isAbortError(err)) return
-        setError(err instanceof ApiError ? err : new ApiError(0, 'WC_ERROR', copy.error.load))
-        setLoading(false)
-      })
-    return () => {
-      live = false
-      controller.abort()
-    }
-  }, [attempt, catalogOnly, debounced, entity, query])
+    setPicked(new Set())
+  }, [pages.pageKey])
 
-  function setFilter(key: string, value: string) {
+  const filters = useMemo<FilterDef[]>(
+    () => [
+      { id: 'kind', label: text.kind, kind: 'single', options: KIND_OPTIONS.map((option) => ({ value: option.id, label: option.label })) },
+      { id: 'wine_id', label: text.wine, kind: 'single', options: wineRows.map((wine) => ({ value: wine.id, label: wine.name })) },
+      { id: 'format_id', label: text.format, kind: 'single', options: formatRows.map((format) => ({ value: format.id, label: format.code })) },
+      { id: 'vintage', label: text.vintage, kind: 'single', optional: true, options: VINTAGES.map((year) => ({ value: year, label: year })) },
+      {
+        id: 'active',
+        label: text.state,
+        kind: 'single',
+        display: 'chips',
+        options: [
+          { value: 'true', label: text.active, tone: statusTone('active') },
+          { value: 'false', label: text.inactive, tone: statusTone('inactive') },
+        ],
+      },
+      { id: 'organic', label: copy.catalog.organic, kind: 'toggle' },
+      {
+        id: 'missing',
+        label: text.warnings,
+        kind: 'single',
+        options: [
+          { value: 'gtin', label: copy.catalog.missingGtin, tone: 'warning' },
+          { value: 'nc_code', label: copy.catalog.missingNc, tone: 'warning' },
+          { value: 'silicie', label: copy.catalog.missingSilicie, tone: 'warning' },
+        ],
+      },
+      {
+        id: 'origin',
+        label: copy.lists.origin.label,
+        kind: 'single',
+        optional: true,
+        options: [
+          { value: 'winecore', label: copy.lists.origin.winecore, tone: originTone('winecore') },
+          { value: 'holded', label: copy.lists.origin.holded, tone: originTone('holded') },
+        ],
+      },
+    ],
+    [formatRows, wineRows],
+  )
+
+  function setFilter(key: string, value: FilterValue) {
     const next = new URLSearchParams(params)
-    if (value) next.set(key, value)
+    if (value === true) next.set(key, 'true')
+    else if (typeof value === 'string' && value) next.set(key, value)
     else next.delete(key)
     setParams(next)
-    setLoading(true)
   }
 
-  async function loadMore() {
-    if (!cursor) return
-    setLoadingMore(true)
-    try {
-      const page = await listProducts({ ...query, cursor })
-      setItems((current) => [...current, ...page.items])
-      setCursor(page.next_cursor)
-      setTotal(page.total)
-    } catch (err: unknown) {
-      setError(err instanceof ApiError ? err : new ApiError(0, 'WC_ERROR', copy.error.load))
-    } finally {
-      setLoadingMore(false)
-    }
+  function clearFilters() {
+    const next = new URLSearchParams(params)
+    for (const key of ['kind', 'wine_id', 'format_id', 'vintage', 'active', 'organic', 'missing', 'origin', 'q']) next.delete(key)
+    setParams(next)
+    setQ('')
   }
 
   function toggleColumn(id: ColumnId) {
@@ -223,13 +295,13 @@ export function ProductList({ me }: { me: Me }) {
       { id: 'name', header: 'Nombre', cell: (row) => row.name },
       {
         id: 'origin',
-        header: 'Origen',
-        cell: (row) =>
-          row.imported ? (
-            <Badge tone="neutral" size="sm">
-              {copy.catalog.imported}
-            </Badge>
-          ) : null,
+        header: copy.lists.origin.label,
+        filterValue: (row) => (row.imported ? copy.lists.origin.holded : copy.lists.origin.winecore),
+        cell: (row) => (
+          <StatusPill tone={originTone(row.imported ? 'holded' : 'winecore')} title={row.imported ? copy.catalog.imported : undefined}>
+            {row.imported ? copy.lists.origin.holded : copy.lists.origin.winecore}
+          </StatusPill>
+        ),
       },
       { id: 'sku', header: 'SKU', cell: (row) => <span className="font-mono text-caption">{row.sku}</span> },
       { id: 'wine', header: 'Vino', cell: (row) => wineName(row, wineRows) },
@@ -256,7 +328,10 @@ export function ProductList({ me }: { me: Me }) {
       {
         id: 'active',
         header: 'Activo',
-        cell: (row) => <Badge tone={row.is_active ? 'success' : 'neutral'}>{row.is_active ? 'Activo' : 'Inactivo'}</Badge>,
+        filterValue: (row) => (row.is_active ? text.activeOne : text.inactiveOne),
+        cell: (row) => (
+          <StatusPill tone={statusTone(row.is_active ? 'active' : 'inactive')}>{row.is_active ? text.activeOne : text.inactiveOne}</StatusPill>
+        ),
       },
       {
         id: 'warnings',
@@ -279,7 +354,66 @@ export function ProductList({ me }: { me: Me }) {
     return all.filter((column) => !hidden.has(column.id as ColumnId))
   }, [formatRows, hidden, wineRows])
 
-  const filtersActive = Boolean(debounced || kind || wineId || formatId || vintage || active || organic || missing)
+  const chosen = items.filter((item) => picked.has(item.id))
+  const ownChosen = chosen.filter((item) => !item.imported)
+  const toDeactivate = ownChosen.filter((item) => item.is_active)
+  const toReactivate = ownChosen.filter((item) => !item.is_active)
+
+  async function setActive(rows: Listed[], next: boolean) {
+    const results = await Promise.allSettled(rows.map((row) => setProductActive(row.id, next, row.updated_at)))
+    const done = results.filter((result) => result.status === 'fulfilled').length
+    if (done === rows.length) toast(fill(next ? text.reactivatedDone : text.deactivatedDone, { n: String(done) }))
+    else toast(fill(copy.lists.bulk.partial, { done: String(done), n: String(rows.length) }))
+    setPicked(new Set())
+    pages.reload()
+  }
+
+  function exportSelection() {
+    downloadCsv(
+      'productos-seleccion.csv',
+      COLUMN_IDS.map((id) => COLUMN_LABELS[id]),
+      chosen.map((row) => [
+        row.name,
+        row.imported ? copy.lists.origin.holded : copy.lists.origin.winecore,
+        row.sku,
+        row.imported ? null : wineName(row, wineRows),
+        row.vintage,
+        row.imported ? null : formatCode(row, formatRows),
+        row.gtin,
+        row.nc_code,
+        taxLabel(row.default_tax_code),
+        row.alcohol_pct,
+        row.imported ? row.importedStock : row.on_hand_qty,
+        row.is_active ? text.activeOne : text.inactiveOne,
+        productWarnings(row).join(' · '),
+      ]),
+    )
+    toast(fill(copy.lists.bulk.exported, { n: String(chosen.length) }))
+  }
+
+  const actions: SelectionAction[] = [
+    ...(canWrite && toDeactivate.length > 0
+      ? [
+          {
+            id: 'deactivate',
+            label: text.deactivate,
+            icon: Ban,
+            confirm: {
+              title: fill(text.deactivateTitle, { n: String(toDeactivate.length) }),
+              body: text.deactivateBody,
+              confirmLabel: text.deactivate,
+            },
+            onRun: () => setActive(toDeactivate, false),
+          },
+        ]
+      : []),
+    ...(canWrite && toReactivate.length > 0
+      ? [{ id: 'reactivate', label: text.reactivate, icon: Undo2, onRun: () => setActive(toReactivate, true) }]
+      : []),
+    { id: 'export', label: copy.lists.bulk.exportCsv, icon: DownloadSimple, onRun: exportSelection },
+  ]
+
+  const filtersActive = Boolean(debounced || catalogOnly || origin)
   const selectedIndex = items.findIndex((item) => item.id === selected)
   if (!allows(me, 'catalog.read')) return <NoPermission />
 
@@ -310,119 +444,52 @@ export function ProductList({ me }: { me: Me }) {
           {canWrite ? create : null}
         </>
       }
-      mobileActions={canWrite ? create : null}
-      toolbar={
-        <>
-          <Input
-            id="buscar-productos"
-            size="sm"
-            type="search"
-            value={q}
-            placeholder={copy.catalog.searchProducts}
-            aria-label={copy.catalog.searchProducts}
-            className="min-w-0 flex-1 sm:w-56 sm:flex-none"
-            prefix={<Search className="size-3.5" strokeWidth={iconStroke} />}
-            onChange={(event) => setQ(event.target.value)}
-          />
-          <GtinScanButton onCode={setQ} />
-          <GlassMenu
-            open={columnsMenu.open}
-            onOpenChange={columnsMenu.setOpen}
-            placement="bottom-start"
-            panelClassName="min-w-[200px]"
-            className="hidden md:inline-flex"
-            trigger={
-              <MenuChip active={columnsMenu.open} onClick={columnsMenu.toggle} title={copy.catalog.columns}>
-                {copy.catalog.columns}
-              </MenuChip>
-            }
-          >
-            {COLUMN_IDS.map((id) => (
-              <MenuItem key={id} checked={!hidden.has(id)} disabled={id === 'name'} onClick={() => toggleColumn(id)}>
-                {COLUMN_LABELS[id]}
-              </MenuItem>
-            ))}
-          </GlassMenu>
-        </>
-      }
-      filters={
-        <>
-          <Select id="filtro-tipo" size="sm" aria-label="Tipo" value={kind} onChange={(event) => setFilter('kind', event.target.value)}>
-            <option value="">Tipo</option>
-            {KIND_OPTIONS.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label}
-              </option>
-            ))}
-          </Select>
-          <Select id="filtro-vino" size="sm" aria-label="Vino" value={wineId} onChange={(event) => setFilter('wine_id', event.target.value)}>
-            <option value="">Vino</option>
-            {wineRows.map((wine) => (
-              <option key={wine.id} value={wine.id}>
-                {wine.name}
-              </option>
-            ))}
-          </Select>
-          <Select
-            id="filtro-formato"
-            size="sm"
-            aria-label="Formato"
-            value={formatId}
-            onChange={(event) => setFilter('format_id', event.target.value)}
-          >
-            <option value="">Formato</option>
-            {formatRows.map((format) => (
-              <option key={format.id} value={format.id}>
-                {format.code}
-              </option>
-            ))}
-          </Select>
-          <Input
-            id="filtro-anada"
-            size="sm"
-            inputMode="numeric"
-            value={vintage}
-            placeholder="Añada"
-            aria-label="Añada"
-            className="w-24 shrink-0"
-            onChange={(event) => setFilter('vintage', event.target.value.replace(/\D/g, '').slice(0, 4))}
-          />
-          <Chip pressed={active === 'true'} active={active === 'true'} onClick={() => setFilter('active', active === 'true' ? '' : 'true')}>
-            {copy.catalog.activeOnly}
-          </Chip>
-          <Chip pressed={organic} active={organic} onClick={() => setFilter('organic', organic ? '' : 'true')}>
-            {copy.catalog.organic}
-          </Chip>
-          <Chip pressed={missing === 'gtin'} active={missing === 'gtin'} onClick={() => setFilter('missing', missing === 'gtin' ? '' : 'gtin')}>
-            {copy.catalog.missingGtin}
-          </Chip>
-          <Chip
-            pressed={missing === 'nc_code'}
-            active={missing === 'nc_code'}
-            onClick={() => setFilter('missing', missing === 'nc_code' ? '' : 'nc_code')}
-          >
-            {copy.catalog.missingNc}
-          </Chip>
-          <Chip
-            pressed={missing === 'silicie'}
-            active={missing === 'silicie'}
-            onClick={() => setFilter('missing', missing === 'silicie' ? '' : 'silicie')}
-          >
-            {copy.catalog.missingSilicie}
-          </Chip>
-        </>
+      bar={
+        <FilterBar
+          leading={<MobileObjectSwitch current="productos" />}
+          search={{ id: 'buscar-productos', value: q, onChange: setQ, placeholder: copy.catalog.searchProducts }}
+          filters={filters}
+          values={{ kind, wine_id: wineId, format_id: formatId, vintage, active, organic, missing, origin }}
+          onChange={setFilter}
+          onClear={clearFilters}
+          grid={gridFilters}
+          selection={{
+            count: picked.size,
+            pageCount: items.length,
+            onSelectAll: () => setPicked(new Set(items.map((item) => item.id))),
+            onClear: () => setPicked(new Set()),
+            actions,
+          }}
+          trailing={
+            <>
+              <GtinScanButton onCode={setQ} />
+              <GlassMenu
+                open={columnsMenu.open}
+                onOpenChange={columnsMenu.setOpen}
+                placement="bottom-end"
+                panelClassName="min-w-[200px]"
+                className="max-md:hidden"
+                trigger={
+                  <MenuChip active={columnsMenu.open} onClick={columnsMenu.toggle} title={copy.catalog.columns}>
+                    {copy.catalog.columns}
+                  </MenuChip>
+                }
+              >
+                {COLUMN_IDS.map((id) => (
+                  <MenuItem key={id} checked={!hidden.has(id)} disabled={id === 'name'} onClick={() => toggleColumn(id)}>
+                    {COLUMN_LABELS[id]}
+                  </MenuItem>
+                ))}
+              </GlassMenu>
+              {canWrite ? <span className="md:hidden">{create}</span> : null}
+            </>
+          }
+        />
       }
     >
       {error && items.length === 0 ? (
         <div className="p-4">
-          <ErrorState
-            title={`${copy.error.load} (${error.code})`}
-            detail={error.message}
-            onRetry={() => {
-              setLoading(true)
-              setAttempt((value) => value + 1)
-            }}
-          />
+          <ErrorState title={`${copy.error.load} (${error.code})`} detail={error.message} onRetry={pages.reload} />
         </div>
       ) : (
         <DataGrid
@@ -440,8 +507,9 @@ export function ProductList({ me }: { me: Me }) {
           }}
           rowHref={(row) => (row.imported ? undefined : `/catalogo/${row.id}`)}
           openRowKey={selected}
-          total={total}
-          loading={loading}
+          total={pages.total ?? undefined}
+          loading={pages.loading}
+          filterLink={gridFilters}
           empty={
             <EmptyState
               size="sm"
@@ -458,13 +526,7 @@ export function ProductList({ me }: { me: Me }) {
           }
         />
       )}
-      {cursor ? (
-        <div className="flex h-10 shrink-0 items-center border-t border-border-subtle px-3 sm:px-4">
-          <Button type="button" variant="ghost" size="sm" loading={loadingMore} onClick={() => void loadMore()}>
-            {copy.table.loadMore}
-          </Button>
-        </div>
-      ) : null}
+      <Pagination {...pages.pagination} />
       <ProductPreview
         id={selected}
         ids={items.map((item) => item.id)}

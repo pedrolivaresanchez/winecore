@@ -16,24 +16,28 @@ export type StepUpOptions = {
   totp: boolean;
 };
 
-export function approvalsPath(query: {
+export type ApprovalsQuery = {
   status: "pending" | "decided" | "all";
   kind?: string;
   entity?: string;
+  /** Only what the signed-in user asked for. */
+  mine?: boolean;
   cursor?: string;
-}): string {
+  limit?: number;
+};
+
+export function approvalsPath(query: ApprovalsQuery): string {
   const params = new URLSearchParams();
   params.set("status", query.status);
   if (query.kind) params.set("kind", query.kind);
   if (query.entity) params.set("entity", query.entity);
+  if (query.mine) params.set("mine", "true");
   if (query.cursor) params.set("cursor", query.cursor);
+  if (query.limit) params.set("limit", String(query.limit));
   return `/v1/approvals?${params.toString()}`;
 }
 
-export function listApprovals(
-  query: { status: "pending" | "decided" | "all"; kind?: string; entity?: string; cursor?: string },
-  signal?: AbortSignal,
-) {
+export function listApprovals(query: ApprovalsQuery, signal?: AbortSignal) {
   return api<ApprovalPage>(approvalsPath(query), { signal });
 }
 

@@ -1061,7 +1061,6 @@
     "decided": "Decididas",
     "mine": "Mías",
     "kind": "Tipo",
-    "allKinds": "Todos los tipos",
     "search": "Buscar solicitud",
     "emptyPending": "No hay nada pendiente",
     "emptyPendingHint": "Cuando haya algo que firmar, aparecerá aquí.",
@@ -1098,8 +1097,6 @@
     "viaCode": "código",
     "lines": "{n} líneas",
     "moreLines": "y {n} más",
-    "loadMore": "Cargar más",
-    "loadingMore": "Cargando…",
     "cancel": "Cancelar",
     "sending": "Enviando…",
     "pendingCount": "{n} pendientes",
@@ -1579,11 +1576,7 @@
     "searchCounts": "Número o ubicación",
     "searchVessel": "Código o QR",
     "columns": "Columnas",
-    "all": "Todos",
     "location": "Ubicación",
-    "type": "Tipo",
-    "from": "Desde",
-    "to": "Hasta",
     "exportCsv": "Exportar CSV",
     "csvDone": "CSV descargado",
     "more": "Más acciones",
@@ -1677,7 +1670,6 @@
     "diff": "Diferencia",
     "litres": "Litros contados",
     "unitCount": "Unidades contadas",
-    "loadMore": "Cargar más",
     "prev": "Anterior",
     "next": "Siguiente",
     "csvFail": "No se ha podido exportar."
@@ -1977,7 +1969,6 @@
     "stale": "Otra persona ha cambiado este gasto. Recarga.",
     "reload": "Recargar",
     "noDocument": "Sin documento",
-    "statusAll": "Todos",
     "status": "Estado",
     "month": "Mes",
     "entity": "Entidad",
@@ -3372,5 +3363,97 @@
   "combobox": {
     "more": "{count} más. Sigue escribiendo para acotar.",
     "empty": "Sin resultados"
+  },
+  "lists": {
+    "filters": {
+      "search": "Buscar",
+      "clear": "Limpiar",
+      "add": "Filtro",
+      "addTitle": "Añadir filtro",
+      "searchOptions": "Buscar",
+      "noOptions": "Nada coincide",
+      "remove": "Quitar filtro",
+      "pageOnly": "Filtra las filas de esta página"
+    },
+    "selection": {
+      "label": "seleccionados",
+      "selectAll": "Seleccionar todo",
+      "clear": "Quitar selección",
+      "cancel": "Cancelar",
+      "selectRow": "Seleccionar {name}"
+    },
+    "pagination": {
+      "range": "{from}–{to} de {total}",
+      "rangeOpen": "{from}–{to}",
+      "page": "Página {page}",
+      "pageOf": "Página {page} de {pages}",
+      "previous": "Anterior",
+      "next": "Siguiente",
+      "rowsPerPage": "Filas por página"
+    },
+    "bulk": {
+      "exportCsv": "Exportar CSV",
+      "exported": "CSV con {n} filas",
+      "archive": "Archivar",
+      "unarchive": "Reactivar",
+      "partial": "Hecho en {done} de {n}. El resto no se ha podido cambiar."
+    },
+    "contacts": {
+      "kind": "Tipo",
+      "companies": "Empresas",
+      "people": "Personas",
+      "role": "Papel",
+      "country": "País",
+      "roles": {
+        "customer": "Cliente",
+        "supplier": "Proveedor",
+        "carrier": "Transportista",
+        "logistics_operator": "Operador logístico"
+      },
+      "archiveTitle": "Archivar {n} contactos",
+      "archiveBody": "Dejan de salir en la lista. Se recuperan desde Archivados.",
+      "archivedDone": "{n} contactos archivados",
+      "unarchivedDone": "{n} contactos reactivados"
+    },
+    "origin": {
+      "label": "Origen",
+      "holded": "Holded",
+      "winecore": "WineCore"
+    },
+    "catalog": {
+      "kind": "Tipo",
+      "wine": "Vino",
+      "format": "Formato",
+      "vintage": "Añada",
+      "state": "Estado",
+      "active": "Activos",
+      "inactive": "Inactivos",
+      "activeOne": "Activo",
+      "inactiveOne": "Inactivo",
+      "warnings": "Avisos",
+      "deactivate": "Desactivar",
+      "reactivate": "Reactivar",
+      "deactivateTitle": "Desactivar {n} productos",
+      "deactivateBody": "Dejarán de ofrecerse en pedidos, pero no se borran. Los importados de Holded no cambian.",
+      "deactivatedDone": "{n} productos desactivados",
+      "reactivatedDone": "{n} productos reactivados"
+    },
+    "stock": {
+      "date": "Fecha",
+      "type": "Tipo",
+      "state": "Estado",
+      "kind": "Tipo de aforo"
+    },
+    "lots": {
+      "kind": "Tipo",
+      "status": "Estado"
+    },
+    "approvals": {
+      "request": "Solicitud",
+      "entity": "Entidad",
+      "summary": "Resumen",
+      "requestedAt": "Pedida",
+      "status": "Estado"
+    }
   }
 }

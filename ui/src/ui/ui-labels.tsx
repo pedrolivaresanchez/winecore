@@ -30,20 +30,78 @@ export type GridToolLabels = {
   presets: Record<GridDatePreset, string>
 }
 
+/** What a list's `FilterBar`, `SelectionBar` and `Pagination` say. `{value}`, `{from}`, `{to}`, `{total}`, `{page}`, `{pages}` are filled in. */
+export type ListToolLabels = {
+  filters: {
+    search: string
+    clear: string
+    add: string
+    addTitle: string
+    searchOptions: string
+    noOptions: string
+    remove: string
+    pageOnly: string
+  }
+  selection: {
+    label: string
+    selectAll: string
+    clear: string
+  }
+  pagination: {
+    range: string
+    rangeOpen: string
+    page: string
+    pageOf: string
+    previous: string
+    next: string
+    rowsPerPage: string
+  }
+}
+
 export type UiLabels = {
   /** Accessible name of the × that closes a dialog or a drawer. */
   close: string
+  /** The way out of a confirmation without doing the thing. */
+  cancel: string
   /** Accessible name of an `InfoTip`'s «i» when the caller does not name it. */
   moreInfo: string
   /** The words on a `WhyPopover` that brings no trigger of its own. */
   why: string
   grid: GridToolLabels
+  lists: ListToolLabels
 }
 
 const DEFAULT_LABELS: UiLabels = {
   close: 'Close',
+  cancel: 'Cancel',
   moreInfo: 'More information',
   why: 'Why?',
+  lists: {
+    filters: {
+      search: 'Search',
+      clear: 'Clear',
+      add: 'Filter',
+      addTitle: 'Add filter',
+      searchOptions: 'Search',
+      noOptions: 'Nothing matches',
+      remove: 'Remove filter',
+      pageOnly: 'Filters the rows on this page',
+    },
+    selection: {
+      label: 'selected',
+      selectAll: 'Select all',
+      clear: 'Clear selection',
+    },
+    pagination: {
+      range: '{from}–{to} of {total}',
+      rangeOpen: '{from}–{to}',
+      page: 'Page {page}',
+      pageOf: 'Page {page} of {pages}',
+      previous: 'Previous',
+      next: 'Next',
+      rowsPerPage: 'Rows per page',
+    },
+  },
   grid: {
     sortAscending: 'Sort ascending',
     sortDescending: 'Sort descending',

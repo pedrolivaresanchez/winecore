@@ -1,5 +1,6 @@
 import { copy } from '@/i18n'
-import type { BadgeTone } from '@/ui'
+import { STATUS_TAG_TONE, type TagTone } from '@/ui'
+import { statusTone as sharedStatusTone } from '@/lib/status-tones'
 import type { ConfidenceKey } from '@/pages/gastos/types'
 
 export const CATEGORIES: { code: string; account: string; organic: boolean }[] = [
@@ -21,21 +22,13 @@ export const CATEGORIES: { code: string; account: string; organic: boolean }[] =
   { code: 'other_services', account: '629', organic: false },
 ]
 
-const STATUS_TONE: Record<string, BadgeTone> = {
-  captured: 'info',
-  validated: 'warning',
-  approved: 'success',
-  rejected: 'danger',
-  duplicate: 'warning',
-}
-
 export function statusLabel(status: string): string {
   const table = copy.gastos.statuses as Record<string, string>
   return table[status] ?? status
 }
 
-export function statusTone(status: string): BadgeTone {
-  return STATUS_TONE[status] ?? 'neutral'
+export function statusTone(status: string): TagTone {
+  return STATUS_TAG_TONE[sharedStatusTone(status)]
 }
 
 export function categoryLabel(code: string | null | undefined): string {

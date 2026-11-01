@@ -1,13 +1,14 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useEntity } from '@/app/entity-context'
 import { ErrorState } from '@/components/ErrorState'
 import { NoPermission } from '@/components/NoPermission'
-import { copy } from '@/i18n'
-import { cn } from '@/lib/cn'
+import { copy, fill } from '@/i18n'
+import { downloadCsv } from '@/lib/csv'
 import { iconStroke } from '@/lib/motion'
 import { formatDateTime } from '@/lib/format'
 import { allows } from '@/lib/permissions'
+import { entityTone, statusTone } from '@/lib/status-tones'
 import type { Me } from '@/lib/types'
 import { toCount } from '@/pages/existencias/adapt'
 import { countsPath, ownerEntityId, type InventoryCount } from '@/pages/existencias/api'
@@ -17,13 +18,46 @@ import { ListFrame } from '@/pages/existencias/components/ListFrame'
 import { readCountCache } from '@/pages/existencias/count-cache'
 import { filterCounts } from '@/pages/existencias/filters'
 import { GRID_LABELS } from '@/pages/existencias/grid'
-import { COUNT_KINDS, countKindLabel, countStatusLabel, countStatusTone, ownerLabel } from '@/pages/existencias/labels'
+import { COUNT_KINDS, countKindLabel, countStatusLabel, ownerLabel } from '@/pages/existencias/labels'
 import { assignParams } from '@/pages/existencias/query'
 import { useHiddenColumns } from '@/pages/existencias/use-hidden'
-import { useList } from '@/pages/existencias/use-list'
-import { FRAME_GUTTER, FRAME_STRIP_SCROLL } from '@/ui/frame'
-import { FileText, MoreVertical, Search } from '@/ui/icons'
-import { Badge, Button, Chip, DataGrid, EmptyState, GlassMenu, Input, MenuItem, useMenuOpen, type GridColumn } from '@/ui'
+import { asApiError, usePagedList } from '@/pages/existencias/use-list'
+import { DownloadSimple, FileText, MoreVertical } from '@/ui/icons'
+import {
+  Button,
+  DataGrid,
+  EmptyState,
+  FilterBar,
+  GlassMenu,
+  MenuItem,
+  Pagination,
+  StatusPill,
+  useGridFilterLink,
+  useMenuOpen,
+  useToast,
+  type FilterDef,
+  type FilterValue,
+  type GridColumn,
+  type SelectionAction,
+} from '@/ui'
+
+const FILTERS: FilterDef[] = [
+  {
+    id: 'kind',
+    label: copy.lists.stock.kind,
+    kind: 'single',
+    display: 'chips',
+    options: COUNT_KINDS.map((item) => ({ value: item.id, label: item.label })),
+  },
+]
+
+function pendingApproval(row: InventoryCount): boolean {
+  return Boolean(row.approval_request_id && row.status !== 'posted' && row.status !== 'approved')
+}
+
+function statusText(row: InventoryCount): string {
+  return pendingApproval(row) ? copy.stock.pendingApproval : countStatusLabel(row.status)
+}
 
 const COLUMN_IDS = ['number', 'kind', 'when', 'status', 'locations', 'entity', 'differences'] as const
 const COLUMN_LABELS: Record<(typeof COLUMN_IDS)[number], string> = {
@@ -38,7 +72,9 @@ const COLUMN_LABELS: Record<(typeof COLUMN_IDS)[number], string> = {
 
 export function CountsPage({ me }: { me: Me }) {
   const navigate = useNavigate()
+  const toast = useToast()
   const more = useMenuOpen()
+  const gridFilters = useGridFilterLink()
   const { filter, entities } = useEntity()
   const { catalog } = useCatalog(entities)
   const ownerId = ownerEntityId(filter, entities)
@@ -48,17 +84,25 @@ export function CountsPage({ me }: { me: Me }) {
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [widths, setWidths] = useState<Record<string, number>>({ number: 170, kind: 120, when: 160, status: 150, locations: 120, entity: 90, differences: 120 })
   const { hidden, toggle } = useHiddenColumns('winecore.columns.stock-counts', COLUMN_IDS)
-  const list = useList<unknown>(countsPath(ownerId))
-  const missingList = list.error?.status === 404
+  const list = usePagedList<unknown>(countsPath(ownerId), 'stock-counts')
+  const error = asApiError(list.error)
+  const missingList = error?.status === 404
+  const firstPage = list.page === 1
   const source = useMemo(() => {
-    const remote = list.error ? [] : list.items.map((row) => toCount(row, catalog))
+    const remote = error ? [] : list.items.map((row) => toCount(row, catalog))
+    if (!firstPage) return remote
     const seen = new Set(remote.map((row) => row.id))
     return [...remote, ...readCountCache().filter((row) => !seen.has(row.id)).map((row) => toCount(row, catalog))]
-  }, [catalog, list.error, list.items])
+  }, [catalog, error, firstPage, list.items])
   const rows = useMemo(() => filterCounts(source, { legalEntityId: ownerId, kind, q }), [kind, ownerId, q, source])
   const canCount = allows(me, 'inventory.count')
   const filtersOn = Boolean(q || kind || ownerId)
-  const screen = list.loading ? 'aforos-cargando' : rows.length === 0 && !filtersOn ? 'aforos-vacio' : 'aforos'
+  const loading = list.loading && list.items.length === 0
+  const screen = loading ? 'aforos-cargando' : rows.length === 0 && !filtersOn ? 'aforos-vacio' : 'aforos'
+
+  useEffect(() => {
+    setPicked(new Set())
+  }, [list.pageKey])
 
   function assign(next: Record<string, string | null>) {
     setParams(assignParams(params, next))
@@ -72,23 +116,47 @@ export function CountsPage({ me }: { me: Me }) {
       {
         id: 'status',
         header: COLUMN_LABELS.status,
-        cell: (row) => {
-          const pending = Boolean(row.approval_request_id && row.status !== 'posted' && row.status !== 'approved')
-          return (
-            <Badge tone={pending ? 'warning' : countStatusTone(row.status)} size="sm">
-              {pending ? copy.stock.pendingApproval : countStatusLabel(row.status)}
-            </Badge>
-          )
-        },
+        filterValue: statusText,
+        cell: (row) => <StatusPill tone={pendingApproval(row) ? 'warning' : statusTone(row.status)}>{statusText(row)}</StatusPill>,
       },
       { id: 'locations', header: COLUMN_LABELS.locations, cell: (row) => row.location_codes.join(', ') || '—' },
-      { id: 'entity', header: COLUMN_LABELS.entity, cell: (row) => ownerLabel(row.legal_entity_code) },
+      {
+        id: 'entity',
+        header: COLUMN_LABELS.entity,
+        filterValue: (row) => ownerLabel(row.legal_entity_code),
+        cell: (row) => <StatusPill tone={entityTone(row.legal_entity_code)}>{ownerLabel(row.legal_entity_code)}</StatusPill>,
+      },
       { id: 'differences', header: COLUMN_LABELS.differences, align: 'right', cell: (row) => String(row.difference_count) },
     ]
     return all.filter((column) => !hidden.has(column.id))
   }, [hidden])
 
   if (!allows(me, 'inventory.read')) return <NoPermission />
+
+  const chosen = rows.filter((row) => picked.has(row.id))
+  const actions: SelectionAction[] = [
+    {
+      id: 'export',
+      label: copy.lists.bulk.exportCsv,
+      icon: DownloadSimple,
+      onRun: () => {
+        downloadCsv(
+          'aforos-seleccion.csv',
+          COLUMN_IDS.map((id) => COLUMN_LABELS[id]),
+          chosen.map((row) => [
+            row.number,
+            countKindLabel(row.kind),
+            formatDateTime(row.counted_at),
+            statusText(row),
+            row.location_codes.join(', '),
+            ownerLabel(row.legal_entity_code),
+            row.difference_count,
+          ]),
+        )
+        toast(fill(copy.lists.bulk.exported, { n: String(chosen.length) }))
+      },
+    },
+  ]
 
   return (
     <ListFrame
@@ -120,44 +188,42 @@ export function CountsPage({ me }: { me: Me }) {
           </>
         ) : null
       }
-      toolbar={
-        <>
-          <div className={FRAME_STRIP_SCROLL}>
-            <Input
-              size="sm"
-              type="search"
-              value={q}
-              placeholder={copy.stock.searchCounts}
-              aria-label={copy.stock.searchCounts}
-              className="w-56 shrink-0"
-              prefix={<Search className="size-3.5" strokeWidth={iconStroke} />}
-              onChange={(event) => setQ(event.target.value)}
-            />
-            <ColumnMenu ids={COLUMN_IDS} labels={COLUMN_LABELS} hidden={hidden} locked="number" onToggle={toggle} />
-          </div>
-          {canCount ? (
-            <Button type="button" variant="primary" size="sm" className="md:hidden" onClick={() => navigate('/stock/aforos/nuevo')}>
-              {copy.stock.newCount}
-            </Button>
-          ) : null}
-        </>
-      }
-      filters={
-        <div className={cn(FRAME_STRIP_SCROLL, '[&>*]:shrink-0')}>
-          <Chip pressed={!kind} active={!kind} onClick={() => assign({ kind: null })}>
-            {copy.stock.all}
-          </Chip>
-          {COUNT_KINDS.map((item) => (
-            <Chip key={item.id} pressed={kind === item.id} active={kind === item.id} onClick={() => assign({ kind: kind === item.id ? null : item.id })}>
-              {item.label}
-            </Chip>
-          ))}
-        </div>
+      bar={
+        <FilterBar
+          search={{ value: q, onChange: setQ, placeholder: copy.stock.searchCounts }}
+          filters={FILTERS}
+          values={{ kind }}
+          onChange={(id: string, value: FilterValue) => assign({ [id]: typeof value === 'string' && value ? value : null })}
+          onClear={() => {
+            assign({ kind: null })
+            setQ('')
+          }}
+          grid={gridFilters}
+          selection={{
+            count: picked.size,
+            pageCount: rows.length,
+            onSelectAll: () => setPicked(new Set(rows.map((row) => row.id))),
+            onClear: () => setPicked(new Set()),
+            actions,
+          }}
+          trailing={
+            <>
+              <span className="max-md:hidden">
+                <ColumnMenu ids={COLUMN_IDS} labels={COLUMN_LABELS} hidden={hidden} locked="number" onToggle={toggle} />
+              </span>
+              {canCount ? (
+                <Button type="button" variant="primary" size="sm" className="md:hidden" onClick={() => navigate('/stock/aforos/nuevo')}>
+                  {copy.stock.newCount}
+                </Button>
+              ) : null}
+            </>
+          }
+        />
       }
     >
-      {list.error && !missingList && rows.length === 0 ? (
+      {error && !missingList && rows.length === 0 ? (
         <div className="p-4">
-          <ErrorState title={`${copy.error.load} (${list.error.code})`} detail={list.error.message} onRetry={list.reload} />
+          <ErrorState title={`${copy.error.load} (${error.code})`} detail={error.message} onRetry={list.reload} />
         </div>
       ) : (
         <DataGrid
@@ -172,7 +238,8 @@ export function CountsPage({ me }: { me: Me }) {
           onOpenRow={(row) => navigate(`/stock/aforos/${row.id}`)}
           rowHref={(row) => `/stock/aforos/${row.id}`}
           loading={list.loading}
-          total={missingList ? rows.length : list.total}
+          total={missingList ? rows.length : (list.total ?? undefined)}
+          filterLink={gridFilters}
           empty={
             <EmptyState
               size="sm"
@@ -190,13 +257,7 @@ export function CountsPage({ me }: { me: Me }) {
           }
         />
       )}
-      {list.cursor && !missingList ? (
-        <div className={cn('flex h-10 shrink-0 items-center border-t border-border-subtle', FRAME_GUTTER)}>
-          <Button type="button" variant="ghost" size="sm" loading={list.loadingMore} onClick={() => void list.loadMore()}>
-            {copy.stock.loadMore}
-          </Button>
-        </div>
-      ) : null}
+      {missingList ? null : <Pagination {...list.pagination} />}
     </ListFrame>
   )
 }
