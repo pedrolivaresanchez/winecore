@@ -60,7 +60,7 @@ describe('MCP de facturación sobre las rutas de la app', () => {
       id: fx.customer,
       address: { kind: 'both', line1: 'Calle Ejemplo 1', postal_code: '46300', city: 'Utiel', country_code: 'ES', is_default: true },
     });
-    await write('contacts_person_add', { id: fx.customer, person: { full_name: 'Persona Ejemplo', email: 'cliente@ejemplo.test', receives_invoices: true, receives_dunning: false } });
+    await write('contacts_person_add', { id: fx.customer, person: { full_name: 'Persona Ejemplo', email: 'cliente@example.com', receives_invoices: true, receives_dunning: false } });
     const created = await write('billing_invoice_create', {
       customer_id: fx.customer,
       legal_entity_id: fx.po,
@@ -109,7 +109,7 @@ describe('MCP de facturación sobre las rutas de la app', () => {
       attempt: Number(pack.data.attempt ?? 1),
       message_id: 'mensaje-de-prueba-1',
       sent_at: new Date().toISOString(),
-      recipients: ['cliente@ejemplo.test'],
+      recipients: ['cliente@example.com'],
     });
     expect(sent.committed).toBeTruthy();
     const resent = await write('billing_invoice_delivery_resend', { id: invoiceId });
