@@ -1362,13 +1362,20 @@ async function presentCount(reader: Reader, count: InventoryCountRow, lines: rea
   };
 }
 
-export async function listInventoryCounts(writer: Writer, legalEntityId: string | null, limit: number) {
+export async function listInventoryCounts(writer: Writer, legalEntityId: string | null, limit: number, cursor: string | null = null) {
   const where = legalEntityId ? `WHERE legal_entity_id = ${uuidSql(legalEntityId)}` : "";
+  const after = cursor
+    ? `${where ? "AND" : "WHERE"} EXISTS (
+        SELECT 1 FROM inventory.inventory_count c
+        WHERE c.id = ${uuidSql(cursor)}
+          AND (ic.counted_at < c.counted_at OR (ic.counted_at = c.counted_at AND ic.id < c.id))
+      )`
+    : "";
   const [rows, totals] = await Promise.all([
     writer.read<{ id: string }>(`
-      SELECT id FROM inventory.inventory_count
-      ${where}
-      ORDER BY counted_at DESC, id DESC
+      SELECT ic.id FROM inventory.inventory_count ic
+      ${where} ${after}
+      ORDER BY ic.counted_at DESC, ic.id DESC
       LIMIT ${limit + 1}
     `),
     writer.read<{ total: unknown }>(`SELECT count(*)::BIGINT AS total FROM inventory.inventory_count ${where}`),
