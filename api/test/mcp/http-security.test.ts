@@ -94,7 +94,7 @@ describe('MCP HTTP', () => {
       expect(who.status).toBe(200);
       expect(who.error).toBe(false);
       expect(typeof who.data?.client).toBe('string');
-      const missing = await plain.app.handle(new Request('http://localhost/mcp', { method: 'POST' }));
+      const missing = await plain.app.handle(new Request('http://localhost/m2m/mcp/otro', { method: 'POST' }));
       expect(missing.status).toBe(404);
     } finally {
       await plain.close();

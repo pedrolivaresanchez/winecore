@@ -882,6 +882,15 @@ export function createApp(deps: AppDeps) {
     }, request), {
       beforeHandle: requireUserOrMachine(guardDeps),
     })
+    // Alias para `MCPServer(service="api")` de Timbal: el agente `asistente` llama a `{origen}/api/mcp` con la sesión de la persona.
+    .post('/mcp', ({ request }) => handleAuthenticatedMcp({
+      config: deps.config,
+      writer: deps.writer,
+      now: http.now,
+      limiter: mcpLimiter,
+    }, request), {
+      beforeHandle: requireUserOrMachine(guardDeps),
+    })
     .get('/v1/mcp/clients', () => listMcpClients(deps.writer), {
       beforeHandle: requireOwner(guardDeps),
     })
