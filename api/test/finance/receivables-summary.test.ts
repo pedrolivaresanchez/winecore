@@ -81,7 +81,7 @@ describe('pendiente de cobro con nombre de cliente y resumen', () => {
         ['HP-01', 'Lince Holded', 'tax_id', 'PO'],
         [native.number, 'Viñedos Lince SL', 'contact', 'PO'],
       ]);
-      expect(linceGroup?.items.map((item) => item.document_id)).toEqual([holdedOf.get(open.lince), native.id]);
+      expect(linceGroup?.items.map((item) => item.document_id)).toEqual([holdedOf.get(open.lince ?? ''), native.id]);
       const garzaItem = page.groups.find((group) => group.contact_id === garza)?.items[0];
       expect(garzaItem).toMatchObject({ contact_match: 'name', counterparty_name: 'comercial  GARZA sl', outstanding: '30.00', is_overdue: false });
       expect(page.groups.find((group) => group.contact_id === nueva)?.items[0]).toMatchObject({ target_id: open.fusion, contact_match: 'contact' });
