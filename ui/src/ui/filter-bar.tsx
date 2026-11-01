@@ -132,26 +132,28 @@ function FilterRow({ search, filters = [], values = {}, onChange, onClear, grid,
   return (
     <div role="toolbar" data-filter-bar="" className={cn(LIST_BAR, className)}>
       {leading}
-      {search ? (
-        <Input
-          id={search.id}
-          size="sm"
-          type="search"
-          value={search.value}
-          placeholder={search.placeholder ?? labels.search}
-          aria-label={search.placeholder ?? labels.search}
-          className="w-36 shrink-0 sm:w-56"
-          prefix={<Search className="size-3.5" strokeWidth={iconStroke} />}
-          onChange={(event) => search.onChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape' && search.value) {
-              event.stopPropagation()
-              search.onChange('')
-            }
-          }}
-        />
-      ) : null}
+      {/* The search scrolls with the chips: on a phone the page's own buttons keep their
+          place at the end, and the row is still one strip. */}
       <div className={cn(FRAME_STRIP_SCROLL, '[&>*]:shrink-0')}>
+        {search ? (
+          <Input
+            id={search.id}
+            size="sm"
+            type="search"
+            value={search.value}
+            placeholder={search.placeholder ?? labels.search}
+            aria-label={search.placeholder ?? labels.search}
+            className="w-40 sm:w-56"
+            prefix={<Search className="size-3.5" strokeWidth={iconStroke} />}
+            onChange={(event) => search.onChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && search.value) {
+                event.stopPropagation()
+                search.onChange('')
+              }
+            }}
+          />
+        ) : null}
         {visible.map((def, index) => {
           const quickRow = (def.kind === 'single' || def.kind === 'multi') && def.display === 'chips'
           const divide = quickRow && index < visible.length - 1

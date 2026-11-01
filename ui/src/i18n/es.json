@@ -3177,6 +3177,30 @@
       "previous": "Anterior",
       "next": "Siguiente",
       "rowsPerPage": "Filas por página"
+    },
+    "bulk": {
+      "exportCsv": "Exportar CSV",
+      "exported": "CSV con {n} filas",
+      "archive": "Archivar",
+      "unarchive": "Reactivar",
+      "partial": "Hecho en {done} de {n}. El resto no se ha podido cambiar."
+    },
+    "contacts": {
+      "kind": "Tipo",
+      "companies": "Empresas",
+      "people": "Personas",
+      "role": "Papel",
+      "country": "País",
+      "roles": {
+        "customer": "Cliente",
+        "supplier": "Proveedor",
+        "carrier": "Transportista",
+        "logistics_operator": "Operador logístico"
+      },
+      "archiveTitle": "Archivar {n} contactos",
+      "archiveBody": "Dejan de salir en la lista. Se recuperan desde Archivados.",
+      "archivedDone": "{n} contactos archivados",
+      "unarchivedDone": "{n} contactos reactivados"
     }
   }
 }
