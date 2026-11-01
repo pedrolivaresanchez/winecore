@@ -244,6 +244,109 @@ export function contactDetail(id: string) {
   };
 }
 
+export function contactOverview(id: string) {
+  const rich = id === "c-encina";
+  const months = ["2025-11", "2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10"];
+  const totals = rich ? [0, 480, 0, 0, 1210, 0, 0, 860, 0, 0, 1540, 0] : months.map(() => 0);
+  const invoice = (number: string, date: string, total: string, pending: string, state: string, source = "winecore") => ({
+    source,
+    id: source === "winecore" ? `inv-${number}` : `h-${number}`,
+    number,
+    issue_date: date,
+    due_date: date,
+    total,
+    pending,
+    state,
+    status: "issued",
+    entity_code: "VR",
+    linked_by: "contact",
+  });
+  return {
+    contact_id: id,
+    as_of: "2026-10-31",
+    year: 2026,
+    invoices: {
+      kpis: rich
+        ? {
+            invoiced_ytd: "3610.00",
+            invoiced_prior_ytd: "2900.00",
+            invoiced_last_year: "3380.00",
+            invoiced_total: "4090.00",
+            invoice_count: 4,
+            average_ticket: "1022.50",
+            first_invoice_date: "2025-12-04",
+            last_invoice_date: "2026-09-18",
+          }
+        : {
+            invoiced_ytd: "0.00",
+            invoiced_prior_ytd: "0.00",
+            invoiced_last_year: "0.00",
+            invoiced_total: "0.00",
+            invoice_count: 0,
+            average_ticket: null,
+            first_invoice_date: null,
+            last_invoice_date: null,
+          },
+      months: months.map((month, index) => ({ month, total: (totals[index] ?? 0).toFixed(2) })),
+      total_count: rich ? 4 : 0,
+      items: rich
+        ? [
+            invoice("VR26-0031", "2026-09-18", "1540.00", "1540.00", "pending"),
+            invoice("VR26-0019", "2026-06-02", "860.00", "0.00", "paid"),
+            invoice("F260044", "2026-03-11", "1210.00", "0.00", "paid", "holded"),
+            invoice("F250310", "2025-12-04", "480.00", "0.00", "paid", "holded"),
+          ]
+        : [],
+    },
+    receivables: {
+      total: rich ? "1540.00" : "0.00",
+      overdue: "0.00",
+      count: rich ? 1 : 0,
+      items: rich
+        ? [
+            {
+              source: "winecore",
+              id: "oi-1",
+              invoice_id: "inv-VR26-0031",
+              number: "VR26-0031",
+              issue_date: "2026-09-18",
+              due_date: "2026-11-17",
+              outstanding: "1540.00",
+              is_overdue: false,
+              days_overdue: 0,
+              entity_code: "VR",
+              linked_by: "contact",
+            },
+          ]
+        : [],
+    },
+    payments: {
+      total: rich ? "860.00" : "0.00",
+      count: rich ? 1 : 0,
+      items: rich
+        ? [
+            {
+              source: "winecore",
+              id: "pay-1",
+              date: "2026-07-01",
+              document_date: "2026-06-02",
+              amount: "860.00",
+              method: "transfer",
+              reference: null,
+              entity_code: "VR",
+              documents: ["VR26-0019"],
+            },
+          ]
+        : [],
+    },
+    sales: {
+      quotes: rich ? [{ source: "winecore", id: "q-1", number: "PR26-0007", date: "2026-08-20", status: "accepted", total: "1540.00" }] : [],
+      orders: [],
+      delivery_notes: [],
+    },
+  };
+}
+
 export const auditEvents = [
   {
     id: "ev-1",

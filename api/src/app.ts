@@ -63,6 +63,7 @@ import {
   createPerson,
   exportContacts,
   getContact,
+  getContactSummary,
   listContacts,
   patchAddress,
   patchContact,
@@ -364,6 +365,9 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requirePermission(guardDeps, 'contacts.write'),
     })
     .get('/v1/contacts/:id', ({ request, params }) => getContact(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'contacts.read'),
+    })
+    .get('/v1/contacts/:id/summary', ({ request, params }) => getContactSummary(deps.writer, request, params.id, guardDeps.now?.() ?? new Date()), {
       beforeHandle: requirePermission(guardDeps, 'contacts.read'),
     })
     .patch('/v1/contacts/:id', ({ request, params }) => patchContact(deps.writer, request, params.id), {
