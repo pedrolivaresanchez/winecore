@@ -13,7 +13,6 @@ test("Ventas: presupuesto, pedido, albarán y factura con PDF", async ({ page })
     await page.locator('[data-screen="ventas-dialogo"]').waitFor();
     const product = page.getByRole("combobox", { name: "Producto" });
     await expect.poll(async () => product.locator("option").count(), { timeout: 8_000 }).toBeGreaterThan(1);
-    const optionCount = await product.locator("option").count();
     const customerBox = page.getByRole("combobox", { name: "Cliente" });
     customer = (await customerBox.locator("option").nth(1).textContent())?.trim() ?? "";
     await customerBox.selectOption({ index: 1 });
