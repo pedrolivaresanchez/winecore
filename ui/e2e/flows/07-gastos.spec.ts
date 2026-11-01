@@ -39,13 +39,9 @@ test("Gastos: capturar un PDF, completar, validar y aprobar", async ({ page }) =
 
   await test.step("Completar los datos que no leyó el OCR", async () => {
     const supplier = page.locator("#gasto-contacto");
-    await supplier.waitFor();
-    if ((await supplier.locator("option").count()) > 1) {
-      await supplier.selectOption({ index: 1 });
-    } else {
-      await page.locator("#gasto-nombre").fill("Suministros Sinteticos SL");
-      await page.locator("#gasto-nif").fill("B11111119");
-    }
+    // Free-text supplier names are not saved: validation needs a supplier contact from the list.
+    await expect(supplier.locator("option").nth(1)).toBeAttached();
+    await supplier.selectOption({ index: 1 });
     await page.locator("#gasto-numero").fill(`F-E2E-${Date.now()}`);
     await page.locator('label[for="gasto-fecha"]').locator("xpath=..").getByRole("button").first().click();
     await page.getByRole("button", { name: "Hoy", exact: true }).click();
@@ -57,6 +53,7 @@ test("Gastos: capturar un PDF, completar, validar y aprobar", async ({ page }) =
     await page.locator("#linea-base-0").fill("48");
     await page.locator("#linea-iva-0").fill("21");
     await expect(page.locator("#gasto-total")).toHaveValue("58.08");
+    await page.getByRole("button", { name: "Guardar" }).click();
   });
 
   await test.step("Validar y aprobar el gasto", async () => {

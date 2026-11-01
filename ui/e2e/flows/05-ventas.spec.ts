@@ -99,7 +99,10 @@ test("Ventas: presupuesto, pedido, albarán y factura con PDF", async ({ page })
     await page.getByRole("tab", { name: "Envío" }).click();
     await expect(page.getByText("Pendiente de envío").first()).toBeVisible();
     await page.getByRole("tab", { name: "PDF" }).click();
-    await expect(page.getByTitle("PDF")).toBeVisible();
+    // Headless Chromium has no PDF viewer: the tab then offers the same blob as a download.
+    const download = page.getByRole("link", { name: "Descargar PDF" }).first();
+    await expect(page.getByTitle("PDF").or(download).first()).toBeVisible();
+    if (await download.isVisible()) await expect(download).toHaveAttribute("href", /^blob:/);
     const number = (await page.locator("h1").first().textContent())?.trim() ?? "";
     writeState({ customerName: customer, invoiceNumber: number, deliveryNoteId: noteId });
   });
