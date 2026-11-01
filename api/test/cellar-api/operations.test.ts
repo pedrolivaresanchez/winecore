@@ -83,6 +83,26 @@ function transfer(cellar: World, outputMl: number, lossMl: number) {
 }
 
 describe('operaciones de bodega', () => {
+  it('edita un borrador con lotes y recipientes, también su fecha', async () => {
+    const ctx = await createTestApp();
+    try {
+      const cellar = await world(ctx);
+      const draft = await call(ctx, 'POST', '/v1/cellar-operations', transfer(cellar, 220_000, 5_000), 'bodega@winecore.test');
+      expect(draft.status).toBe(201);
+      const edited = await call(ctx, 'PATCH', `/v1/cellar-operations/${draft.body.id}`, {
+        ...transfer(cellar, 200_000, 0),
+        occurred_at: '2026-06-16T08:00:00Z',
+        fiscal_date: '2026-06-16',
+      }, 'bodega@winecore.test');
+      expect(edited.status).toBe(200);
+      expect(String(edited.body.occurred_at)).toStartWith('2026-06-16');
+      const lines = edited.body.lines as { role: string; volume_ml: number }[];
+      expect(lines.map((line) => [line.role, line.volume_ml])).toEqual([['input', 200_000], ['output', 200_000]]);
+    } finally {
+      await ctx.close();
+    }
+  });
+
   it('trasiega de depósito a barrica con merma y mueve el libro fiscal', async () => {
     const ctx = await createTestApp();
     try {

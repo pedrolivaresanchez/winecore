@@ -36,7 +36,7 @@ describe('0042: alcances del cliente MCP pedro-owner', () => {
       const clientsBefore = await client.query(`SELECT * FROM core.api_client ORDER BY code`);
 
       const applied = await migrate(client);
-      expect(applied.pending).toEqual(['0042_mcp_owner_scopes.sql']);
+      expect(applied.pending[0]).toBe('0042_mcp_owner_scopes.sql');
 
       expect(await client.query(`SELECT * FROM core.api_token`)).toEqual(tokenBefore);
       expect(await client.query(`SELECT * FROM core.api_client ORDER BY code`)).toEqual(clientsBefore);
