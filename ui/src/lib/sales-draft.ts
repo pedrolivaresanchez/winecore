@@ -12,6 +12,7 @@ export type DraftLine = {
   touched: boolean
   taxCode: string
   lotId: string
+  lotCode: string
   orderLineId: string
 }
 
@@ -27,6 +28,7 @@ export function blankLine(): DraftLine {
     touched: false,
     taxCode: '',
     lotId: '',
+    lotCode: '',
     orderLineId: '',
   }
 }
@@ -44,8 +46,16 @@ export function draftsFrom(lines: SalesLine[]): DraftLine[] {
     touched: false,
     taxCode: line.tax_code ?? '',
     lotId: line.lot_id ?? '',
+    lotCode: '',
     orderLineId: line.order_line_id ?? '',
   }))
+}
+
+/** Tariffs carry six decimals; the price field shows the short form. */
+export function shortPrice(value: string | null | undefined): string {
+  if (value == null || value === '') return ''
+  const n = Number(value)
+  return Number.isFinite(n) ? String(n) : value
 }
 
 function trimQty(value: string): string {

@@ -11,6 +11,7 @@ type Check = {
   id: string;
   status: string;
   detail: string;
+  href?: string | null;
   action?: {
     kind: string;
     items?: unknown[];
@@ -106,7 +107,7 @@ describe('puesta en marcha', () => {
       expect(badLetter.status).toBe(422);
       const forbidden = await call(ctx, 'PATCH', '/v1/legal-entities/PO', {
         address_line: 'Camino del Lagar 7',
-      }, 'admin@winecore.test');
+      }, 'asesor@winecore.test');
       expect(forbidden.status).toBe(403);
 
       const saved = await call(ctx, 'PATCH', '/v1/legal-entities/PO', {
@@ -122,6 +123,17 @@ describe('puesta en marcha', () => {
       const entity = await saved.json() as { postal_code: string; legal_name: string };
       expect(entity.legal_name).toBe('Productor Ejemplo');
       expect(entity.postal_code).toBe('02240');
+
+      const listed = await call(ctx, 'GET', '/v1/legal-entities', undefined, 'admin@winecore.test');
+      expect(listed.status).toBe(200);
+      const entities = (await listed.json() as { items: { id: string; code: string; postal_code: string | null }[] }).items;
+      expect(entities.map((item) => item.code)).toContain('PO');
+      expect(entities.find((item) => item.code === 'PO')?.postal_code).toBe('02240');
+      expect(entities.every((item) => /^[0-9a-f-]{36}$/.test(item.id))).toBe(true);
+      const hidden = await call(ctx, 'GET', '/v1/legal-entities', undefined, 'asesor@winecore.test');
+      expect(hidden.status).toBe(403);
+      const byAdmin = await call(ctx, 'PATCH', '/v1/legal-entities/PO', { city: 'Villarejo' }, 'admin@winecore.test');
+      expect(byAdmin.status).toBe(200);
 
       const afterAddress = await report(ctx);
       expect(findCheck(afterAddress, 'facturacion_po', 'entity.PO.address').status).toBe('ok');
@@ -145,6 +157,11 @@ describe('puesta en marcha', () => {
       const readyEori = await report(ctx);
       expect(findCheck(readyEori, 'facturacion_po', 'entity.PO.eori').status).toBe('ok');
       expect(findCheck(readyEori, 'facturacion_po', 'entity.PO.eori').detail).not.toContain('ES00000000T');
+
+      const billing = findCheck(readyEori, 'facturacion_po', 'series.billing.po');
+      expect(billing.status).toBe('missing');
+      expect(billing.action).toBeUndefined();
+      expect(billing.href).toBe('settings:numbering');
 
       const sales = findCheck(readyEori, 'ventas', 'series.sales');
       expect(sales.action?.kind).toBe('create_series');

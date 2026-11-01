@@ -238,7 +238,7 @@ function listItem(row: Record<string, unknown>) {
     payment_status: String(row.payment_status),
     status: String(row.status),
     invoice_type: String(row.invoice_type),
-    series_id: idOf(row.series_id),
+    series_id: row.series_id == null ? null : idOf(row.series_id),
     verifactu_record_id: row.verifactu_record_id == null ? null : idOf(row.verifactu_record_id),
     delivery_status: deliveryStatusOf(row.delivery_status),
     last_delivery_at: stamp(row.last_delivery_at),

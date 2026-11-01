@@ -6,7 +6,7 @@ import type { Actor, Tx } from '../db/writer';
 import { DomainError, domainError } from '../errors';
 import { sha256Hex } from '../hash';
 import { newId } from '../ids';
-import { takeNumber } from '../series';
+import { ensureDefaultSeries, takeNumber, takeProvisionedNumber } from '../series';
 import { businessDate } from '../time';
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -163,6 +163,8 @@ export async function assignNumber(
   date: Date,
 ): Promise<{ number: string; seriesId: string }> {
   const year = Number(businessDate(date).slice(0, 4));
+  const fresh = await ensureDefaultSeries(tx, legalEntityId, docType, year);
+  if (fresh) return { number: takeProvisionedNumber(tx, fresh), seriesId: fresh.id };
   const rows = await tx.read<{ id: unknown; is_default: unknown }>(sql`
     SELECT id, is_default
     FROM core.number_series
@@ -320,6 +322,20 @@ export async function assertEntity(tx: Tx, id: string): Promise<string> {
   const code = await entityCode(tx, id);
   if (!code) fail('La entidad no existe', { legal_entity_id: id });
   return code;
+}
+
+export async function assertActiveEntity(tx: Tx, id: string): Promise<void> {
+  const rows = await tx.read<{ is_active: unknown }>(sql`
+    SELECT is_active FROM core.legal_entity WHERE id = CAST(${id} AS UUID)
+  `);
+  const row = rows[0];
+  if (!row) fail('La entidad no existe', { legal_entity_id: id });
+  if (!boolOf(row.is_active)) fail('La entidad no está activa', { legal_entity_id: id });
+}
+
+export function optionalId(value: unknown, field: string, fields: Record<string, string>): string | null {
+  if (value == null || value === '') return null;
+  return bodyId(value, field, fields);
 }
 
 export async function taxRateOf(tx: Tx, code: string): Promise<Decimal> {

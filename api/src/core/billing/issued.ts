@@ -40,7 +40,7 @@ export interface IssuedInvoice {
   entityCode: string;
   personType: string;
   incomeTax: string;
-  seriesId: string;
+  seriesId: string | null;
   number: string;
   invoiceType: string;
   rectificationKind: string | null;

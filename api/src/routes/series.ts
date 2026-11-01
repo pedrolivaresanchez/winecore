@@ -7,6 +7,8 @@ import {
   ensureSeriesForYear,
   isDocType,
   listSeries,
+  numberingProposal,
+  openNumbering,
   readSeries,
   type DocType,
   type EnsureSeriesInput,
@@ -40,6 +42,33 @@ export async function createNumberSeriesBulk(writer: Writer, request: Request) {
     return out;
   });
   return { items: created };
+}
+
+export async function getNumberingProposal(writer: Writer, request: Request) {
+  sessionOf(request);
+  const url = new URL(request.url);
+  return numberingProposal(writer, {
+    legalEntityId: url.searchParams.get('legal_entity_id') ?? '',
+    docType: url.searchParams.get('doc_type') ?? '',
+    year: Number(url.searchParams.get('year') ?? ''),
+  });
+}
+
+export async function openNumberSeries(writer: Writer, request: Request) {
+  const user = sessionOf(request);
+  const raw = await readJson(request);
+  const body = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+  const id = await writer.withWrite(
+    { ...actor(user.id, request), reason: 'numeración de la primera factura del año' },
+    (tx) => openNumbering(tx, {
+      legalEntityId: typeof body.legal_entity_id === 'string' ? body.legal_entity_id : '',
+      docType: typeof body.doc_type === 'string' ? body.doc_type : '',
+      year: typeof body.year === 'number' ? body.year : Number.NaN,
+      choice: body.choice,
+      nextValue: body.next_value,
+    }),
+  );
+  return readSeries((statement) => writer.read(statement), id);
 }
 
 export async function deactivateNumberSeries(writer: Writer, request: Request, id: string) {
@@ -121,14 +150,21 @@ function parseBulkItem(entry: unknown, index: number, fields: Record<string, str
   const seriesPrefix = typeof body.prefix === 'string' ? body.prefix : '';
   if (seriesPrefix.length < 1 || seriesPrefix.length > 12) fields[`${prefix}.prefix`] = 'El prefijo debe tener entre 1 y 12 caracteres';
   const padding = body.padding === undefined ? 4 : body.padding;
-  if (typeof padding !== 'number' || !Number.isInteger(padding) || padding < 3 || padding > 8) {
-    fields[`${prefix}.padding`] = 'El relleno debe estar entre 3 y 8';
+  if (typeof padding !== 'number' || !Number.isInteger(padding) || padding < 2 || padding > 8) {
+    fields[`${prefix}.padding`] = 'El relleno debe estar entre 2 y 8';
+  }
+  const nextValue = body.next_value === undefined ? 1 : body.next_value;
+  if (typeof nextValue !== 'number' || !Number.isInteger(nextValue) || nextValue < 1) {
+    fields[`${prefix}.next_value`] = 'El primer número debe ser un entero desde 1';
   }
   const isDefault = body.is_default === undefined ? true : body.is_default;
   const verifactu = body.verifactu === undefined ? false : body.verifactu;
   if (typeof isDefault !== 'boolean') fields[`${prefix}.is_default`] = 'Debe ser verdadero o falso';
   if (typeof verifactu !== 'boolean') fields[`${prefix}.verifactu`] = 'Debe ser verdadero o falso';
-  if (!isDocType(docTypeRaw) || typeof year !== 'number' || typeof padding !== 'number' || typeof isDefault !== 'boolean' || typeof verifactu !== 'boolean') {
+  if (
+    !isDocType(docTypeRaw) || typeof year !== 'number' || typeof padding !== 'number'
+    || typeof nextValue !== 'number' || typeof isDefault !== 'boolean' || typeof verifactu !== 'boolean'
+  ) {
     return null;
   }
   const docType: DocType = docTypeRaw;
@@ -141,6 +177,7 @@ function parseBulkItem(entry: unknown, index: number, fields: Record<string, str
     padding,
     isDefault,
     verifactu,
+    nextValue,
   };
 }
 

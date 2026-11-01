@@ -318,7 +318,7 @@ function FiltrationDialog({ me, onClose, onSaved }: { me: Me; onClose: () => voi
       <DialogHeader titleId="filtracion-nueva" title={copy.higiene.newFiltration} onClose={onClose} />
       <DialogBody>
         <form
-          id="filtracion-nueva"
+          id="filtracion-nueva-form"
           data-screen="higiene-dialogo-filtracion"
           className="grid gap-4 pb-2"
           onSubmit={(event) => {
@@ -445,7 +445,7 @@ function FiltrationDialog({ me, onClose, onSaved }: { me: Me; onClose: () => voi
         <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={saving}>
           {copy.higiene.cancel}
         </Button>
-        <Button type="submit" form="filtracion-nueva" variant="primary" size="sm" loading={saving}>
+        <Button type="submit" form="filtracion-nueva-form" variant="primary" size="sm" loading={saving}>
           {copy.higiene.save}
         </Button>
       </DialogFooter>

@@ -125,7 +125,8 @@ describe('priceFor', () => {
     const customCustomer = await contact('distributor', custom);
     const channelCustomer = await contact('distributor', null);
     const generalCustomer = await contact(null, null);
-    const shopCustomer = await contact('web', null);
+    const shopCustomer = await contact('cellar_shop', null);
+    const webCustomer = await contact('web', null);
 
     const customPrice = await priceFor(ctx.writer, {
       customerId: customCustomer,
@@ -185,6 +186,13 @@ describe('priceFor', () => {
     });
     expect(shopPrice.unitPrice.toFixed(4)).toBe('9.0000');
     expect(shopPrice.priceListCode).toBe('shop');
+    const webPrice = await priceFor(ctx.writer, {
+      customerId: webCustomer,
+      productId: product,
+      qty: new Decimal('1'),
+      date: '2026-06-01',
+    });
+    expect(webPrice.priceListCode).toBe('final');
 
     const quote = await ctx.app.handle(new Request(
       `http://localhost/v1/price-quote?customer_id=${customCustomer}&product_id=${product}&qty=1.5&date=2026-06-01`,

@@ -4,6 +4,7 @@ import { domainError } from '../errors';
 import { businessDate } from '../time';
 import {
   asRecord,
+  assertActiveEntity,
   assertChannel,
   assertEntity,
   assignNumber,
@@ -16,6 +17,7 @@ import {
   loadCustomer,
   loadProduct,
   newRowId,
+  optionalId,
   optionalText,
   parseDate,
   parseIncoterm,
@@ -29,7 +31,7 @@ import {
   UUID_RE,
 } from './db';
 import { parseCommercialLines, resolveLinePrice, type CommercialLineInput } from './pricing';
-import { resolutionJson, resolveIssuingEntity } from './rules';
+import { draftEntity, resolutionJson, resolveIssuingEntity } from './rules';
 import { priceTotals, type PricedLine } from './totals';
 
 const SOURCES = new Set(['manual', 'edi', 'web', 'mcp', 'import']);
@@ -67,12 +69,13 @@ export async function createSalesOrder(
       return { status: Number(stored.status_code), body: jsonValue(stored.response) as Record<string, unknown> };
     }
   }
-  const input = await parseOrderBody(tx, raw);
+  const input = await parseOrderBody(tx, raw, true);
   const id = newRowId();
   const now = new Date();
   const customer = await loadCustomer(tx, input.customerId);
   if (!customer.is_customer) fail('El contacto no es cliente', { customer_id: input.customerId });
   await assertChannel(tx, input.channel);
+  const trace = await chosenEntityTrace(tx, actor, input, now);
   if (input.externalRef) {
     const dup = await tx.read(sql`
       SELECT id FROM sales.sales_order
@@ -86,7 +89,7 @@ export async function createSalesOrder(
     INSERT INTO sales.sales_order (
       id, status, invoicing_status, source, channel, customer_id, customer_order_ref,
       customer_department, customer_cost_center, external_ref, order_date, requested_date,
-      ship_to, incoterm, quote_id, currency, notes, subtotal, tax_total, total,
+      ship_to, incoterm, quote_id, billing_rule_trace, currency, notes, subtotal, tax_total, total,
       created_by, created_at, updated_at
     ) VALUES (
       CAST(${id} AS UUID), 'draft', 'not_invoiced', ${input.source}, ${input.channel},
@@ -95,7 +98,7 @@ export async function createSalesOrder(
       CASE WHEN ${input.requestedDate} IS NULL THEN NULL ELSE CAST(${input.requestedDate} AS DATE) END,
       ${input.shipTo ? sql.json(input.shipTo) : null}, ${input.incoterm},
       CASE WHEN ${input.quoteId} IS NULL THEN NULL ELSE CAST(${input.quoteId} AS UUID) END,
-      'EUR', ${input.notes},
+      ${trace ? sql.json(trace) : null}, 'EUR', ${input.notes},
       CAST(${totals.subtotal} AS DECIMAL(14,2)), CAST(${totals.tax_total} AS DECIMAL(14,2)),
       CAST(${totals.total} AS DECIMAL(14,2)), ${actor.id}, ${now}, ${now}
     )
@@ -106,7 +109,13 @@ export async function createSalesOrder(
     rowId: id,
     action: 'INSERT',
     before: null,
-    after: { customer_id: input.customerId, channel: input.channel, source: input.source, total: totals.total },
+    after: {
+      customer_id: input.customerId,
+      channel: input.channel,
+      source: input.source,
+      total: totals.total,
+      ...(trace ? { exception: trace.exception } : {}),
+    },
   });
   const body = await presentOrder(tx, {
     id,
@@ -128,7 +137,7 @@ export async function createSalesOrder(
     quote_id: input.quoteId,
     billing_rule_set_id: null,
     billing_rule_id: null,
-    billing_rule_trace: null,
+    billing_rule_trace: trace,
     currency: 'EUR',
     notes: input.notes,
     subtotal: totals.subtotal,
@@ -147,7 +156,7 @@ export async function createSalesOrder(
 export async function patchSalesOrder(tx: Tx, id: string, raw: unknown): Promise<Record<string, unknown>> {
   const order = await loadOrder(tx, id);
   assertDraft(order);
-  const input = await parseOrderBody(tx, raw);
+  const input = await parseOrderBody(tx, raw, false);
   const customer = await loadCustomer(tx, input.customerId);
   if (!customer.is_customer) fail('El contacto no es cliente', { customer_id: input.customerId });
   await assertChannel(tx, input.channel);
@@ -222,17 +231,16 @@ export async function confirmSalesOrder(tx: Tx, actor: Actor, id: string): Promi
   if (country && country !== 'ES' && !textOf(order.incoterm)) {
     fail('El Incoterm es obligatorio fuera de España', { incoterm: 'Obligatorio' });
   }
-  const resolved = await resolveIssuingEntity(tx, { customerId, channel });
   const trace = jsonOf(order.billing_rule_trace);
   const exception = trace.exception;
-  let entityId = resolved.entityId;
-  if (exception && typeof exception === 'object' && !Array.isArray(exception)) {
-    const override = (exception as { legal_entity_id?: unknown }).legal_entity_id;
-    if (typeof override === 'string') {
-      await assertEntity(tx, override);
-      entityId = override;
-    }
-  }
+  const override = overrideOf(exception);
+  if (override) await assertEntity(tx, override);
+  const resolved = await resolveIssuingEntity(tx, {
+    customerId,
+    channel,
+    bootstrap: { actorId: actor.id, entityId: override },
+  });
+  const entityId = override ?? resolved.entityId;
   const now = new Date();
   const taken = await assignNumber(tx, entityId, 'sales_order', now);
   const fullTrace = { ...resolved.trace, exception: exception ?? null };
@@ -262,7 +270,6 @@ export async function confirmSalesOrder(tx: Tx, actor: Actor, id: string): Promi
     before: { status: 'draft' },
     after: { status: 'confirmed', number: taken.number, legal_entity_id: entityId, billing_rule_id: resolved.ruleId },
   });
-  void actor;
   return presentOrder(tx, {
     ...order,
     status: 'confirmed',
@@ -289,24 +296,33 @@ export async function cancelSalesOrder(tx: Tx, actor: Actor, id: string, reason:
   const notes = appendNote(textOf(order.notes), `Cancelado: ${reason.trim()}`);
   let next: Record<string, unknown> = { ...order, status: 'cancelled', notes };
   if (status === 'draft') {
-    const resolved = await resolveIssuingEntity(tx, { customerId: idOf(order.customer_id), channel: String(order.channel) });
-    const taken = await assignNumber(tx, resolved.entityId, 'sales_order', now);
+    const exception = jsonOf(order.billing_rule_trace).exception;
+    const override = overrideOf(exception);
+    if (override) await assertEntity(tx, override);
+    const resolved = await resolveIssuingEntity(tx, {
+      customerId: idOf(order.customer_id),
+      channel: String(order.channel),
+      bootstrap: { actorId: actor.id, entityId: override },
+    });
+    const entityId = override ?? resolved.entityId;
+    const taken = await assignNumber(tx, entityId, 'sales_order', now);
+    const trace = { ...resolved.trace, exception: exception ?? null };
     next = {
       ...next,
       number: taken.number,
       series_id: taken.seriesId,
-      legal_entity_id: resolved.entityId,
+      legal_entity_id: entityId,
       billing_rule_set_id: resolved.ruleSetId,
       billing_rule_id: resolved.ruleId,
-      billing_rule_trace: resolved.trace,
+      billing_rule_trace: trace,
     };
     tx.write(sql`
       UPDATE sales.sales_order SET
         status = 'cancelled', number = ${taken.number}, series_id = CAST(${taken.seriesId} AS UUID),
-        legal_entity_id = CAST(${resolved.entityId} AS UUID),
+        legal_entity_id = CAST(${entityId} AS UUID),
         billing_rule_set_id = CAST(${resolved.ruleSetId} AS UUID),
         billing_rule_id = CAST(${resolved.ruleId} AS UUID),
-        billing_rule_trace = ${sql.json(resolved.trace)},
+        billing_rule_trace = ${sql.json(trace)},
         notes = ${notes}, updated_at = ${now}
       WHERE id = CAST(${id} AS UUID)
     `);
@@ -323,7 +339,6 @@ export async function cancelSalesOrder(tx: Tx, actor: Actor, id: string, reason:
     before: { status },
     after: { status: 'cancelled', reason: reason.trim() },
   });
-  void actor;
   return presentOrder(tx, next, await loadLines(tx, id), false);
 }
 
@@ -339,6 +354,39 @@ export async function closeSalesOrder(tx: Tx, id: string, reason: string): Promi
   `);
   tx.audit({ table: 'sales.sales_order', rowId: id, action: 'UPDATE', before: { status: 'partially_delivered' }, after: { status: 'closed', reason: reason.trim() } });
   return presentOrder(tx, { ...order, status: 'closed', notes }, await loadLines(tx, id), false);
+}
+
+function overrideOf(exception: unknown): string | null {
+  if (!exception || typeof exception !== 'object' || Array.isArray(exception)) return null;
+  const override = (exception as { legal_entity_id?: unknown }).legal_entity_id;
+  return typeof override === 'string' ? override : null;
+}
+
+/** Entidad elegida al crear: si no es la de las reglas, queda como la excepción de `setEntityException`. */
+async function chosenEntityTrace(
+  tx: Tx,
+  actor: Actor,
+  input: OrderInput,
+  now: Date,
+): Promise<{ exception: Record<string, unknown> } | null> {
+  if (!input.legalEntityId) return null;
+  await assertActiveEntity(tx, input.legalEntityId);
+  const { rule } = await draftEntity(tx, {
+    customerId: input.customerId,
+    channel: input.channel,
+    actorId: actor.id,
+    entityId: input.legalEntityId,
+  });
+  if (rule?.entityId === input.legalEntityId) return null;
+  const chosen = rule ? 'Entidad elegida al crear el pedido' : 'Entidad elegida a mano sin reglas activas';
+  return {
+    exception: {
+      legal_entity_id: input.legalEntityId,
+      reason: input.quoteId ? 'Entidad del presupuesto' : chosen,
+      at: now.toISOString(),
+      by: actor.id,
+    },
+  };
 }
 
 export async function setEntityException(tx: Tx, actor: Actor, id: string, entityId: string, reason: string): Promise<Record<string, unknown>> {
@@ -375,9 +423,11 @@ export async function listSalesOrders(writer: Writer, request: Request): Promise
   const entity = url.searchParams.get('entity');
   const channel = url.searchParams.get('channel');
   const cursor = url.searchParams.get('cursor');
+  const customer = url.searchParams.get('customer_id');
   const filters = ['TRUE'];
   if (status) filters.push(`status = ${sql`${status}`}`);
   if (entity && UUID_RE.test(entity)) filters.push(`legal_entity_id = CAST(${sql`${entity}`} AS UUID)`);
+  if (customer && UUID_RE.test(customer)) filters.push(`customer_id = CAST(${sql`${customer}`} AS UUID)`);
   if (channel) filters.push(`channel = ${sql`${channel}`}`);
   if (cursor) filters.push(`id < CAST(${sql`${cursor}`} AS UUID)`);
   const rows = await writer.read<Record<string, unknown>>(`
@@ -496,6 +546,7 @@ function assertDraft(order: Record<string, unknown>): void {
 
 type OrderInput = {
   customerId: string;
+  legalEntityId: string | null;
   channel: string;
   source: string;
   orderDate: string;
@@ -511,12 +562,13 @@ type OrderInput = {
   lines: CommercialLineInput[];
 };
 
-async function parseOrderBody(tx: Tx, raw: unknown): Promise<OrderInput> {
+async function parseOrderBody(tx: Tx, raw: unknown, creating: boolean): Promise<OrderInput> {
   const body = asRecord(raw);
-  if ('legal_entity_id' in body && body.legal_entity_id != null) {
+  if (!creating && 'legal_entity_id' in body && body.legal_entity_id != null) {
     fail('La entidad se cambia con una excepción', { legal_entity_id: 'No editable' });
   }
   const fields: Record<string, string> = {};
+  const legalEntityId = creating ? optionalId(body.legal_entity_id, 'legal_entity_id', fields) : null;
   const customerId = typeof body.customer_id === 'string' ? body.customer_id.trim().toLowerCase() : '';
   if (!/^[0-9a-f-]{36}$/.test(customerId)) fields.customer_id = 'Identificador no válido';
   const channel = typeof body.channel === 'string' ? body.channel : '';
@@ -543,6 +595,7 @@ async function parseOrderBody(tx: Tx, raw: unknown): Promise<OrderInput> {
   void tx;
   return {
     customerId,
+    legalEntityId,
     channel,
     source: String(source),
     orderDate,

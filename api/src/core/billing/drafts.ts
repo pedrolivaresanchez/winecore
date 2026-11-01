@@ -19,6 +19,7 @@ import {
   today,
 } from './format';
 import { DomainError } from '../errors';
+import { quoteListCode } from '../catalog/pricing';
 import { sameVersion } from '../party/contacts';
 import {
   findDefaultSeries,
@@ -28,6 +29,7 @@ import {
   loadLines,
   loadSeries,
   loadTaxCodes,
+  seriesFits,
   type CustomerView,
   type EntityView,
   type SeriesView,
@@ -107,7 +109,7 @@ interface Built {
   id: string;
   entity: EntityView;
   customer: CustomerView;
-  series: SeriesView;
+  series: SeriesView | null;
   invoiceType: string;
   rectificationKind: 'S' | 'I' | null;
   channel: string | null;
@@ -232,7 +234,7 @@ async function buildNew(tx: Tx, input: CreateInput, now: Date): Promise<Built> {
   const manual = input.lines ?? [];
   const draftLines = [...sourced.lines, ...manual];
   const priceOn = input.issueDate ?? input.operationDate ?? today(now);
-  const enriched = await enrichLines(tx, draftLines, customer, priceOn, input.rectificationKind);
+  const enriched = await enrichLines(tx, draftLines, customer, channel, priceOn, input.rectificationKind);
   const targets = input.rectifies ? await loadTargets(tx, input.rectifies) : [];
   assertRectificationEntity(input, entity.taxId, entity.id, targets);
   const year = Number((input.issueDate ?? today(now)).slice(0, 4));
@@ -300,13 +302,10 @@ async function buildUpdate(
   const issueDate = patch.issueDate === undefined ? current.issueDate : patch.issueDate;
   const operationDate = patch.operationDate === undefined ? current.operationDate : patch.operationDate;
   const year = Number((issueDate ?? today(now)).slice(0, 4));
-  const series = await chooseSeries(
-    tx,
-    patch.seriesId === undefined ? current.seriesId : patch.seriesId,
-    entity.id,
-    seriesDocType(current.invoiceType),
-    year,
-  );
+  const docType = seriesDocType(current.invoiceType);
+  const series = patch.seriesId === undefined
+    ? await keptSeries(tx, current.seriesId, entity.id, docType, year)
+    : await chooseSeries(tx, patch.seriesId, entity.id, docType, year);
   const terms = patch.paymentTermsDays === undefined
     ? current.paymentTermsDays ?? customer.paymentTermsDays
     : patch.paymentTermsDays;
@@ -331,7 +330,7 @@ async function buildUpdate(
       if (!isUuid(line.productId)) throw domainError('WC_VALIDATION', { product_id: 'El producto es obligatorio' });
     }
   }
-  const enriched = await enrichLines(tx, sourceLines.filter((line) => isUuid(line.productId)), customer, priceOn, current.rectificationKind);
+  const enriched = await enrichLines(tx, sourceLines.filter((line) => isUuid(line.productId)), customer, channel, priceOn, current.rectificationKind);
   const priced = applyTotals(enriched, await loadTaxCodes(tx), terms, priceOn, language);
   const physical = physicalReturnOf(current, patch);
   const keptIds = patch.lines ? null : await loadLines(tx, current.id);
@@ -438,6 +437,7 @@ async function enrichLines(
   tx: Tx,
   lines: readonly ManualLine[],
   customer: CustomerView,
+  channel: string | null,
   priceOn: string,
   kind: 'S' | 'I' | null,
 ): Promise<BuiltLine[]> {
@@ -457,7 +457,7 @@ async function enrichLines(
     }
     const unitPrice = line.unitPrice
       ? scale(line.unitPrice, 6)
-      : await unitPriceOf(tx, product.id, customer.defaultPriceListId, priceOn, quantity.abs());
+      : await unitPriceOf(tx, product.id, customer.defaultPriceListId, channel, priceOn, quantity.abs());
     if (unitPrice.isNeg()) throw domainError('WC_VALIDATION', { unit_price: 'El precio no puede ser negativo' });
     const taxCode = line.taxCode ?? product.defaultTaxCode;
     if (!taxCode) throw domainError('WC_VALIDATION', { tax_code: 'Indica el código de impuesto' });
@@ -492,13 +492,18 @@ async function unitPriceOf(
   tx: Tx,
   productId: string,
   priceListId: string | null,
+  channel: string | null,
   on: string,
   qty: Decimal,
 ): Promise<Decimal> {
   let listId = priceListId;
   if (!listId) {
+    const code = quoteListCode(channel);
     const lists = await tx.read<{ id: unknown; tax_included: unknown }>(sql`
-      SELECT id, tax_included FROM catalog.price_list WHERE code = 'final' AND is_active LIMIT 1
+      SELECT id, tax_included FROM catalog.price_list
+      WHERE code IN (${code}, 'final') AND is_active
+      ORDER BY code = 'final'
+      LIMIT 1
     `);
     const list = lists[0];
     if (!list) throw domainError('WC_INV_PRICE', { product_id: 'No hay precio para el producto' });
@@ -710,20 +715,32 @@ async function requireEntity(tx: Tx, id: string): Promise<EntityView> {
   return entity;
 }
 
+/**
+ * Sin serie elegida, la de por defecto del año si existe. Si la entidad aún no tiene numeración
+ * fiscal, el borrador queda sin serie y se elige al emitir.
+ */
 async function chooseSeries(
   tx: Tx,
   explicitId: string | null,
   entityId: string,
   docType: string,
   year: number,
-): Promise<SeriesView> {
-  const series = explicitId
-    ? await loadSeries(tx, explicitId)
-    : await findDefaultSeries(tx, entityId, docType, year);
-  if (!series || !series.active || series.legalEntityId !== entityId || series.docType !== docType || series.year !== year) {
-    throw domainError('WC_INV_SERIES');
-  }
+): Promise<SeriesView | null> {
+  if (!explicitId) return findDefaultSeries(tx, entityId, docType, year);
+  const series = await loadSeries(tx, explicitId);
+  if (!seriesFits(series, entityId, docType, year)) throw domainError('WC_INV_SERIES');
   return series;
+}
+
+async function keptSeries(
+  tx: Tx,
+  currentId: string | null,
+  entityId: string,
+  docType: string,
+  year: number,
+): Promise<SeriesView | null> {
+  const current = currentId ? await loadSeries(tx, currentId) : null;
+  return seriesFits(current, entityId, docType, year) ? current : findDefaultSeries(tx, entityId, docType, year);
 }
 
 interface RuleHit {
@@ -809,7 +826,7 @@ function insertInvoice(tx: Tx, built: Built, actor: Actor, now: Date): void {
     ) VALUES (
       CAST(${built.id} AS UUID),
       CAST(${built.entity.id} AS UUID),
-      CAST(${built.series.id} AS UUID),
+      CAST(${built.series?.id ?? null} AS UUID),
       'draft',
       ${built.invoiceType},
       ${built.rectificationKind},
@@ -850,7 +867,7 @@ function insertInvoice(tx: Tx, built: Built, actor: Actor, now: Date): void {
       invoice_type: built.invoiceType,
       legal_entity_id: built.entity.id,
       customer_id: built.customer.id,
-      series_id: built.series.id,
+      series_id: built.series?.id ?? null,
       total: built.total,
     },
   });
@@ -927,7 +944,7 @@ function updateHeader(tx: Tx, before: Awaited<ReturnType<typeof loadHeader>>, bu
   tx.write(sql`
     UPDATE billing.invoice SET
       legal_entity_id = CAST(${built.entity.id} AS UUID),
-      series_id = CAST(${built.series.id} AS UUID),
+      series_id = CAST(${built.series?.id ?? null} AS UUID),
       customer_id = CAST(${built.customer.id} AS UUID),
       channel = ${built.channel},
       issue_date = CAST(${built.issueDate} AS DATE),
@@ -953,7 +970,7 @@ function updateHeader(tx: Tx, before: Awaited<ReturnType<typeof loadHeader>>, bu
     rowId: built.id,
     action: 'UPDATE',
     before: { customer_id: before.customerId, total: before.total, series_id: before.seriesId },
-    after: { customer_id: built.customer.id, total: built.total, series_id: built.series.id },
+    after: { customer_id: built.customer.id, total: built.total, series_id: built.series?.id ?? null },
   });
 }
 

@@ -6,6 +6,7 @@ import { businessDate } from '../time';
 import {
   actorOf,
   asRecord,
+  assertActiveEntity,
   assertChannel,
   assignNumber,
   boolOf,
@@ -15,6 +16,7 @@ import {
   idOf,
   loadCustomer,
   newRowId,
+  optionalId,
   optionalText,
   parseDate,
   parseIncoterm,
@@ -30,7 +32,7 @@ import {
 import { createSalesOrder } from './orders';
 import { parseCommercialLines, resolveLinePrice } from './pricing';
 import { renderQuotePdf } from './proforma';
-import { resolveIssuingEntity } from './rules';
+import { draftEntity, previewIssuingEntity } from './rules';
 import { priceTotals, type PricedLine } from './totals';
 
 type ReadDb = Pick<Tx, 'read'>;
@@ -128,6 +130,7 @@ export async function createQuote(writer: Writer, request: Request): Promise<{ s
   const incoterm = parseIncoterm(raw.incoterm, 'incoterm', fields);
   const notes = optionalText(raw.notes, 'notes', fields, 2000);
   const validUntil = parseDate(raw.valid_until, 'valid_until', fields, false);
+  const explicitEntity = optionalId(raw.legal_entity_id, 'legal_entity_id', fields);
   const lines = Array.isArray(raw.lines) ? raw.lines : null;
   if (!lines) fields.lines = 'Hace falta al menos una línea';
   throwIf(fields);
@@ -142,7 +145,8 @@ export async function createQuote(writer: Writer, request: Request): Promise<{ s
     await assertChannel(tx, channel);
     const customer = await loadCustomer(tx, customerId);
     if (!customer.is_customer) fail('El contacto no es cliente', { customer_id: customerId });
-    const resolved = await resolveIssuingEntity(tx, { customerId, channel });
+    if (explicitEntity) await assertActiveEntity(tx, explicitEntity);
+    const { entityId, rule } = await draftEntity(tx, { customerId, channel, actorId: actor.id, entityId: explicitEntity });
     const priced = await priceQuoteLines(tx, parsed, issueDate, customer.default_price_list_id, channel);
     const totals = priceTotals(priced.totals);
     tx.write(sql`
@@ -150,7 +154,7 @@ export async function createQuote(writer: Writer, request: Request): Promise<{ s
         id, legal_entity_id, status, customer_id, channel, currency, language, is_proforma,
         incoterm, notes, valid_until, subtotal, tax_total, total, created_by, created_at, updated_at
       ) VALUES (
-        CAST(${id} AS UUID), CAST(${resolved.entityId} AS UUID), 'draft', CAST(${customerId} AS UUID),
+        CAST(${id} AS UUID), CAST(${entityId} AS UUID), 'draft', CAST(${customerId} AS UUID),
         ${channel}, 'EUR', ${language}, ${isProforma}, ${incoterm}, ${notes},
         CASE WHEN ${validUntil} IS NULL THEN NULL ELSE CAST(${validUntil} AS DATE) END,
         CAST(${totals.subtotal} AS DECIMAL(14,2)), CAST(${totals.tax_total} AS DECIMAL(14,2)),
@@ -163,11 +167,20 @@ export async function createQuote(writer: Writer, request: Request): Promise<{ s
       rowId: id,
       action: 'INSERT',
       before: null,
-      after: { customer_id: customerId, channel, is_proforma: isProforma, legal_entity_id: resolved.entityId, total: totals.total },
+      after: {
+        customer_id: customerId,
+        channel,
+        is_proforma: isProforma,
+        legal_entity_id: entityId,
+        total: totals.total,
+        ...(rule === null
+          ? { entity_choice: 'manual', rule_id: null }
+          : entityId === rule.entityId ? {} : { rule_entity_id: rule.entityId, rule_id: rule.ruleId }),
+      },
     });
     return quoteJson({
       id,
-      legal_entity_id: resolved.entityId,
+      legal_entity_id: entityId,
       series_id: null,
       number: null,
       status: 'draft',
@@ -304,6 +317,7 @@ export async function quoteToOrder(writer: Writer, request: Request, id: string)
     const fresh = row;
     const order = await createSalesOrder(tx, actor, {
       customer_id: idOf(fresh.customer_id),
+      legal_entity_id: idOf(fresh.legal_entity_id),
       channel: String(fresh.channel),
       source: 'manual',
       order_date: businessDate(new Date()),
@@ -521,8 +535,8 @@ async function prepareQuotePatch(tx: Tx, quoteId: string, raw: Record<string, un
     if (!customer.is_customer) fail('El contacto no es cliente', { customer_id: customerId });
     priceListId = customer.default_price_list_id;
     if (customerChanged || channelChanged) {
-      const resolved = await resolveIssuingEntity(tx, { customerId, channel });
-      entityId = resolved.entityId;
+      const resolved = await previewIssuingEntity(tx, { customerId, channel });
+      if (resolved) entityId = resolved.entityId;
     }
   }
 

@@ -31,7 +31,7 @@ import {
   type DeliveryNote,
 } from '@/lib/sales'
 import type { Me } from '@/lib/types'
-import { Button, Input, MenuItem, useToast } from '@/ui'
+import { Alert, Button, Input, MenuItem, useToast } from '@/ui'
 import { RecordSkeleton } from '@/components/RecordSkeleton'
 import { DocumentModal } from '@/pages/documents/DocumentModal'
 import { useDocParam } from '@/pages/documents/use-doc-param'
@@ -86,6 +86,7 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
   const [lines, setLines] = useState<DraftLine[]>(() => draftsFrom(note.lines))
   const [tracking, setTracking] = useState(note.tracking_ref ?? '')
   const [dialog, setDialog] = useState<null | 'issue' | 'void' | 'return' | 'incident' | 'skip'>(null)
+  const [issueError, setIssueError] = useState<string | null>(null)
   const canWrite = allows(me, 'sales.write')
   const canManage = allows(me, 'sales.manage')
   const draft = note.status === 'draft'
@@ -160,7 +161,7 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
                   </Button>
                 ) : null}
                 {draft ? (
-                  <Button type="button" variant="primary" size="sm" onClick={() => setDialog('issue')}>
+                  <Button type="button" variant="primary" size="sm" onClick={() => { setIssueError(null); setDialog('issue') }}>
                     {copy.sales.issue}
                   </Button>
                 ) : null}
@@ -266,19 +267,29 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
       <ConfirmDialog
         open={dialog === 'issue'}
         title={copy.sales.issueTitle}
-        body={<span data-screen="ventas-emitir">{copy.sales.issueBody}</span>}
+        body={
+          <div data-screen="ventas-emitir" className="grid gap-3">
+            <span>{copy.sales.issueBody}</span>
+            {issueError ? <Alert tone="danger">{issueError}</Alert> : null}
+          </div>
+        }
         confirmLabel={copy.sales.issue}
         busy={busy}
-        onClose={() => setDialog(null)}
+        onClose={() => {
+          if (busy) return
+          setDialog(null)
+          setIssueError(null)
+        }}
         onConfirm={() => {
           setBusy(true)
+          setIssueError(null)
           void issueDelivery(note.id)
             .then(() => {
               toast(copy.sales.toast.issued)
               setDialog(null)
               onReload()
             })
-            .catch((error: unknown) => toast(errorText(error)))
+            .catch((error: unknown) => setIssueError(errorText(error)))
             .finally(() => setBusy(false))
         }}
       />

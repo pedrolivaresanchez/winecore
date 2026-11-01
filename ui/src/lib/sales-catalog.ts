@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { ComboOption } from '@/components/Combobox'
 import { ApiError, api, isAbortError } from '@/lib/api'
 import { listContacts, type ContactSummary } from '@/lib/contacts'
 import { listStock, type StockItem } from '@/lib/sales'
 
-export type CatalogCustomer = { id: string; name: string; country: string }
-export type CatalogProduct = { id: string; sku: string; label: string }
+export type CatalogCustomer = { id: string; name: string; country: string; taxId: string | null; city: string | null }
+export type CatalogProduct = { id: string; sku: string; label: string; requiresLot?: boolean }
 export type CatalogLot = { id: string; code: string; productId: string; locationId: string; qty: number }
 export type CatalogLocation = { id: string; code: string }
 
@@ -68,23 +69,33 @@ export function useSalesCatalog(aliases?: ReadonlyMap<string, string>) {
   }
 }
 
+/** Every page: a customer missing from the list cannot be picked, and the Holded book alone runs to hundreds. */
 export async function loadCustomers(signal: AbortSignal): Promise<ContactSummary[]> {
   const items: ContactSummary[] = []
   let cursor: string | undefined
-  for (let page = 0; page < 4; page += 1) {
+  do {
     const result = await listContacts({ role: 'customer', limit: 100, cursor }, signal)
     items.push(...result.items)
-    if (!result.next_cursor) break
-    cursor = result.next_cursor
-  }
+    cursor = result.next_cursor ?? undefined
+  } while (cursor)
   return items
 }
 
 export function customersOf(items: ContactSummary[]): CatalogCustomer[] {
   return items
     .filter((item) => item.is_customer && !item.archived_at)
-    .map((item) => ({ id: item.id, name: item.legal_name, country: item.country_code }))
+    .map((item) => ({ id: item.id, name: item.legal_name, country: item.country_code, taxId: item.tax_id, city: item.city }))
     .sort((a, b) => a.name.localeCompare(b.name, 'es'))
+}
+
+/** The tax id rides along as the hint so typing a NIF finds the customer too. */
+export function customerOption(customer: CatalogCustomer): ComboOption {
+  const hint = customer.taxId ?? (customer.country === 'ES' ? undefined : customer.country)
+  return { value: customer.id, label: customer.name, hint: hint ?? undefined }
+}
+
+export function customerDetail(customer: CatalogCustomer | undefined): string {
+  return customer ? [customer.taxId, customer.city].filter(Boolean).join(' · ') : ''
 }
 
 function productsOf(stock: StockItem[], aliases?: ReadonlyMap<string, string>): CatalogProduct[] {
@@ -144,8 +155,18 @@ type OfferProduct = {
   id: string
   sku: string
   name: string
+  requires_lot?: boolean
+  default_tax_code?: string | null
   price: { unit_price: string } | null
 }
+
+type OfferTax = {
+  code: string
+  rate: string
+  surcharge_rate: string
+}
+
+export type TaxRate = { rate: number; surcharge: number }
 
 type OfferLot = {
   id: string
@@ -172,6 +193,8 @@ export function useSalesOffer(query: SalesOfferQuery | null) {
   const [lots, setLots] = useState<CatalogLot[]>([])
   const [locations, setLocations] = useState<CatalogLocation[]>([])
   const [prices, setPrices] = useState<ReadonlyMap<string, string>>(() => new Map())
+  const [taxes, setTaxes] = useState<ReadonlyMap<string, string>>(() => new Map())
+  const [rates, setRates] = useState<ReadonlyMap<string, TaxRate>>(() => new Map())
   const [loading, setLoading] = useState(enabled)
   const [error, setError] = useState<ApiError | null>(null)
 
@@ -184,17 +207,24 @@ export function useSalesOffer(query: SalesOfferQuery | null) {
     if (channel) params.set('channel', channel)
     if (date) params.set('date', date)
     setLoading(true)
-    api<{ products: OfferProduct[]; lots: OfferLot[] }>(`/v1/sales/catalog?${params}`, { signal: controller.signal })
+    api<{ products: OfferProduct[]; lots: OfferLot[]; taxes?: OfferTax[] }>(`/v1/sales/catalog?${params}`, { signal: controller.signal })
       .then((body) => {
         if (!active) return
         const nextPrices = new Map<string, string>()
+        const nextTaxes = new Map<string, string>()
+        const nextRates = new Map<string, TaxRate>()
+        for (const tax of body.taxes ?? []) {
+          nextRates.set(tax.code, { rate: Number(tax.rate) || 0, surcharge: Number(tax.surcharge_rate) || 0 })
+        }
         const nextProducts = (body.products ?? []).map((product) => {
           if (product.price?.unit_price) nextPrices.set(product.id, product.price.unit_price)
+          if (product.default_tax_code) nextTaxes.set(product.id, product.default_tax_code)
           const name = product.name?.trim() || product.sku
           return {
             id: product.id,
             sku: product.sku,
             label: product.sku && name !== product.sku ? `${product.sku} · ${name}` : name,
+            requiresLot: Boolean(product.requires_lot),
           }
         })
         nextProducts.sort((a, b) => a.label.localeCompare(b.label, 'es'))
@@ -220,6 +250,8 @@ export function useSalesOffer(query: SalesOfferQuery | null) {
         setLots(nextLots)
         setLocations([...places.values()].sort((a, b) => a.code.localeCompare(b.code, 'es')))
         setPrices(nextPrices)
+        setTaxes(nextTaxes)
+        setRates(nextRates)
         setError(null)
         setLoading(false)
       })
@@ -235,8 +267,10 @@ export function useSalesOffer(query: SalesOfferQuery | null) {
   }, [channel, customerId, date, enabled])
 
   const priceOf = useCallback((productId: string) => prices.get(productId) ?? null, [prices])
+  const taxOf = useCallback((productId: string) => taxes.get(productId) ?? null, [taxes])
+  const rateOf = useCallback((code: string) => rates.get(code) ?? null, [rates])
 
-  return { products, lots, locations, priceOf, loading, error }
+  return { products, lots, locations, priceOf, taxOf, rateOf, loading, error }
 }
 
 export function mergeProducts(products: CatalogProduct[], aliases?: ReadonlyMap<string, string>): CatalogProduct[] {

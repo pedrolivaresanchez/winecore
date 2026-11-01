@@ -3,6 +3,7 @@ import type { Tx } from '../db/writer';
 import { domainError } from '../errors';
 import { newId } from '../ids';
 import { businessDate } from '../time';
+import { AUTOMATIC_SERIES, MAX_PADDING, MIN_PADDING, PLAN_PADDING, SERIES_PLAN } from './plan';
 import { derivePrefix, formatSeriesNumber, seriesPrefixError } from './prefix';
 
 type Read = <T = Record<string, unknown>>(statement: string) => Promise<T[]>;
@@ -74,6 +75,7 @@ type SeriesInput = {
   isDefault: boolean | null;
   verifactu: boolean | null;
   year: number | null;
+  nextValue: number | null;
 };
 
 const SERIES_COLUMNS = `
@@ -211,6 +213,139 @@ export async function takeNumber(
   return formatSeriesNumber(String(preferred.prefix), padding, taken);
 }
 
+const VARIANTS = ['', ...'BCDEFGHIJKLMNOPQRSTUVWXYZ'];
+
+export type ProvisionedSeries = {
+  id: string;
+  legalEntityId: string;
+  docType: DocType;
+  code: string;
+  year: number;
+  prefix: string;
+  padding: number;
+};
+
+const provisioned = new WeakMap<Tx, Map<string, ProvisionedSeries>>();
+
+/**
+ * Abre la serie por defecto de un documento no fiscal (`AUTOMATIC_SERIES`) cuando la entidad
+ * no tiene ninguna (ni activa ni de baja) para el tipo y el año. Si ya hay alguna, o el tipo
+ * es fiscal, devuelve null y manda la configuración existente. La serie nueva no se ve con
+ * `tx.read` hasta el commit: dentro de la misma escritura se numera con `takeProvisionedNumber`.
+ */
+export async function ensureDefaultSeries(
+  tx: Tx,
+  legalEntityId: string,
+  docType: string,
+  year: number,
+): Promise<ProvisionedSeries | null> {
+  if (!UUID.test(legalEntityId)) {
+    throw domainError('WC_VALIDATION', { legal_entity_id: 'Identificador no válido' });
+  }
+  if (!isDocType(docType)) {
+    throw domainError('WC_VALIDATION', { doc_type: 'Tipo de documento no válido' });
+  }
+  if (!AUTOMATIC_SERIES.includes(docType) || !Number.isInteger(year) || year < 2020 || year > 2100) return null;
+  const letters = SERIES_PLAN[docType].code;
+  const entityId = legalEntityId.toLowerCase();
+  const key = `${entityId}|${docType}|${year}`;
+  const pending = provisioned.get(tx) ?? new Map<string, ProvisionedSeries>();
+  provisioned.set(tx, pending);
+  const known = pending.get(key);
+  if (known) return known;
+
+  const existing = await tx.read<{ id: string }>(sql`
+    SELECT id FROM core.number_series
+    WHERE legal_entity_id = CAST(${entityId} AS UUID)
+      AND doc_type = ${docType}
+      AND "year" = ${year}
+    LIMIT 1
+  `);
+  if (existing[0]) return null;
+  const entities = await tx.read<{ id: string }>(sql`
+    SELECT id FROM core.legal_entity
+    WHERE id = CAST(${entityId} AS UUID) AND is_active
+    LIMIT 1
+  `);
+  if (!entities[0]) throw domainError('WC_VALIDATION', { legal_entity_id: 'La entidad no existe' });
+
+  const taken = await tx.read<{ prefix: unknown }>(sql`
+    SELECT prefix FROM core.number_series WHERE legal_entity_id = CAST(${entityId} AS UUID)
+  `);
+  const used = new Set(taken.map((row) => String(row.prefix)));
+  for (const other of pending.values()) {
+    if (other.legalEntityId === entityId) used.add(other.prefix);
+  }
+  const yy = String(year % 100).padStart(2, '0');
+  const variant = VARIANTS.find((suffix) => !used.has(`${letters}${yy}${suffix}-`));
+  if (variant === undefined) throw domainError('WC010');
+  const series: ProvisionedSeries = {
+    id: newId(),
+    legalEntityId: entityId,
+    docType,
+    code: letters,
+    year,
+    prefix: `${letters}${yy}${variant}-`,
+    padding: PLAN_PADDING,
+  };
+  tx.write(sql`
+    INSERT INTO core.number_series (
+      id, legal_entity_id, doc_type, code, year, prefix, padding,
+      next_value, is_default, verifactu, is_active
+    ) VALUES (
+      CAST(${series.id} AS UUID),
+      CAST(${entityId} AS UUID),
+      ${docType},
+      ${series.code},
+      ${year},
+      ${series.prefix},
+      ${series.padding},
+      1,
+      TRUE,
+      FALSE,
+      TRUE
+    )
+  `);
+  tx.audit({
+    table: 'core.number_series',
+    rowId: series.id,
+    action: 'INSERT',
+    before: null,
+    after: {
+      legal_entity_id: entityId,
+      doc_type: docType,
+      code: series.code,
+      year,
+      prefix: series.prefix,
+      padding: series.padding,
+      next_value: 1,
+      is_default: true,
+      verifactu: false,
+      is_active: true,
+      provisioned: true,
+    },
+  });
+  pending.set(key, series);
+  return series;
+}
+
+export function takeProvisionedNumber(tx: Tx, series: ProvisionedSeries): string {
+  const taken = claim(tx, series.id, 1, series.padding);
+  tx.write(sql`
+    UPDATE core.number_series
+    SET next_value = ${taken + 1}
+    WHERE id = CAST(${series.id} AS UUID) AND is_active
+  `);
+  tx.audit({
+    table: 'core.number_series',
+    rowId: series.id,
+    action: 'UPDATE',
+    before: { next_value: taken },
+    after: { next_value: taken + 1 },
+  });
+  return formatSeriesNumber(series.prefix, series.padding, taken);
+}
+
 function parseSeriesBody(raw: unknown): SeriesInput {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     throw domainError('WC_VALIDATION', { body: 'El cuerpo debe ser un objeto' });
@@ -229,8 +364,9 @@ function parseSeriesBody(raw: unknown): SeriesInput {
     if (typeof body.prefix !== 'string') fields.prefix = 'Debe ser texto';
     else prefix = body.prefix;
   }
-  const padding = optionalInt(body.padding, 'padding', 3, 8, fields);
+  const padding = optionalInt(body.padding, 'padding', MIN_PADDING, MAX_PADDING, fields);
   const year = optionalInt(body.year, 'year', 2020, 2100, fields);
+  const nextValue = optionalInt(body.next_value, 'next_value', 1, 10 ** MAX_PADDING - 1, fields);
   const isDefault = optionalBool(body.is_default, 'is_default', fields);
   const verifactu = optionalBool(body.verifactu, 'verifactu', fields);
   if (Object.keys(fields).length > 0) throw domainError('WC_VALIDATION', fields);
@@ -244,7 +380,43 @@ function parseSeriesBody(raw: unknown): SeriesInput {
     isDefault,
     verifactu,
     year,
+    nextValue,
   };
+}
+
+function assertNextFits(nextValue: number, padding: number, prefix: string): void {
+  if (!Number.isInteger(nextValue) || nextValue < 1) {
+    throw domainError('WC_VALIDATION', { next_value: 'El primer número debe ser un entero desde 1' });
+  }
+  if (String(nextValue).length > padding) {
+    throw domainError('WC_VALIDATION', {
+      next_value: `${formatSeriesNumber(prefix, padding, nextValue)} no cabe en ${padding} cifras`,
+    });
+  }
+}
+
+/**
+ * Una serie que comparte prefijo con las facturas de venta de Holded de la entidad repetiría
+ * sus números: tiene que empezar después del último.
+ */
+async function assertAfterHolded(tx: Tx, legalEntityId: string, prefix: string, nextValue: number): Promise<void> {
+  const rows = await tx.read<{ number: unknown }>(sql`
+    SELECT number FROM legacy.holded_invoice
+    WHERE entity_id = CAST(${legalEntityId} AS UUID) AND kind = 'sale' AND starts_with(number, ${prefix})
+  `);
+  let last: { value: number; number: string } | null = null;
+  for (const row of rows) {
+    const number = String(row.number);
+    const digits = number.slice(prefix.length);
+    if (!/^\d{1,15}$/.test(digits)) continue;
+    const value = Number(digits);
+    if (!last || value > last.value) last = { value, number };
+  }
+  if (last && nextValue <= last.value) {
+    throw domainError('WC_VALIDATION', {
+      next_value: `Holded ya llegó a ${last.number} con este prefijo: empieza en ${last.value + 1} o más`,
+    });
+  }
 }
 
 function optionalInt(
@@ -317,9 +489,9 @@ export async function createSeries(tx: Tx, raw: unknown): Promise<string> {
     }
   }
 
-  const padding = input.padding ?? (previous ? num(previous.padding) : 4);
-  if (!Number.isInteger(padding) || padding < 3 || padding > 8) {
-    throw domainError('WC_VALIDATION', { padding: 'El relleno debe estar entre 3 y 8' });
+  const padding = input.padding ?? (previous ? num(previous.padding) : PLAN_PADDING);
+  if (!Number.isInteger(padding) || padding < MIN_PADDING || padding > MAX_PADDING) {
+    throw domainError('WC_VALIDATION', { padding: `El relleno debe estar entre ${MIN_PADDING} y ${MAX_PADDING}` });
   }
   let prefix = input.prefix;
   if (prefix === null) {
@@ -329,6 +501,8 @@ export async function createSeries(tx: Tx, raw: unknown): Promise<string> {
   }
   const problem = seriesPrefixError(prefix, padding);
   if (problem) throw domainError('WC_VALIDATION', { prefix: problem });
+  const nextValue = input.nextValue ?? 1;
+  assertNextFits(nextValue, padding, prefix);
   const isDefault = input.isDefault ?? (previous ? flag(previous.is_default) : false);
   const verifactu = input.verifactu ?? (previous ? flag(previous.verifactu) : false);
 
@@ -351,6 +525,7 @@ export async function createSeries(tx: Tx, raw: unknown): Promise<string> {
     LIMIT 1
   `);
   if (sameCode[0]) throw domainError('WC_VALIDATION', { code: 'Ya existe una serie con este código y año' });
+  await assertAfterHolded(tx, input.legalEntityId, prefix, nextValue);
 
   if (isDefault) await clearDefault(tx, input.legalEntityId, input.docType, year);
   const id = newId();
@@ -366,7 +541,7 @@ export async function createSeries(tx: Tx, raw: unknown): Promise<string> {
       ${year},
       ${prefix},
       ${padding},
-      1,
+      ${nextValue},
       ${isDefault},
       ${verifactu},
       TRUE
@@ -384,7 +559,7 @@ export async function createSeries(tx: Tx, raw: unknown): Promise<string> {
       year,
       prefix,
       padding,
-      next_value: 1,
+      next_value: nextValue,
       is_default: isDefault,
       verifactu,
       is_active: true,
@@ -427,6 +602,7 @@ export type EnsureSeriesInput = {
   padding: number;
   isDefault: boolean;
   verifactu: boolean;
+  nextValue?: number;
 };
 
 export type EnsuredSeries = {
@@ -457,11 +633,13 @@ export async function ensureSeriesForYear(tx: Tx, input: EnsureSeriesInput): Pro
   if (!Number.isInteger(input.year) || input.year < 2020 || input.year > 2100) {
     throw domainError('WC_VALIDATION', { year: 'El año debe estar entre 2020 y 2100' });
   }
-  if (!Number.isInteger(input.padding) || input.padding < 3 || input.padding > 8) {
-    throw domainError('WC_VALIDATION', { padding: 'El relleno debe estar entre 3 y 8' });
+  if (!Number.isInteger(input.padding) || input.padding < MIN_PADDING || input.padding > MAX_PADDING) {
+    throw domainError('WC_VALIDATION', { padding: `El relleno debe estar entre ${MIN_PADDING} y ${MAX_PADDING}` });
   }
   const problem = seriesPrefixError(input.prefix, input.padding);
   if (problem) throw domainError('WC_VALIDATION', { prefix: problem });
+  const nextValue = input.nextValue ?? 1;
+  assertNextFits(nextValue, input.padding, input.prefix);
 
   const entities = await tx.read<{ id: string }>(sql`
     SELECT id FROM core.legal_entity
@@ -536,6 +714,7 @@ export async function ensureSeriesForYear(tx: Tx, input: EnsureSeriesInput): Pro
   if (samePrefix[0]) {
     throw domainError('WC_VALIDATION', { prefix: 'Ya existe una serie con este prefijo en la entidad' });
   }
+  await assertAfterHolded(tx, input.legalEntityId, input.prefix, nextValue);
 
   if (input.isDefault) await clearDefault(tx, input.legalEntityId, input.docType, input.year);
   const id = newId();
@@ -551,7 +730,7 @@ export async function ensureSeriesForYear(tx: Tx, input: EnsureSeriesInput): Pro
       ${input.year},
       ${input.prefix},
       ${input.padding},
-      1,
+      ${nextValue},
       ${input.isDefault},
       ${input.verifactu},
       TRUE
@@ -569,7 +748,7 @@ export async function ensureSeriesForYear(tx: Tx, input: EnsureSeriesInput): Pro
       year: input.year,
       prefix: input.prefix,
       padding: input.padding,
-      next_value: 1,
+      next_value: nextValue,
       is_default: input.isDefault,
       verifactu: input.verifactu,
       is_active: true,

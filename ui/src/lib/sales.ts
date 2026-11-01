@@ -320,8 +320,10 @@ export function pricesDiffer(left: string | null | undefined, right: string | nu
 
 export function errorText(error: unknown): string {
   if (error instanceof ApiError) {
-    if (/conjunto de reglas activo|regla de entidad facturadora/i.test(error.message)) return copy.sales.rulesInactive
-    if (/serie inexistente|serie activa/i.test(error.message)) return copy.sales.seriesMissing
+    if (error.code === 'WC_RULES_INACTIVE' || /conjunto de reglas activo|regla de entidad facturadora/i.test(error.message)) {
+      return copy.sales.rulesInactive
+    }
+    if (error.code === 'WC010' || /serie inexistente|serie activa/i.test(error.message)) return copy.sales.seriesMissing
     if (/no hay precio de tarifa/i.test(error.message)) return copy.sales.noTariffServer
     const extra = error.fields ? Object.values(error.fields).filter(Boolean).join(' ') : ''
     return extra ? `${error.message} ${extra}` : error.message
@@ -367,11 +369,15 @@ export function quoteToOrder(id: string) {
   return api<SalesOrder>(`/v1/quotes/${id}/to-order`, { method: 'POST', body: '{}' })
 }
 
-export function listOrders(query: { status?: string; entity?: string; channel?: string; cursor?: string | null }, signal?: AbortSignal) {
+export function listOrders(
+  query: { status?: string; entity?: string; channel?: string; customer?: string; cursor?: string | null },
+  signal?: AbortSignal,
+) {
   const params = new URLSearchParams({ limit: '100' })
   if (query.status) params.set('status', query.status)
   if (query.entity) params.set('entity', query.entity)
   if (query.channel) params.set('channel', query.channel)
+  if (query.customer) params.set('customer_id', query.customer)
   if (query.cursor) params.set('cursor', query.cursor)
   return api<SalesPage<SalesOrder>>(`/v1/sales-orders?${params}`, { signal })
 }
@@ -419,13 +425,14 @@ export function createDeliveryFromOrder(orderId: string, body: Record<string, un
 }
 
 export function listDeliveries(
-  query: { kind?: string; status?: string; invoiced?: string; cursor?: string | null },
+  query: { kind?: string; status?: string; invoiced?: string; customer?: string; cursor?: string | null },
   signal?: AbortSignal,
 ) {
   const params = new URLSearchParams({ limit: '100' })
   if (query.kind) params.set('kind', query.kind)
   if (query.status) params.set('status', query.status)
   if (query.invoiced) params.set('invoiced', query.invoiced)
+  if (query.customer) params.set('customer_id', query.customer)
   if (query.cursor) params.set('cursor', query.cursor)
   return api<SalesPage<DeliveryNote>>(`/v1/delivery-notes?${params}`, { signal })
 }
@@ -482,19 +489,23 @@ export function createIncident(id: string, body: Record<string, unknown>) {
   })
 }
 
-export function getPriceQuote(query: { customerId: string; productId: string; qty: string; date?: string }, signal?: AbortSignal) {
+export function getPriceQuote(
+  query: { customerId: string; productId: string; qty: string; date?: string; channel?: string },
+  signal?: AbortSignal,
+) {
   const params = new URLSearchParams({
     customer_id: query.customerId,
     product_id: query.productId,
     qty: query.qty || '1',
   })
   if (query.date) params.set('date', query.date)
+  if (query.channel) params.set('channel', query.channel)
   return api<PriceQuote>(`/v1/price-quote?${params}`, { signal })
 }
 
 export function resolveIssuing(customerId: string, channel: string, signal?: AbortSignal) {
   const params = new URLSearchParams({ customer_id: customerId, channel })
-  return api<IssuingPreview>(`/v1/billing-rules/resolve?${params}`, { signal })
+  return api<IssuingPreview | null>(`/v1/billing-rules/resolve?${params}`, { signal }).then((hit) => hit ?? null)
 }
 
 export type StockItem = {

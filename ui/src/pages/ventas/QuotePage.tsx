@@ -104,7 +104,7 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
     if (!customerId || !line.productId || !(Number(line.quantity) > 0)) return
     const stamp = crypto.randomUUID()
     stamps.current[line.key] = stamp
-    getPriceQuote({ customerId, productId: line.productId, qty: line.quantity, date: offerDate })
+    getPriceQuote({ customerId, productId: line.productId, qty: line.quantity, date: offerDate, channel })
       .then((hit) => {
         if (stamps.current[line.key] !== stamp) return
         setLines((current) =>

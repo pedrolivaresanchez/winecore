@@ -110,6 +110,7 @@ export function Combobox({
         aria-expanded={open}
         aria-controls={listId}
         aria-autocomplete="list"
+        aria-activedescendant={open && shown[active] ? `${listId}-${active}` : undefined}
         invalid={invalid}
         disabled={disabled}
         onFocus={(event) => {
@@ -136,6 +137,7 @@ export function Combobox({
               {shown.map((option, index) => (
                 <li
                   key={option.value}
+                  id={`${listId}-${index}`}
                   role="option"
                   aria-selected={option.value === value}
                   className={cn(

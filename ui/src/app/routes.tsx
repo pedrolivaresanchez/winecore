@@ -43,7 +43,6 @@ import { OrderPage } from '@/pages/ventas/OrderPage'
 import { QuotePage } from '@/pages/ventas/QuotePage'
 import { SalesHome } from '@/pages/ventas/SalesHome'
 import { Gastos } from '@/pages/gastos/Gastos'
-import { CreateInvoice } from '@/pages/facturas/CreateInvoice'
 import { FacturasPage } from '@/pages/facturas/FacturasPage'
 import { InvoicePage } from '@/pages/facturas/InvoicePage'
 import { RectifyPage } from '@/pages/facturas/RectifyPage'
@@ -119,7 +118,7 @@ export function AppRoutes({ me }: { me: Me }) {
       <Route path="ventas/albaranes/:id" element={<DeliveryPage me={me} />} />
       <Route path="gastos/*" element={<Gastos me={me} />} />
       <Route path="facturas" element={<FacturasPage me={me} />} />
-      <Route path="facturas/nueva" element={<CreateInvoice me={me} />} />
+      <Route path="facturas/nueva" element={<FacturasPage me={me} creating />} />
       <Route path="facturas/:id/rectificar" element={<RectifyPage me={me} />} />
       <Route path="facturas/:id" element={<InvoicePage me={me} />} />
       <Route path="cobros" element={<CobrosPage me={me} />} />

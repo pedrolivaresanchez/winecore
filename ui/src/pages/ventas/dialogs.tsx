@@ -1,11 +1,19 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Combobox, type ComboOption } from '@/components/Combobox'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { Combobox } from '@/components/Combobox'
 import { Field } from '@/components/Field'
 import { copy } from '@/i18n'
 import { ApiError } from '@/lib/api'
 import { COUNTRIES } from '@/lib/contacts'
-import { useSalesOffer, type CatalogCustomer, type CatalogLocation, type CatalogLot } from '@/lib/sales-catalog'
-import { blankLine, commercialLines, type DraftLine } from '@/lib/sales-draft'
+import {
+  customerDetail,
+  customerOption,
+  useSalesOffer,
+  type CatalogCustomer,
+  type CatalogLocation,
+  type CatalogLot,
+} from '@/lib/sales-catalog'
+import { blankLine, commercialLines, shortPrice, type DraftLine } from '@/lib/sales-draft'
 import {
   CHANNELS,
   INCOTERMS,
@@ -15,12 +23,10 @@ import {
   createQuote,
   errorText,
   kindLabel,
-  resolveIssuing,
   todayMadrid,
   getPriceQuote,
   type ChannelCode,
   type DeliveryKind,
-  type IssuingPreview,
   type SalesOrder,
 } from '@/lib/sales'
 import {
@@ -36,6 +42,7 @@ import {
   Switch,
   Textarea,
 } from '@/ui'
+import { useIssuer } from '@/pages/ventas/issuer'
 import { LineEditor } from '@/pages/ventas/lines'
 
 const DATE_LABELS = { clear: 'Quitar', today: 'Hoy' }
@@ -51,7 +58,8 @@ export function CreateDocument({
   onClose: () => void
   onCreated: (id: string) => void
 }) {
-  const [customerId, setCustomerId] = useState('')
+  const [params] = useSearchParams()
+  const [customerId, setCustomerId] = useState(() => params.get('cliente') ?? '')
   const [channel, setChannel] = useState<ChannelCode>('horeca')
   const [language, setLanguage] = useState('es')
   const [proforma, setProforma] = useState(false)
@@ -64,7 +72,6 @@ export function CreateDocument({
   const [costCenter, setCostCenter] = useState('')
   const [ship, setShip] = useState('')
   const [lines, setLines] = useState<DraftLine[]>([blankLine()])
-  const [preview, setPreview] = useState<IssuingPreview | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [badLine, setBadLine] = useState<string | null>(null)
   const [customerBad, setCustomerBad] = useState(false)
@@ -72,48 +79,50 @@ export function CreateDocument({
   const stamps = useRef<Record<string, string>>({})
   const offerDate = doc === 'order' ? orderDate : todayMadrid()
   const offer = useSalesOffer({ customerId: customerId || undefined, channel, date: offerDate })
-
-  const customerOptions = useMemo<ComboOption[]>(
-    () => customers.map((item) => ({ value: item.id, label: item.name, hint: item.country === 'ES' ? undefined : item.country })),
-    [customers],
-  )
-
-  useEffect(() => {
-    if (!customerId || !channel) {
-      setPreview(null)
-      return
-    }
-    const controller = new AbortController()
-    resolveIssuing(customerId, channel, controller.signal)
-      .then(setPreview)
-      .catch(() => {
-        if (!controller.signal.aborted) setPreview(null)
-      })
-    return () => controller.abort()
-  }, [channel, customerId])
+  const issuer = useIssuer(customerId, channel)
+  const customerOptions = useMemo(() => customers.map(customerOption), [customers])
+  const customer = customers.find((item) => item.id === customerId)
 
   function applyListed(line: DraftLine) {
     const listed = offer.priceOf(line.productId)
-    if (!listed) return
+    const tax = offer.taxOf(line.productId)
+    if (!listed && !tax) return
     setLines((current) =>
       current.map((item) =>
-        item.key === line.key ? { ...item, quoted: listed, unitPrice: item.touched ? item.unitPrice : listed } : item,
+        item.key === line.key
+          ? {
+              ...item,
+              quoted: listed ?? item.quoted,
+              unitPrice: listed && !item.touched ? shortPrice(listed) : item.unitPrice,
+              taxCode: item.taxCode || tax || '',
+            }
+          : item,
       ),
     )
   }
 
-  function reprice(line: DraftLine, nextCustomer = customerId, date = orderDate) {
+  function reprice(line: DraftLine) {
     applyListed(line)
+    quoteTier(line, customerId, channel, offerDate)
+  }
+
+  function repriceAll(next: { customerId?: string; channel?: ChannelCode; date?: string }) {
+    for (const line of lines) {
+      quoteTier(line, next.customerId ?? customerId, next.channel ?? channel, next.date ?? offerDate)
+    }
+  }
+
+  function quoteTier(line: DraftLine, nextCustomer: string, nextChannel: ChannelCode, date: string) {
     if (!nextCustomer || !line.productId || !(Number(line.quantity) > 0)) return
     const stamp = crypto.randomUUID()
     stamps.current[line.key] = stamp
-    getPriceQuote({ customerId: nextCustomer, productId: line.productId, qty: line.quantity, date: date || undefined })
+    getPriceQuote({ customerId: nextCustomer, productId: line.productId, qty: line.quantity, date, channel: nextChannel })
       .then((hit) => {
         if (stamps.current[line.key] !== stamp) return
         setLines((current) =>
           current.map((item) =>
             item.key === line.key
-              ? { ...item, quoted: hit.unit_price, unitPrice: item.touched ? item.unitPrice : hit.unit_price }
+              ? { ...item, quoted: hit.unit_price, unitPrice: item.touched ? item.unitPrice : shortPrice(hit.unit_price) }
               : item,
           ),
         )
@@ -138,7 +147,7 @@ export function CreateDocument({
     setCustomerId(next)
     setCustomerBad(false)
     setError(null)
-    if (next) lines.forEach((line) => reprice(line, next))
+    repriceAll({ customerId: next })
   }
 
   function refuse(message: string, customer = false, line: string | null = null) {
@@ -180,6 +189,7 @@ export function CreateDocument({
       if (doc === 'quote') {
         const created = await createQuote({
           customer_id: customerId,
+          legal_entity_id: issuer.entityId || undefined,
           channel,
           language,
           is_proforma: proforma,
@@ -192,6 +202,7 @@ export function CreateDocument({
       } else {
         const created = await createOrder({
           customer_id: customerId,
+          legal_entity_id: issuer.entityId || undefined,
           channel,
           source: 'manual',
           order_date: orderDate,
@@ -229,7 +240,7 @@ export function CreateDocument({
             void submit()
           }}
         >
-          <Field id="cliente" label={copy.sales.customer} hint={copy.sales.createHint}>
+          <Field id="cliente" label={copy.sales.customer} hint={customerDetail(customer) || copy.sales.createHint}>
             <Combobox
               id="cliente"
               options={customerOptions}
@@ -240,24 +251,40 @@ export function CreateDocument({
               onChange={pickCustomer}
             />
           </Field>
-          <Field id="canal" label={copy.sales.channel}>
-            <Select id="canal" className="w-full" value={channel} onChange={(event) => setChannel(event.target.value as ChannelCode)}>
-              {CHANNELS.map((code) => (
-                <option key={code} value={code}>
-                  {channelLabel(code)}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          {preview ? (
-            <p className="text-label text-text-secondary">
-              <span className="font-medium text-ink-900">{copy.sales.invoiceAs.replace('{entity}', preview.entity_code)}</span>
-              {' · '}
-              {preview.label}
-            </p>
-          ) : customerId ? (
-            <p className="text-label text-text-tertiary">{copy.sales.ruleMissing}</p>
-          ) : null}
+          <div className="grid items-start gap-4 sm:grid-cols-2">
+            <Field id="canal" label={copy.sales.channel}>
+              <Select
+                id="canal"
+                className="w-full"
+                value={channel}
+                onChange={(event) => {
+                  const next = event.target.value as ChannelCode
+                  setChannel(next)
+                  setError(null)
+                  repriceAll({ channel: next })
+                }}
+              >
+                {CHANNELS.map((code) => (
+                  <option key={code} value={code}>
+                    {channelLabel(code)}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <div className="grid content-start gap-1.5">
+              <span className="text-label text-text-secondary">{copy.sales.issuingEntity}</span>
+              <SegmentedControl
+                aria-label={copy.sales.issuingEntity}
+                value={issuer.entityId}
+                options={issuer.options}
+                onChange={(next) => {
+                  issuer.choose(next)
+                  setError(null)
+                }}
+              />
+              {issuer.note ? <p className="text-caption text-text-tertiary">{issuer.note}</p> : null}
+            </div>
+          </div>
           {offer.error && offer.products.length === 0 ? (
             <p role="alert" className="text-label text-danger-700">{errorText(offer.error)}</p>
           ) : null}
@@ -296,7 +323,16 @@ export function CreateDocument({
           ) : (
             <>
               <Field id="fecha-pedido" label={copy.sales.orderDate}>
-                <DatePicker value={orderDate} onChange={(next) => setOrderDate(next ?? todayMadrid())} labels={DATE_LABELS} timeZone="Europe/Madrid" />
+                <DatePicker
+                  value={orderDate}
+                  onChange={(next) => {
+                    const date = next ?? todayMadrid()
+                    setOrderDate(date)
+                    repriceAll({ date })
+                  }}
+                  labels={DATE_LABELS}
+                  timeZone="Europe/Madrid"
+                />
               </Field>
               <Field id="fecha-entrega" label={copy.sales.requestedDate}>
                 <DatePicker value={requested} onChange={setRequested} labels={DATE_LABELS} timeZone="Europe/Madrid" />
@@ -369,10 +405,7 @@ export function CreateDelivery({
   const [badLine, setBadLine] = useState<string | null>(null)
   const [customerBad, setCustomerBad] = useState(false)
   const [saving, setSaving] = useState(false)
-  const customerOptions = useMemo<ComboOption[]>(
-    () => customers.map((item) => ({ value: item.id, label: item.name, hint: item.country === 'ES' ? undefined : item.country })),
-    [customers],
-  )
+  const customerOptions = useMemo(() => customers.map(customerOption), [customers])
   const offer = useSalesOffer({
     customerId: customerId || undefined,
     channel,
@@ -440,7 +473,7 @@ export function CreateDelivery({
       <DialogHeader titleId="albaran-nuevo" title={copy.sales.newDelivery} onClose={onClose} />
       <DialogBody>
         <form
-          id="albaran-nuevo"
+          id="albaran-nuevo-form"
           data-screen="ventas-dialogo"
           className="grid gap-4 pb-2"
           onSubmit={(event) => {
@@ -530,7 +563,7 @@ export function CreateDelivery({
         <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={saving}>
           {copy.sales.cancel}
         </Button>
-        <Button type="submit" form="albaran-nuevo" variant="primary" size="sm" loading={saving}>
+        <Button type="submit" form="albaran-nuevo-form" variant="primary" size="sm" loading={saving}>
           {saving ? copy.sales.creating : copy.sales.create}
         </Button>
       </DialogFooter>
@@ -594,7 +627,7 @@ export function DeliveryFromOrder({
       <DialogHeader titleId="albaran-pedido" title={copy.sales.createDelivery} onClose={onClose} />
       <DialogBody>
         <form
-          id="albaran-pedido"
+          id="albaran-pedido-form"
           className="grid gap-4 pb-2"
           onSubmit={(event) => {
             event.preventDefault()
@@ -656,7 +689,7 @@ export function DeliveryFromOrder({
         <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={saving}>
           {copy.sales.cancel}
         </Button>
-        <Button type="submit" form="albaran-pedido" variant="primary" size="sm" loading={saving}>
+        <Button type="submit" form="albaran-pedido-form" variant="primary" size="sm" loading={saving}>
           {saving ? copy.sales.creating : copy.sales.create}
         </Button>
       </DialogFooter>

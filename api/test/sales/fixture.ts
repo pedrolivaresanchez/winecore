@@ -55,7 +55,10 @@ export type SalesFixture = {
 
 type Ctx = Awaited<ReturnType<typeof createTestApp>>;
 
-export async function buildSalesFixture(ctx: Ctx): Promise<SalesFixture> {
+export async function buildSalesFixture(
+  ctx: Ctx,
+  options: { rules?: boolean; series?: boolean } = {},
+): Promise<SalesFixture> {
   const entities = await ctx.writer.read<{ id: string; code: string }>(
     `SELECT id, code FROM core.legal_entity`,
   );
@@ -185,7 +188,7 @@ export async function buildSalesFixture(ctx: Ctx): Promise<SalesFixture> {
         )
       `);
     }
-    const docs: [string, string, string][] = [
+    const docs: [string, string, string][] = options.series === false ? [] : [
       ['sales_order', 'PED', `P${yy}-`],
       ['delivery_note', 'ALB', `A${yy}-`],
       ['quote', 'PRE', `Q${yy}-`],
@@ -203,7 +206,7 @@ export async function buildSalesFixture(ctx: Ctx): Promise<SalesFixture> {
       }
     }
   });
-  await activateRules(ctx, fx);
+  if (options.rules !== false) await activateRules(ctx, fx);
   return fx;
 }
 

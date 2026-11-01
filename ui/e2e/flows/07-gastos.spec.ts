@@ -1,68 +1,59 @@
 import { expect, test } from "playwright/test";
-import { omitir, pantalla } from "./support";
+import { pantalla } from "./support";
 
-const FACTURAE = `<?xml version="1.0" encoding="UTF-8"?>
-<fe:Facturae xmlns:fe="http://www.facturae.gob.es/formato/Versiones/Facturaev3_2_2.xml">
-  <Parties>
-    <SellerParty>
-      <TaxIdentification><TaxIdentificationNumber>ESB11111119</TaxIdentificationNumber></TaxIdentification>
-      <LegalEntity><CorporateName>Suministros Sinteticos SL</CorporateName></LegalEntity>
-    </SellerParty>
-    <BuyerParty>
-      <TaxIdentification><TaxIdentificationNumber>B00000000</TaxIdentificationNumber></TaxIdentification>
-    </BuyerParty>
-  </Parties>
-  <Invoices>
-    <Invoice>
-      <InvoiceHeader><InvoiceNumber>F-E2E-118</InvoiceNumber></InvoiceHeader>
-      <InvoiceIssueData>
-        <IssueDate>2026-10-02</IssueDate>
-        <InvoiceCurrencyCode>EUR</InvoiceCurrencyCode>
-      </InvoiceIssueData>
-      <TaxesOutputs>
-        <Tax>
-          <TaxRate>21.00</TaxRate>
-          <TaxableBase><TotalAmount>48.00</TotalAmount></TaxableBase>
-          <TaxAmount><TotalAmount>10.08</TotalAmount></TaxAmount>
-        </Tax>
-      </TaxesOutputs>
-      <InvoiceTotals>
-        <TotalGrossAmountBeforeTaxes>48.00</TotalGrossAmountBeforeTaxes>
-        <TotalTaxOutputs>10.08</TotalTaxOutputs>
-        <TotalTaxesWithheld>0.00</TotalTaxesWithheld>
-        <InvoiceTotal>58.08</InvoiceTotal>
-      </InvoiceTotals>
-      <Items>
-        <InvoiceLine>
-          <ItemDescription>Metabisulfito de potasio sintetico</ItemDescription>
-          <Quantity>2.000</Quantity>
-          <UnitPriceWithoutTax>24.00</UnitPriceWithoutTax>
-          <GrossAmount>48.00</GrossAmount>
-        </InvoiceLine>
-      </Items>
-    </Invoice>
-  </Invoices>
-</fe:Facturae>`;
+/** Una página en blanco: PDF válido y mínimo, sin binarios en el repositorio. */
+function tinyPdf(): Buffer {
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >>",
+  ];
+  let body = "%PDF-1.4\n";
+  const offsets: number[] = [];
+  objects.forEach((object, index) => {
+    offsets.push(body.length);
+    body += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xref = body.length;
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) body += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  body += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(body, "latin1");
+}
 
-test("Gastos: capturar un XML Facturae, validar y aprobar", async ({ page }) => {
+test("Gastos: capturar un PDF, completar, validar y aprobar", async ({ page }) => {
   await test.step("Abrir la captura", async () => {
     await page.goto("/gastos/capturar");
     await pantalla(page, "gastos-captura");
   });
 
-  await test.step("Subir la factura XML sintética", async () => {
+  await test.step("Subir el PDF sintético", async () => {
     await page.locator("#captura-gasto").setInputFiles({
-      name: "facturae-e2e.xml",
-      mimeType: "application/xml",
-      buffer: Buffer.from(FACTURAE),
+      name: "gasto-e2e.pdf",
+      mimeType: "application/pdf",
+      buffer: tinyPdf(),
     });
-    const rejected = page.getByText("Algún fichero no sirve");
-    if (await rejected.isVisible({ timeout: 3_000 }).catch(() => false)) {
-      omitir(
-        "La pantalla de captura solo admite foto o PDF. El XML Facturae, que la API sí extrae, no se puede enviar desde la UI.",
-      );
-    }
     await page.getByRole("button", { name: "Revisar" }).click();
+    await page.waitForURL(/\/gastos\/[0-9a-f-]+$/i);
+  });
+
+  await test.step("Completar los datos que no leyó el OCR", async () => {
+    const supplier = page.locator("#gasto-contacto");
+    // Free-text supplier names are not saved: validation needs a supplier contact from the list.
+    await expect(supplier.locator("option").nth(1)).toBeAttached();
+    await supplier.selectOption({ index: 1 });
+    await page.locator("#gasto-numero").fill(`F-E2E-${Date.now()}`);
+    await page.locator('label[for="gasto-fecha"]').locator("xpath=..").getByRole("button").first().click();
+    await page.getByRole("button", { name: "Hoy", exact: true }).click();
+    await page.locator("#gasto-categoria").selectOption({ index: 1 });
+    if (!(await page.locator("#linea-desc-0").isVisible())) {
+      await page.getByRole("button", { name: "Añadir línea" }).click();
+    }
+    await page.locator("#linea-desc-0").fill("Metabisulfito de potasio sintetico");
+    await page.locator("#linea-base-0").fill("48");
+    await page.locator("#linea-iva-0").fill("21");
+    await expect(page.locator("#gasto-total")).toHaveValue("58.08");
+    await page.getByRole("button", { name: "Guardar" }).click();
   });
 
   await test.step("Validar y aprobar el gasto", async () => {

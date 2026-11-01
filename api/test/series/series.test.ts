@@ -60,7 +60,11 @@ describe('prefijo de serie', () => {
     expect(seriesPrefixError('CF27-', 56)).toContain('60');
     expect(formatSeriesNumber('CF27-', 4, 12)).toBe('CF27-0012');
     expect(derivePrefix('CF26-', 2027)).toBe('CF27-');
+    expect(derivePrefix('F-2026-', 2027)).toBe('F-2027-');
+    expect(derivePrefix('2026/', 2027)).toBe('2027/');
     expect(derivePrefix('LIBRE', 2027)).toBeNull();
+    expect(seriesPrefixError('F-2026-', 2)).toBeNull();
+    expect(seriesPrefixError('FAC/2026/', 3)).toBeNull();
   });
 });
 
@@ -214,12 +218,36 @@ describe('numeración', () => {
     }
   });
 
+  it('empieza en el número indicado, que debe caber en el relleno', async () => {
+    const ctx = await createTestApp();
+    try {
+      const legalEntityId = await entityId(ctx);
+      const tooBig = await post(ctx, seriesBody(legalEntityId, { code: 'G', prefix: 'G27-', padding: 2, next_value: 100 }));
+      expect(tooBig.status).toBe(422);
+      expect(JSON.stringify(await json(tooBig))).toContain('no cabe en 2 cifras');
+      const zero = await post(ctx, seriesBody(legalEntityId, { code: 'G', prefix: 'G27-', next_value: 0 }));
+      expect(zero.status).toBe(422);
+      const narrow = await post(ctx, seriesBody(legalEntityId, { code: 'G', prefix: 'G27-', padding: 1 }));
+      expect(narrow.status).toBe(422);
+
+      const created = await json(await post(ctx, seriesBody(legalEntityId, { code: 'G', prefix: 'G-2027-', padding: 2, next_value: 35 })));
+      expect(created.next_value).toBe(35);
+      expect(created.last_number).toBe('G-2027-34');
+      const taken = await ctx.writer.withWrite(actor, (tx) => takeNumber(tx, {
+        legalEntityId, docType: 'invoice', date: new Date('2027-06-01T10:00:00Z'),
+      }));
+      expect(taken).toBe('G-2027-35');
+    } finally {
+      await ctx.close();
+    }
+  });
+
   it('lista, crea la serie del año siguiente, desactiva y audita', async () => {
     const ctx = await createTestApp();
     try {
       const legalEntityId = await entityId(ctx);
       const denied = await ctx.app.handle(new Request('http://localhost/v1/number-series', {
-        headers: { 'X-Dev-User': 'admin@winecore.test' },
+        headers: { 'X-Dev-User': 'asesor@winecore.test' },
       }));
       expect(denied.status).toBe(403);
       expect((await json(denied)).code).toBe('WC_FORBIDDEN');

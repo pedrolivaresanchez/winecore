@@ -25,6 +25,8 @@ import {
 } from '@/pages/facturas/chrome'
 import { DeliveryPanel } from '@/pages/facturas/DeliveryPanel'
 import { IssueDialog, VoidDialog } from '@/pages/facturas/dialogs'
+import { NumberingStep } from '@/pages/facturas/NumberingStep'
+import { numberingNeed } from '@/pages/ajustes/numeracion/api'
 import { DATE_LABELS, day, daysLabel, draftsFrom, entityLabel, invoiceTitle, isOpen, kindLabel, linePayload, methodLabel, money, paymentLabel } from '@/pages/facturas/format'
 import { LineEditor } from '@/pages/facturas/lines'
 import type { AuditItem, DeliveryStatus, Invoice, LineDraft, ValidationResult, VoidReason } from '@/pages/facturas/types'
@@ -151,8 +153,14 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
       const issuedInvoice = await issueInvoice(invoice.id, issueKey.current || crypto.randomUUID())
       toast(issuedInvoice.number ? `${copy.facturas.issuedToast} ${issuedInvoice.number}` : copy.facturas.issuedToast)
       setIssueOpen(false)
+      setIssues(null)
       onReload()
     } catch (error: unknown) {
+      if (error instanceof ApiError && error.code === 'WC_INV_NUMBERING') {
+        setIssueOpen(false)
+        setIssues({ errors: [{ code: error.code, message: error.message, details: error.details }], warnings: [] })
+        return
+      }
       toast(error instanceof ApiError ? error.message : copy.api.generic)
     } finally {
       setBusy(false)
@@ -187,6 +195,11 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
     }
   }
 
+  const errors = issues?.errors ?? []
+  const numbering = errors.every((issue) => issue.code === 'WC_INV_NUMBERING')
+    ? numberingNeed(errors.find((issue) => issue.code === 'WC_INV_NUMBERING')?.details)
+    : null
+  const blocking = numbering ? [] : errors
   const snapshot = invoice.customer_snapshot
   const facts = [
     { label: copy.facturas.entity, value: entityLabel(invoice.entity_code) },
@@ -288,15 +301,16 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
       >
         {tab === 'factura' ? (
           <div className="grid gap-4">
-            {issues && issues.errors.length > 0 ? (
+            {blocking.length > 0 ? (
               <Alert tone="danger">
                 <ul className="grid gap-1 text-label">
-                  {issues.errors.map((issue) => (
+                  {blocking.map((issue) => (
                     <li key={`${issue.field ?? ''}-${issue.message}`}>{issue.message}</li>
                   ))}
                 </ul>
               </Alert>
             ) : null}
+            {numbering && canIssue ? <NumberingStep me={me} need={numbering} onOpened={() => void preflight()} /> : null}
             {issues && issues.warnings.length > 0 ? (
               <Alert tone="warning">
                 <ul className="grid gap-1 text-label">

@@ -163,8 +163,9 @@ function Loaded({
   }, [tab])
   const archived = Boolean(contact.archived_at)
   const customer = contact.is_customer && !archived
-  const newInvoice = customer && allows(me, 'billing.write') ? () => navigate('/facturas/nueva') : null
-  const newQuote = customer && allows(me, 'sales.write') ? () => navigate('/ventas/presupuestos/nuevo') : null
+  const forCustomer = `?${new URLSearchParams({ cliente: contact.id })}`
+  const newInvoice = customer && allows(me, 'billing.write') ? () => navigate(`/facturas/nueva${forCustomer}`) : null
+  const newQuote = customer && allows(me, 'sales.write') ? () => navigate(`/ventas/presupuestos/nuevo${forCustomer}`) : null
   const data = overview.data
 
   const tabs: RecordTab<TabId>[] = [

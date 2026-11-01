@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Building, FlaskConical, List, Lock, Search, ShareNetwork, Sliders, Users, type IconComponent } from '@/ui/icons'
+import { ArrowLeft, Building, FlaskConical, List, ListOrdered, Lock, Search, ShareNetwork, Sliders, Users, type IconComponent } from '@/ui/icons'
 import { Input } from '@/ui'
 import { EntityRoles } from '@/components/EntityRoles'
 import { SystemStatus } from '@/components/SystemStatus'
@@ -7,6 +7,7 @@ import { copy } from '@/i18n'
 import { isOwner } from '@/pages/aprobaciones/model'
 import { PoliciesPanel } from '@/pages/aprobaciones/PoliciesPanel'
 import { ConnectorsPanel } from '@/pages/ajustes/conectores/ConnectorsPanel'
+import { NumberingPanel } from '@/pages/ajustes/numeracion/NumberingPanel'
 import { PersonasPanel } from '@/pages/ajustes/personas/PersonasPanel'
 import { SecurityPanel } from '@/pages/ajustes/seguridad/SecurityPanel'
 import { EnologySettings } from '@/pages/enologia/EnologySettings'
@@ -16,7 +17,7 @@ import { iconStroke, pressClass } from '@/lib/motion'
 import { useShell } from '@/app/shell/shell-context'
 import type { Me } from '@/lib/types'
 
-export type SettingsArea = 'entities' | 'people' | 'security' | 'policies' | 'enology' | 'connectors' | 'system'
+export type SettingsArea = 'entities' | 'numbering' | 'people' | 'security' | 'policies' | 'enology' | 'connectors' | 'system'
 
 const AREAS: { id: SettingsArea; title: string; hint: string; keywords: string; icon: IconComponent; ownerOnly?: boolean; staff?: boolean }[] = [
   {
@@ -25,6 +26,14 @@ const AREAS: { id: SettingsArea; title: string; hint: string; keywords: string; 
     hint: copy.settings.entitiesHint,
     keywords: 'entidades usuarios roles bodega personas',
     icon: Building,
+  },
+  {
+    id: 'numbering',
+    title: copy.settings.numbering,
+    hint: copy.settings.numberingHint,
+    keywords: 'sociedades numeracion numeración series facturas nif direccion dirección holded verifactu prefijo',
+    icon: ListOrdered,
+    staff: true,
   },
   {
     id: 'people',
@@ -180,7 +189,7 @@ export function SettingsView({ me, area }: { me: Me; area: SettingsArea }) {
 
   return (
     <div data-screen="ajustes" data-area={area} className="min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-[640px] flex-col gap-6 px-4 py-6 md:px-8">
+      <div className={cn('mx-auto flex w-full flex-col gap-6 px-4 py-6 md:px-8', area === 'numbering' ? 'max-w-[880px]' : 'max-w-[640px]')}>
         <header className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h1 className="text-heading font-medium tracking-tight text-ink-900">{current?.title}</h1>
@@ -188,6 +197,7 @@ export function SettingsView({ me, area }: { me: Me; area: SettingsArea }) {
           </div>
         </header>
         {area === 'entities' ? <EntityRoles me={me} /> : null}
+        {area === 'numbering' ? <NumberingPanel me={me} /> : null}
         {area === 'people' ? (canManagePeople(me) ? <PersonasPanel me={me} /> : <NoPermission />) : null}
         {area === 'security' ? <SecurityPanel /> : null}
         {area === 'policies' ? <PoliciesPanel me={me} /> : null}

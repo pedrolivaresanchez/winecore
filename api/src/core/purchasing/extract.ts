@@ -1,6 +1,6 @@
 import { detectMime } from '../attachments/mime';
-import { domainError } from '../errors';
-import { parseSuppliedExtraction, type Extraction } from './extraction';
+import { DomainError, domainError } from '../errors';
+import { manualExtraction, parseSuppliedExtraction, type Extraction } from './extraction';
 import { extractXmlInvoice } from './xml';
 
 export const MAX_CAPTURE_BYTES = 10 * 1024 * 1024;
@@ -82,7 +82,13 @@ export async function extractDocument(
   const ocr = new TimbalOcrExtractor(workforce);
   if (!ocr.supports(mime)) throw domainError('WC_VALIDATION', { file: 'Tipo de fichero no admitido' });
   if (supplied != null) return parseSuppliedExtraction(supplied, modelOf(supplied));
-  return ocr.extract({ bytes: file.bytes, mime, filename: file.filename });
+  try {
+    return await ocr.extract({ bytes: file.bytes, mime, filename: file.filename });
+  } catch (error) {
+    // Sin OCR (sin configurar o caído) el documento se guarda igual: perderlo obligaría a subirlo otra vez.
+    if (error instanceof DomainError && error.code === 'WC_OCR_UNAVAILABLE') return manualExtraction();
+    throw error;
+  }
 }
 
 function modelOf(supplied: unknown): string | null {

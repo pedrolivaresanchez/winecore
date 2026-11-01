@@ -21,10 +21,23 @@ describe('seedDemo', () => {
       expect(Number(placedTwice[0]?.total)).toBe(Number(placedOnce[0]?.total));
       const wines = await writer.read<{ total: number }>('SELECT count(*)::INTEGER AS total FROM catalog.wine');
       const vessels = await writer.read<{ total: number }>('SELECT count(*)::INTEGER AS total FROM cellar.vessel');
-      const lots = await writer.read<{ total: number }>('SELECT count(*)::INTEGER AS total FROM inventory.lot');
+      const lots = await writer.read<{ total: number }>("SELECT count(*)::INTEGER AS total FROM inventory.lot WHERE kind <> 'bottled'");
       expect(wines[0]?.total).toBe(8);
       expect(vessels[0]?.total).toBe(30);
       expect(lots[0]?.total).toBe(24);
+      const bottled = await writer.read<{ products: number; lots: number; moves: number; units: number; fiscal: number }>(`
+        SELECT
+          (SELECT count(*)::INTEGER FROM catalog.product WHERE kind = 'wine' AND is_active AND format_id IS NOT NULL) AS products,
+          (SELECT count(*)::INTEGER FROM inventory.lot WHERE kind = 'bottled') AS lots,
+          (SELECT count(*)::INTEGER FROM inventory.stock_move WHERE product_state = 'packaged_labeled') AS moves,
+          (SELECT min(qty_units)::INTEGER FROM inventory.stock_move WHERE product_state = 'packaged_labeled') AS units,
+          (SELECT count(*)::INTEGER FROM inventory.fiscal_move WHERE product_class = 'packaged') AS fiscal
+      `);
+      expect(bottled[0]?.products).toBeGreaterThan(0);
+      expect(bottled[0]?.lots).toBe(bottled[0]?.products);
+      expect(bottled[0]?.moves).toBe(bottled[0]?.products);
+      expect(bottled[0]?.units).toBe(120);
+      expect(bottled[0]?.fiscal).toBe(bottled[0]?.products);
       const zones = await writer.read<{ code: string }>('SELECT code FROM cellar.zone ORDER BY code');
       expect(zones.map((row) => row.code)).toEqual(['BOT', 'ELAB', 'EXT', 'SALA']);
       expect(Number(placedOnce[0]?.total)).toBeGreaterThan(10);

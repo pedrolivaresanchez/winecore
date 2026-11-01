@@ -172,6 +172,7 @@ export async function seedDemo(
             WHERE r.rule_set_id = s.id AND r.scope = 'default'
           )
       `);
+      for (const statement of bottledStockStatements()) tx.write(statement);
       for (const statement of syntheticParcelStatements()) tx.write(statement);
       for (const statement of planLayoutStatements()) tx.write(statement);
     },
@@ -441,6 +442,63 @@ function placeVesselsSql(
     ) ranked
     JOIN cellar.zone z ON z.code = '${zoneCode}' AND z.location_id = (SELECT id FROM inventory.location WHERE code = 'BOD')
   `;
+}
+
+const BOTTLED_LOT = `'E-' || left(replace(p.sku, '_', '-'), 28)`;
+
+/**
+ * Un lote envasado por vino a la venta, producido por P.O y en BOD a nombre de CVPO, que es quien
+ * vende por defecto: así el albarán no necesita tarifa intercompañía. Aforo inicial físico y fiscal
+ * a la misma fecha que el granel. Sin él no se puede emitir un albarán de vino.
+ */
+function bottledStockStatements(): string[] {
+  return [
+    `
+      INSERT INTO inventory.lot (id, producer_entity_id, code, kind, wine_id, vintage, status, origin, notes)
+      SELECT gen_random_uuid(), e.id, ${BOTTLED_LOT}, 'bottled', p.wine_id, p.vintage,
+             'active', 'opening_count', 'Envasado de la demostración'
+      FROM catalog.product p
+      JOIN core.legal_entity e ON e.code = 'PO'
+      WHERE p.kind = 'wine' AND p.is_active AND p.format_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM inventory.lot l WHERE l.producer_entity_id = e.id AND l.code = ${BOTTLED_LOT}
+        )
+    `,
+    `
+      INSERT INTO inventory.stock_move (
+        id, occurred_at, move_type, location_id, owner_entity_id, lot_id, product_id, product_state,
+        qty_units, volume_ml, source_table, source_id, created_by
+      )
+      SELECT gen_random_uuid(),
+             COALESCE((SELECT min(occurred_at) FROM inventory.stock_move WHERE move_type = 'opening'), now()),
+             'opening', loc.id, owner.id, l.id, p.id, 'packaged_labeled',
+             120, 120 * f.nominal_volume_ml, 'inventory.lot', l.id, 'seed-demo'
+      FROM catalog.product p
+      JOIN catalog.format f ON f.id = p.format_id
+      JOIN core.legal_entity e ON e.code = 'PO'
+      JOIN core.legal_entity owner ON owner.code = 'CVPO'
+      JOIN inventory.lot l ON l.producer_entity_id = e.id AND l.code = ${BOTTLED_LOT}
+      JOIN inventory.location loc ON loc.code = 'BOD'
+      WHERE p.kind = 'wine' AND p.is_active
+        AND NOT EXISTS (SELECT 1 FROM inventory.stock_move m WHERE m.lot_id = l.id)
+    `,
+    `
+      INSERT INTO inventory.fiscal_move (
+        id, tax_warehouse_id, fiscal_date, physical_date, move_type, product_class, lot_id, product_id,
+        volume_ml, units, abv_pct, excise_product_key, nc_code, justification_type, justification_ref,
+        fiscal_trigger, source_table, source_id, created_by
+      )
+      SELECT gen_random_uuid(), loc.tax_warehouse_id, CAST(m.occurred_at AS DATE), CAST(m.occurred_at AS DATE),
+             'opening', 'packaged', m.lot_id, m.product_id, m.volume_ml, m.qty_units, p.alcohol_pct,
+             p.excise_product_key, p.nc_code, 'count_record', 'AFORO-DEMO', 'count', 'inventory.lot', m.lot_id, 'seed-demo'
+      FROM inventory.stock_move m
+      JOIN inventory.location loc ON loc.id = m.location_id
+      JOIN catalog.product p ON p.id = m.product_id
+      WHERE m.move_type = 'opening' AND m.product_state = 'packaged_labeled' AND m.created_by = 'seed-demo'
+        AND loc.tax_warehouse_id IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM inventory.fiscal_move f WHERE f.lot_id = m.lot_id AND f.move_type = 'opening')
+    `,
+  ];
 }
 
 function syntheticParcelStatements(): string[] {

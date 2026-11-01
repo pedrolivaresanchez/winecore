@@ -132,28 +132,6 @@ export function draftsFrom(lines: InvoiceLine[]): LineDraft[] {
   }))
 }
 
-export function blankLine(): LineDraft {
-  return {
-    key: crypto.randomUUID(),
-    productId: '',
-    description: '',
-    quantity: '1',
-    unitPrice: '',
-    discountPct: '0',
-    taxCode: 'IVA21',
-    lotCode: '',
-    deliveryNoteLineId: null,
-    orderLineId: null,
-  }
-}
-
-export function uuidsOf(value: string): string[] {
-  return value
-    .split(/[\s,;]+/)
-    .map((item) => item.trim().toLowerCase())
-    .filter(Boolean)
-}
-
 export function stepLabel(n: number): string {
   return fill(copy.facturas.step, { n: String(n) })
 }

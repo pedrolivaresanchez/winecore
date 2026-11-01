@@ -7,6 +7,8 @@ import { acceptQuote, docPath, errorText, quoteToOrder, rejectQuote, sendQuote, 
 import type { Me } from '@/lib/types'
 import { issueInvoice, resendDelivery, validateInvoice } from '@/pages/facturas/api'
 import { IssueDialog } from '@/pages/facturas/dialogs'
+import { NumberingStep } from '@/pages/facturas/NumberingStep'
+import { numberingNeed } from '@/pages/ajustes/numeracion/api'
 import { entityLabel, isOpen, money } from '@/pages/facturas/format'
 import type { Invoice, ValidationResult } from '@/pages/facturas/types'
 import { ReasonDialog } from '@/pages/ventas/dialogs'
@@ -29,6 +31,11 @@ export function InvoiceActions({ me, invoice, onChanged }: { me: Me; invoice: In
   const canSend = issued && allows(me, 'billing.deliver')
   const canRectify = issued && allows(me, 'billing.write')
   if (!canIssue && !canSend && !canRectify) return null
+  const errors = issues?.errors ?? []
+  const numbering = errors.every((issue) => issue.code === 'WC_INV_NUMBERING')
+    ? numberingNeed(errors.find((issue) => issue.code === 'WC_INV_NUMBERING')?.details)
+    : null
+  const blocking = numbering ? [] : errors
 
   async function preflight() {
     setBusy(true)
@@ -55,6 +62,11 @@ export function InvoiceActions({ me, invoice, onChanged }: { me: Me; invoice: In
       setIssues(null)
       onChanged()
     } catch (error: unknown) {
+      if (error instanceof ApiError && error.code === 'WC_INV_NUMBERING') {
+        setIssueOpen(false)
+        setIssues({ errors: [{ code: error.code, message: error.message, details: error.details }], warnings: [] })
+        return
+      }
       toast(messageOf(error))
     } finally {
       setBusy(false)
@@ -93,15 +105,16 @@ export function InvoiceActions({ me, invoice, onChanged }: { me: Me; invoice: In
           </Button>
         ) : null}
       </div>
-      {issues && issues.errors.length > 0 ? (
+      {blocking.length > 0 ? (
         <Alert tone="danger">
           <ul className="grid gap-1 text-label">
-            {issues.errors.map((issue) => (
+            {blocking.map((issue) => (
               <li key={`${issue.field ?? ''}-${issue.message}`}>{issue.message}</li>
             ))}
           </ul>
         </Alert>
       ) : null}
+      {numbering && canIssue ? <NumberingStep me={me} need={numbering} onOpened={() => void preflight()} /> : null}
       <IssueDialog
         open={issueOpen}
         entity={entityLabel(invoice.entity_code)}

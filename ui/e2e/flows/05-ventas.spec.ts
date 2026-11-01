@@ -8,16 +8,16 @@ test("Ventas: presupuesto, pedido, albarán y factura con PDF", async ({ page })
   let customer = "";
 
   await test.step("Crear un presupuesto", async () => {
+    const customers = await page.request.get("/api/v1/contacts?role=customer&archived=false&limit=20");
+    const items = ((await customers.json()) as { items: { legal_name: string; city: string | null; country_code: string }[] }).items;
+    customer = items.find((item) => item.city && item.country_code === "ES")?.legal_name ?? "";
+    if (!customer) omitir("El seed de demostración no trae clientes.");
     await page.goto("/ventas/presupuestos");
     await page.getByRole("button", { name: "Nuevo presupuesto" }).first().click();
     await page.locator('[data-screen="ventas-dialogo"]').waitFor();
     const dialog = page.getByRole("dialog");
-    const customerBox = dialog.getByRole("combobox", { name: "Cliente" });
-    await customerBox.click();
-    const firstCustomer = page.getByRole("listbox").getByRole("option").first();
-    await firstCustomer.waitFor();
-    customer = ((await firstCustomer.locator("span").first().textContent()) ?? "").trim();
-    await firstCustomer.click();
+    await dialog.getByRole("combobox", { name: "Cliente" }).fill(customer);
+    await page.getByRole("listbox").getByRole("option").filter({ hasText: customer }).first().click();
     const product = dialog.getByRole("combobox", { name: "Producto" });
     await product.click();
     const firstProduct = page.getByRole("listbox").getByRole("option").first();
@@ -74,15 +74,35 @@ test("Ventas: presupuesto, pedido, albarán y factura con PDF", async ({ page })
   await test.step("Facturar el albarán, emitir y abrir el PDF", async () => {
     const noteId = page.url().split("/").pop() ?? "";
     await page.goto("/facturas/nueva");
-    await page.locator("#albaranes-factura").fill(noteId);
-    await page.getByRole("button", { name: "Crear borrador" }).click();
+    await page.locator('[data-screen="facturas-nueva"]').waitFor();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("combobox", { name: "Cliente" }).fill(customer);
+    await page.getByRole("listbox").getByRole("option").filter({ hasText: customer }).first().click();
+    await dialog.getByRole("radio", { name: "Desde albaranes" }).click();
+    const elsewhere = dialog.getByRole("button", { name: /^Hay \d+ en / });
+    const note = dialog.getByRole("checkbox").first();
+    await expect(note.or(elsewhere).first()).toBeVisible();
+    if (await elsewhere.isVisible()) await elsewhere.click();
+    await note.check();
+    await dialog.getByRole("button", { name: "Crear borrador" }).click();
     await page.waitForURL(/\/facturas\/[0-9a-f-]+$/i);
     await page.getByRole("button", { name: "Emitir" }).click();
-    await page.getByRole("dialog").getByRole("button", { name: "Emitir" }).click();
+    const numbering = page.locator('[data-screen="numeracion-primera"]');
+    const confirm = page.getByRole("dialog").getByRole("button", { name: "Emitir" });
+    await expect(numbering.or(confirm).first()).toBeVisible();
+    if (await numbering.isVisible()) {
+      await expect(numbering.getByText(/^Primera factura de .+ en \d{4}: elige la numeración$/)).toBeVisible();
+      await numbering.getByRole("radio", { name: /Empezar una serie nueva/ }).check();
+      await numbering.getByRole("button", { name: "Usar esta numeración" }).click();
+    }
+    await confirm.click();
     await page.getByRole("tab", { name: "Envío" }).click();
     await expect(page.getByText("Pendiente de envío").first()).toBeVisible();
     await page.getByRole("tab", { name: "PDF" }).click();
-    await expect(page.getByTitle("PDF")).toBeVisible();
+    // Headless Chromium has no PDF viewer: the tab then offers the same blob as a download.
+    const download = page.getByRole("link", { name: "Descargar PDF" }).first();
+    await expect(page.getByTitle("PDF").or(download).first()).toBeVisible();
+    if (await download.isVisible()) await expect(download).toHaveAttribute("href", /^blob:/);
     const number = (await page.locator("h1").first().textContent())?.trim() ?? "";
     writeState({ customerName: customer, invoiceNumber: number, deliveryNoteId: noteId });
   });

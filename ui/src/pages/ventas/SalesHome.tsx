@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { allows } from '@/lib/permissions'
-import { useSalesCatalog } from '@/lib/sales-catalog'
+import { useCustomers } from '@/lib/sales-catalog'
 import { docPath, type DocKind } from '@/lib/sales'
 import type { Me } from '@/lib/types'
 import { SalesDocumentList } from '@/pages/documents/SalesDocumentList'
@@ -20,7 +20,7 @@ export function SalesHome({ me, doc, creating = false }: { me: Me; doc: DocKind;
 /** `/nuevo` opens the dialog over the same list; closing it goes back to that list. */
 function CreateOver({ doc }: { doc: 'quote' | 'delivery' }) {
   const navigate = useNavigate()
-  const { customers } = useSalesCatalog()
+  const { customers } = useCustomers()
   const close = () => navigate(docPath(doc))
   const created = (id: string) => navigate(`${docPath(doc)}/${id}`)
   if (doc === 'quote') return <CreateDocument doc="quote" customers={customers} onClose={close} onCreated={created} />

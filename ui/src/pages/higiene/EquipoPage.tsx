@@ -273,7 +273,7 @@ function MaintenanceDialog({
       <DialogHeader titleId="mantenimiento-nuevo" title={copy.higiene.maintenance} onClose={onClose} />
       <DialogBody>
         <form
-          id="mantenimiento-nuevo"
+          id="mantenimiento-nuevo-form"
           data-screen="higiene-dialogo-mantenimiento"
           className="grid gap-4 pb-2"
           onSubmit={(event) => {
@@ -300,7 +300,7 @@ function MaintenanceDialog({
         <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={saving}>
           {copy.higiene.cancel}
         </Button>
-        <Button type="submit" form="mantenimiento-nuevo" variant="primary" size="sm" loading={saving}>
+        <Button type="submit" form="mantenimiento-nuevo-form" variant="primary" size="sm" loading={saving}>
           {copy.higiene.save}
         </Button>
       </DialogFooter>
@@ -345,7 +345,7 @@ function LinkDialog({ equipmentId, onClose, onSaved }: { equipmentId: string; on
       <DialogHeader titleId="vincular-equipo" title={copy.higiene.link} onClose={onClose} />
       <DialogBody>
         <form
-          id="vincular-equipo"
+          id="vincular-equipo-form"
           className="grid gap-4 pb-2"
           onSubmit={(event) => {
             event.preventDefault()
@@ -380,7 +380,7 @@ function LinkDialog({ equipmentId, onClose, onSaved }: { equipmentId: string; on
         <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={saving}>
           {copy.higiene.cancel}
         </Button>
-        <Button type="submit" form="vincular-equipo" variant="primary" size="sm" loading={saving}>
+        <Button type="submit" form="vincular-equipo-form" variant="primary" size="sm" loading={saving}>
           {copy.higiene.save}
         </Button>
       </DialogFooter>
