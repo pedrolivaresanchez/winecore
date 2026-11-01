@@ -1,4 +1,4 @@
-import { expect, test } from "playwright/test";
+import { expect, test, type Page } from "playwright/test";
 import { datosMovil, MOVIL, sinDesborde } from "./movil";
 import { pantalla } from "./support";
 
@@ -14,6 +14,10 @@ type Vessel = {
   volume_ml: number;
   capacity_ml: number;
 };
+
+async function abrirPrimeraFila(page: Page) {
+  await page.locator("[data-grid-scroll] tbody tr").first().locator("td").first().locator("span, div").last().tap();
+}
 
 test("Móvil: abrir el plano de depósitos, un depósito y el modo edición", async ({ page }) => {
   await test.step("El plano cabe en 390 px", async () => {
@@ -132,8 +136,35 @@ test("Móvil: trasiego entre depósitos (movimiento de stock)", async ({ page })
     const buscador = page.getByRole("searchbox", { name: "Buscar lote, recipiente o vino" });
     await buscador.waitFor();
     await buscador.fill(lote);
-    await expect(page.getByText(lote).first()).toBeVisible();
+    await expect(page.locator("[data-grid-scroll] tbody tr").first()).toBeVisible();
     await sinDesborde(page, "existencias tras el trasiego");
+    await abrirPrimeraFila(page);
+    await expect(page.getByRole("dialog").getByText(lote).first()).toBeVisible();
+  });
+});
+
+test("Móvil: existencias deja ver litros y unidades y abre el detalle de la fila", async ({ page }) => {
+  await page.goto("/stock");
+  const epoca = page.getByRole("button", { name: "Ver el 01/01/2027" });
+  if (await epoca.isVisible().catch(() => false)) await epoca.tap();
+  await expect(page.locator("[data-grid-scroll] tbody tr").first()).toBeVisible();
+
+  await test.step("Litros y unidades entran en la pantalla sin desplazar la tabla", async () => {
+    for (const cabecera of ["Litros", "Unidades"]) {
+      const celda = page.locator("[data-grid-scroll] thead th").filter({ hasText: cabecera }).first();
+      await expect(celda, `falta la columna ${cabecera}`).toBeVisible();
+      const caja = await celda.boundingBox();
+      expect((caja?.x ?? 0) + 60, `${cabecera} empieza fuera de la pantalla`).toBeLessThanOrEqual(390);
+    }
+    await sinDesborde(page, "existencias");
+  });
+
+  await test.step("Tocar el recipiente abre la hoja con ubicación, lote y estado", async () => {
+    await abrirPrimeraFila(page);
+    const hoja = page.getByRole("dialog");
+    await expect(hoja.getByText("Ubicación")).toBeVisible();
+    await expect(hoja.getByText("Lote").first()).toBeVisible();
+    await sinDesborde(page, "detalle de existencias");
   });
 });
 

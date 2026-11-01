@@ -321,6 +321,8 @@ const MAX_W = 720
  * name — the one thing the row is read by — eight letters.
  */
 const PINNED_MIN_W = 240
+/** In a phone the pinned column leaves room for the next column to show without scrolling. */
+const PINNED_MIN_W_TOUCH = 192
 /** Pointer travel before a header press becomes a reorder rather than a click. */
 const DRAG_THRESHOLD = 5
 
@@ -415,9 +417,9 @@ function DataGridCore<Row>({
   const widthOf = useCallback(
     (id: string) => {
       const width = clampWidth(widths[id] ?? DEFAULT_W)
-      return id === pinnedId ? Math.max(PINNED_MIN_W, width) : width
+      return id === pinnedId ? Math.max(touch ? PINNED_MIN_W_TOUCH : PINNED_MIN_W, width) : width
     },
-    [widths, pinnedId],
+    [widths, pinnedId, touch],
   )
   const tableWidth = columns.reduce((sum, column) => sum + widthOf(column.id), 0)
 
