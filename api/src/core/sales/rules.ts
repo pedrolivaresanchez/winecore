@@ -264,17 +264,86 @@ export async function replaceRules(tx: Tx, setId: string, rules: readonly RuleIn
   return { id: set.id, version: set.version, status: set.status, rules: saved.map(ruleJson) };
 }
 
+export type RuleBootstrap = { actorId: string; entityId: string | null };
+
+type LoadedSet = { set: SetRow; rules: RuleRow[] };
+
+const bootstrapped = new WeakMap<Tx, LoadedSet>();
+
+async function setRules(tx: Tx, setId: string): Promise<LoadedSet> {
+  const set = await loadSet(tx, setId);
+  return { set, rules: await loadRules(tx, set.id) };
+}
+
+async function currentRules(tx: Tx, bootstrap?: RuleBootstrap): Promise<LoadedSet | null> {
+  const pending = bootstrapped.get(tx);
+  if (pending) return pending;
+  const set = await activeSet(tx);
+  if (set) return { set, rules: await loadRules(tx, set.id) };
+  return bootstrap ? bootstrapRuleSet(tx, bootstrap) : null;
+}
+
+/**
+ * Sin conjunto activo ningún pedido sale de borrador (`billing_rule_id` es obligatorio).
+ * El primer documento abre uno ya activo con una sola regla por defecto: la entidad elegida
+ * o, si no hay, la primera activa por código. Queda auditado; las reglas finas siguen
+ * pasando por aprobación. Hasta el commit `tx.read` no lo ve, de ahí `bootstrapped`.
+ */
+async function bootstrapRuleSet(tx: Tx, bootstrap: RuleBootstrap): Promise<LoadedSet> {
+  const entities = await tx.read<{ id: unknown }>(bootstrap.entityId
+    ? sql`SELECT id FROM core.legal_entity WHERE id = CAST(${bootstrap.entityId} AS UUID) AND is_active`
+    : sql`SELECT id FROM core.legal_entity WHERE is_active ORDER BY code LIMIT 1`);
+  const entity = entities[0];
+  if (!entity) fail('No hay una entidad activa para facturar', { legal_entity_id: bootstrap.entityId ?? 'Obligatorio' });
+  const versions = await tx.read<{ version: unknown }>(sql`
+    SELECT coalesce(max(version), 0) AS version FROM billing.billing_rule_set
+  `);
+  const version = Number(versions[0]?.version ?? 0) + 1;
+  const id = newRowId();
+  const now = new Date();
+  const notes = 'Alta automática con el primer documento: regla por defecto';
+  tx.write(sql`
+    INSERT INTO billing.billing_rule_set (id, version, status, notes, activated_at, created_by, created_at)
+    VALUES (CAST(${id} AS UUID), ${version}, 'active', ${notes}, ${now}, ${bootstrap.actorId}, ${now})
+  `);
+  tx.audit({
+    table: 'billing.billing_rule_set',
+    rowId: id,
+    action: 'INSERT',
+    before: null,
+    after: { version, status: 'active', notes, activated_at: now.toISOString() },
+  });
+  const rule = { scope: 'default' as const, customer_id: null, channel: null, issuing_entity_id: idOf(entity.id), notes: null };
+  const ruleId = insertRule(tx, id, rule);
+  const loaded: LoadedSet = {
+    set: { id, version, status: 'active', notes, approval_request_id: null, activated_at: now.toISOString() },
+    rules: [{ id: ruleId, ...rule }],
+  };
+  bootstrapped.set(tx, loaded);
+  return loaded;
+}
+
+/** Vista previa: sin conjunto activo no hay entidad que anunciar, pero tampoco es un error. */
+export async function previewIssuingEntity(
+  tx: Tx,
+  input: { customerId: string; channel: string; setId?: string },
+): Promise<IssuingResolution | null> {
+  if (!input.setId && !(await currentRules(tx))) return null;
+  return resolveIssuingEntity(tx, input);
+}
+
 /**
  * Cliente > canal > defecto. `setId` prueba un borrador; si falta, usa el conjunto activo.
+ * Con `bootstrap`, la falta de conjunto activo abre uno en vez de fallar.
  */
 export async function resolveIssuingEntity(
   tx: Tx,
-  input: { customerId: string; channel: string; setId?: string },
+  input: { customerId: string; channel: string; setId?: string; bootstrap?: RuleBootstrap },
 ): Promise<IssuingResolution> {
-  const set = input.setId ? await loadSet(tx, input.setId) : await activeSet(tx);
-  if (!set) fail('No hay un conjunto de reglas activo');
+  const loaded = input.setId ? await setRules(tx, input.setId) : await currentRules(tx, input.bootstrap);
+  if (!loaded) fail('No hay un conjunto de reglas activo');
+  const { set, rules } = loaded;
   const customer = await loadCustomer(tx, input.customerId);
-  const rules = await loadRules(tx, set.id);
   const customerRule = rules.find((rule) => rule.scope === 'customer' && rule.customer_id === input.customerId) ?? null;
   const channelRule = rules.find((rule) => rule.scope === 'channel' && rule.channel === input.channel) ?? null;
   const defaultRule = rules.find((rule) => rule.scope === 'default') ?? null;

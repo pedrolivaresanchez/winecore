@@ -5,6 +5,7 @@ import type { Actor, Tx } from '../db/writer';
 import { domainError } from '../errors';
 import { newId } from '../ids';
 import { money } from '../money';
+import { ensureDefaultSeries } from '../series';
 import { computeInvoice, InvoiceCalculationError } from './compute';
 import {
   decimalOf,
@@ -717,6 +718,10 @@ async function chooseSeries(
   docType: string,
   year: number,
 ): Promise<SeriesView> {
+  if (!explicitId) {
+    const fresh = await ensureDefaultSeries(tx, entityId, docType, year);
+    if (fresh) return { id: fresh.id, legalEntityId: fresh.legalEntityId, docType, year, active: true, isDefault: true };
+  }
   const series = explicitId
     ? await loadSeries(tx, explicitId)
     : await findDefaultSeries(tx, entityId, docType, year);

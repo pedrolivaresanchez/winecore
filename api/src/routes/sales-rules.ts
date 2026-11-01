@@ -6,10 +6,10 @@ import {
   createRuleSet,
   listRuleSets,
   parseRuleInputs,
+  previewIssuingEntity,
   replaceRules,
   requestActivation,
   resolutionJson,
-  resolveIssuingEntity,
   ruleImpact,
 } from '../core/sales/rules';
 import { businessDate } from '../core/time';
@@ -45,12 +45,12 @@ export async function getResolve(writer: Writer, request: Request) {
   const channel = url.searchParams.get('channel') ?? '';
   const setId = url.searchParams.get('set_id');
   return writer.withWrite(systemActor(), async (tx) => {
-    const resolved = await resolveIssuingEntity(tx, {
+    const resolved = await previewIssuingEntity(tx, {
       customerId,
       channel,
       ...(setId ? { setId: pathId(setId) } : {}),
     });
-    return resolutionJson(resolved);
+    return resolved ? resolutionJson(resolved) : null;
   });
 }
 

@@ -387,9 +387,11 @@ export async function listDeliveries(writer: Writer, request: Request): Promise<
   const status = url.searchParams.get('status');
   const invoiced = url.searchParams.get('invoiced');
   const cursor = url.searchParams.get('cursor');
+  const customer = url.searchParams.get('customer_id');
   const entity = await entityFilter(writer, url.searchParams.get('entity'));
   const filters = ['TRUE'];
   if (entity) filters.push(`legal_entity_id = CAST(${sql`${entity}`} AS UUID)`);
+  if (customer && UUID_RE.test(customer)) filters.push(`customer_id = CAST(${sql`${customer}`} AS UUID)`);
   if (kind) filters.push(`kind = ${sql`${kind}`}`);
   if (status) filters.push(`status = ${sql`${status}`}`);
   if (invoiced === 'true') filters.push(`invoicing_status = 'invoiced'`);

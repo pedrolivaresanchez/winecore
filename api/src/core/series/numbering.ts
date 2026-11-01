@@ -211,6 +211,150 @@ export async function takeNumber(
   return formatSeriesNumber(String(preferred.prefix), padding, taken);
 }
 
+const DEFAULT_LETTERS: Partial<Record<DocType, string>> = {
+  quote: 'PR',
+  sales_order: 'PE',
+  delivery_note: 'AL',
+  invoice: 'F',
+  credit_note: 'R',
+  simplified_invoice: 'FS',
+  proforma: 'PF',
+};
+
+const DEFAULT_PADDING = 4;
+const VARIANTS = ['', ...'BCDEFGHIJKLMNOPQRSTUVWXYZ'];
+
+export type ProvisionedSeries = {
+  id: string;
+  legalEntityId: string;
+  docType: DocType;
+  code: string;
+  year: number;
+  prefix: string;
+  padding: number;
+};
+
+const provisioned = new WeakMap<Tx, Map<string, ProvisionedSeries>>();
+
+/**
+ * Abre la serie por defecto cuando la entidad no tiene ninguna (ni activa ni de baja)
+ * para el tipo y el año: sin ella no se numera el primer documento. Si ya hay alguna,
+ * devuelve null y manda la configuración existente. La serie nueva no se ve con
+ * `tx.read` hasta el commit: dentro de la misma escritura se numera con `takeProvisionedNumber`.
+ */
+export async function ensureDefaultSeries(
+  tx: Tx,
+  legalEntityId: string,
+  docType: string,
+  year: number,
+): Promise<ProvisionedSeries | null> {
+  if (!UUID.test(legalEntityId)) {
+    throw domainError('WC_VALIDATION', { legal_entity_id: 'Identificador no válido' });
+  }
+  if (!isDocType(docType)) {
+    throw domainError('WC_VALIDATION', { doc_type: 'Tipo de documento no válido' });
+  }
+  const letters = DEFAULT_LETTERS[docType];
+  if (!letters || !Number.isInteger(year) || year < 2020 || year > 2100) return null;
+  const entityId = legalEntityId.toLowerCase();
+  const key = `${entityId}|${docType}|${year}`;
+  const pending = provisioned.get(tx) ?? new Map<string, ProvisionedSeries>();
+  provisioned.set(tx, pending);
+  const known = pending.get(key);
+  if (known) return known;
+
+  const existing = await tx.read<{ id: string }>(sql`
+    SELECT id FROM core.number_series
+    WHERE legal_entity_id = CAST(${entityId} AS UUID)
+      AND doc_type = ${docType}
+      AND "year" = ${year}
+    LIMIT 1
+  `);
+  if (existing[0]) return null;
+  const entities = await tx.read<{ id: string }>(sql`
+    SELECT id FROM core.legal_entity
+    WHERE id = CAST(${entityId} AS UUID) AND is_active
+    LIMIT 1
+  `);
+  if (!entities[0]) throw domainError('WC_VALIDATION', { legal_entity_id: 'La entidad no existe' });
+
+  const taken = await tx.read<{ prefix: unknown }>(sql`
+    SELECT prefix FROM core.number_series WHERE legal_entity_id = CAST(${entityId} AS UUID)
+  `);
+  const used = new Set(taken.map((row) => String(row.prefix)));
+  for (const other of pending.values()) {
+    if (other.legalEntityId === entityId) used.add(other.prefix);
+  }
+  const yy = String(year % 100).padStart(2, '0');
+  const variant = VARIANTS.find((suffix) => !used.has(`${letters}${yy}${suffix}-`));
+  if (variant === undefined) throw domainError('WC010');
+  const series: ProvisionedSeries = {
+    id: newId(),
+    legalEntityId: entityId,
+    docType,
+    code: letters,
+    year,
+    prefix: `${letters}${yy}${variant}-`,
+    padding: DEFAULT_PADDING,
+  };
+  tx.write(sql`
+    INSERT INTO core.number_series (
+      id, legal_entity_id, doc_type, code, year, prefix, padding,
+      next_value, is_default, verifactu, is_active
+    ) VALUES (
+      CAST(${series.id} AS UUID),
+      CAST(${entityId} AS UUID),
+      ${docType},
+      ${series.code},
+      ${year},
+      ${series.prefix},
+      ${series.padding},
+      1,
+      TRUE,
+      FALSE,
+      TRUE
+    )
+  `);
+  tx.audit({
+    table: 'core.number_series',
+    rowId: series.id,
+    action: 'INSERT',
+    before: null,
+    after: {
+      legal_entity_id: entityId,
+      doc_type: docType,
+      code: series.code,
+      year,
+      prefix: series.prefix,
+      padding: series.padding,
+      next_value: 1,
+      is_default: true,
+      verifactu: false,
+      is_active: true,
+      provisioned: true,
+    },
+  });
+  pending.set(key, series);
+  return series;
+}
+
+export function takeProvisionedNumber(tx: Tx, series: ProvisionedSeries): string {
+  const taken = claim(tx, series.id, 1, series.padding);
+  tx.write(sql`
+    UPDATE core.number_series
+    SET next_value = ${taken + 1}
+    WHERE id = CAST(${series.id} AS UUID) AND is_active
+  `);
+  tx.audit({
+    table: 'core.number_series',
+    rowId: series.id,
+    action: 'UPDATE',
+    before: { next_value: taken },
+    after: { next_value: taken + 1 },
+  });
+  return formatSeriesNumber(series.prefix, series.padding, taken);
+}
+
 function parseSeriesBody(raw: unknown): SeriesInput {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     throw domainError('WC_VALIDATION', { body: 'El cuerpo debe ser un objeto' });
