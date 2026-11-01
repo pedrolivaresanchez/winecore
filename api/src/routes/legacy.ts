@@ -4,8 +4,10 @@ import { loadLegacyDocument, loadLegacyInvoice, readHoldedDocument, readHoldedIn
 import { listLegacyDocuments } from '../core/legacy/documents';
 import { listLegacyInvoices } from '../core/legacy/invoices';
 import { loadLegacyOverview } from '../core/legacy/overview';
-import { holdedDocumentPdfInput, holdedPdfFilename, holdedPdfInput } from '../core/legacy/pdf';
+import { holdedDocumentPdfInput, holdedPdfFilename, holdedPdfInput, type HoldedPdfExtras } from '../core/legacy/pdf';
+import { loadCustomerParty } from '../core/pdf/context';
 import { renderDocumentPdf } from '../core/pdf/document';
+import { loadDocumentProfile } from '../core/pdf/profile';
 import { listLegacyProducts } from '../core/legacy/products';
 import type { Writer } from '../core/db/writer';
 
@@ -24,7 +26,7 @@ export function getLegacyInvoice(writer: Writer, request: Request, id: string, n
 export async function getLegacyInvoicePdf(writer: Writer, request: Request, id: string): Promise<Response> {
   const loaded = await readHoldedInvoice(writer, sessionOf(request), id);
   const stored = await storedPdf(writer, 'legacy.holded_invoice', loaded.detail.id, ['invoice_pdf', 'supplier_invoice_scan']);
-  const bytes = stored ?? await renderDocumentPdf(holdedPdfInput(loaded));
+  const bytes = stored ?? await renderDocumentPdf(holdedPdfInput(loaded, await pdfExtras(writer, loaded.detail.legal_entity_id, loaded.detail.counterparty_contact_id)));
   return pdfResponse(bytes, holdedPdfFilename(loaded.detail.number));
 }
 
@@ -33,8 +35,15 @@ export async function getLegacyDocumentPdf(writer: Writer, request: Request, id:
   const quote = loaded.detail.kind === 'quote';
   const table = quote ? 'legacy.holded_quote' : 'legacy.holded_delivery_note';
   const stored = await storedPdf(writer, table, loaded.detail.id, quote ? ['contract', 'other'] : ['delivery_note_pdf', 'other']);
-  const bytes = stored ?? await renderDocumentPdf(holdedDocumentPdfInput(loaded));
+  const bytes = stored ?? await renderDocumentPdf(holdedDocumentPdfInput(loaded, await pdfExtras(writer, loaded.detail.legal_entity_id, loaded.detail.counterparty_contact_id)));
   return pdfResponse(bytes, holdedPdfFilename(loaded.detail.number, quote ? 'presupuesto' : 'albaran'));
+}
+
+async function pdfExtras(writer: Writer, entityId: string, contactId: string | null): Promise<HoldedPdfExtras> {
+  return {
+    profile: await loadDocumentProfile(writer, entityId),
+    customer: await loadCustomerParty(writer, contactId),
+  };
 }
 
 /** La UI lo pinta desde un blob, así que `inline` solo cuenta si alguien abre la URL de la API. */

@@ -67,6 +67,17 @@ export function LineEditor({
                 onChange={(event) => update(line.key, { lotCode: event.target.value })}
               />
             </Field>
+            <Field id={`unidad-${line.key}`} label={copy.sales.unit}>
+              <Input
+                id={`unidad-${line.key}`}
+                size="sm"
+                autoComplete="off"
+                maxLength={30}
+                placeholder={copy.sales.unitPlaceholder}
+                value={line.unit}
+                onChange={(event) => update(line.key, { unit: event.target.value })}
+              />
+            </Field>
           </div>
           <Field id={`iva-${line.key}`} label={copy.facturas.taxCode}>
             <Select

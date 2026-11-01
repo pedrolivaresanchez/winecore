@@ -33,6 +33,8 @@ import { Button, DatePicker, MenuItem, SegmentedControl, Select, Switch, Textare
 import { DocLink, FactList, LineTable, MoreMenu, RecordFrame, SalesHistory, StatusBadge, TotalsBox } from '@/pages/ventas/chrome'
 import { ReasonDialog } from '@/pages/ventas/dialogs'
 import { LineEditor } from '@/pages/ventas/lines'
+import { ShippingFields } from '@/pages/ventas/shipping'
+import { shipToDraftOf, shipToPayload, referencesPayload, shippingRows, type ShipToDraft } from '@/lib/shipping'
 import { RecordSkeleton } from '@/components/RecordSkeleton'
 import { DocumentModal } from '@/pages/documents/DocumentModal'
 import { useDocParam } from '@/pages/documents/use-doc-param'
@@ -73,6 +75,8 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
   const [incoterm, setIncoterm] = useState(quote.incoterm ?? '')
   const [validUntil, setValidUntil] = useState<string | null>(quote.valid_until)
   const [notesText, setNotesText] = useState(quote.notes ?? '')
+  const [shipTo, setShipTo] = useState<ShipToDraft>(() => shipToDraftOf(quote.ship_to))
+  const [references, setReferences] = useState(quote.customer_references ?? '')
   const stamps = useRef<Record<string, string>>({})
   const canWrite = allows(me, 'sales.write')
   const draft = quote.status === 'draft'
@@ -125,6 +129,8 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
     setIncoterm(quote.incoterm ?? '')
     setValidUntil(quote.valid_until)
     setNotesText(quote.notes ?? '')
+    setShipTo(shipToDraftOf(quote.ship_to))
+    setReferences(quote.customer_references ?? '')
     setEditing(true)
     setTab('lines')
   }
@@ -156,6 +162,8 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
         incoterm: incoterm || null,
         valid_until: validUntil,
         notes: notesText || null,
+        ship_to: shipToPayload(shipTo),
+        customer_references: referencesPayload(references),
         lines: built.ok,
       })
       toast(copy.sales.toast.saved)
@@ -335,6 +343,13 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
               <Field id="notas-presupuesto" label={copy.sales.notes}>
                 <Textarea id="notas-presupuesto" value={notesText} onChange={(event) => setNotesText(event.target.value)} />
               </Field>
+              <ShippingFields
+                idPrefix="presupuesto"
+                shipTo={shipTo}
+                onShipTo={setShipTo}
+                references={references}
+                onReferences={setReferences}
+              />
             </div>
           ) : (
             <FactList
@@ -346,6 +361,7 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
                 { label: copy.sales.validUntil, value: formatIsoDate(quote.valid_until) },
                 { label: copy.sales.date, value: formatIsoDate(quote.issue_date) },
                 { label: copy.sales.notes, value: quote.notes || '—' },
+                ...shippingRows(quote.ship_to, quote.customer_references),
                 {
                   label: copy.sales.relatedOrder,
                   value: child ? <DocLink to={`${docPath('order')}/${child.id}`}>{child.number ?? copy.sales.draft}</DocLink> : '—',

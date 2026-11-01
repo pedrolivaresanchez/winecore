@@ -1,6 +1,6 @@
 import { sql } from '../db/sql';
 import type { Actor, Tx, Writer } from '../db/writer';
-import { domainError } from '../errors';
+import { DomainError, domainError } from '../errors';
 import { businessDate } from '../time';
 import {
   asRecord,
@@ -30,6 +30,7 @@ import {
   throwIf,
   UUID_RE,
 } from './db';
+import { parseCustomerReferences } from '../pdf/ship-to';
 import { parseCommercialLines, resolveLinePrice, type CommercialLineInput } from './pricing';
 import { draftEntity, resolutionJson, resolveIssuingEntity } from './rules';
 import { priceTotals, type PricedLine } from './totals';
@@ -47,6 +48,7 @@ type OrderLine = {
   discount_pct: string;
   tax_code: string;
   external_line_ref: string | null;
+  unit: string | null;
 };
 
 type Idem = { principal: string; key: string; hash: string };
@@ -89,8 +91,8 @@ export async function createSalesOrder(
     INSERT INTO sales.sales_order (
       id, status, invoicing_status, source, channel, customer_id, customer_order_ref,
       customer_department, customer_cost_center, external_ref, order_date, requested_date,
-      ship_to, incoterm, quote_id, billing_rule_trace, currency, notes, subtotal, tax_total, total,
-      created_by, created_at, updated_at
+      ship_to, incoterm, quote_id, billing_rule_trace, currency, notes, customer_references,
+      subtotal, tax_total, total, created_by, created_at, updated_at
     ) VALUES (
       CAST(${id} AS UUID), 'draft', 'not_invoiced', ${input.source}, ${input.channel},
       CAST(${input.customerId} AS UUID), ${input.customerOrderRef}, ${input.department},
@@ -98,7 +100,7 @@ export async function createSalesOrder(
       CASE WHEN ${input.requestedDate} IS NULL THEN NULL ELSE CAST(${input.requestedDate} AS DATE) END,
       ${input.shipTo ? sql.json(input.shipTo) : null}, ${input.incoterm},
       CASE WHEN ${input.quoteId} IS NULL THEN NULL ELSE CAST(${input.quoteId} AS UUID) END,
-      ${trace ? sql.json(trace) : null}, 'EUR', ${input.notes},
+      ${trace ? sql.json(trace) : null}, 'EUR', ${input.notes}, ${input.customerReferences},
       CAST(${totals.subtotal} AS DECIMAL(14,2)), CAST(${totals.tax_total} AS DECIMAL(14,2)),
       CAST(${totals.total} AS DECIMAL(14,2)), ${actor.id}, ${now}, ${now}
     )
@@ -140,6 +142,7 @@ export async function createSalesOrder(
     billing_rule_trace: trace,
     currency: 'EUR',
     notes: input.notes,
+    customer_references: input.customerReferences,
     subtotal: totals.subtotal,
     tax_total: totals.tax_total,
     total: totals.total,
@@ -178,6 +181,7 @@ export async function patchSalesOrder(tx: Tx, id: string, raw: unknown): Promise
     sql`ship_to = ${input.shipTo ? sql.json(input.shipTo) : null}`,
     sql`incoterm = ${input.incoterm}`,
     sql`notes = ${input.notes}`,
+    sql`customer_references = ${input.customerReferences}`,
     sql`subtotal = CAST(${totals.subtotal} AS DECIMAL(14,2))`,
     sql`tax_total = CAST(${totals.tax_total} AS DECIMAL(14,2))`,
     sql`total = CAST(${totals.total} AS DECIMAL(14,2))`,
@@ -204,6 +208,7 @@ export async function patchSalesOrder(tx: Tx, id: string, raw: unknown): Promise
     ship_to: input.shipTo,
     incoterm: input.incoterm,
     notes: input.notes,
+    customer_references: input.customerReferences,
     subtotal: totals.subtotal,
     tax_total: totals.tax_total,
     total: totals.total,
@@ -497,6 +502,7 @@ async function presentOrder(
     issuing_preview: preview,
     currency: String(order.currency),
     notes: textOf(order.notes),
+    customer_references: textOf(order.customer_references),
     subtotal: decOf(order.subtotal).toFixed(2),
     tax_total: decOf(order.tax_total).toFixed(2),
     total: decOf(order.total).toFixed(2),
@@ -524,7 +530,7 @@ async function loadOrder(db: Pick<Tx, 'read'>, id: string): Promise<Record<strin
 
 async function loadLines(db: Pick<Tx, 'read'>, id: string): Promise<OrderLine[]> {
   const rows = await db.read<Record<string, unknown>>(sql`
-    SELECT id, line_no, product_id, description, quantity, unit_price, discount_pct, tax_code, external_line_ref
+    SELECT id, line_no, product_id, description, quantity, unit_price, discount_pct, tax_code, external_line_ref, unit
     FROM sales.sales_order_line WHERE order_id = CAST(${id} AS UUID) ORDER BY line_no
   `);
   return rows.map((row) => ({
@@ -537,6 +543,7 @@ async function loadLines(db: Pick<Tx, 'read'>, id: string): Promise<OrderLine[]>
     discount_pct: decOf(row.discount_pct).toFixed(2),
     tax_code: String(row.tax_code),
     external_line_ref: textOf(row.external_line_ref),
+    unit: textOf(row.unit),
   }));
 }
 
@@ -558,6 +565,7 @@ type OrderInput = {
   shipTo: Record<string, unknown> | null;
   incoterm: string | null;
   notes: string | null;
+  customerReferences: string | null;
   quoteId: string | null;
   lines: CommercialLineInput[];
 };
@@ -583,6 +591,13 @@ async function parseOrderBody(tx: Tx, raw: unknown, creating: boolean): Promise<
   const externalRef = optionalText(body.external_ref, 'external_ref', fields, 80);
   const incoterm = parseIncoterm(body.incoterm, 'incoterm', fields);
   const notes = optionalText(body.notes, 'notes', fields, 2000);
+  let customerReferences: string | null = null;
+  try {
+    customerReferences = parseCustomerReferences(body.customer_references);
+  } catch (error) {
+    if (error instanceof DomainError) Object.assign(fields, error.fields ?? { customer_references: error.message });
+    else throw error;
+  }
   const quoteId = body.quote_id == null || body.quote_id === '' ? null : (typeof body.quote_id === 'string' ? body.quote_id.trim().toLowerCase() : '');
   if (quoteId === '') fields.quote_id = 'Identificador no válido';
   let shipTo: Record<string, unknown> | null = null;
@@ -607,6 +622,7 @@ async function parseOrderBody(tx: Tx, raw: unknown, creating: boolean): Promise<
     shipTo,
     incoterm,
     notes,
+    customerReferences,
     quoteId,
     lines,
   };
@@ -636,7 +652,8 @@ function updateOrderLines(
       && decOf(current.quantity).eq(entry.line.quantity)
       && decOf(current.unit_price).eq(entry.price.unitPrice)
       && decOf(current.discount_pct).eq(entry.line.discountPct)
-      && current.tax_code === entry.price.taxCode;
+      && current.tax_code === entry.price.taxCode
+      && current.unit === entry.line.unit;
     if (unchanged) {
       return { ...current, description: entry.price.description };
     }
@@ -647,7 +664,8 @@ function updateOrderLines(
         quantity = CAST(${qtyText(entry.line.quantity)} AS DECIMAL(14,3)),
         unit_price = CAST(${priceText(entry.price.unitPrice)} AS DECIMAL(14,6)),
         discount_pct = CAST(${entry.line.discountPct.toFixed(2)} AS DECIMAL(5,2)),
-        tax_code = ${entry.price.taxCode}
+        tax_code = ${entry.price.taxCode},
+        unit = ${entry.line.unit}
       WHERE id = CAST(${current.id} AS UUID)
     `);
     tx.audit({
@@ -665,6 +683,7 @@ function updateOrderLines(
       unit_price: priceText(entry.price.unitPrice),
       discount_pct: entry.line.discountPct.toFixed(2),
       tax_code: entry.price.taxCode,
+      unit: entry.line.unit,
     };
   });
 }
@@ -678,12 +697,12 @@ function insertOrderLines(
     const id = newRowId();
     tx.write(sql`
       INSERT INTO sales.sales_order_line (
-        id, order_id, line_no, product_id, description, quantity, unit_price, discount_pct, tax_code
+        id, order_id, line_no, product_id, description, quantity, unit_price, discount_pct, tax_code, unit
       ) VALUES (
         CAST(${id} AS UUID), CAST(${orderId} AS UUID), ${index + 1}, CAST(${entry.line.productId} AS UUID),
         ${entry.price.description}, CAST(${qtyText(entry.line.quantity)} AS DECIMAL(14,3)),
         CAST(${priceText(entry.price.unitPrice)} AS DECIMAL(14,6)),
-        CAST(${entry.line.discountPct.toFixed(2)} AS DECIMAL(5,2)), ${entry.price.taxCode}
+        CAST(${entry.line.discountPct.toFixed(2)} AS DECIMAL(5,2)), ${entry.price.taxCode}, ${entry.line.unit}
       )
     `);
     tx.audit({
@@ -703,6 +722,7 @@ function insertOrderLines(
       discount_pct: entry.line.discountPct.toFixed(2),
       tax_code: entry.price.taxCode,
       external_line_ref: null,
+      unit: entry.line.unit,
     };
   });
 }

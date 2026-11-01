@@ -37,6 +37,14 @@ const EXTRA_COLUMNS: Record<string, readonly string[]> = {
     "pulp_sweetness", "pulp_acidity", "phenolic_maturity", "photo_attachment_id",
   ],
   "inventory.lot": ["segregated"],
+  // 0042 añade los campos que Holded imprime en sus documentos.
+  "billing.invoice": ["ship_to", "customer_references"],
+  "sales.quote": ["ship_to", "customer_references"],
+  "sales.quote_line": ["unit"],
+  "sales.delivery_note": ["customer_references"],
+  "sales.delivery_note_line": ["unit"],
+  "sales.sales_order": ["customer_references"],
+  "sales.sales_order_line": ["unit"],
   // TASK-VIN-002 amplía vineyard.treatment sin reescribir el DDL de referencia.
   "vineyard.treatment": [
     "active_substances",
@@ -355,8 +363,8 @@ test("el esquema DuckDB reproduce tablas, vistas y columnas de la referencia", a
   expect(migrations[0]).toBe("0001_core.sql");
   expect(migrations).toContain("0002_core_ops.sql");
   expect(migrations).toContain("0016_legacy.sql");
-  expect(migrations.at(-1)).toBe("0041_invoice_customer_idx.sql");
-  expect(migrations).toHaveLength(41);
+  expect(migrations.at(-1)).toBe("0042_document_profile.sql");
+  expect(migrations).toHaveLength(42);
   await migrate(client);
 
   const refs = referenceObjects(root);

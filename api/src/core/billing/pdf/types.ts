@@ -1,3 +1,6 @@
+import type { DocumentProfileView } from '../../pdf/profile';
+import type { ShipToView } from '../../pdf/ship-to';
+
 export type InvoiceLang = 'es' | 'en';
 
 export type TaxIdType = 'nif' | 'nie' | 'vat_eu' | 'passport' | 'foreign_id' | 'none';
@@ -19,6 +22,9 @@ export interface PartyIdentity {
   taxIdType: TaxIdType;
   address: PostalAddress;
   registryData: string | null;
+  /** Teléfono y correo de contacto del cliente (el emisor los toma de su perfil documental). */
+  phone?: string | null;
+  email?: string | null;
 }
 
 export interface InvoiceLineView {
@@ -63,13 +69,6 @@ export interface RectificationView {
   reason: string;
 }
 
-export interface BrandingSlot {
-  /** PNG or JPEG. Absent: the slot shows the trade name, or only the colour bar. */
-  logo: Uint8Array | null;
-  /** RGB components in 0..1. Absent: the default wine colour. */
-  accentRgb: readonly [number, number, number] | null;
-}
-
 /**
  * Verifactu is M4. `active` is true only when the entity has an installation
  * active on the issue date. The QR matrix is supplied by that module; until
@@ -110,7 +109,14 @@ export interface IssuedInvoice {
   incoterm: string | null;
   paymentMethod: string | null;
   rectifications: readonly RectificationView[];
-  branding: BrandingSlot;
+  /** Logotipo, contacto, pie y variante de plantilla de la sociedad emisora. */
+  profile: DocumentProfileView;
+  /** Dirección de envío congelada al crear el borrador. */
+  shipTo: ShipToView | null;
+  /** Referencias del cliente (PEDIDO, CENTRO…), una por línea. */
+  customerReferences: string | null;
+  /** Albaranes de origen de las líneas, sin repetir y ordenados. */
+  deliveryNoteNumbers: readonly string[];
   verifactu: VerifactuSlot;
   /** Set once the PDF is stored. The renderer does not draw it. */
   pdfAttachmentId: string | null;

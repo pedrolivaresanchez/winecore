@@ -78,7 +78,10 @@ describe('ventas', () => {
     const pdf = await ctx.app.handle(req('GET', `/v1/quotes/${String(created.id)}/pdf`));
     expect(pdf.status).toBe(200);
     const text = pdfLines(new Uint8Array(await pdf.arrayBuffer())).join('\n');
-    expect(text).toContain('Proforma');
+    expect(text).toContain('PROFORMA (DRAFT)');
+    expect(text).toContain('Customer:');
+    expect(text).toContain('TAXABLE AMOUNT');
+    expect(text).toContain('Status: Draft');
     expect(text).toContain('This document is not a tax invoice.');
     expect(text).toContain('FCA');
     expect(text).not.toContain('Factura');
@@ -447,9 +450,10 @@ describe('ventas', () => {
     expect(pdf.status).toBe(200);
     expect(pdf.headers.get('content-type')).toContain('application/pdf');
     const text = pdfLines(new Uint8Array(await pdf.arrayBuffer())).join('\n');
-    expect(text).toContain('Albarán');
-    expect(text).toContain('L25T01B1');
+    expect(text).toContain('ALBARÁN #');
+    expect(text).toContain('LOTE: L25T01B1');
     expect(text).toContain('Cliente Ejemplo');
+    expect(text).toContain('BASE IMPONIBLE');
 
     const empty = await json(ctx, 'GET', `/v1/delivery-notes/${id}/incidents`);
     expect(empty.items).toEqual([]);

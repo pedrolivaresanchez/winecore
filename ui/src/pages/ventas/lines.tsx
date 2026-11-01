@@ -137,6 +137,17 @@ export function LineEditor({
                   </Select>
                 </label>
               </div>
+              <label className="grid gap-1">
+                <span className="text-label text-text-secondary">{copy.sales.unit}</span>
+                <Input
+                  value={line.unit}
+                  maxLength={30}
+                  autoComplete="off"
+                  aria-label={copy.sales.unit}
+                  placeholder={copy.sales.unitPlaceholder}
+                  onChange={(event) => patch(line.key, { unit: event.target.value })}
+                />
+              </label>
               {line.productId ? (
                 line.quoted ? (
                   <p className="text-caption text-text-tertiary tabular-nums">

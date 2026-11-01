@@ -2,6 +2,8 @@ import { sql } from '../db/sql';
 import type { Tx } from '../db/writer';
 import { domainError } from '../errors';
 import { money } from '../money';
+import { loadDocumentProfile } from '../pdf/profile';
+import { shipToFrom } from '../pdf/ship-to';
 import { knowledgeBaseInvoiceDocuments } from './pdf/documents';
 import { openDeliveryOnIssue } from './delivery/service';
 import type { LoadedInvoice } from './pdf/load';
@@ -60,6 +62,9 @@ async function loadedInvoice(
     SELECT code FROM core.number_series WHERE id = CAST(${view.header.seriesId} AS UUID)
   `);
   const seriesCode = seriesRows[0] ? String(seriesRows[0].code) : '';
+  const profile = await loadDocumentProfile(tx, view.header.legalEntityId);
+  const mentions = await taxMentions(tx, taxes.map((tax) => tax.taxCode));
+  const noteNumbers = await deliveryNoteNumbers(tx, view.header.id);
   const language: InvoiceLang = view.header.language === 'en' ? 'en' : 'es';
   return {
     id: view.header.id,
@@ -115,8 +120,8 @@ async function loadedInvoice(
       surchargeQuota: tax.surchargeQuota,
       withholdingRate: tax.withholdingRate,
       withholding: tax.withholding,
-      legalMentionEs: null,
-      legalMentionEn: null,
+      legalMentionEs: mentions.get(tax.taxCode)?.es ?? null,
+      legalMentionEn: mentions.get(tax.taxCode)?.en ?? null,
       exemption: tax.exemption,
       qualification: tax.qualification,
     })),
@@ -142,10 +147,41 @@ async function loadedInvoice(
       relation: row.relation === 'substituted' ? 'substituted' : 'rectified',
       reason: row.reason,
     })),
-    branding: { logo: null, accentRgb: null },
+    profile,
+    shipTo: shipToFrom(view.header.shipTo),
+    customerReferences: view.header.customerReferences,
+    deliveryNoteNumbers: noteNumbers,
     verifactu: { active: false, qrUrl: null, qrModules: null },
     pdfAttachmentId: null,
   };
+}
+
+async function taxMentions(tx: Tx, codes: readonly string[]): Promise<Map<string, { es: string | null; en: string | null }>> {
+  const out = new Map<string, { es: string | null; en: string | null }>();
+  for (const code of new Set(codes)) {
+    const rows = await tx.read<Record<string, unknown>>(sql`
+      SELECT legal_mention_es, legal_mention_en FROM billing.tax_code WHERE code = ${code}
+    `);
+    const row = rows[0];
+    if (!row) continue;
+    out.set(code, {
+      es: row.legal_mention_es == null ? null : String(row.legal_mention_es),
+      en: row.legal_mention_en == null ? null : String(row.legal_mention_en),
+    });
+  }
+  return out;
+}
+
+async function deliveryNoteNumbers(tx: Tx, invoiceId: string): Promise<string[]> {
+  const rows = await tx.read<Record<string, unknown>>(sql`
+    SELECT DISTINCT d.number
+    FROM billing.invoice_line il
+    JOIN sales.delivery_note_line l ON l.id = il.delivery_note_line_id
+    JOIN sales.delivery_note d ON d.id = l.delivery_note_id
+    WHERE il.invoice_id = CAST(${invoiceId} AS UUID) AND d.number IS NOT NULL
+    ORDER BY d.number
+  `);
+  return rows.map((row) => String(row.number));
 }
 
 async function anyAddress(tx: Tx, contactId: string): Promise<NonNullable<InvoiceView['customer']>['address']> {
@@ -198,6 +234,8 @@ function customerParty(
       countryCode: address.countryCode,
     },
     registryData: null,
+    phone: customer.phone,
+    email: customer.email,
   };
 }
 

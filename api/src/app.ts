@@ -158,6 +158,14 @@ import { me } from './routes/me';
 import { getUsers, patchUserRoute, postUser } from './routes/users';
 import { listNotifications, readAllNotifications, readNotification } from './routes/notifications';
 import { getReport } from './routes/reports';
+import {
+  deleteDocumentLogoRoute,
+  getDocumentLogoRoute,
+  getDocumentProfileRoute,
+  postDocumentSampleRoute,
+  putDocumentLogoRoute,
+  putDocumentProfileRoute,
+} from './routes/document-profile';
 import { getLegalEntitiesRoute, patchLegalEntityRoute } from './routes/legal-entities';
 import { getReadiness } from './routes/setup';
 import {
@@ -515,6 +523,24 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requireOwnerOrAdmin(guardDeps),
     })
     .patch('/v1/legal-entities/:code', ({ request, params }) => patchLegalEntityRoute(deps.writer, request, params.code), {
+      beforeHandle: requireOwnerOrAdmin(guardDeps),
+    })
+    .get('/v1/legal-entities/:code/document-profile', ({ request, params }) => getDocumentProfileRoute(deps.writer, request, params.code), {
+      beforeHandle: requireOwnerOrAdmin(guardDeps),
+    })
+    .put('/v1/legal-entities/:code/document-profile', ({ request, params }) => putDocumentProfileRoute(deps.writer, request, params.code), {
+      beforeHandle: requireOwnerOrAdmin(guardDeps),
+    })
+    .get('/v1/legal-entities/:code/document-profile/logo', ({ request, params }) => getDocumentLogoRoute(deps.writer, request, params.code), {
+      beforeHandle: requireOwnerOrAdmin(guardDeps),
+    })
+    .put('/v1/legal-entities/:code/document-profile/logo', ({ request, params }) => putDocumentLogoRoute(deps.writer, request, params.code), {
+      beforeHandle: requireOwnerOrAdmin(guardDeps),
+    })
+    .delete('/v1/legal-entities/:code/document-profile/logo', ({ request, params }) => deleteDocumentLogoRoute(deps.writer, request, params.code), {
+      beforeHandle: requireOwnerOrAdmin(guardDeps),
+    })
+    .post('/v1/legal-entities/:code/document-profile/sample', ({ request, params }) => postDocumentSampleRoute(deps.writer, request, params.code), {
       beforeHandle: requireOwnerOrAdmin(guardDeps),
     })
     .post('/v1/number-series/:id/deactivate', ({ request, params }) => deactivateNumberSeries(deps.writer, request, params.id), {

@@ -1,6 +1,8 @@
 import { sql } from '../../db/sql';
 import { domainError } from '../../errors';
 import { money } from '../../money';
+import { loadDocumentProfile } from '../../pdf/profile';
+import { shipToFrom } from '../../pdf/ship-to';
 import type { SqlReader } from './documents';
 import { addAmounts, subAmounts, sameAmount } from './format';
 import type {
@@ -39,6 +41,7 @@ export async function loadInvoiceDocument(reader: SqlReader, id: string): Promis
       i.customer_id, i.customer_snapshot, i.currency, i.language, i.description,
       i.subtotal, i.tax_total, i.surcharge_total, i.withholding_total, i.total,
       i.payment_method, i.notes, i.incoterm, i.pdf_attachment_id, i.legal_mentions,
+      i.ship_to, i.customer_references,
       i.sent_at, i.sent_by, i.sent_channel,
       e.code AS entity_code, e.legal_name AS issuer_name, e.trade_name AS issuer_trade,
       e.tax_id AS issuer_tax_id, e.address_line, e.postal_code, e.city, e.province,
@@ -69,7 +72,7 @@ export async function loadInvoiceDocument(reader: SqlReader, id: string): Promis
     return { kind: 'not_issued', legalEntityId, status };
   }
 
-  const [lineRows, taxRows, dueRows, rectificationRows, linkRows] = await Promise.all([
+  const [lineRows, taxRows, dueRows, rectificationRows, linkRows, noteRows, profile] = await Promise.all([
     reader.read<Record<string, unknown>>(sql`
       SELECT line_no, sku, description, lot_code, quantity, unit, unit_price, discount_pct, tax_code, line_base
       FROM billing.invoice_line
@@ -106,6 +109,15 @@ export async function loadInvoiceDocument(reader: SqlReader, id: string): Promis
       ORDER BY created_at
       LIMIT 1
     `),
+    reader.read<{ number: string }>(sql`
+      SELECT DISTINCT d.number
+      FROM billing.invoice_line il
+      JOIN sales.delivery_note_line l ON l.id = il.delivery_note_line_id
+      JOIN sales.delivery_note d ON d.id = l.delivery_note_id
+      WHERE il.invoice_id = CAST(${id} AS UUID) AND d.number IS NOT NULL
+      ORDER BY d.number
+    `),
+    loadDocumentProfile(reader, legalEntityId),
   ]);
 
   const language = text(header.language);
@@ -166,7 +178,10 @@ export async function loadInvoiceDocument(reader: SqlReader, id: string): Promis
     incoterm: optionalText(header.incoterm),
     paymentMethod: optionalText(header.payment_method),
     rectifications: rectificationRows.map(rectificationFrom),
-    branding: { logo: null, accentRgb: null },
+    profile,
+    shipTo: shipToFrom(header.ship_to),
+    customerReferences: optionalText(header.customer_references),
+    deliveryNoteNumbers: noteRows.map((row) => text(row.number)),
     verifactu: {
       active: asBool(header.verifactu_active),
       qrUrl: optionalText(header.qr_url),
@@ -231,6 +246,8 @@ function customerFrom(snapshot: unknown): PartyIdentity {
     taxIdType: taxType(row.tax_id_type),
     address: addressFrom(address),
     registryData: null,
+    phone: optionalText(row.phone),
+    email: optionalText(row.email),
   };
 }
 
