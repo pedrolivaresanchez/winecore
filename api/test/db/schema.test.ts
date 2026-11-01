@@ -120,7 +120,7 @@ INSERT INTO core.session (id, user_id, token_hash, expires_at) VALUES ('${u(6)}'
 INSERT INTO core.api_client (id, code, role_code, description, scopes) VALUES ('${u(7)}', 'cvbot', 'agent', 'Cliente sintetico', ['read:*']);
 INSERT INTO core.api_token (id, client_id, token_hash, prefix, expires_at)
 VALUES ('${u(8)}', '${u(7)}', from_base64('Ag=='), 'wc_live_AbCdEf', '2027-12-31 00:00:00+00');
-INSERT INTO core.module_state (module_key, enabled, changed_by) VALUES ('contacts', true, 'test');
+INSERT OR REPLACE INTO core.module_state (module_key, enabled, changed_by) VALUES ('contacts', true, 'test');
 INSERT INTO core.setting (key, value, updated_by) VALUES ('ui.locale', '{"lang":"es"}'::JSON, 'test');
 INSERT INTO core.number_series (id, legal_entity_id, doc_type, code, year, prefix)
 VALUES ('${u(9)}', '${u(1)}', 'invoice', 'A', 2027, 'CF27');
@@ -355,8 +355,8 @@ test("el esquema DuckDB reproduce tablas, vistas y columnas de la referencia", a
   expect(migrations[0]).toBe("0001_core.sql");
   expect(migrations).toContain("0002_core_ops.sql");
   expect(migrations).toContain("0016_legacy.sql");
-  expect(migrations.at(-1)).toBe("0041_invoice_customer_idx.sql");
-  expect(migrations).toHaveLength(41);
+  expect(migrations.at(-1)).toBe("0042_mcp_owner_scopes.sql");
+  expect(migrations).toHaveLength(42);
   await migrate(client);
 
   const refs = referenceObjects(root);

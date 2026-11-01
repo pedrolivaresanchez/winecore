@@ -35,6 +35,21 @@ interface GuardState {
 
 const requestIds = new WeakMap<Request, string>();
 const sessions = new WeakMap<Request, UserCtx | DomainError>();
+const delegated = new WeakSet<Request>();
+
+/**
+ * An in-process request (MCP over the REST routes) runs as `user`. Only code holding the
+ * Request object can do this: no header or cookie reaches it. There is no step-up proof
+ * on such a request, so routes that demand a recent passkey still refuse it.
+ */
+export function delegateSession(request: Request, user: UserCtx): void {
+  sessions.set(request, user);
+  delegated.add(request);
+}
+
+export function isDelegated(request: Request): boolean {
+  return delegated.has(request);
+}
 
 export interface MachinePrincipal {
   kind: 'agent' | 'machine';
@@ -190,6 +205,7 @@ export function requireOwnerOrAdmin(deps: GuardDeps) {
 }
 
 async function rememberLogin(deps: GuardDeps, request: Request, user: UserCtx): Promise<void> {
+  if (delegated.has(request)) return;
   try {
     await ensureLoginSession(
       deps.writer,

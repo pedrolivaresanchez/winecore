@@ -38,7 +38,7 @@ async function enableModules(ctx: TestApp, modules: readonly string[]) {
   await ctx.writer.withWrite({ type: 'system', id: 'assistant-test', requestId: 'assistant-test' }, async (tx) => {
     for (const key of modules) {
       tx.write(sql`
-        INSERT INTO core.module_state (module_key, enabled, changed_by)
+        INSERT OR REPLACE INTO core.module_state (module_key, enabled, changed_by)
         VALUES (${key}, TRUE, ${'test'})
       `);
     }
@@ -167,7 +167,7 @@ describe('asistente: disponibilidad y entrada', () => {
       expect(owner.tools).toContain('contacts_search');
       expect(owner.tools).toContain('contacts_create_prepare');
       expect(owner.tools.some((name) => name.endsWith('_commit'))).toBe(false);
-      expect(owner.tools).not.toContain('billing_invoices_pending_delivery_list');
+      expect(owner.tools).toContain('billing_invoices_pending_delivery_list');
       const cellar = await status('bodega@winecore.test');
       expect(cellar.tools).toContain('cellar_vessels_list');
       expect(cellar.tools).not.toContain('contacts_search');

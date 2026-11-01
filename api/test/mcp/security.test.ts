@@ -1,29 +1,37 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 
-import { defineReadTool, untrustedText } from "../../src/mcp/registry";
-import { callTool, catalogueNames } from "../../src/mcp/server";
+import { DECISION_VERB, defineReadTool, untrustedText } from "../../src/mcp/registry";
+import { baseTools, callTool, catalogueNames } from "../../src/mcp/server";
 import { APPROVAL_ID, expectError, makeCtx, readToolResult } from "./fixture";
 
-const DECISION = /approve|issue|void|send|delete|secret|decide|reject/i;
-
-const FORBIDDEN = /approve|issue|void|send|delete|module|role|secret/i;
+const FORBIDDEN = /module|role|secret/i;
 
 describe("catalogue safety", () => {
-  test("no tool name implies approving or deciding", () => {
+  test("deciding is always two-step and nothing touches secrets, modules or roles", () => {
     const names = catalogueNames();
     expect(names).toContain("approvals_get_link");
     expect(names).toContain("approvals_list_pending");
     expect(names).toContain("system_whoami");
     expect(names).not.toContain("system_modules");
-    expect(names).not.toContain("approvals_request_create_prepare");
-    expect(names).not.toContain("purchasing_expense_approve_prepare");
     expect(names).toContain("billing_invoice_pdf_get");
     expect(names).toContain("billing_invoice_delivery_mark_sent");
-    for (const name of names) {
-      expect(DECISION.test(name)).toBe(false);
-      expect(FORBIDDEN.test(name)).toBe(false);
+    for (const name of names) expect(FORBIDDEN.test(name)).toBe(false);
+    for (const tool of baseTools) {
+      if (DECISION_VERB.test(tool.name)) expect(`${tool.name}:${tool.kind}`).toBe(`${tool.name}:write`);
     }
+  });
+
+  test("a decision verb outside prepare/commit does not even register", () => {
+    expect(() => defineReadTool({
+      name: "approvals_request_approve",
+      module: "system",
+      scope: "read:approvals",
+      title: "Aprobar",
+      description: "No debe existir.",
+      input: z.object({}),
+      handler: () => ({}),
+    })).toThrow(/prepare\/commit/);
   });
 
   test("approvals_get_link returns the inbox url and does not decide", async () => {
