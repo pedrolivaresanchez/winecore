@@ -29,6 +29,18 @@ Los 149 puntos de la reunión siguen en `docs/10-backlog/` y en `docs/04-regulat
 
 Los pull requests abiertos contra ramas antiguas no se han cerrado. Su código, cuando ya estaba en `main`, sigue ahí.
 
+## Qué hace falta en producción para crear documentos (1-11-2026)
+
+Crear un presupuesto, un pedido o un albarán necesita tres cosas que no se pueden saltar. El estado en producción es este.
+
+| Requisito | Estado | Quién lo cierra |
+|---|---|---|
+| Series de numeración de presupuesto (PR), pedido (PE), albarán (AL), proforma (PF) y aforo (AF) de 2026 y 2027 para P.O y CVPO | Creadas | Hecho |
+| Conjunto de reglas de entidad facturadora activo (por defecto CVPO, El Corte Inglés a P.O, según la propuesta Q-025) | Borrador creado y solicitud de activación pendiente en Aprobaciones | Pedro: registrar una passkey o el código TOTP en Ajustes, Seguridad, y aprobar «Activación de reglas de facturación». Al aprobar, el conjunto queda activo solo |
+| Series de factura (FA, RC, FS, FI), con Verifactu | Sin crear a propósito | Pedro: decidir si la numeración continúa la de Holded o empieza en 1, y luego pulsar «Crear series» en Puesta en marcha |
+| NIF y dirección de P.O y CVPO (siguen en PENDIENTE) | Sin datos | Pedro: Ajustes, Entidades y usuarios |
+| Stock envasado para sacar albaranes con lote | Solo hay 17 aperturas a granel | Carga del stock envasado, aún por recibir |
+
 ## Cómo conectar CVBOT (MCP)
 
 La URL es `https://e4165.deployments.timbal.ai/api/m2m/mcp`. El cliente es `pedro-owner`, en nombre del propietario que entra con Microsoft, con lectura de facturación, ventas y contactos. Caduca a los 90 días.
