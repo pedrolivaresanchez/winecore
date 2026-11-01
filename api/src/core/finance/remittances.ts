@@ -177,7 +177,12 @@ export async function listRemittances(writer: Writer, user: UserCtx, request: Re
   if (status && !REMITTANCE_STATUSES.has(status)) {
     throw domainError('WC_VALIDATION', { status: 'Estado de remesa no válido' });
   }
+  const kind = url.searchParams.get('kind')?.trim() || null;
+  if (kind && kind !== 'direct_debit' && kind !== 'credit_transfer') {
+    throw domainError('WC_VALIDATION', { kind: 'Usa direct_debit o credit_transfer' });
+  }
   const limit = limitOf(url.searchParams.get('limit'));
+  const offset = offsetOf(url.searchParams.get('cursor'));
   const scope = entityScope(user, 'finance.read');
   let entityId: string | null = null;
   if (entityValue) {
@@ -193,6 +198,7 @@ export async function listRemittances(writer: Writer, user: UserCtx, request: Re
     filters.push(`r.legal_entity_id IN (${scope.map((id) => sql`CAST(${id} AS UUID)`).join(', ')})`);
   }
   if (status) filters.push(sql`r.status = ${status}`);
+  if (kind) filters.push(sql`r.kind = ${kind}`);
   const where = filters.join(' AND ');
   const rows = await writer.read<Record<string, unknown>>(
     `SELECT r.id, r.legal_entity_id, e.code AS entity_code, r.kind, r.status, r.bank_account_id,
@@ -201,13 +207,14 @@ export async function listRemittances(writer: Writer, user: UserCtx, request: Re
      JOIN core.legal_entity e ON e.id = r.legal_entity_id
      WHERE ${where}
      ORDER BY r.created_at DESC, r.id DESC
-     LIMIT ${limit}`,
+     LIMIT ${limit + 1} OFFSET ${offset}`,
   );
   const totalRows = await writer.read<{ total: number }>(
     `SELECT count(*)::INTEGER AS total FROM finance.remittance r WHERE ${where}`,
   );
+  const page = rows.length > limit ? rows.slice(0, limit) : rows;
   return {
-    items: rows.map((row) => ({
+    items: page.map((row) => ({
       id: String(row.id).toLowerCase(),
       legal_entity_id: String(row.legal_entity_id).toLowerCase(),
       entity_code: String(row.entity_code),
@@ -218,7 +225,7 @@ export async function listRemittances(writer: Writer, user: UserCtx, request: Re
       total: moneyText(decimalOf(row.total)),
       created_at: row.created_at == null ? null : String(row.created_at),
     })),
-    next_cursor: null,
+    next_cursor: rows.length > limit ? String(offset + limit) : null,
     total: Number(totalRows[0]?.total ?? 0),
   };
 }
@@ -609,6 +616,13 @@ function limitOf(value: string | null): number {
   if (!/^\d{1,3}$/.test(value) || Number(value) < 1 || Number(value) > 100) {
     throw domainError('WC_VALIDATION', { limit: 'Debe ser un entero entre 1 y 100' });
   }
+  return Number(value);
+}
+
+/** The cursor is the offset of the next page; the list is short enough that it never drifts far. */
+function offsetOf(value: string | null): number {
+  if (!value) return 0;
+  if (!/^\d{1,7}$/.test(value)) throw domainError('WC_VALIDATION', { cursor: 'Cursor no válido' });
   return Number(value);
 }
 
