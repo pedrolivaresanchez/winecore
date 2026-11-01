@@ -23,6 +23,8 @@ const ids = {
   mixedUser: newId(),
   mixedCellar: newId(),
   mixedAdmin: newId(),
+  installPo: newId(),
+  installCvpo: newId(),
 };
 
 type Item = {
@@ -37,6 +39,8 @@ type Item = {
   pending: string | null;
   status: string;
   status_label: string;
+  verifactu: string | null;
+  delivery: string | null;
   api_path: string;
 };
 type Facet = { value: string; label: string; count: number };
@@ -124,6 +128,22 @@ describe('lista única de documentos de venta', () => {
       native.draft = nativeInvoice(tx, { entity: po, series: ids.seriesPo, number: null, status: 'draft', date: null, due: null, customer: ids.avila, total: null, paid: '0.00', payment: 'unpaid', created: '2026-10-30T09:00:00Z' });
       native.void = nativeInvoice(tx, { entity: po, series: ids.seriesPo, number: 'W-003', status: 'voided', date: '2026-07-01', due: null, customer: ids.norte, total: '30.00', paid: '0.00', payment: 'unpaid' });
       native.paid = nativeInvoice(tx, { entity: cvpo, series: ids.seriesCvpo, number: 'W-004', status: 'issued', date: '2026-02-02', due: '2026-03-02', customer: ids.avila, total: '90.00', paid: '90.00', payment: 'paid' });
+
+      tx.write(sql`
+        INSERT INTO regulatory.verifactu_installation (
+          id, legal_entity_id, environment, mode, system_version, installation_number, producer_name, producer_tax_id, starts_on
+        ) VALUES
+          (CAST(${ids.installPo} AS UUID), CAST(${po} AS UUID), 'test', 'verifactu', '0.1.0', '1', 'Productor sintético', 'B00000000', CAST('2026-01-01' AS DATE)),
+          (CAST(${ids.installCvpo} AS UUID), CAST(${cvpo} AS UUID), 'test', 'verifactu', '0.1.0', '2', 'Productor sintético', 'B00000000', CAST('2026-01-01' AS DATE))
+      `);
+      verifactuRecord(tx, { installation: ids.installPo, entity: po, seq: 1, type: 'alta', invoice: native.w001, number: 'W-001', at: '2026-10-05T09:00:00Z', status: 'accepted' });
+      verifactuRecord(tx, { installation: ids.installPo, entity: po, seq: 2, type: 'alta', invoice: native.void, number: 'W-003', at: '2026-10-06T09:00:00Z', status: 'accepted' });
+      verifactuRecord(tx, { installation: ids.installPo, entity: po, seq: 3, type: 'anulacion', invoice: native.void, number: 'W-003', at: '2026-10-07T09:00:00Z', status: 'sending' });
+      verifactuRecord(tx, { installation: ids.installCvpo, entity: cvpo, seq: 1, type: 'alta', invoice: native.paid, number: 'W-004', at: '2026-10-08T09:00:00Z', status: 'rejected' });
+      delivery(tx, native.w001, 1, 'failed');
+      delivery(tx, native.w001, 2, 'sent');
+      delivery(tx, native.w002, 1, 'pending');
+      delivery(tx, native.paid, 1, 'no_recipient');
 
       holdedQuote(tx, { entity: po, number: 'HQ-1', date: '2026-09-01', validUntil: '2026-09-30', name: 'Cliente Norte SL', status: 'Pendiente', invoiced: null, total: '70.00' });
       holdedQuote(tx, { entity: cvpo, number: 'HQ-2', date: '2026-10-20', validUntil: '2026-11-20', name: 'Bodega Avila SL', status: 'Aceptado', invoiced: null, total: '20.00' });
@@ -249,6 +269,30 @@ describe('lista única de documentos de venta', () => {
     expect(byName.items.map((item) => item.number)).toEqual([null, 'H-002', 'W-004']);
   });
 
+  it('muestra y filtra el estado Verifactu y el envío de las facturas emitidas en WineCore', async () => {
+    const page = await list('kind=invoice');
+    expect(byNumber(page, 'W-001')).toMatchObject({ verifactu: 'accepted', delivery: 'sent' });
+    expect(byNumber(page, 'W-002')).toMatchObject({ verifactu: 'pending', delivery: 'pending' });
+    expect(byNumber(page, 'W-003')).toMatchObject({ verifactu: 'pending', delivery: 'none' });
+    expect(byNumber(page, 'W-004')).toMatchObject({ verifactu: 'rejected', delivery: 'no_recipient' });
+    expect(page.items[0]).toMatchObject({ status: 'draft', verifactu: null, delivery: null });
+    expect(byNumber(page, 'H-001')).toMatchObject({ verifactu: null, delivery: null });
+
+    const pending = await list('kind=invoice&verifactu=pendiente');
+    expect(pending.items.map((item) => item.number)).toEqual(['W-002', 'W-003']);
+    expect(counts(pending.facets.origin)).toEqual({ winecore: 2 });
+    expect((await list('kind=invoice&verifactu=accepted')).items.map((item) => item.number)).toEqual(['W-001']);
+    expect((await list('kind=invoice&verifactu=rejected')).items.map((item) => item.number)).toEqual(['W-004']);
+
+    expect((await list('kind=invoice&delivery=sent')).items.map((item) => item.number)).toEqual(['W-001']);
+    expect((await list('kind=invoice&delivery=failed')).total).toBe(0);
+    expect((await list('kind=invoice&delivery=none')).items.map((item) => item.number)).toEqual(['W-003']);
+    expect((await list('kind=invoice&delivery=pending&verifactu=pending')).items.map((item) => item.number)).toEqual(['W-002']);
+
+    const quotes = await list('kind=quote');
+    expect(quotes.items.every((item) => item.verifactu === null && item.delivery === null)).toBe(true);
+  });
+
   it('busca por número o cliente sin distinguir mayúsculas ni tildes', async () => {
     const accent = await list('kind=invoice&q=%C3%A1vila');
     expect(accent.items.map((item) => item.number)).toEqual([null, 'H-002', 'W-004']);
@@ -349,6 +393,10 @@ describe('lista única de documentos de venta', () => {
       'kind=invoice&limit=0',
       'kind=invoice&limit=201',
       'kind=invoice&offset=-1',
+      'kind=invoice&verifactu=si',
+      'kind=quote&verifactu=pending',
+      'kind=invoice&delivery=entregada',
+      'kind=invoice&direction=purchase&delivery=sent',
     ]) {
       expect(await status(query)).toBe(422);
     }
@@ -437,6 +485,40 @@ function nativeInvoice(tx: Tx, input: {
     `);
   }
   return id;
+}
+
+function verifactuRecord(tx: Tx, input: {
+  installation: string;
+  entity: string;
+  seq: number;
+  type: 'alta' | 'anulacion';
+  invoice: string;
+  number: string;
+  at: string;
+  status: string;
+}) {
+  const hash = String(input.seq).padStart(64, '0');
+  tx.write(sql`
+    INSERT INTO regulatory.verifactu_record (
+      id, installation_id, legal_entity_id, chain_seq, record_type, invoice_id, issuer_tax_id, invoice_number,
+      invoice_issue_date, invoice_type, total_tax, total_amount, generated_at, hash, record_xml, send_status
+    ) VALUES (
+      CAST(${newId()} AS UUID), CAST(${input.installation} AS UUID), CAST(${input.entity} AS UUID), ${input.seq}, ${input.type},
+      CAST(${input.invoice} AS UUID), 'B00000000', ${input.number}, CAST('2026-10-01' AS DATE), 'F1', 0.00, 1.00,
+      CAST(${input.at} AS TIMESTAMPTZ), ${hash}, '<r/>', ${input.status}
+    )
+  `);
+}
+
+function delivery(tx: Tx, invoice: string, attempt: number, status: string) {
+  const sent = status === 'sent';
+  tx.write(sql`
+    INSERT INTO billing.invoice_delivery (id, invoice_id, attempt, status, message_id, sent_at, requested_by)
+    VALUES (
+      CAST(${newId()} AS UUID), CAST(${invoice} AS UUID), ${attempt}, ${status},
+      ${sent ? `msg-${attempt}` : null}, ${sent ? NOW : null}, 'test'
+    )
+  `);
 }
 
 function holdedQuote(tx: Tx, input: {

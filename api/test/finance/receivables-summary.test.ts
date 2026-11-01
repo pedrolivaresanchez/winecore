@@ -7,6 +7,7 @@ import { bodyOf, financeApp, insertInvoice, world } from './fixture';
 
 type Item = {
   target_id: string;
+  document_id: string;
   entity_code: string;
   document_number: string;
   counterparty_name: string | null;
@@ -80,6 +81,7 @@ describe('pendiente de cobro con nombre de cliente y resumen', () => {
         ['HP-01', 'Lince Holded', 'tax_id', 'PO'],
         [native.number, 'Viñedos Lince SL', 'contact', 'PO'],
       ]);
+      expect(linceGroup?.items.map((item) => item.document_id)).toEqual([holdedOf.get(open.lince ?? ''), native.id]);
       const garzaItem = page.groups.find((group) => group.contact_id === garza)?.items[0];
       expect(garzaItem).toMatchObject({ contact_match: 'name', counterparty_name: 'comercial  GARZA sl', outstanding: '30.00', is_overdue: false });
       expect(page.groups.find((group) => group.contact_id === nueva)?.items[0]).toMatchObject({ target_id: open.fusion, contact_match: 'contact' });
@@ -154,6 +156,8 @@ function contact(tx: Tx, id: string, name: string, tax: string, mergedInto: stri
   `);
 }
 
+const holdedOf = new Map<string, string>();
+
 function openItem(tx: Tx, batch: string, input: {
   entity: string;
   number: string;
@@ -167,6 +171,7 @@ function openItem(tx: Tx, batch: string, input: {
 }): string {
   const holded = newId();
   const id = newId();
+  holdedOf.set(id, holded);
   const kind = input.payable ? 'purchase' : 'sale';
   const issue = addCalendarDays(input.due, -30);
   tx.write(sql`

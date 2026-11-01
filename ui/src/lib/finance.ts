@@ -12,12 +12,19 @@ export type MoneyBuckets = Record<AgingBucket | 'total' | 'overdue', string>
 export type ReceivableItem = {
   target_table: TargetTable
   target_id: string
+  /** The invoice the document viewer opens: Holded's invoice id or WineCore's own. */
+  document_id: string
   legal_entity_id: string
+  entity_code: string | null
   document_number: string
+  /** As the document names the customer; Holded's own text when no contact matched. */
+  counterparty_name: string | null
+  contact_match: 'contact' | 'tax_id' | 'name' | null
   issue_date: string
   due_date: string | null
   outstanding: string
   aging: AgingBucket
+  /** Days past the due date (or the issue date without one); 0 while not yet due. */
   days: number
   is_overdue: boolean
   origin: 'winecore' | 'holded'
@@ -25,10 +32,20 @@ export type ReceivableItem = {
 }
 
 export type ReceivableGroup = {
+  /** The contact, or `name:<name>` for Holded items that matched none. Unique per group. */
+  key: string
   contact_id: string | null
   customer_name: string
   amounts: MoneyBuckets
   items: ReceivableItem[]
+}
+
+export type ReceivablesSummary = {
+  pending_total: string
+  overdue_total: string
+  due_next_30: string
+  collected_this_month: string
+  by_entity: { entity_code: string; pending: string; overdue: string }[]
 }
 
 export type Receivables = {
@@ -36,6 +53,8 @@ export type Receivables = {
   status: 'clear' | 'open'
   groups: ReceivableGroup[]
   totals: MoneyBuckets
+  /** Over everything open for the entity and contact asked for; the aging filter does not cut it. */
+  summary: ReceivablesSummary
 }
 
 export type Allocation = {
@@ -57,6 +76,7 @@ export type Payment = {
   currency: string
   value_date: string | null
   counterparty_id: string | null
+  counterparty_name: string | null
   bank_account_id: string | null
   reference: string | null
   source: string
@@ -133,6 +153,18 @@ export type RemittanceItem = {
   status: string
 }
 
+export type RemittanceSummary = {
+  id: string
+  legal_entity_id: string
+  entity_code: string
+  kind: RemittanceKind | string
+  status: string
+  bank_account_id: string
+  execution_date: string | null
+  total: string
+  created_at: string | null
+}
+
 export type Remittance = {
   id: string
   legal_entity_id: string
@@ -145,11 +177,6 @@ export type Remittance = {
   file_attachment_id: string | null
   content_sha256?: string | null
   items: RemittanceItem[]
-}
-
-type AuditPage = {
-  items: { row_id: string | null }[]
-  next_cursor: string | null
 }
 
 function idempotent(path: string, body: unknown) {
@@ -169,11 +196,17 @@ export function receivablesPath(entity: string | null, aging: string | null, con
   return `/v1/receivables${qs ? `?${qs}` : ''}`
 }
 
-export function paymentsPath(entity: string | null, direction: string | null, cursor?: string | null) {
+export function paymentsPath(
+  query: { entity?: string | null; direction?: string | null; from?: string | null; to?: string | null },
+  cursor?: string | null,
+  limit = 100,
+) {
   const params = new URLSearchParams()
-  if (entity) params.set('entity', entity)
-  if (direction) params.set('direction', direction)
-  params.set('limit', '100')
+  if (query.entity) params.set('entity', query.entity)
+  if (query.direction) params.set('direction', query.direction)
+  if (query.from) params.set('from', query.from)
+  if (query.to) params.set('to', query.to)
+  params.set('limit', String(limit))
   if (cursor) params.set('cursor', cursor)
   return `/v1/payments?${params.toString()}`
 }
@@ -297,32 +330,13 @@ export async function downloadRemittance(id: string) {
   URL.revokeObjectURL(url)
 }
 
-/**
- * No hay GET /v1/remittances. El índice sale del registro de auditoría
- * y cada ficha se pide por id.
- */
-export async function listRemittances(signal?: AbortSignal): Promise<Remittance[]> {
-  const ids = new Set<string>()
-  let cursor: string | null = null
-  for (let page = 0; page < 5; page += 1) {
-    const auditPath: string = `/v1/audit?table=finance.remittance&limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`
-    const body: AuditPage = await api<AuditPage>(auditPath, { signal })
-    for (const item of body.items) {
-      if (item.row_id) ids.add(item.row_id.toLowerCase())
-    }
-    if (!body.next_cursor) break
-    cursor = body.next_cursor
-  }
-  const rows = await Promise.all(
-    [...ids].map(async (id) => {
-      try {
-        return await api<Remittance>(`/v1/remittances/${id}`, { signal })
-      } catch {
-        return null
-      }
-    }),
-  )
-  return rows
-    .filter((row): row is Remittance => row !== null)
-    .sort((left, right) => (right.execution_date ?? '').localeCompare(left.execution_date ?? ''))
+export function listRemittances(
+  query: { entity?: string | null; kind?: string | null; cursor?: string | null; limit: number },
+  signal?: AbortSignal,
+) {
+  const params = new URLSearchParams({ limit: String(query.limit) })
+  if (query.entity) params.set('entity', query.entity)
+  if (query.kind) params.set('kind', query.kind)
+  if (query.cursor) params.set('cursor', query.cursor)
+  return api<{ items: RemittanceSummary[]; next_cursor: string | null; total: number }>(`/v1/remittances?${params}`, { signal })
 }

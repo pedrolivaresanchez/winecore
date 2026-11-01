@@ -1,13 +1,28 @@
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
+import { allows } from '@/lib/permissions'
+import { useSalesCatalog } from '@/lib/sales-catalog'
+import { docPath, type DocKind } from '@/lib/sales'
 import type { Me } from '@/lib/types'
-import { HistoricalDocs } from '@/pages/ventas/HistoricalDocs'
+import { SalesDocumentList } from '@/pages/documents/SalesDocumentList'
+import { CreateDelivery, CreateDocument } from '@/pages/ventas/dialogs'
 import { VentasList } from '@/pages/ventas/VentasList'
-import type { DocKind } from '@/lib/sales'
 
 export function SalesHome({ me, doc, creating = false }: { me: Me; doc: DocKind; creating?: boolean }) {
-  const [params] = useSearchParams()
-  if (!creating && doc !== 'order' && params.get('libro') !== 'winecore') {
-    return <HistoricalDocs me={me} kind={doc === 'quote' ? 'quote' : 'delivery'} />
-  }
-  return <VentasList me={me} doc={doc} creating={creating} />
+  if (doc === 'order') return <VentasList me={me} creating={creating} />
+  return (
+    <>
+      <SalesDocumentList me={me} kind={doc === 'quote' ? 'quote' : 'delivery_note'} />
+      {creating && allows(me, 'sales.write') ? <CreateOver doc={doc} /> : null}
+    </>
+  )
+}
+
+/** `/nuevo` opens the dialog over the same list; closing it goes back to that list. */
+function CreateOver({ doc }: { doc: 'quote' | 'delivery' }) {
+  const navigate = useNavigate()
+  const { customers } = useSalesCatalog()
+  const close = () => navigate(docPath(doc))
+  const created = (id: string) => navigate(`${docPath(doc)}/${id}`)
+  if (doc === 'quote') return <CreateDocument doc="quote" customers={customers} onClose={close} onCreated={created} />
+  return <CreateDelivery customers={customers} onClose={close} onCreated={created} />
 }

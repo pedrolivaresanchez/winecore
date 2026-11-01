@@ -3,6 +3,7 @@ import type { UserCtx } from '../auth/permissions';
 import { sql } from '../db/sql';
 import type { Writer } from '../db/writer';
 import { domainError } from '../errors';
+import { holdedDocumentState, type HoldedDocumentState } from '../sales-documents/list';
 import { dateOf, intOf, money2 } from './overview';
 import { entityPredicate, legacyScope } from './scope';
 
@@ -78,8 +79,19 @@ export interface LegacyDocumentDetail {
   lines: LegacyLine[];
 }
 
-export async function loadLegacyInvoice(writer: Writer, user: UserCtx, rawId: string): Promise<LegacyInvoiceDetail> {
-  return (await readHoldedInvoice(writer, user, rawId)).detail;
+export type CommonStatus = Pick<HoldedDocumentState, 'status' | 'status_label'>;
+
+export async function loadLegacyInvoice(
+  writer: Writer,
+  user: UserCtx,
+  rawId: string,
+  now: Date,
+): Promise<LegacyInvoiceDetail & CommonStatus> {
+  const { detail } = await readHoldedInvoice(writer, user, rawId);
+  const direction = detail.kind === 'purchase' ? 'purchase' : 'sale';
+  const state = await holdedDocumentState(writer, 'invoice', direction, detail.id, now);
+  if (!state) throw domainError('WC_NOT_FOUND');
+  return { ...detail, pending: state.pending ?? detail.pending, status: state.status, status_label: state.status_label };
 }
 
 export async function readHoldedInvoice(writer: Writer, user: UserCtx, rawId: string): Promise<HoldedInvoiceLoaded> {
@@ -135,8 +147,16 @@ export async function readHoldedInvoice(writer: Writer, user: UserCtx, rawId: st
   };
 }
 
-export async function loadLegacyDocument(writer: Writer, user: UserCtx, rawId: string): Promise<LegacyDocumentDetail> {
-  return (await readHoldedDocument(writer, user, rawId)).detail;
+export async function loadLegacyDocument(
+  writer: Writer,
+  user: UserCtx,
+  rawId: string,
+  now: Date,
+): Promise<LegacyDocumentDetail & CommonStatus> {
+  const { detail } = await readHoldedDocument(writer, user, rawId);
+  const state = await holdedDocumentState(writer, detail.kind, 'sale', detail.id, now);
+  if (!state) throw domainError('WC_NOT_FOUND');
+  return { ...detail, status: state.status, status_label: state.status_label };
 }
 
 export async function readHoldedDocument(writer: Writer, user: UserCtx, rawId: string): Promise<HoldedDocumentLoaded> {

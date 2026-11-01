@@ -3,8 +3,27 @@ import { useSearchParams } from 'react-router-dom'
 import { useEntity } from '@/app/entity-context'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { ErrorState } from '@/components/ErrorState'
-import { Badge, Button, Chip, DataGrid, Drawer, DrawerBody, DrawerHeader, EmptyState, GlassMenu, Input, MenuItem, Textarea, useMenuOpen, useToast, type GridColumn } from '@/ui'
-import { MoreVertical, Search } from '@/ui/icons'
+import {
+  Badge,
+  Button,
+  DataGrid,
+  Drawer,
+  DrawerBody,
+  DrawerHeader,
+  EmptyState,
+  GlassMenu,
+  MenuItem,
+  Pagination,
+  StatusPill,
+  Textarea,
+  useCursorPages,
+  useMenuOpen,
+  useToast,
+  type FilterDef,
+  type FilterValue,
+  type GridColumn,
+} from '@/ui'
+import { MoreVertical } from '@/ui/icons'
 import { useApi } from '@/hooks/use-api'
 import { copy } from '@/i18n'
 import { ApiError, api } from '@/lib/api'
@@ -12,92 +31,141 @@ import { formatDate } from '@/lib/format'
 import { paymentsPath, reversePayment, type Payment, type PaymentPage } from '@/lib/finance'
 import { allows } from '@/lib/permissions'
 import { iconStroke } from '@/lib/motion'
-import type { Me } from '@/lib/types'
+import { entityTone } from '@/lib/status-tones'
+import type { EntityChoice, Me } from '@/lib/types'
 import { CobrosFrame } from '@/pages/cobros/CobrosFrame'
 import { vistaOf } from '@/pages/cobros/vista'
-import { entityLabel, gridLabels, methodLabel, moneyOf, statusLabel } from '@/pages/cobros/money'
+import { entityCode, entityLabel, gridLabels, methodLabel, moneyOf, statusLabel } from '@/pages/cobros/money'
 import { RegistrarDialog } from '@/pages/cobros/RegistrarDialog'
 
-type NameMap = Record<string, string>
+/** The API pages at most 100 payments at a time. */
+const SIZES = [25, 50, 100] as const
+
+/** The rail picks the entity; `?entity=all` overrides it for this view only. */
+function entityOf(raw: string | null, rail: EntityChoice): string {
+  if (raw === 'all') return ''
+  if (raw === 'PO' || raw === 'CVPO') return raw
+  return rail === 'all' ? '' : rail
+}
 
 export function Pagos({ me }: { me: Me }) {
-  const { entityCode } = useEntity()
+  const { filter: rail } = useEntity()
   const toast = useToast()
   const [params, setParams] = useSearchParams()
-  const direction = params.get('direction') ?? ''
+  const directionRaw = params.get('direction')
+  const direction = directionRaw === 'in' || directionRaw === 'out' ? directionRaw : ''
+  const entity = entityOf(params.get('entity'), rail)
+  const from = params.get('from') ?? ''
+  const to = params.get('to') ?? ''
   const vista = vistaOf(params.get('vista'))
   const [q, setQ] = useState('')
-  const [names, setNames] = useState<NameMap>({})
-  const [widths, setWidths] = useState<Record<string, number>>({ date: 120, who: 260, direction: 110, method: 150, amount: 140, status: 130 })
+  const [widths, setWidths] = useState<Record<string, number>>({ date: 120, who: 260, entity: 100, direction: 110, method: 150, amount: 140, status: 130 })
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [openId, setOpenId] = useState<string | null>(null)
   const [register, setRegister] = useState(false)
   const canWrite = allows(me, 'finance.write')
-  const page = useApi<PaymentPage>(paymentsPath(entityCode, direction || null))
-  const items = useMemo(() => page.data?.items ?? [], [page.data])
+  const pages = useCursorPages<Payment>({
+    queryKey: [direction, entity, from, to].join('|'),
+    storageKey: 'cobros-pagos',
+    sizes: SIZES,
+    fetchPage: ({ cursor, limit, signal }) => api<PaymentPage>(paymentsPath({ entity, direction, from, to }, cursor, limit), { signal }),
+  })
 
   useEffect(() => {
-    const missing = items.map((item) => item.counterparty_id).filter((id): id is string => Boolean(id && !names[id]))
-    if (missing.length === 0) return
-    const controller = new AbortController()
-    void Promise.all(
-      [...new Set(missing)].map(async (id) => {
-        try {
-          const contact = await api<{ legal_name: string }>(`/v1/contacts/${id}`, { signal: controller.signal })
-          return [id, contact.legal_name] as const
-        } catch {
-          return [id, id.slice(0, 8)] as const
-        }
-      }),
-    ).then((pairs) => {
-      if (controller.signal.aborted) return
-      setNames((current) => {
-        const next = { ...current }
-        for (const [id, name] of pairs) next[id] = name
-        return next
-      })
-    })
-    return () => controller.abort()
-  }, [items, names])
+    setPicked(new Set())
+  }, [pages.pageKey])
 
   const query = q.trim().toLocaleLowerCase('es')
   const shown = useMemo(
     () =>
-      items.filter((item) => {
+      pages.items.filter((item) => {
         if (!query) return true
-        const name = (item.counterparty_id ? names[item.counterparty_id] : '') ?? ''
-        return `${name} ${item.reference ?? ''} ${item.amount}`.toLocaleLowerCase('es').includes(query)
+        return `${item.counterparty_name ?? ''} ${item.reference ?? ''} ${item.amount}`.toLocaleLowerCase('es').includes(query)
       }),
-    [items, names, query],
+    [pages.items, query],
   )
-  const screen = page.loading ? 'cobros-cargando' : shown.length === 0 ? 'cobros-pagos-vacio' : 'cobros-pagos'
-  const filtersActive = Boolean(query || direction)
+  const loadingFirst = pages.loading && pages.items.length === 0 && !pages.error
+  const screen = loadingFirst ? 'cobros-cargando' : shown.length === 0 ? 'cobros-pagos-vacio' : 'cobros-pagos'
+  const filtersActive = Boolean(query || direction || entity || from || to)
+  const error = pages.error ? (pages.error instanceof ApiError ? pages.error : new ApiError(0, 'WC_ERROR', copy.error.load)) : null
 
-  function setDirection(next: string) {
-    const queryParams = new URLSearchParams(params)
-    if (next) queryParams.set('direction', next)
-    else queryParams.delete('direction')
-    setParams(queryParams, { replace: true })
+  function update(change: (next: URLSearchParams) => void) {
+    const next = new URLSearchParams(params)
+    change(next)
+    setParams(next, { replace: true })
   }
+
+  function setFilter(id: string, value: FilterValue) {
+    update((next) => {
+      if (id === 'date') {
+        const range = value && typeof value === 'object' && !Array.isArray(value) ? value : null
+        if (range?.from) next.set('from', range.from)
+        else next.delete('from')
+        if (range?.to) next.set('to', range.to)
+        else next.delete('to')
+        return
+      }
+      const raw = typeof value === 'string' ? value : ''
+      if (raw) next.set(id, raw)
+      else if (id === 'entity' && rail !== 'all') next.set('entity', 'all')
+      else next.delete(id)
+    })
+  }
+
+  function clearFilters() {
+    update((next) => {
+      for (const key of ['direction', 'entity', 'from', 'to']) next.delete(key)
+      if (rail !== 'all') next.set('entity', 'all')
+    })
+    setQ('')
+  }
+
+  const filters: FilterDef[] = [
+    {
+      id: 'direction',
+      label: copy.cobros.direction,
+      kind: 'single',
+      display: 'chips',
+      options: [
+        { value: 'in', label: copy.cobros.collectionsOnly, tone: 'success' },
+        { value: 'out', label: copy.cobros.paymentsOnly, tone: 'neutral' },
+      ],
+    },
+    {
+      id: 'entity',
+      label: copy.salesDocs.entity,
+      kind: 'single',
+      options: me.entities.map((item) => ({ value: item.code, label: entityLabel(item.id, me.entities), tone: entityTone(item.code) })),
+    },
+    { id: 'date', label: copy.cobros.date, kind: 'date' },
+  ]
 
   const columns = useMemo<GridColumn<Payment>[]>(
     () => [
       { id: 'date', header: copy.cobros.date, cell: (row) => (row.value_date ? formatDate(row.value_date) : '—') },
-      { id: 'who', header: copy.cobros.counterparty, cell: (row) => (row.counterparty_id ? names[row.counterparty_id] ?? '…' : '—') },
+      { id: 'who', header: copy.cobros.counterparty, cell: (row) => row.counterparty_name ?? '—' },
+      {
+        id: 'entity',
+        header: copy.salesDocs.entity,
+        filterValue: (row) => entityLabel(row.legal_entity_id, me.entities),
+        cell: (row) => <StatusPill tone={entityTone(entityCode(row.legal_entity_id, me.entities) ?? '')}>{entityLabel(row.legal_entity_id, me.entities)}</StatusPill>,
+      },
       {
         id: 'direction',
         header: copy.cobros.direction,
-        cell: (row) => <Badge size="sm" tone={row.direction === 'in' ? 'success' : 'neutral'}>{row.direction === 'in' ? copy.cobros.collection : copy.cobros.payment}</Badge>,
+        filterValue: (row) => (row.direction === 'in' ? copy.cobros.collection : copy.cobros.payment),
+        cell: (row) => <StatusPill tone={row.direction === 'in' ? 'success' : 'neutral'}>{row.direction === 'in' ? copy.cobros.collection : copy.cobros.payment}</StatusPill>,
       },
       { id: 'method', header: copy.cobros.method, cell: (row) => methodLabel(row.method) },
       { id: 'amount', header: copy.cobros.amount, align: 'right', cell: (row) => <span className="tabular-nums">{moneyOf(row.amount)}</span> },
       {
         id: 'status',
         header: copy.cobros.status,
-        cell: (row) => <Badge size="sm" tone={row.status === 'reversed' ? 'neutral' : 'info'}>{statusLabel(row.status)}</Badge>,
+        filterValue: (row) => statusLabel(row.status),
+        cell: (row) => <StatusPill tone={row.status === 'reversed' ? 'slate' : 'info'}>{statusLabel(row.status)}</StatusPill>,
       },
     ],
-    [names],
+    [me.entities],
   )
 
   return (
@@ -105,36 +173,17 @@ export function Pagos({ me }: { me: Me }) {
       screen={screen}
       vista={vista}
       action={canWrite ? { label: copy.cobros.register, onClick: () => setRegister(true) } : null}
-      toolbar={
-        <Input
-          id="buscar-pagos"
-          size="sm"
-          type="search"
-          value={q}
-          placeholder={copy.cobros.searchMovements}
-          aria-label={copy.cobros.searchMovements}
-          className="w-56 shrink-0"
-          prefix={<Search className="size-3.5" strokeWidth={iconStroke} />}
-          onChange={(event) => setQ(event.target.value)}
-        />
-      }
-      filters={
-        <>
-          {[
-            { id: '', label: copy.cobros.allDirections },
-            { id: 'in', label: copy.cobros.collectionsOnly },
-            { id: 'out', label: copy.cobros.paymentsOnly },
-          ].map((pill) => (
-            <Chip key={pill.id || 'all'} pressed={direction === pill.id} active={direction === pill.id} onClick={() => setDirection(direction === pill.id ? '' : pill.id)}>
-              {pill.label}
-            </Chip>
-          ))}
-        </>
-      }
+      bar={{
+        search: { id: 'buscar-pagos', value: q, onChange: setQ, placeholder: copy.cobros.searchMovements },
+        filters,
+        values: { direction, entity, date: from || to ? { from: from || to, to: to || from } : null },
+        onChange: setFilter,
+        onClear: clearFilters,
+      }}
     >
-      {page.error && !page.data ? (
+      {error && pages.items.length === 0 ? (
         <div className="p-4">
-          <ErrorState title={`${copy.error.load} (${page.error.code})`} detail={page.error.message} onRetry={page.reload} />
+          <ErrorState title={`${copy.error.load} (${error.code})`} detail={error.message} onRetry={pages.reload} />
         </div>
       ) : (
         <DataGrid
@@ -148,9 +197,9 @@ export function Pagos({ me }: { me: Me }) {
           onSelectedChange={setPicked}
           onOpenRow={(row) => setOpenId(row.id)}
           openRowKey={openId}
-          total={shown.length}
-          loading={page.loading && !page.data}
-          scrollKey="cobros-pagos"
+          total={pages.total ?? undefined}
+          loading={pages.loading}
+          scrollKey={pages.pageKey}
           empty={
             <EmptyState
               size="sm"
@@ -160,14 +209,14 @@ export function Pagos({ me }: { me: Me }) {
           }
         />
       )}
+      <Pagination {...pages.pagination} />
       <PagoDrawer
         me={me}
         id={openId}
-        names={names}
         onClose={() => setOpenId(null)}
         onChanged={() => {
           setOpenId(null)
-          page.reload()
+          pages.reload()
           toast(copy.cobros.reversedToast, { tone: 'success' })
         }}
       />
@@ -181,7 +230,7 @@ export function Pagos({ me }: { me: Me }) {
         onSaved={(warnings) => {
           setRegister(false)
           toast(copy.cobros.saved, warnings[0] ? { tone: 'warning', description: warnings[0] } : { tone: 'success' })
-          page.reload()
+          pages.reload()
         }}
       />
     </CobrosFrame>
@@ -191,13 +240,11 @@ export function Pagos({ me }: { me: Me }) {
 function PagoDrawer({
   me,
   id,
-  names,
   onClose,
   onChanged,
 }: {
   me: Me
   id: string | null
-  names: NameMap
   onClose: () => void
   onChanged: () => void
 }) {
@@ -209,7 +256,7 @@ function PagoDrawer({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const payment = detail.data
-  const name = payment?.counterparty_id ? names[payment.counterparty_id] ?? '…' : '—'
+  const name = payment?.counterparty_name ?? '—'
 
   async function reverse() {
     if (!payment || reason.trim().length < 3) return

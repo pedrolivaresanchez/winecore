@@ -5,8 +5,9 @@ import { Badge, Tooltip, textureSecondary } from '@/ui'
 import { copy, fill } from '@/i18n'
 import { cn } from '@/lib/cn'
 import { formatDate, formatMoney } from '@/lib/format'
+import { docKey, type RecordDoc } from '@/pages/documents/doc-key'
 import { useDocParam } from '@/pages/documents/use-doc-param'
-import { INVOICE_STATE, amount, docKey, invoiceDoc, type DocSource, type OverviewInvoice, type RecordDoc } from '@/pages/contactos/overview'
+import { INVOICE_STATE, amount, invoiceDoc, type DocSource, type OverviewInvoice } from '@/pages/contactos/overview'
 
 export const RECORD_CARD = 'rounded-xl bg-surface shadow-(--shadow-surface)'
 

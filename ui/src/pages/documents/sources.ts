@@ -2,12 +2,11 @@ import { useCallback, useEffect, useState } from 'react'
 import { copy } from '@/i18n'
 import { ApiError, api, isAbortError } from '@/lib/api'
 import { deliveryStatusLabel, docPath, lineBase, quoteStatusLabel, statusTone as salesTone, type DeliveryNote, type Quote } from '@/lib/sales'
+import { statusTone as commonTone, type StatusTone } from '@/lib/status-tones'
 import type { Me } from '@/lib/types'
 import { day, entityLabel, hasAmount, invoiceTitle, money, qty, statusLabel, statusTone as invoiceTone } from '@/pages/facturas/format'
 import { linesOf, moneySum } from '@/pages/facturas/holded-detail'
 import type { Invoice } from '@/pages/facturas/types'
-import type { BadgeTone } from '@/ui'
-
 export type DocSource = 'holded-invoice' | 'holded-document' | 'invoice' | 'quote' | 'delivery'
 
 type HoldedInvoiceDetail = {
@@ -24,6 +23,8 @@ type HoldedInvoiceDetail = {
   paid: string | null
   pending: string | null
   status_holded: string
+  status: string
+  status_label: string
   kind: string
   entity_code: string
 }
@@ -46,7 +47,7 @@ export type DocView = {
   kind: string
   holded: boolean
   entity: string
-  status: { label: string; tone: BadgeTone } | null
+  status: { label: string; tone: StatusTone } | null
   party: { label: string; name: string; contactId: string | null } | null
   dates: { label: string; value: string }[]
   totals: { label: string; value: string; strong?: boolean }[]
@@ -115,14 +116,6 @@ export function useDocument(source: DocSource, id: string | null) {
   }
 }
 
-function holdedTone(status: string): BadgeTone {
-  const key = status.trim().toLowerCase()
-  if (key === 'pagado' || key === 'cobrado' || key === 'facturado' || key === 'aceptado') return 'success'
-  if (key === 'vencido') return 'danger'
-  if (key === 'pendiente') return 'warning'
-  return 'neutral'
-}
-
 function negate(value: string | null): string | null {
   if (!value) return null
   return value.startsWith('-') ? value.slice(1) : `-${value}`
@@ -163,7 +156,7 @@ function holdedInvoiceView(data: HoldedInvoiceDetail): DocView {
     kind: purchase ? copy.documents.kinds.purchase : rectifying ? copy.documents.kinds.rectifying : copy.documents.kinds.invoice,
     holded: true,
     entity: entityLabel(data.entity_code),
-    status: data.status_holded ? { label: data.status_holded, tone: holdedTone(data.status_holded) } : null,
+    status: { label: data.status_label, tone: commonTone(data.status) },
     party: {
       label: purchase ? copy.documents.supplier : copy.documents.customer,
       name: data.counterparty_name || '—',
@@ -188,7 +181,7 @@ function holdedDocumentView(data: HoldedDocumentDetail): DocView {
     kind: quote ? copy.documents.kinds.quote : copy.documents.kinds.delivery,
     holded: true,
     entity: entityLabel(data.entity_code),
-    status: data.status_holded ? { label: data.status_holded, tone: holdedTone(data.status_holded) } : null,
+    status: { label: data.status_label, tone: commonTone(data.status) },
     party: { label: copy.documents.customer, name: data.counterparty_name || '—', contactId: data.counterparty_contact_id },
     dates: [
       { label: copy.documents.issueDate, value: day(data.issue_date) },

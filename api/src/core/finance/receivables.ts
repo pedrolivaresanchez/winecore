@@ -163,6 +163,7 @@ function itemOf(doc: PayableDocument, age: ReturnType<typeof ageingOf>, codes: M
   return {
     target_table: doc.targetTable,
     target_id: doc.targetId,
+    document_id: doc.documentId,
     legal_entity_id: doc.legalEntityId,
     entity_code: codes.get(doc.legalEntityId) ?? null,
     document_number: doc.documentNumber,
