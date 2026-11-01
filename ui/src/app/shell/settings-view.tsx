@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, Building, Check, FlaskConical, List, Lock, Search, ShareNetwork, Sliders, Users, type IconComponent } from '@/ui/icons'
+import { ArrowLeft, Building, FlaskConical, List, Lock, Search, ShareNetwork, Sliders, Users, type IconComponent } from '@/ui/icons'
 import { Input } from '@/ui'
 import { EntityRoles } from '@/components/EntityRoles'
 import { SystemStatus } from '@/components/SystemStatus'
@@ -10,14 +10,13 @@ import { ConnectorsPanel } from '@/pages/ajustes/conectores/ConnectorsPanel'
 import { PersonasPanel } from '@/pages/ajustes/personas/PersonasPanel'
 import { SecurityPanel } from '@/pages/ajustes/seguridad/SecurityPanel'
 import { EnologySettings } from '@/pages/enologia/EnologySettings'
-import { SetupPanel } from '@/pages/ajustes/puesta-en-marcha/SetupPanel'
 import { NoPermission } from '@/components/NoPermission'
 import { cn } from '@/lib/cn'
 import { iconStroke, pressClass } from '@/lib/motion'
 import { useShell } from '@/app/shell/shell-context'
 import type { Me } from '@/lib/types'
 
-export type SettingsArea = 'entities' | 'people' | 'security' | 'policies' | 'enology' | 'connectors' | 'setup' | 'system'
+export type SettingsArea = 'entities' | 'people' | 'security' | 'policies' | 'enology' | 'connectors' | 'system'
 
 const AREAS: { id: SettingsArea; title: string; hint: string; keywords: string; icon: IconComponent; ownerOnly?: boolean; staff?: boolean }[] = [
   {
@@ -73,14 +72,6 @@ const AREAS: { id: SettingsArea; title: string; hint: string; keywords: string; 
     keywords: 'sistema version esquema base datos escritor',
     icon: Sliders,
   },
-  {
-    id: 'setup',
-    title: copy.settings.setup,
-    hint: copy.settings.setupHint,
-    keywords: 'puesta en marcha series nif eori sepa silicie cvbot',
-    icon: Check,
-    staff: true,
-  },
 ]
 
 export function settingsAreas(query: string, me: Me) {
@@ -95,7 +86,7 @@ export function settingsAreas(query: string, me: Me) {
   })
 }
 
-export function canReadSetup(me: Me): boolean {
+export function canManagePeople(me: Me): boolean {
   return me.roles.some((role) => role.role === 'owner' || role.role === 'admin')
 }
 
@@ -197,13 +188,12 @@ export function SettingsView({ me, area }: { me: Me; area: SettingsArea }) {
           </div>
         </header>
         {area === 'entities' ? <EntityRoles me={me} /> : null}
-        {area === 'people' ? (canReadSetup(me) ? <PersonasPanel me={me} /> : <NoPermission />) : null}
+        {area === 'people' ? (canManagePeople(me) ? <PersonasPanel me={me} /> : <NoPermission />) : null}
         {area === 'security' ? <SecurityPanel /> : null}
         {area === 'policies' ? <PoliciesPanel me={me} /> : null}
         {area === 'enology' ? <EnologySettings me={me} /> : null}
         {area === 'connectors' ? <ConnectorsPanel me={me} /> : null}
         {area === 'system' ? <SystemStatus /> : null}
-        {area === 'setup' ? (canReadSetup(me) ? <SetupPanel me={me} /> : <NoPermission />) : null}
       </div>
     </div>
   )

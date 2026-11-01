@@ -14,7 +14,6 @@ import { allows } from '@/lib/permissions'
 import { attentionHref, useDashboard, verifactuClock, type AttentionBlock } from '@/lib/dashboard'
 import { entityFilter } from '@/lib/reports'
 import type { Me } from '@/lib/types'
-import { SetupCard } from '@/pages/ajustes/puesta-en-marcha/SetupPanel'
 
 const dateLabel = new Intl.DateTimeFormat('es-ES', {
   weekday: 'long',
@@ -42,8 +41,6 @@ export function Panel({ me }: { me: Me }) {
           <p className="text-caption text-text-tertiary first-letter:uppercase">{dateLabel.format(new Date())}</p>
           <h1 className="mt-1 text-heading font-medium tracking-tight text-ink-900">{copy.panel.title}</h1>
         </header>
-
-        <SetupCard me={me} />
 
         {legacy.initial ? <PanelSkeleton /> : null}
         {legacy.error ? (

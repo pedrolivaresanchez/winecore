@@ -1,5 +1,4 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { copy } from '@/i18n'
 import type { Me } from '@/lib/types'
 import { NotFound } from '@/pages/NotFound'
 import { InformesPage } from '@/pages/informes/InformesPage'
@@ -133,7 +132,6 @@ export function AppRoutes({ me }: { me: Me }) {
       <Route path="vinedo" element={<Vinedo me={me} />} />
       <Route path="vinedo/:code" element={<ParcelaPage me={me} />} />
       <Route path="regulatorio/*" element={<Regulatorio me={me} />} />
-      <Route path="ajustes/puesta-en-marcha" element={<div className="sr-only">{copy.settings.setup}</div>} />
       <Route path="*" element={<NotFound />} />
     </Routes>
   )
