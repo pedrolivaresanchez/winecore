@@ -16,6 +16,7 @@ import {
   revokeCredential,
 } from "@/pages/aprobaciones/api";
 import { totpSecret, type UserCredential } from "@/pages/aprobaciones/model";
+import { ApprovalStepUpSetting } from "./ApprovalStepUpSetting";
 import {
   Alert,
   Button,
@@ -195,6 +196,7 @@ export function SecurityPanel() {
 
   return (
     <div data-screen="seguridad" className="flex flex-col gap-10">
+      <ApprovalStepUpSetting />
       {error ? (
         <div className="grid gap-3">
           <Alert tone="danger">{`${copy.error.load} (${error.code}). ${error.message}`}</Alert>

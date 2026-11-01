@@ -2,7 +2,14 @@ import { isOwner, type UserCtx } from '../core/auth/permissions';
 import { machineOf, requestIdFor, sessionOf } from '../auth/guard';
 import type { HttpDeps } from './auth-credentials';
 import { openApprovalService } from '../core/approvals/sql-store';
-import { listPolicyViews, loadApprovalPolicies, saveApprovalPolicy, type PolicyView } from '../core/approvals/policy-store';
+import {
+  listPolicyViews,
+  loadApprovalPolicies,
+  readStepUpRequired,
+  saveApprovalPolicy,
+  saveStepUpRequired,
+  type PolicyView,
+} from '../core/approvals/policy-store';
 import { isApprovalKind, resolvePolicy, type ResolvedPolicy } from '../core/approvals/policy';
 import type { ApprovalKind, ApprovalPolicy } from '../core/approvals/types';
 import { readStepUp, sessionHash } from '../core/auth/stepup/session';
@@ -184,6 +191,18 @@ export async function decideApproval(
 export async function getApprovalPolicy(deps: HttpDeps, _request: Request) {
   const items = await listPolicyViews(deps.writer);
   return { items };
+}
+
+export async function getApprovalSettings(deps: HttpDeps) {
+  return { require_step_up: await readStepUpRequired(deps.writer) };
+}
+
+export async function putApprovalSettings(deps: HttpDeps, request: Request, payload: unknown) {
+  const body = objectBody(payload);
+  const required = boolField(body.require_step_up, 'require_step_up');
+  const user = sessionOf(request);
+  await saveStepUpRequired(deps.writer, userActor(request, user.id), required, deps.now());
+  return { require_step_up: required };
 }
 
 export async function putApprovalPolicy(deps: HttpDeps, request: Request, kind: string, payload: unknown): Promise<PolicyView> {

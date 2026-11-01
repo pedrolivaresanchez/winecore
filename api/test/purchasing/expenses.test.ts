@@ -636,6 +636,13 @@ describe('gastos', () => {
       ));
       expect(again.approval_request_id).toBe(requestId);
 
+      const strict = await ctx.app.handle(new Request('http://localhost/v1/approval-settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-Dev-User': 'owner@winecore.test' },
+        body: JSON.stringify({ require_step_up: true }),
+      }));
+      expect(strict.status).toBe(200);
+
       const early = await ctx.app.handle(new Request(`http://localhost/v1/approvals/${requestId}/decide`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

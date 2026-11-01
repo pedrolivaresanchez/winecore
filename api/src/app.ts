@@ -32,8 +32,10 @@ import {
   decideApproval,
   getApproval,
   getApprovalPolicy,
+  getApprovalSettings,
   listApprovals,
   putApprovalPolicy,
+  putApprovalSettings,
 } from './routes/approvals';
 import { downloadAttachment, listAttachmentLinks, uploadAttachment } from './routes/attachments';
 import {
@@ -583,6 +585,12 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requireOwner(guardDeps),
     })
     .put('/v1/approval-policies/:kind', ({ request, params, body }) => putApprovalPolicy(http, request, params.kind, body), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .get('/v1/approval-settings', () => getApprovalSettings(http), {
+      beforeHandle: requireOwner(guardDeps),
+    })
+    .put('/v1/approval-settings', ({ request, body }) => putApprovalSettings(http, request, body), {
       beforeHandle: requireOwner(guardDeps),
     })
     // SILICIE y calendario regulatorio. El fichero se descarga; no se envía a la AEAT.

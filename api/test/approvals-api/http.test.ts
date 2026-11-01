@@ -398,10 +398,57 @@ describe('aprobaciones', () => {
     }
   });
 
+  test('por defecto aprobar no pide passkey ni TOTP; el ajuste del propietario lo vuelve a exigir', async () => {
+    const clock = mutableClock();
+    const ctx = await openApp(clock);
+    try {
+      const settings = await call(ctx.app, 'GET', '/v1/approval-settings');
+      expect(settings.status).toBe(200);
+      expect(settings.body).toEqual({ require_step_up: false });
+
+      const first = await requestApproval(ctx);
+      const open = await call(ctx.app, 'GET', `/v1/approvals/${first.id}`);
+      expect(open.status).toBe(200);
+      const decided = await call(ctx.app, 'POST', `/v1/approvals/${first.id}/decide`, {
+        decision: 'approve',
+        payload_sha256: first.payloadSha256,
+      });
+      expect(decided.status).toBe(200);
+      expect(decided.body?.status).toBe('approved');
+
+      const forbidden = await call(ctx.app, 'PUT', '/v1/approval-settings', { require_step_up: true }, asUser('admin@winecore.test'));
+      expect(forbidden.status).toBe(403);
+      const invalid = await call(ctx.app, 'PUT', '/v1/approval-settings', { require_step_up: 'sí' });
+      expect(invalid.status).toBe(422);
+      const on = await call(ctx.app, 'PUT', '/v1/approval-settings', { require_step_up: true });
+      expect(on.body).toEqual({ require_step_up: true });
+
+      const second = await requestApproval(ctx);
+      const blocked = await call(ctx.app, 'POST', `/v1/approvals/${second.id}/decide`, {
+        decision: 'approve',
+        payload_sha256: second.payloadSha256,
+      });
+      expect(blocked.status).toBe(401);
+      expect(blocked.body?.code).toBe('WC_STEP_UP_REQUIRED');
+
+      const off = await call(ctx.app, 'PUT', '/v1/approval-settings', { require_step_up: false });
+      expect(off.body).toEqual({ require_step_up: false });
+      const again = await call(ctx.app, 'POST', `/v1/approvals/${second.id}/decide`, {
+        decision: 'approve',
+        payload_sha256: second.payloadSha256,
+      });
+      expect(again.status).toBe(200);
+    } finally {
+      await ctx.close();
+    }
+  });
+
   test('exige verificación reciente, lista y muestra el detalle', async () => {
     const clock = mutableClock();
     const ctx = await openApp(clock);
     try {
+      const enabled = await call(ctx.app, 'PUT', '/v1/approval-settings', { require_step_up: true });
+      expect(enabled.status).toBe(200);
       const { passkey } = await registerPasskey(ctx.app, ownerHeaders());
       const approval = await requestApproval(ctx);
       const early = await call(ctx.app, 'POST', `/v1/approvals/${approval.id}/decide`, {

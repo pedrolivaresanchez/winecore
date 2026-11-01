@@ -154,8 +154,23 @@ export interface ResolvedPolicy {
   source: 'stored' | 'default';
 }
 
+/**
+ * Interruptor general de «Pedir passkey o TOTP al aprobar» (Ajustes, Seguridad). La lista que
+ * devuelve `loadApprovalPolicies` lo lleva; con `false` ninguna política exige verificación
+ * reforzada aunque la suya lo diga. Una lista sin interruptor (tests, llamadas internas) aplica
+ * cada política tal cual.
+ */
+export const STEP_UP_SWITCH: unique symbol = Symbol('winecore.approvals.stepUpSwitch');
+
+export type PolicyList = readonly ApprovalPolicy[] & { readonly [STEP_UP_SWITCH]?: boolean };
+
+export function withStepUpSwitch(policies: ApprovalPolicy[], required: boolean): PolicyList {
+  Object.defineProperty(policies, STEP_UP_SWITCH, { value: required, enumerable: false });
+  return policies;
+}
+
 export function resolvePolicy(
-  policies: readonly ApprovalPolicy[],
+  policies: PolicyList,
   query: PolicyQuery,
 ): ResolvedPolicy {
   // Amount is part of the query contract. No threshold table exists in §12.
@@ -172,8 +187,9 @@ export function resolvePolicy(
   const globals = sameKind.filter((policy) => policy.legalEntityId === null);
   const chosen = one(exact) ?? (entityId === null ? null : one(globals));
 
-  if (!chosen) return fromDefault(query.kind);
-  return fromStored(chosen);
+  const resolved = chosen ? fromStored(chosen) : fromDefault(query.kind);
+  if (policies[STEP_UP_SWITCH] === false) return { ...resolved, requiresStepUp: false };
+  return resolved;
 }
 
 export function isApprovalKind(value: string): value is ApprovalKind {

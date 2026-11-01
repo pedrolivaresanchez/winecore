@@ -2,10 +2,11 @@ import { domainError } from '../errors';
 import { newId } from '../ids';
 import { sql } from '../db/sql';
 import type { Actor, Tx, Writer } from '../db/writer';
-import { DEFAULT_POLICIES, isApprovalKind, resolvePolicy } from './policy';
+import { DEFAULT_POLICIES, isApprovalKind, resolvePolicy, withStepUpSwitch, type PolicyList } from './policy';
 import { APPROVAL_KINDS, type ApprovalKind, type ApprovalPolicy } from './types';
 
 const SELF_KEY = 'approvals.allow_self';
+const STEP_UP_KEY = 'approvals.require_step_up';
 
 export interface PolicyView {
   id: string | null;
@@ -29,15 +30,62 @@ export interface PolicyWrite {
   updatedBy: string;
 }
 
-export async function loadApprovalPolicies(writer: Writer): Promise<ApprovalPolicy[]> {
-  const [rows, self] = await Promise.all([
+export async function loadApprovalPolicies(writer: Writer): Promise<PolicyList> {
+  const [rows, self, stepUp] = await Promise.all([
     writer.read<Record<string, unknown>>(policySelect()),
     readSelfMap(writer),
+    readStepUpRequired(writer),
   ]);
-  return rows.flatMap((row) => {
+  const policies = rows.flatMap((row) => {
     const policy = mapPolicy(row, self);
     return policy ? [policy] : [];
   });
+  return withStepUpSwitch(policies, stepUp);
+}
+
+type Reader = { read<T>(statement: string): Promise<T[]> };
+
+/** Sin ajuste guardado no se pide passkey ni TOTP al aprobar (decisión de Pedro, 1-11-2026). */
+export async function readStepUpRequired(reader: Reader): Promise<boolean> {
+  const rows = await reader.read<{ value: unknown }>(sql`
+    SELECT value FROM core.setting WHERE key = ${STEP_UP_KEY}
+  `);
+  const value = rows[0]?.value;
+  return value === true || value === 'true';
+}
+
+export async function saveStepUpRequired(
+  writer: Writer,
+  actor: Actor,
+  required: boolean,
+  now: Date,
+): Promise<boolean> {
+  await writer.withWrite(actor, async (tx) => {
+    const rows = await tx.read<{ value: unknown }>(sql`
+      SELECT value FROM core.setting WHERE key = ${STEP_UP_KEY}
+    `);
+    const before = rows[0] ? { value: rows[0].value } : null;
+    if (rows[0]) {
+      tx.write(sql`
+        UPDATE core.setting
+        SET value = ${sql.json(required)}, updated_at = ${now}, updated_by = ${actor.id}
+        WHERE key = ${STEP_UP_KEY}
+      `);
+    } else {
+      tx.write(sql`
+        INSERT INTO core.setting (key, value, updated_at, updated_by)
+        VALUES (${STEP_UP_KEY}, ${sql.json(required)}, ${now}, ${actor.id})
+      `);
+    }
+    tx.audit({
+      table: 'core.setting',
+      rowId: STEP_UP_KEY,
+      action: rows[0] ? 'UPDATE' : 'INSERT',
+      before,
+      after: { value: required },
+    });
+  });
+  return required;
 }
 
 export async function listPolicyViews(writer: Writer): Promise<PolicyView[]> {

@@ -1215,6 +1215,7 @@
     "minimum": "Mínimo",
     "validity": "Caducidad (horas)",
     "stepUp": "Exigir passkey o código",
+    "stepUpGlobalNote": "Mientras el ajuste de Ajustes → Seguridad «Pedir passkey o código al aprobar» esté apagado, no se pide verificación aunque la regla la marque.",
     "selfApproval": "El solicitante puede aprobar",
     "selfHelp": "Los envíos a la AEAT, la Junta, EDI y la certificadora no deberían autoaprobarse.",
     "validityHelp": "Entre 1 y 168 horas. El mínimo es 1, 2 o 3.",
@@ -1273,7 +1274,12 @@
     "created": "Alta {date}",
     "used": "último uso {date}",
     "unused": "sin usar",
-    "placeholder": "iPhone de Pedro"
+    "placeholder": "iPhone de Pedro",
+    "approveTitle": "Aprobar sin verificación",
+    "approveStrict": "Pedir passkey o código al aprobar",
+    "approveStrictHint": "Apagado: se aprueba con un clic dentro de tu sesión. Encendido: cada aprobación pide passkey o código de la app hecho hace menos de 5 minutos.",
+    "approveSaved": "Ajuste guardado",
+    "approveSaveFail": "No se pudo guardar el ajuste."
   },
   "catalog": {
     "title": "Catálogo",

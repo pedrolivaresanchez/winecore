@@ -111,6 +111,7 @@ export function PoliciesPanel({ me }: { me: Me }) {
 
   return (
     <div data-screen="politicas">
+      <p className="mt-3 text-caption text-text-tertiary">{copy.approvals.stepUpGlobalNote}</p>
       {items.length === 0 ? (
         <p className="mt-4 text-label text-text-secondary">{copy.approvals.policyEmpty}</p>
       ) : (

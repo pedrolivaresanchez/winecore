@@ -176,6 +176,8 @@ describe("presentación SILICIE", () => {
       await expect(ctx.writer.withWrite({ type: "user", id: admin, requestId: newId() }, (tx) => enqueueRun(tx, submissionId)))
         .rejects.toMatchObject({ code: "WC_ILLEGAL_TRANSITION" });
 
+      const strict = await call(ctx.app, "PUT", "/v1/approval-settings", { require_step_up: true }, "owner@winecore.test");
+      expect(strict.status).toBe(200);
       const withoutStep = await call(ctx.app, "POST", `/v1/approvals/${approvalId}/decide`, {
         decision: "approve",
         payload_sha256: hash,
