@@ -87,7 +87,15 @@ test("Ventas: presupuesto, pedido, albarán y factura con PDF", async ({ page })
     await dialog.getByRole("button", { name: "Crear borrador" }).click();
     await page.waitForURL(/\/facturas\/[0-9a-f-]+$/i);
     await page.getByRole("button", { name: "Emitir" }).click();
-    await page.getByRole("dialog").getByRole("button", { name: "Emitir" }).click();
+    const numbering = page.locator('[data-screen="numeracion-primera"]');
+    const confirm = page.getByRole("dialog").getByRole("button", { name: "Emitir" });
+    await expect(numbering.or(confirm).first()).toBeVisible();
+    if (await numbering.isVisible()) {
+      await expect(numbering.getByText(/^Primera factura de .+ en \d{4}: elige la numeración$/)).toBeVisible();
+      await numbering.getByRole("radio", { name: /Empezar una serie nueva/ }).check();
+      await numbering.getByRole("button", { name: "Usar esta numeración" }).click();
+    }
+    await confirm.click();
     await page.getByRole("tab", { name: "Envío" }).click();
     await expect(page.getByText("Pendiente de envío").first()).toBeVisible();
     await page.getByRole("tab", { name: "PDF" }).click();

@@ -139,6 +139,7 @@ export type ValidationIssue = {
   code?: string
   message: string
   field?: string
+  details?: Record<string, unknown>
 }
 
 export type ValidationResult = {

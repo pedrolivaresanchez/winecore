@@ -194,14 +194,16 @@ export function cellarOperationSeriesStatements(now = new Date()): string[] {
   ]);
 }
 
-/** Presupuesto, pedido, albarán y factura para el año en curso y el siguiente. */
+/**
+ * Presupuesto, pedido y albarán para el año en curso y el siguiente. La serie de factura no:
+ * se elige al emitir la primera del año.
+ */
 export function salesDocumentSeriesStatements(now = new Date()): string[] {
   const year = Number(businessDate(now).slice(0, 4));
   const kinds = [
     ['quote', 'PR'],
     ['sales_order', 'PD'],
     ['delivery_note', 'AL'],
-    ['invoice', 'FC'],
   ] as const;
   return [year, year + 1].flatMap((value) =>
     kinds.flatMap(([docType, code]) => [
