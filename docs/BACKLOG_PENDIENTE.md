@@ -38,7 +38,7 @@ Crear un presupuesto, un pedido o un albarán necesita tres cosas que no se pued
 | Series de numeración de presupuesto (PR), pedido (PE), albarán (AL), proforma (PF) y aforo (AF) de 2026 y 2027 para P.O y CVPO | Creadas | Hecho |
 | Conjunto de reglas de entidad facturadora activo (por defecto CVPO, El Corte Inglés a P.O, exportaciones e-DA a P.O, según la propuesta Q-025) | Activo desde el 1-11-2026 (Pedro lo autorizó; pedir passkey o código para aprobar es ahora un ajuste del propietario, apagado) | Hecho |
 | Series de factura y rectificativa de 2026 y 2027 para P.O y CVPO, con la numeración de Holded (`F26NNNN` y `CN26NNNN`; 2027 empieza en `F270001` y `CN270001`) | Abiertas el 1-11-2026: P.O sigue en `F260087` y `CN260002`; CVPO en `F260248` y `CN260009`. Si Holded emite más facturas antes del cambio, el primer número se corrige al abrir la serie | Hecho. Revisar el primer número el día del cambio |
-| NIF y dirección de P.O y CVPO | Cargados en Entidades el 1-11-2026 desde las facturas de Holded y el registro público; las fuentes y las dudas están en el informe a Pedro | Hecho. Pedro confirma |
+| NIF y dirección de P.O y CVPO | Cargados en Entidades el 1-11-2026 desde las facturas de Holded. Pedro decidió el 1-11-2026 que las facturas de CVPO llevan la dirección de la plantilla de Holded: Avda la Victoria nº 4, Los Llanos de Arriba, 23360 La Puerta de Segura (Jaén); sustituye a Calle Lozoya 17 (Riba-roja de Túria), que venía del registro público. Aplicado en producción el mismo día | Hecho |
 | Stock envasado para sacar albaranes con lote | Solo hay 17 aperturas a granel | Carga del stock envasado, aún por recibir |
 
 ## Cómo conectar CVBOT (MCP)
