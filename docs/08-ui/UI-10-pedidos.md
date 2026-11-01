@@ -16,7 +16,7 @@
 - `POST /api/v1/sales-orders` (`Idempotency-Key`); `PATCH /api/v1/sales-orders/{id}` (solo borrador).
 - `GET /api/v1/billing-rules/resolve?customer_id=&channel=` → entidad, regla aplicada y traza.
 - `POST /api/v1/sales-orders/{id}/confirm`, `.../cancel`, `.../delivery-notes` (crea albarán, UI-11).
-- Precio: `GET /api/v1/price-quote?customer_id=&product_id=&qty=&date=`.
+- Precio: `GET /api/v1/price-quote?customer_id=&product_id=&qty=&date=&channel=` (con `channel`, sin tarifa propia del cliente se usa la del canal del pedido, como al guardarlo).
 
 ## Campos y validaciones
 | Campo | Validación |

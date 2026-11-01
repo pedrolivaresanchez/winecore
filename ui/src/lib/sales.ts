@@ -501,13 +501,17 @@ export function createIncident(id: string, body: Record<string, unknown>) {
   })
 }
 
-export function getPriceQuote(query: { customerId: string; productId: string; qty: string; date?: string }, signal?: AbortSignal) {
+export function getPriceQuote(
+  query: { customerId: string; productId: string; qty: string; date?: string; channel?: string },
+  signal?: AbortSignal,
+) {
   const params = new URLSearchParams({
     customer_id: query.customerId,
     product_id: query.productId,
     qty: query.qty || '1',
   })
   if (query.date) params.set('date', query.date)
+  if (query.channel) params.set('channel', query.channel)
   return api<PriceQuote>(`/v1/price-quote?${params}`, { signal })
 }
 

@@ -87,12 +87,22 @@ export function CreateDocument({
     )
   }
 
-  function reprice(line: DraftLine, nextCustomer = customerId, date = orderDate) {
+  function reprice(line: DraftLine) {
     applyListed(line)
+    quoteTier(line, customerId, channel, offerDate)
+  }
+
+  function repriceAll(next: { customerId?: string; channel?: ChannelCode; date?: string }) {
+    for (const line of lines) {
+      quoteTier(line, next.customerId ?? customerId, next.channel ?? channel, next.date ?? offerDate)
+    }
+  }
+
+  function quoteTier(line: DraftLine, nextCustomer: string, nextChannel: ChannelCode, date: string) {
     if (!nextCustomer || !line.productId || !(Number(line.quantity) > 0)) return
     const stamp = crypto.randomUUID()
     stamps.current[line.key] = stamp
-    getPriceQuote({ customerId: nextCustomer, productId: line.productId, qty: line.quantity, date: date || undefined })
+    getPriceQuote({ customerId: nextCustomer, productId: line.productId, qty: line.quantity, date, channel: nextChannel })
       .then((hit) => {
         if (stamps.current[line.key] !== stamp) return
         setLines((current) =>
@@ -192,12 +202,23 @@ export function CreateDocument({
                 setCustomer(next)
                 setCustomerError(null)
                 setError(null)
+                repriceAll({ customerId: next?.id ?? '' })
               }}
             />
           </Field>
           <div className="grid items-start gap-4 sm:grid-cols-2">
             <Field id="canal" label={copy.sales.channel}>
-              <Select id="canal" className="w-full" value={channel} onChange={(event) => setChannel(event.target.value as ChannelCode)}>
+              <Select
+                id="canal"
+                className="w-full"
+                value={channel}
+                onChange={(event) => {
+                  const next = event.target.value as ChannelCode
+                  setChannel(next)
+                  setError(null)
+                  repriceAll({ channel: next })
+                }}
+              >
                 {CHANNELS.map((code) => (
                   <option key={code} value={code}>
                     {channelLabel(code)}
@@ -259,7 +280,16 @@ export function CreateDocument({
           ) : (
             <>
               <Field id="fecha-pedido" label={copy.sales.orderDate}>
-                <DatePicker value={orderDate} onChange={(next) => setOrderDate(next ?? todayMadrid())} labels={DATE_LABELS} timeZone="Europe/Madrid" />
+                <DatePicker
+                  value={orderDate}
+                  onChange={(next) => {
+                    const date = next ?? todayMadrid()
+                    setOrderDate(date)
+                    repriceAll({ date })
+                  }}
+                  labels={DATE_LABELS}
+                  timeZone="Europe/Madrid"
+                />
               </Field>
               <Field id="fecha-entrega" label={copy.sales.requestedDate}>
                 <DatePicker value={requested} onChange={setRequested} labels={DATE_LABELS} timeZone="Europe/Madrid" />

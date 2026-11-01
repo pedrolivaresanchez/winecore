@@ -6,6 +6,7 @@ import type { Actor, Tx, Writer } from '../db/writer';
 import { sql } from '../db/sql';
 import { domainError } from '../errors';
 import { newId } from '../ids';
+import { priceListCodeForChannel } from '../sales/pricing';
 import { businessDate } from '../time';
 import {
   FieldBag,
@@ -114,7 +115,7 @@ export function rangesOverlap(left: DateRange, right: DateRange): boolean {
 
 export async function priceFor(
   db: Reader,
-  input: { customerId: string; productId: string; qty: Decimal; date: string },
+  input: { customerId: string; productId: string; qty: Decimal; date: string; channel?: string | null },
 ): Promise<PriceQuote> {
   if (!(input.qty instanceof Decimal) || !input.qty.isFinite()) {
     throw domainError('WC_VALIDATION', { qty: 'Cantidad no válida' });
@@ -139,7 +140,7 @@ export async function priceFor(
     SELECT id FROM catalog.product WHERE id = CAST(${input.productId} AS UUID)
   `);
   if (products.length === 0) throw domainError('WC_NOT_FOUND');
-  const list = await resolveList(db, contact);
+  const list = await resolveList(db, contact, input.channel ?? null);
   const versions = await db.read<{ id: string }>(sql`
     SELECT id
     FROM catalog.price_list_version
@@ -606,9 +607,11 @@ export async function quoteFromRequest(writer: Writer, request: Request): Promis
   const productId = url.searchParams.get('product_id');
   const qtyRaw = url.searchParams.get('qty');
   const dateRaw = url.searchParams.get('date');
+  const channel = url.searchParams.get('channel')?.trim() || null;
   if (!customerId) errors.add('customer_id', 'Obligatorio');
   if (!productId) errors.add('product_id', 'Obligatorio');
   if (!qtyRaw) errors.add('qty', 'Obligatorio');
+  if (channel && !priceListCodeForChannel(channel)) errors.add('channel', 'El canal no existe');
   const qty = qtyRaw ? decimalValue(qtyRaw, 'qty', errors, { scale: 3, min: '0', exclusiveMin: true }) : null;
   const date = dateRaw ? dateValue(dateRaw, 'date', errors) : businessDate(new Date());
   errors.fail();
@@ -617,6 +620,7 @@ export async function quoteFromRequest(writer: Writer, request: Request): Promis
     productId: productId ?? '',
     qty: qty ?? new PriceDecimal(0),
     date: date ?? businessDate(new Date()),
+    channel,
   });
   return {
     product_id: productId ?? '',
@@ -630,9 +634,14 @@ export async function quoteFromRequest(writer: Writer, request: Request): Promis
   };
 }
 
+/**
+ * Con el canal de un presupuesto o pedido se elige la tarifa igual que al guardarlo
+ * (`sales/pricing.ts`), sin caer en la general: el precio mostrado es el que se guardará.
+ */
 async function resolveList(
   db: Reader,
   contact: { default_channel: string | null; default_price_list_id: string | null },
+  documentChannel: string | null,
 ): Promise<PriceList> {
   if (contact.default_price_list_id) {
     const rows = await db.read<Record<string, unknown>>(sql`
@@ -644,6 +653,12 @@ async function resolveList(
     if (!list) throw domainError('WC_VALIDATION', { customer_id: 'La tarifa del cliente no existe' });
     if (!list.is_active) throw domainError('WC_VALIDATION', { customer_id: 'La tarifa del cliente no está activa' });
     return list;
+  }
+  if (documentChannel) {
+    const code = priceListCodeForChannel(documentChannel);
+    const found = code ? await listByCode(db, code) : null;
+    if (found) return found;
+    throw domainError('WC_VALIDATION', { channel: 'No hay tarifa para este canal' });
   }
   const channel = contact.default_channel;
   if (channel && !(channel in CHANNEL_LIST)) {
