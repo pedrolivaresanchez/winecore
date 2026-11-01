@@ -23,6 +23,7 @@ const AREAS: [prefix: string, title: string][] = [
   ["tasting_", "Catas"],
   ["vineyard_", "Viñedo"],
   ["regulatory_", "Regulatorio y SILICIE"],
+  ["agenda_", "Agenda de ideas"],
 ];
 
 const groups = new Map<string, string[]>();

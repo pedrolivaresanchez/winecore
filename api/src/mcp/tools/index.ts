@@ -14,6 +14,7 @@ import { contactsCreate, contactsGet, contactsSearch } from "./contacts";
 import { inventoryMovementsList, inventoryReconcile, inventoryStockAt } from "./inventory";
 import { systemSearch, systemWhoami } from "./system";
 import type { AnyTool } from "../registry";
+import { agendaRestTools } from "./rest/agenda";
 import { billingRestTools } from "./rest/billing";
 import { catalogRestTools } from "./rest/catalog";
 import { cellarRestTools } from "./rest/cellar";
@@ -81,6 +82,7 @@ export const restTools: readonly AnyTool[] = [
   ...vineyardRestTools,
   ...tastingRestTools,
   ...regulatoryRestTools,
+  ...agendaRestTools,
 ];
 
 export const mcpTools: readonly AnyTool[] = [...coreTools, ...restTools];

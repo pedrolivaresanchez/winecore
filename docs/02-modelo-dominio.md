@@ -66,6 +66,7 @@ flowchart TB
 | `finance` | finance | M6 | Sí | billing, purchasing |
 | `accounting` | accounting | M7 | Sí | billing, purchasing, finance |
 | `knowledge`, `labels` | knowledge, catalog.label_spec | Posterior | Sí | catalog |
+| `agenda` | agenda | Posterior | Sí | contacts, sales, billing (enlaces opcionales; sin FK entre esquemas) |
 
 **Qué significa "desactivado"** (lo aplica `api/src/modules/guard.ts`): rutas REST del módulo → `404` con código `WC_MODULE_DISABLED`; herramientas MCP del módulo → no se listan en `tools/list`; pantallas → ocultas en el menú y la ruta muestra "Módulo desactivado"; jobs programados del módulo → no se ejecutan; los datos se conservan. Activar o desactivar un módulo exige aprobación (`ops.approval_policy.kind = 'module_toggle'`) y comprueba dependencias (no se puede apagar `inventory` si `silicie` está activo).
 

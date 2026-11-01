@@ -15,6 +15,8 @@ describe('auth', () => {
       const body = await bodyOf(response);
       expect(body.email).toBe('owner@winecore.test');
       expect(body.permissions).toEqual([
+        'agenda.read',
+        'agenda.write',
         'audit.read',
         'billing.deliver',
         'billing.issue',
