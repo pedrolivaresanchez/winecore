@@ -12,7 +12,8 @@ import {
   type ReactNode,
 } from 'react'
 import { ChevronDown, ChevronUp, ChevronsUpDown, Expand, Filter, Plus, type IconComponent } from './icons'
-import { AutoColumnMenu, FilteredEmpty, FilterStrip, useGridAuto } from './grid-auto'
+import { AutoColumnMenu, FilteredEmpty, FilterStrip, useGridAuto, usePublishGridFilters } from './grid-auto'
+import type { GridFilterLink } from './grid-filter-link'
 import { Checkbox } from './checkbox'
 import { Skeleton } from './skeleton'
 import { GlassMenu, useMenuOpen } from './glass-menu'
@@ -224,6 +225,11 @@ export type DataGridProps<Row> = {
   autoTools?: boolean
   /** Where widths, sort and filters are kept. Defaults to the route and first column; `null` keeps nothing. */
   persistKey?: string | null
+  /**
+   * The `FilterBar` above this grid (`useGridFilterLink`). The column conditions are then
+   * drawn there as chips beside the page's own filters, and the grid draws no strip of its own.
+   */
+  filterLink?: GridFilterLink
 }
 
 type CoreProps<Row> = DataGridProps<Row> & {
@@ -253,6 +259,7 @@ export function DataGrid<Row>(props: DataGridProps<Row>) {
     persistKey: props.persistKey,
     enabled,
   })
+  usePublishGridFilters(props.filterLink, auto, props.columns, enabled)
   if (!enabled) return <DataGridCore {...props} widths={auto.widths} onResize={auto.onResize} />
 
   const filtered = auto.filterCount > 0
@@ -284,7 +291,7 @@ export function DataGrid<Row>(props: DataGridProps<Row>) {
         />
       )}
       banner={
-        filtered ? (
+        filtered && !props.filterLink ? (
           <FilterStrip
             columns={props.columns}
             filters={auto.filters}

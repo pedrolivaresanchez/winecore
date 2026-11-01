@@ -3151,5 +3151,32 @@
       "polymerization_index": "IP",
       "turbidity": "Turbidez"
     }
+  },
+  "lists": {
+    "filters": {
+      "search": "Buscar",
+      "clear": "Limpiar",
+      "add": "Filtro",
+      "addTitle": "Añadir filtro",
+      "searchOptions": "Buscar",
+      "noOptions": "Nada coincide",
+      "remove": "Quitar filtro",
+      "pageOnly": "Filtra las filas de esta página"
+    },
+    "selection": {
+      "label": "seleccionados",
+      "selectAll": "Seleccionar todo",
+      "clear": "Quitar selección",
+      "cancel": "Cancelar"
+    },
+    "pagination": {
+      "range": "{from}–{to} de {total}",
+      "rangeOpen": "{from}–{to}",
+      "page": "Página {page}",
+      "pageOf": "Página {page} de {pages}",
+      "previous": "Anterior",
+      "next": "Siguiente",
+      "rowsPerPage": "Filas por página"
+    }
   }
 }

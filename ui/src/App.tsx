@@ -8,7 +8,14 @@ import { Workspace } from '@/app/Workspace'
 import { LoginPage } from '@/pages/Login'
 import { copy } from '@/i18n'
 
-const UI_LABELS = { close: 'Cerrar', moreInfo: 'Más información', why: '¿Por qué?', grid: copy.grid }
+const UI_LABELS = {
+  close: 'Cerrar',
+  cancel: copy.lists.selection.cancel,
+  moreInfo: 'Más información',
+  why: '¿Por qué?',
+  grid: copy.grid,
+  lists: copy.lists,
+}
 
 export default function App() {
   return (
