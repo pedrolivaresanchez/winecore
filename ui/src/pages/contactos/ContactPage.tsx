@@ -47,7 +47,9 @@ import type { Me } from '@/lib/types'
 import { validateContact } from '@/lib/contact-validate'
 import { ContactForm } from '@/pages/contactos/ContactForm'
 import { ActivityTab, CollectionsTab, InvoicesTab, SalesTab, SummaryTab, type OverviewState } from '@/pages/contactos/ContactTabs'
-import { overviewPath, type ContactOverview } from '@/pages/contactos/overview'
+import { overviewPath, parseDocKey, type ContactOverview } from '@/pages/contactos/overview'
+import { DocumentModal } from '@/pages/documents/DocumentModal'
+import { useDocParam } from '@/pages/documents/use-doc-param'
 import { BarButton, Fact, Facts, FoldCard, RECORD_CARD, TabStrip, type RecordTab } from '@/pages/contactos/record-ui'
 import { AddressBook, PersonBook } from '@/pages/contactos/Related'
 
@@ -147,6 +149,8 @@ function Loaded({
   const [saving, setSaving] = useState(false)
   const [confirmArchive, setConfirmArchive] = useState(false)
   const pendingFocus = useRef<string | null>(null)
+  const docs = useDocParam()
+  const opened = parseDocKey(docs.id)
   const active = draft && !(draft.saved && draft.base !== contact.updated_at) ? draft : null
   const value = active?.value ?? inputFromContact(contact)
   const editing = Boolean(active && !active.saved)
@@ -438,6 +442,7 @@ function Loaded({
         onClose={() => setConfirmArchive(false)}
         onConfirm={() => void toggleArchive()}
       />
+      {opened ? <DocumentModal me={me} source={opened.source} id={opened.id} onClose={docs.close} onChanged={overview.reload} /> : null}
     </div>
   )
 }

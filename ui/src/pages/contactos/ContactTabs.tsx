@@ -15,15 +15,20 @@ import { cn } from '@/lib/cn'
 import {
   INVOICE_STATE,
   amount,
-  invoiceHref,
+  docKey,
+  invoiceDoc,
   monthLabel,
+  paymentHref,
+  salesDoc,
   salesHref,
   salesStatusLabel,
   type ContactOverview,
   type OverviewPayment,
   type OverviewReceivable,
   type OverviewSalesDoc,
+  type RecordDoc,
 } from '@/pages/contactos/overview'
+import { useDocParam } from '@/pages/documents/use-doc-param'
 import { DocRow, InvoiceRow, RowList, Section, SourceMark } from '@/pages/contactos/record-ui'
 
 export type OverviewState = {
@@ -320,7 +325,7 @@ export function SalesTab({ overview, newQuote }: { overview: OverviewState; newQ
   )
 }
 
-type TimelineEntry = { key: string; date: string; icon: IconComponent; tint: GlyphTint; title: string; meta: string; href: string | null }
+type TimelineEntry = { key: string; date: string; icon: IconComponent; tint: GlyphTint; title: string; meta: string; href: string | null; doc: RecordDoc | null }
 
 export function ActivityTab({
   overview,
@@ -329,6 +334,7 @@ export function ActivityTab({
   overview: OverviewState
   audit: { items: AuditEvent[]; loading: boolean; error: ApiError | null; reload: () => void } | null
 }) {
+  const docs = useDocParam()
   return (
     <Loaded overview={overview} skeleton={<SkeletonRows rows={6} />}>
       {(data) => {
@@ -345,9 +351,10 @@ export function ActivityTab({
                       {index < entries.length - 1 ? <span aria-hidden className="absolute top-5 bottom-0 left-2 w-px bg-border-subtle" /> : null}
                       <ObjectGlyph icon={entry.icon} tint={entry.tint} className="mt-0.5" />
                       <div className="min-w-0 flex-1">
-                        {entry.href ? (
+                        {entry.doc || entry.href ? (
                           <Link
-                            to={entry.href}
+                            to={entry.doc ? docs.hrefFor(docKey(entry.doc)) : (entry.href ?? '')}
+                            state={entry.doc ? { docModal: true } : undefined}
                             className="block truncate rounded-sm text-label text-ink-900 outline-none hover:underline focus-visible:shadow-(--shadow-focus)"
                           >
                             {entry.title}
@@ -391,7 +398,8 @@ function timelineOf(data: ContactOverview): TimelineEntry[] {
       tint: 'info',
       title: `${copy.contactRecord.invoice} ${invoice.number ?? ''}`.trim(),
       meta: [formatMoney(amount(invoice.total)), invoice.source === 'holded' ? copy.contactRecord.holded : null].filter(Boolean).join(' · '),
-      href: invoiceHref(invoice),
+      href: null,
+      doc: invoiceDoc(invoice),
     })
   }
   for (const payment of data.payments?.items ?? []) {
@@ -405,6 +413,7 @@ function timelineOf(data: ContactOverview): TimelineEntry[] {
       title: `${copy.contactRecord.paid} ${formatMoney(amount(payment.amount))}`,
       meta: [payment.documents.join(', '), payment.method ? paymentLabel(payment.method) : null].filter(Boolean).join(' · '),
       href: null,
+      doc: null,
     })
   }
   const sales = data.sales
@@ -419,6 +428,7 @@ function timelineOf(data: ContactOverview): TimelineEntry[] {
         title: `${label} ${doc.number ?? ''}`.trim(),
         meta: [salesStatusLabel(doc.status), doc.total ? formatMoney(amount(doc.total)) : null].filter(Boolean).join(' · '),
         href: salesHref(kind, doc),
+        doc: salesDoc(kind, doc),
       })
     }
   }
@@ -439,6 +449,7 @@ function SalesSection({ title, kind, items }: { title: string; kind: 'quote' | '
           <DocRow
             key={`${doc.source}-${doc.id}`}
             href={salesHref(kind, doc)}
+            doc={salesDoc(kind, doc)}
             title={
               <>
                 <span className="truncate font-medium">{doc.number ?? salesStatusLabel(doc.status)}</span>
@@ -462,7 +473,7 @@ function SalesSection({ title, kind, items }: { title: string; kind: 'quote' | '
 function ReceivableRow({ item }: { item: OverviewReceivable }) {
   return (
     <DocRow
-      href={invoiceHref({ source: item.source, id: item.invoice_id, number: item.number })}
+      doc={invoiceDoc({ source: item.source, id: item.invoice_id })}
       title={
         <>
           <span className="truncate font-medium">{item.number ?? '—'}</span>
@@ -496,7 +507,7 @@ function PaymentRow({ item }: { item: OverviewPayment }) {
   const number = item.documents[0] ?? null
   return (
     <DocRow
-      href={item.source === 'holded' ? invoiceHref({ source: 'holded', id: null, number }) : null}
+      href={item.source === 'holded' ? paymentHref(number) : null}
       title={
         <>
           <span className="truncate font-medium">{item.documents.join(', ') || paymentLabel(item.method)}</span>

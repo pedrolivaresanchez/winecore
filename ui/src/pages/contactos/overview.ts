@@ -1,4 +1,5 @@
 import type { BadgeTone } from '@/ui'
+import type { DocSource as ModalSource } from '@/pages/documents/sources'
 
 export type DocSource = 'winecore' | 'holded'
 export type InvoiceState = 'draft' | 'pending' | 'overdue' | 'paid' | 'voided'
@@ -80,16 +81,44 @@ export function overviewPath(id: string): string {
   return `/v1/contacts/${id}/summary`
 }
 
-/** Holded has no page per invoice: the list filtered by its number is where it is read. */
-export function invoiceHref(doc: { source: DocSource; id: string | null; number: string | null }): string | null {
-  if (doc.source === 'winecore') return doc.id ? `/facturas/${doc.id}` : null
-  return doc.number ? `/facturas?q=${encodeURIComponent(doc.number)}` : null
+/** A document the record opens in the document modal, kept in `?doc=<source>:<id>`. */
+export type RecordDoc = { source: ModalSource; id: string }
+
+const MODAL_SOURCES: readonly ModalSource[] = ['holded-invoice', 'holded-document', 'invoice', 'quote', 'delivery']
+
+export function invoiceDoc(doc: { source: DocSource; id: string | null }): RecordDoc | null {
+  if (!doc.id) return null
+  return { source: doc.source === 'holded' ? 'holded-invoice' : 'invoice', id: doc.id }
+}
+
+/** Orders have no modal yet, so a WineCore order keeps its page and a Holded one has nowhere to go. */
+export function salesDoc(kind: 'quote' | 'order' | 'delivery', doc: OverviewSalesDoc): RecordDoc | null {
+  if (kind === 'order') return null
+  if (doc.source === 'holded') return { source: 'holded-document', id: doc.id }
+  return { source: kind, id: doc.id }
 }
 
 export function salesHref(kind: 'quote' | 'order' | 'delivery', doc: OverviewSalesDoc): string | null {
-  if (doc.source === 'holded') return null
-  const base = kind === 'quote' ? '/ventas/presupuestos' : kind === 'order' ? '/ventas/pedidos' : '/ventas/albaranes'
-  return `${base}/${doc.id}`
+  if (kind !== 'order' || doc.source === 'holded') return null
+  return `/ventas/pedidos/${doc.id}`
+}
+
+/** Holded payments only carry invoice numbers: the invoice list filtered by number is where they are read. */
+export function paymentHref(number: string | null): string | null {
+  return number ? `/facturas?q=${encodeURIComponent(number)}` : null
+}
+
+export function docKey(doc: RecordDoc): string {
+  return `${doc.source}:${doc.id}`
+}
+
+export function parseDocKey(value: string | null): RecordDoc | null {
+  if (!value) return null
+  const cut = value.indexOf(':')
+  if (cut <= 0) return null
+  const source = value.slice(0, cut) as ModalSource
+  const id = value.slice(cut + 1)
+  return MODAL_SOURCES.includes(source) && id ? { source, id } : null
 }
 
 export const INVOICE_STATE: Record<InvoiceState, { label: string; tone: BadgeTone }> = {

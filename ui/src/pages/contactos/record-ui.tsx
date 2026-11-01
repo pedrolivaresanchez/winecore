@@ -5,7 +5,8 @@ import { Badge, Tooltip, textureSecondary } from '@/ui'
 import { copy, fill } from '@/i18n'
 import { cn } from '@/lib/cn'
 import { formatDate, formatMoney } from '@/lib/format'
-import { INVOICE_STATE, amount, invoiceHref, type DocSource, type OverviewInvoice } from '@/pages/contactos/overview'
+import { useDocParam } from '@/pages/documents/use-doc-param'
+import { INVOICE_STATE, amount, docKey, invoiceDoc, type DocSource, type OverviewInvoice, type RecordDoc } from '@/pages/contactos/overview'
 
 export const RECORD_CARD = 'rounded-xl bg-surface shadow-(--shadow-surface)'
 
@@ -193,12 +194,15 @@ export function RowList({ children }: { children: ReactNode }) {
 /** A document line: the number and its dates on the left, the amount and the state on the right. */
 export function DocRow({
   href,
+  doc,
   title,
   meta,
   value,
   badge,
 }: {
-  href: string | null
+  href?: string | null
+  /** Opens over the record in the document modal; wins over `href`. */
+  doc?: RecordDoc | null
   title: ReactNode
   meta: ReactNode
   value: ReactNode
@@ -217,10 +221,16 @@ export function DocRow({
     </>
   )
   const row = 'flex items-center gap-3 px-3 py-2'
+  const docs = useDocParam()
+  const to = doc ? docs.hrefFor(docKey(doc)) : href
   return (
     <li>
-      {href ? (
-        <Link to={href} className={cn(row, 'outline-none transition-colors hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)')}>
+      {to ? (
+        <Link
+          to={to}
+          state={doc ? { docModal: true } : undefined}
+          className={cn(row, 'outline-none transition-colors hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)')}
+        >
           {body}
         </Link>
       ) : (
@@ -252,7 +262,7 @@ export function InvoiceRow({ invoice }: { invoice: OverviewInvoice }) {
   ]
   return (
     <DocRow
-      href={invoiceHref(invoice)}
+      doc={invoiceDoc(invoice)}
       title={
         <>
           <span className="truncate font-medium">{invoice.number ?? state.label}</span>
