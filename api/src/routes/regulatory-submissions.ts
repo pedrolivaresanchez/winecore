@@ -13,7 +13,9 @@ import {
   markSubmitted,
   readSubmissionFile,
   requestApproval,
+  SUBMISSION_LIST_STATUSES,
   validateSilicie,
+  type SubmissionListStatus,
   type SubmissionView,
 } from "../core/regulatory/submissions";
 
@@ -30,6 +32,7 @@ export async function listRegulatorySubmissions(deps: RegulatoryDeps, request: R
   const entity = optionalUuid(url.searchParams.get("entity") ?? url.searchParams.get("legal_entity_id"), "entity");
   const flow = url.searchParams.get("flow") ?? undefined;
   if (flow && !/^[a-z_]{3,20}$/.test(flow)) throw domainError("WC_VALIDATION", { flow: "Flujo no válido" });
+  const status = listStatus(url.searchParams.get("status"));
   const page = pageOf(url);
   if (entity && !can(user, "regulatory.read", entity)) throw domainError("WC_FORBIDDEN");
   const scope = entityScope(user, "regulatory.read");
@@ -37,13 +40,22 @@ export async function listRegulatorySubmissions(deps: RegulatoryDeps, request: R
     legalEntityId: entity,
     flow,
     entityIds: scope?.map((id) => id.toLowerCase()) ?? null,
+    status,
     limit: page.limit,
     cursor: page.cursor,
   });
   return {
     items: listed.items.filter((item) => can(user, "regulatory.read", item.legal_entity_id)),
     next_cursor: listed.next_cursor ? encodeCursor(listed.next_cursor.at, listed.next_cursor.id) : null,
+    total: listed.total,
   };
+}
+
+function listStatus(value: string | null): SubmissionListStatus | undefined {
+  if (value === null || value === "") return undefined;
+  const known = SUBMISSION_LIST_STATUSES.find((status) => status === value);
+  if (!known) throw domainError("WC_VALIDATION", { status: "Estado no válido" });
+  return known;
 }
 
 export async function getRegulatorySubmission(deps: RegulatoryDeps, request: Request, id: string) {

@@ -3,11 +3,12 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useEntity } from '@/app/entity-context'
 import { ErrorState } from '@/components/ErrorState'
 import { NoPermission } from '@/components/NoPermission'
-import { copy } from '@/i18n'
+import { copy, fill } from '@/i18n'
 import { ApiError, api, isAbortError } from '@/lib/api'
-import { cn } from '@/lib/cn'
+import { downloadCsv, type CsvValue } from '@/lib/csv'
 import { iconStroke } from '@/lib/motion'
 import { allows } from '@/lib/permissions'
+import { entityTone, type StatusTone } from '@/lib/status-tones'
 import type { Me } from '@/lib/types'
 import { toBalance, toFiscal, toMaterial, type MaterialRow } from '@/pages/existencias/adapt'
 import { balanceKey, balancesPath, fiscalBalancesPath, materialsStockPath, ownerEntityId, type FiscalBalance, type StockBalance } from '@/pages/existencias/api'
@@ -23,23 +24,27 @@ import { assignParams } from '@/pages/existencias/query'
 import { summarizeFiscal, summarizePhysical } from '@/pages/existencias/summarize'
 import { STOCK_EPOCH_ISO, isBeforeStockEpoch, madridInputToIso } from '@/pages/existencias/time'
 import { useHiddenColumns } from '@/pages/existencias/use-hidden'
-import { useList } from '@/pages/existencias/use-list'
+import { asApiError, usePagedList } from '@/pages/existencias/use-list'
 import { formatMl, formatUnits } from '@/pages/existencias/volume'
-import { FRAME_GUTTER, FRAME_STRIP_SCROLL } from '@/ui/frame'
-import { Box, MoreVertical, Search } from '@/ui/icons'
+import { Box, DownloadSimple, MoreVertical } from '@/ui/icons'
 import {
-  Badge,
   Button,
-  Chip,
   DataGrid,
   DatePicker,
   EmptyState,
+  FilterBar,
   GlassMenu,
-  Input,
   MenuItem,
-  Select,
+  Pagination,
+  StatusPill,
+  useGridFilterLink,
+  useLocalPages,
   useMenuOpen,
+  useToast,
+  type FilterDef,
+  type FilterValue,
   type GridColumn,
+  type SelectionAction,
 } from '@/ui'
 
 const STATE_PILLS = PRODUCT_STATES.filter((item) => item.id !== 'grape' && item.id !== 'goods')
@@ -73,11 +78,22 @@ const MATERIAL_LABELS: Record<'sku' | 'name' | 'location' | 'units', string> = {
 
 const DATE_LABELS = { clear: copy.stock.dateClear, today: copy.stock.dateToday, time: copy.stock.dateTime }
 
-function stateTone(state: string): 'info' | 'warning' | 'success' | 'neutral' {
-  if (state === 'wine') return 'info'
-  if (state === 'must') return 'warning'
-  if (state === 'packaged_labeled') return 'success'
-  return 'neutral'
+const STATE_TONE: Record<string, StatusTone> = {
+  wine: 'info',
+  must: 'warning',
+  packaged_unlabeled: 'sky',
+  packaged_labeled: 'success',
+  grape: 'purple',
+}
+
+function stateTone(state: string): StatusTone {
+  return STATE_TONE[state] ?? 'neutral'
+}
+
+const MATERIALS = 'materials'
+
+function fiscalKey(row: FiscalBalance): string {
+  return `${row.tax_warehouse_id}:${row.product_class}:${row.excise_product_key ?? ''}:${row.lot_id ?? ''}`
 }
 
 function shownProduct(row: { product_name?: string | null; wine_name?: string | null; vintage?: number | null }): string {
@@ -87,7 +103,9 @@ function shownProduct(row: { product_name?: string | null; wine_name?: string | 
 
 export function StockPage({ me }: { me: Me }) {
   const navigate = useNavigate()
+  const toast = useToast()
   const more = useMenuOpen()
+  const gridFilters = useGridFilterLink()
   const { filter, entities } = useEntity()
   const { catalog } = useCatalog(entities)
   const ownerId = ownerEntityId(filter, entities)
@@ -123,8 +141,8 @@ export function StockPage({ me }: { me: Me }) {
 
   const physicalPath = before || book !== 'physical' || materials ? null : balancesPath({ at, locationId, ownerEntityId: ownerId, state })
   const fiscalPath = before || book !== 'fiscal' ? null : fiscalBalancesPath({ at, legalEntityId: ownerId })
-  const physical = useList<unknown>(physicalPath)
-  const fiscal = useList<unknown>(fiscalPath)
+  const physical = usePagedList<unknown>(physicalPath, 'stock-balances')
+  const fiscal = usePagedList<unknown>(fiscalPath, 'stock-balances')
 
   useEffect(() => {
     if (before) return
@@ -181,11 +199,19 @@ export function StockPage({ me }: { me: Me }) {
     [catalog],
   )
 
+  const materialPages = useLocalPages(materialRows, { queryKey: JSON.stringify([at, ownerId]), storageKey: 'stock-balances' })
+  const pages = book === 'physical' ? physical : fiscal
   const filtersOn = Boolean(q || locationId || state || ownerId || materials)
   const visibleCount = materials ? materialRows.length : book === 'physical' ? physicalRows.length : fiscalRows.length
-  const loading = materials ? materialLoading : book === 'physical' ? physical.loading : fiscal.loading
-  const error = materials ? null : book === 'physical' ? physical.error : fiscal.error
-  const reload = book === 'physical' ? physical.reload : fiscal.reload
+  const loading = materials ? materialLoading : pages.loading && pages.items.length === 0
+  const error = materials ? null : asApiError(pages.error)
+  const reload = pages.reload
+  const wholeList = materials || (pages.page === 1 && !pages.hasNext)
+  const pageKey = materials ? materialPages.pageKey : pages.pageKey
+
+  useEffect(() => {
+    setPicked(new Set())
+  }, [pageKey, book, materials])
   const screen = loading
     ? 'existencias-cargando'
     : before
@@ -222,13 +248,15 @@ export function StockPage({ me }: { me: Me }) {
       {
         id: 'state',
         header: COLUMN_LABELS.state,
-        cell: (row) => (
-          <Badge tone={stateTone(row.product_state)} size="sm">
-            {stateLabel(row.product_state)}
-          </Badge>
-        ),
+        filterValue: (row) => stateLabel(row.product_state),
+        cell: (row) => <StatusPill tone={stateTone(row.product_state)}>{stateLabel(row.product_state)}</StatusPill>,
       },
-      { id: 'owner', header: COLUMN_LABELS.owner, cell: (row) => row.owner_code },
+      {
+        id: 'owner',
+        header: COLUMN_LABELS.owner,
+        filterValue: (row) => row.owner_code,
+        cell: (row) => <StatusPill tone={entityTone(row.owner_code)}>{row.owner_code}</StatusPill>,
+      },
       { id: 'litres', header: COLUMN_LABELS.litres, align: 'right', cell: (row) => formatMl(row.volume_ml) },
       { id: 'units', header: COLUMN_LABELS.units, align: 'right', cell: (row) => (row.qty_units ? formatUnits(row.qty_units) : '—') },
     ]
@@ -257,6 +285,77 @@ export function StockPage({ me }: { me: Me }) {
     ],
     [],
   )
+
+  const filters = useMemo<FilterDef[]>(() => {
+    if (book !== 'physical') return []
+    return [
+      {
+        id: 'state',
+        label: copy.lists.stock.state,
+        kind: 'single',
+        display: 'chips',
+        options: [
+          ...STATE_PILLS.map((item) => ({ value: item.id, label: item.label, tone: stateTone(item.id) })),
+          ...(materialsOn ? [{ value: MATERIALS, label: copy.stock.materials }] : []),
+        ],
+      },
+      { id: 'location', label: copy.stock.location, kind: 'single', options: locations.map(([value, label]) => ({ value, label })) },
+    ]
+  }, [book, locations, materialsOn])
+
+  function setFilter(id: string, value: FilterValue) {
+    const chosen = typeof value === 'string' && value ? value : null
+    if (id === 'state') assign({ state: chosen === MATERIALS ? null : chosen, cat: chosen === MATERIALS ? MATERIALS : null })
+    else assign({ [id]: chosen })
+  }
+
+  const shownCount = materials ? materialPages.items.length : book === 'physical' ? physicalRows.length : fiscalRows.length
+
+  function selectPage() {
+    if (materials) setPicked(new Set(materialPages.items.map((row) => row.id)))
+    else if (book === 'physical') setPicked(new Set(physicalRows.map(balanceKey)))
+    else setPicked(new Set(fiscalRows.map(fiscalKey)))
+  }
+
+  function exportSelection() {
+    let header: string[]
+    let rows: CsvValue[][]
+    if (materials) {
+      header = [MATERIAL_LABELS.sku, MATERIAL_LABELS.name, MATERIAL_LABELS.location, MATERIAL_LABELS.units]
+      rows = materialPages.items.filter((row) => picked.has(row.id)).map((row) => [row.sku, row.name, row.location, row.units])
+    } else if (book === 'physical') {
+      header = COLUMN_IDS.map((id) => COLUMN_LABELS[id])
+      rows = physicalRows
+        .filter((row) => picked.has(balanceKey(row)))
+        .map((row) => [
+          row.vessel_code ?? shownProduct(row),
+          row.location_name,
+          row.lot_code,
+          shownProduct(row),
+          stateLabel(row.product_state),
+          row.owner_code,
+          formatMl(row.volume_ml),
+          row.qty_units || null,
+        ])
+    } else {
+      header = FISCAL_IDS.map((id) => FISCAL_LABELS[id])
+      rows = fiscalRows
+        .filter((row) => picked.has(fiscalKey(row)))
+        .map((row) => [
+          row.tax_warehouse_name,
+          classLabel(row.product_class),
+          row.excise_product_key,
+          row.lot_code,
+          shownProduct(row),
+          formatMl(row.volume_ml),
+          row.units || null,
+        ])
+    }
+    downloadCsv(`existencias-${materials ? 'materiales' : book}-seleccion.csv`, header, rows)
+    toast(fill(copy.lists.bulk.exported, { n: String(rows.length) }))
+  }
+
+  const actions: SelectionAction[] = [{ id: 'export', label: copy.lists.bulk.exportCsv, icon: DownloadSimple, onRun: exportSelection }]
 
   if (!allows(me, 'inventory.read')) return <NoPermission />
 
@@ -311,90 +410,71 @@ export function StockPage({ me }: { me: Me }) {
           ) : null}
         </>
       }
-      toolbar={
-        <>
-          <div className={FRAME_STRIP_SCROLL}>
-            <BookControl value={book} onChange={(value) => assign({ book: value === 'physical' ? null : value, cat: null })} />
-            <Input
-              size="sm"
-              type="search"
-              value={q}
-              placeholder={copy.stock.searchBalances}
-              aria-label={copy.stock.searchBalances}
-              className="w-44 shrink-0 sm:w-56"
-              prefix={<Search className="size-3.5" strokeWidth={iconStroke} />}
-              onChange={(event) => setQ(event.target.value)}
-            />
-            <DatePicker
-              size="sm"
-              withTime
-              timeZone="Europe/Madrid"
-              locale="es"
-              labels={DATE_LABELS}
-              value={at}
-              className="w-48 shrink-0"
-              onChange={(next) => {
-                if (!next) {
-                  assign({ at: new Date().toISOString() })
-                  return
-                }
-                assign({ at: next.includes('T') ? madridInputToIso(next) : madridInputToIso(`${next}T12:00`) })
-              }}
-            />
-            {book === 'physical' && !materials ? (
-              <ColumnMenu ids={COLUMN_IDS} labels={COLUMN_LABELS} hidden={hiddenPhysical.hidden} locked="name" onToggle={hiddenPhysical.toggle} />
-            ) : null}
-            {book === 'fiscal' ? (
-              <ColumnMenu ids={FISCAL_IDS} labels={FISCAL_LABELS} hidden={hiddenFiscal.hidden} locked="place" onToggle={hiddenFiscal.toggle} />
-            ) : null}
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5 md:hidden">
-            {canCount ? (
-              <Button type="button" variant="primary" size="sm" onClick={() => navigate('/stock/aforos/nuevo')}>
-                {copy.stock.startCount}
-              </Button>
-            ) : (
-              <Button type="button" variant="secondary" size="sm" onClick={() => navigate(informeTo)}>
-                {copy.stock.report}
-              </Button>
-            )}
-          </div>
-        </>
-      }
-      filters={
-        <div className={cn(FRAME_STRIP_SCROLL, '[&>*]:shrink-0')}>
-          {book === 'physical' ? (
+      bar={
+        <FilterBar
+          controls={
             <>
-              <Chip pressed={!state && !materials} active={!state && !materials} onClick={() => assign({ state: null, cat: null })}>
-                {copy.stock.all}
-              </Chip>
-              {STATE_PILLS.map((item) => (
-                <Chip
-                  key={item.id}
-                  pressed={state === item.id && !materials}
-                  active={state === item.id && !materials}
-                  onClick={() => assign({ state: state === item.id ? null : item.id, cat: null })}
-                >
-                  {item.label}
-                </Chip>
-              ))}
-              {materialsOn ? (
-                <Chip pressed={materials} active={materials} onClick={() => assign({ cat: materials ? null : 'materials', state: null })}>
-                  {copy.stock.materials}
-                </Chip>
-              ) : null}
-              <Select size="sm" aria-label={copy.stock.location} value={locationId} onChange={(event) => assign({ location: event.target.value || null })}>
-                <option value="">{copy.stock.location}</option>
-                {locations.map(([id, label]) => (
-                  <option key={id} value={id}>
-                    {label}
-                  </option>
-                ))}
-              </Select>
+              <BookControl value={book} onChange={(value) => assign({ book: value === 'physical' ? null : value, cat: null, state: null, location: null })} />
+              <DatePicker
+                size="sm"
+                withTime
+                timeZone="Europe/Madrid"
+                locale="es"
+                labels={DATE_LABELS}
+                value={at}
+                className="w-48"
+                onChange={(next) => {
+                  if (!next) {
+                    assign({ at: new Date().toISOString() })
+                    return
+                  }
+                  assign({ at: next.includes('T') ? madridInputToIso(next) : madridInputToIso(`${next}T12:00`) })
+                }}
+              />
             </>
-          ) : null}
-          {summary && visibleCount > 0 ? <span className="ml-auto hidden shrink-0 text-caption text-text-tertiary tabular-nums xl:inline">{summary}</span> : null}
-        </div>
+          }
+          search={{ value: q, onChange: setQ, placeholder: copy.stock.searchBalances }}
+          filters={filters}
+          values={{ state: materials ? MATERIALS : state, location: locationId }}
+          onChange={setFilter}
+          onClear={() => {
+            assign({ state: null, cat: null, location: null })
+            setQ('')
+          }}
+          grid={gridFilters}
+          selection={{
+            count: picked.size,
+            pageCount: shownCount,
+            onSelectAll: selectPage,
+            onClear: () => setPicked(new Set()),
+            actions,
+          }}
+          trailing={
+            <>
+              {book === 'physical' && !materials ? (
+                <span className="max-md:hidden">
+                  <ColumnMenu ids={COLUMN_IDS} labels={COLUMN_LABELS} hidden={hiddenPhysical.hidden} locked="name" onToggle={hiddenPhysical.toggle} />
+                </span>
+              ) : null}
+              {book === 'fiscal' ? (
+                <span className="max-md:hidden">
+                  <ColumnMenu ids={FISCAL_IDS} labels={FISCAL_LABELS} hidden={hiddenFiscal.hidden} locked="place" onToggle={hiddenFiscal.toggle} />
+                </span>
+              ) : null}
+              <span className="md:hidden">
+                {canCount ? (
+                  <Button type="button" variant="primary" size="sm" onClick={() => navigate('/stock/aforos/nuevo')}>
+                    {copy.stock.startCount}
+                  </Button>
+                ) : (
+                  <Button type="button" variant="secondary" size="sm" onClick={() => navigate(informeTo)}>
+                    {copy.stock.report}
+                  </Button>
+                )}
+              </span>
+            </>
+          }
+        />
       }
     >
       {before ? (
@@ -422,7 +502,7 @@ export function StockPage({ me }: { me: Me }) {
       ) : materials ? (
         <DataGrid
           columns={materialColumns}
-          rows={materialRows}
+          rows={materialPages.items}
           rowKey={(row) => row.id}
           labels={GRID_LABELS}
           widths={widths}
@@ -432,6 +512,7 @@ export function StockPage({ me }: { me: Me }) {
           onOpenRow={() => undefined}
           loading={materialLoading}
           total={materialRows.length}
+          filterLink={gridFilters}
           empty={<EmptyState size="sm" title={filtersOn ? copy.stock.noMatch : copy.stock.emptyBalances} />}
         />
       ) : book === 'physical' ? (
@@ -448,7 +529,8 @@ export function StockPage({ me }: { me: Me }) {
             onOpenRow={(row) => setSelected(balanceKey(row))}
             openRowKey={selected}
             loading={physical.loading}
-            total={physical.total || physicalRows.length}
+            total={physical.total ?? undefined}
+            filterLink={gridFilters}
             empty={
               <EmptyState
                 size="sm"
@@ -458,13 +540,6 @@ export function StockPage({ me }: { me: Me }) {
               />
             }
           />
-          {physical.cursor ? (
-            <div className={cn('flex h-10 shrink-0 items-center border-t border-border-subtle', FRAME_GUTTER)}>
-              <Button type="button" variant="ghost" size="sm" loading={physical.loadingMore} onClick={() => void physical.loadMore()}>
-                {copy.stock.loadMore}
-              </Button>
-            </div>
-          ) : null}
           <StockPreview
             row={selectedRow}
             index={selectedIndex}
@@ -479,7 +554,7 @@ export function StockPage({ me }: { me: Me }) {
           <DataGrid
             columns={fiscalColumns}
             rows={fiscalRows}
-            rowKey={(row) => `${row.tax_warehouse_id}:${row.product_class}:${row.excise_product_key ?? ''}:${row.lot_id ?? ''}`}
+            rowKey={fiscalKey}
             labels={GRID_LABELS}
             widths={widths}
             onResize={(id, width) => setWidths((current) => ({ ...current, [id]: width }))}
@@ -487,7 +562,8 @@ export function StockPage({ me }: { me: Me }) {
             onSelectedChange={setPicked}
             onOpenRow={() => undefined}
             loading={fiscal.loading}
-            total={fiscal.total || fiscalRows.length}
+            total={fiscal.total ?? undefined}
+            filterLink={gridFilters}
             empty={
               <EmptyState
                 size="sm"
@@ -496,15 +572,14 @@ export function StockPage({ me }: { me: Me }) {
               />
             }
           />
-          {fiscal.cursor ? (
-            <div className={cn('flex h-10 shrink-0 items-center border-t border-border-subtle', FRAME_GUTTER)}>
-              <Button type="button" variant="ghost" size="sm" loading={fiscal.loadingMore} onClick={() => void fiscal.loadMore()}>
-                {copy.stock.loadMore}
-              </Button>
-            </div>
-          ) : null}
         </>
       )}
-      </ListFrame>
+      {before ? null : (
+        <Pagination
+          {...(materials ? materialPages.pagination : pages.pagination)}
+          detail={summary && visibleCount > 0 && wholeList ? summary : undefined}
+        />
+      )}
+    </ListFrame>
   )
 }

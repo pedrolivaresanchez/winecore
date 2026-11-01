@@ -131,6 +131,54 @@ describe('huecos regulatorios', () => {
       expect(third.body.next_cursor).toBeNull();
       const bad = await call(ctx.app, 'GET', '/v1/regulatory/submissions?cursor=no-es-cursor&limit=0', undefined, 'admin@winecore.test');
       expect(bad.status).toBe(422);
+      expect(first.body.total).toBe(3);
+      expect(third.body.total).toBe(3);
+
+      const original = ids[0] as string;
+      const rectifier = newId();
+      const approvals = [newId(), newId(), newId()];
+      await ctx.writer.withWrite({ type: 'system', id: 'silicie-test', requestId: newId() }, async (tx) => {
+        for (const [index, approval] of approvals.entries()) {
+          tx.write(sql`
+            INSERT INTO ops.approval_request (
+              id, kind, legal_entity_id, subject_table, subject_id, payload_sha256, summary, status, requested_by, expires_at
+            ) VALUES (
+              CAST(${approval} AS UUID), 'regulatory_submission', CAST(${po} AS UUID), 'regulatory.submission',
+              CAST(${[original, ids[1], rectifier][index]} AS UUID), ${hash}, ${'Envío sintético'}, 'approved',
+              'silicie-test', TIMESTAMPTZ ${'2027-12-31 00:00:00+00'}
+            )
+          `);
+        }
+        tx.write(sql`
+          UPDATE regulatory.submission SET status = 'accepted', approval_request_id = CAST(${approvals[0]} AS UUID)
+          WHERE id = CAST(${original} AS UUID)
+        `);
+        tx.write(sql`
+          UPDATE regulatory.submission SET status = 'submitting', approval_request_id = CAST(${approvals[1]} AS UUID)
+          WHERE id = CAST(${ids[1]} AS UUID)
+        `);
+        tx.write(sql`
+          INSERT INTO regulatory.submission (
+            id, flow, legal_entity_id, kind, status, payload, payload_sha256, validation_errors,
+            approval_request_id, rectifies_submission_id, created_by, created_at
+          ) VALUES (
+            CAST(${rectifier} AS UUID), 'silicie', CAST(${po} AS UUID), 'silicie.asientos', 'accepted',
+            ${sql.json({ tax_warehouse_id: warehouse })}, ${hash}, ${sql.json([])},
+            CAST(${approvals[2]} AS UUID), CAST(${original} AS UUID), 'silicie-test', TIMESTAMPTZ ${'2027-03-04 10:00:00+00'}
+          )
+        `);
+      });
+      const listed = async (status: string) => {
+        const page = await call(ctx.app, 'GET', `/v1/regulatory/submissions?status=${status}&limit=1`, undefined, 'admin@winecore.test');
+        expect(page.status).toBe(200);
+        return { ids: (page.body.items as { id: string }[]).map((item) => item.id), total: page.body.total };
+      };
+      expect(await listed('draft')).toEqual({ ids: [ids[2] as string], total: 1 });
+      expect(await listed('approved')).toEqual({ ids: [ids[1] as string], total: 1 });
+      expect(await listed('accepted')).toEqual({ ids: [rectifier], total: 2 });
+      expect(await listed('corrected')).toEqual({ ids: [original], total: 1 });
+      const unknown = await call(ctx.app, 'GET', '/v1/regulatory/submissions?status=perdido', undefined, 'admin@winecore.test');
+      expect(unknown.status).toBe(422);
     } finally {
       await ctx.close();
     }

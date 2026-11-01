@@ -1,4 +1,4 @@
-import { isValidElement, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { isValidElement, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Calendar, Filter, SortAsc, SortDesc, X } from './icons'
 import { Button } from './button'
 import { EntityChip } from './chip'
@@ -7,6 +7,7 @@ import { formatCivilRange } from './date-range'
 import { EmptyState } from './empty-state'
 import { FRAME_GUTTER, FRAME_STRIP_SCROLL } from './frame'
 import { MenuEmpty, MenuFoot, MenuItem, MenuScroll, MenuSearch, MenuSeparator } from './menu'
+import { EMPTY_GRID_FILTERS, type GridFilterLink } from './grid-filter-link'
 import { fillLabel, useUiLabels, type GridDatePreset, type GridToolLabels } from './ui-labels'
 import type { GridColumn, SortDir } from './data-grid'
 import { cn } from '../lib/cn'
@@ -141,7 +142,7 @@ const PRESETS: GridDatePreset[] = ['today', 'last7', 'last30', 'thisMonth', 'las
 
 function filterSummary(filter: ColumnFilter, labels: GridToolLabels): string {
   if (filter.kind === 'contains') return `«${filter.q}»`
-  if (filter.kind === 'date') return filter.preset ? labels.presets[filter.preset] : (formatCivilRange(filter.from, filter.to, 'es') ?? '')
+  if (filter.kind === 'date') return dateRangeSummary(filter, labels)
   const [first, ...rest] = filter.values.map((value) => (value === EMPTY_VALUE ? labels.empty : value))
   return rest.length > 0 ? `${first} +${rest.length}` : (first ?? '')
 }
@@ -370,6 +371,65 @@ export function useGridAuto<Row>({
   }
 }
 
+type GridAuto<Row> = ReturnType<typeof useGridAuto<Row>>
+
+/** Tells a `FilterBar` what the column menus have set, and hands it the menus to change it. */
+export function usePublishGridFilters<Row>(
+  link: GridFilterLink | null | undefined,
+  auto: GridAuto<Row>,
+  columns: GridColumn<Row>[],
+  enabled: boolean,
+) {
+  const labels = useUiLabels().grid
+  const revision = useRef({ texts: auto.texts, n: 0 })
+  if (revision.current.texts !== auto.texts) revision.current = { texts: auto.texts, n: revision.current.n + 1 }
+
+  useEffect(() => {
+    if (!link || !enabled) return
+    const filterable = (column: GridColumn<Row>) => {
+      const kind = auto.kinds.get(column.id) ?? 'none'
+      return column.filterable !== false && (kind === 'text' || kind === 'date')
+    }
+    link.publish(
+      {
+        active: columns
+          .filter((column) => auto.filters[column.id])
+          .map((column) => ({ id: column.id, label: column.header, summary: filterSummary(auto.filters[column.id]!, labels) })),
+        available: columns.filter(filterable).map((column) => ({ id: column.id, label: column.header })),
+        shown: auto.rows.length,
+        loaded: auto.loaded,
+        revision: revision.current.n,
+      },
+      {
+        remove: (id) => auto.setFilter(id, null),
+        clear: auto.clearFilters,
+        menu: (id, close) => {
+          const column = columns.find((item) => item.id === id)
+          if (!column) return null
+          return (
+            <AutoColumnMenu
+              column={column}
+              kind={auto.kinds.get(id) ?? 'none'}
+              texts={auto.texts.get(id) ?? []}
+              sort={auto.sort}
+              onSort={auto.applySort}
+              filter={auto.filters[id]}
+              onFilter={(filter) => auto.setFilter(id, filter)}
+              close={close}
+              filterOnly
+            />
+          )
+        },
+      },
+    )
+  })
+
+  useEffect(() => {
+    if (!link) return
+    return () => link.publish(EMPTY_GRID_FILTERS, null)
+  }, [link])
+}
+
 // ---------------------------------------------------------------------------
 // The column menu
 // ---------------------------------------------------------------------------
@@ -385,6 +445,7 @@ export function AutoColumnMenu<Row>({
   filter,
   onFilter,
   close,
+  filterOnly = false,
 }: {
   column: GridColumn<Row>
   kind: ColumnKind
@@ -394,15 +455,27 @@ export function AutoColumnMenu<Row>({
   filter: ColumnFilter | undefined
   onFilter: (filter: ColumnFilter | null) => void
   close: () => void
+  /** Opened from a filter chip rather than the header: the condition, not the order. */
+  filterOnly?: boolean
 }) {
   const labels = useUiLabels().grid
   const sorted = sort?.id === column.id ? sort.dir : null
-  const sortable = column.sortable !== false && kind !== 'none'
+  const sortable = !filterOnly && column.sortable !== false && kind !== 'none'
   const filterable = column.filterable !== false && (kind === 'text' || kind === 'date')
+
+  if (filterOnly && filterable && kind === 'date') {
+    return (
+      <DateRangeMenu
+        value={filter?.kind === 'date' ? filter : null}
+        onChange={(next) => onFilter(next ? { kind: 'date', ...next } : null)}
+        close={close}
+      />
+    )
+  }
 
   return (
     <>
-      {filterable && kind === 'text' ? <ValueFilter texts={texts} filter={filter} onFilter={onFilter} /> : null}
+      {filterable && kind === 'text' ? <ValueFilter texts={texts} filter={filter} onFilter={onFilter} separate={!filterOnly} /> : null}
       {!sortable ? null : (
         <>
           <MenuItem
@@ -447,10 +520,12 @@ function ValueFilter({
   texts,
   filter,
   onFilter,
+  separate,
 }: {
   texts: string[]
   filter: ColumnFilter | undefined
   onFilter: (filter: ColumnFilter | null) => void
+  separate: boolean
 }) {
   const labels = useUiLabels().grid
   const [q, setQ] = useState('')
@@ -510,7 +585,7 @@ function ValueFilter({
           {labels.clearFilter}
         </MenuItem>
       ) : null}
-      <MenuSeparator />
+      {separate ? <MenuSeparator /> : null}
     </>
   )
 }
@@ -524,24 +599,51 @@ function DateFilter({
   onFilter: (filter: ColumnFilter | null) => void
   close: () => void
 }) {
-  const labels = useUiLabels().grid
-  const range = filter?.kind === 'date' ? filter : null
-  const [custom, setCustom] = useState(Boolean(range && !range.preset))
-
   return (
     <>
       <MenuSeparator />
+      <DateRangeMenu
+        value={filter?.kind === 'date' ? filter : null}
+        onChange={(next) => onFilter(next ? { kind: 'date', ...next } : null)}
+        close={close}
+      />
+    </>
+  )
+}
+
+/** A day range picked from the presets, or drawn on a calendar. */
+export type DateRangeValue = { from: string; to: string; preset?: GridDatePreset }
+
+export function dateRangeSummary(value: DateRangeValue, labels: GridToolLabels): string {
+  return value.preset ? labels.presets[value.preset] : (formatCivilRange(value.from, value.to, 'es') ?? '')
+}
+
+/** The inside of a date filter: presets, «Rango personalizado» for the calendar, and the way out. */
+export function DateRangeMenu({
+  value,
+  onChange,
+  close,
+}: {
+  value: DateRangeValue | null
+  onChange: (next: DateRangeValue | null) => void
+  close: () => void
+}) {
+  const labels = useUiLabels().grid
+  const [custom, setCustom] = useState(Boolean(value && !value.preset))
+
+  return (
+    <>
       {custom ? (
         <DateRangeCalendar
-          from={range?.from ?? null}
-          to={range?.to ?? null}
+          from={value?.from ?? null}
+          to={value?.to ?? null}
           labels={{ clear: labels.clearFilter, today: labels.today }}
           onChange={(next, complete) => {
             if (!next.from) {
-              onFilter(null)
+              onChange(null)
               return
             }
-            onFilter({ kind: 'date', from: next.from, to: next.to ?? next.from })
+            onChange({ from: next.from, to: next.to ?? next.from })
             if (complete) close()
           }}
         />
@@ -551,9 +653,9 @@ function DateFilter({
             <MenuItem
               key={preset}
               radio
-              checked={range?.preset === preset}
+              checked={value?.preset === preset}
               onClick={() => {
-                onFilter({ kind: 'date', preset, ...presetRange(preset) })
+                onChange({ preset, ...presetRange(preset) })
                 close()
               }}
             >
@@ -565,11 +667,11 @@ function DateFilter({
           </MenuItem>
         </>
       )}
-      {range ? (
+      {value ? (
         <MenuItem
           icon={<X className="size-3.5" strokeWidth={iconStroke} />}
           onClick={() => {
-            onFilter(null)
+            onChange(null)
             close()
           }}
         >

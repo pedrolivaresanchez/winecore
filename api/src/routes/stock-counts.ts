@@ -17,7 +17,16 @@ export async function listInventoryCountsRoute(writer: Writer, request: Request)
   if (raw !== '' && !isUuid(raw)) {
     throw new DomainError('WC_VALIDATION', 422, 'Identificador de entidad no válido.', { legal_entity_id: 'UUID no válido' });
   }
-  return listInventoryCounts(writer, raw === '' ? null : raw.toLowerCase(), parseLimit(url.searchParams.get('limit'), 50, 200));
+  const cursor = url.searchParams.get('cursor')?.trim() ?? '';
+  if (cursor !== '' && !isUuid(cursor)) {
+    throw new DomainError('WC_VALIDATION', 422, 'Cursor no válido.', { cursor: 'Cursor no válido' });
+  }
+  return listInventoryCounts(
+    writer,
+    raw === '' ? null : raw.toLowerCase(),
+    parseLimit(url.searchParams.get('limit'), 50, 200),
+    cursor === '' ? null : cursor.toLowerCase(),
+  );
 }
 
 export async function getInventoryCountRoute(writer: Writer, id: string) {

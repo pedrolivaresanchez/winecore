@@ -57,6 +57,15 @@ function ObjectSwitch({ current }: { current: CatalogObject }) {
   )
 }
 
+/** The object switcher for a phone, where the header that holds it is hidden. Goes in a `FilterBar`'s `leading`. */
+export function MobileObjectSwitch({ current }: { current: CatalogObject }) {
+  return (
+    <div className="shrink-0 md:hidden">
+      <ObjectSwitch current={current} />
+    </div>
+  )
+}
+
 export function ListFrame({
   screen,
   object,
@@ -64,6 +73,7 @@ export function ListFrame({
   mobileActions,
   toolbar,
   filters,
+  bar,
   children,
 }: {
   screen: string
@@ -72,6 +82,8 @@ export function ListFrame({
   mobileActions?: ReactNode
   toolbar?: ReactNode
   filters?: ReactNode
+  /** A `FilterBar` in place of the toolbar and filter rows; it carries `MobileObjectSwitch` itself. */
+  bar?: ReactNode
   children: ReactNode
 }) {
   const label = OBJECTS.find((item) => item.id === object)?.label ?? copy.catalog.title
@@ -83,6 +95,25 @@ export function ListFrame({
         <ObjectSwitch current={object} />
         {actions ? <div className="ml-auto flex shrink-0 items-center gap-1.5">{actions}</div> : null}
       </header>
+      {bar ?? <ToolbarRows object={object} toolbar={toolbar} filters={filters} mobileActions={mobileActions} />}
+      {children}
+    </div>
+  )
+}
+
+function ToolbarRows({
+  object,
+  toolbar,
+  filters,
+  mobileActions,
+}: {
+  object: CatalogObject
+  toolbar?: ReactNode
+  filters?: ReactNode
+  mobileActions?: ReactNode
+}) {
+  return (
+    <>
       <div className={cn('flex h-11 shrink-0 items-center gap-1.5 border-b border-border-subtle', FRAME_GUTTER)}>
         <div className="shrink-0 md:hidden">
           <ObjectSwitch current={object} />
@@ -95,8 +126,7 @@ export function ListFrame({
           <div className={cn(FRAME_STRIP_SCROLL, '[&>*]:shrink-0')}>{filters}</div>
         </div>
       ) : null}
-      {children}
-    </div>
+    </>
   )
 }
 

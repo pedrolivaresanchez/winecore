@@ -282,6 +282,50 @@ describe('aforos', () => {
     }
   });
 
+  it('pagina los aforos por el cursor sin repetir ni saltarse ninguno', async () => {
+    const ctx = await createTestApp();
+    try {
+      const cellar = await seedCellar(ctx.client);
+      const created: string[] = [];
+      for (const day of ['01', '02', '03']) {
+        const count = await jsonOf<CountBody>(await ctx.app.handle(call('POST', '/v1/inventory-counts', {
+          legal_entity_id: cellar.po,
+          kind: 'spot',
+          counted_at: `2027-06-${day}T10:00:00+02:00`,
+          location_ids: [cellar.bod],
+        })));
+        created.push(count.id);
+      }
+      type Listed = { items: { id: string; counted_at: string }[]; next_cursor: string | null; total: number };
+      const seen: Listed['items'] = [];
+      let cursor: string | null = null;
+      let total = 0;
+      for (let page = 0; page < 20; page += 1) {
+        const query: string = cursor ? `&cursor=${cursor}` : '';
+        const listed: Listed = await jsonOf<Listed>(
+          await ctx.app.handle(call('GET', `/v1/inventory-counts?legal_entity_id=${cellar.po}&limit=2${query}`)),
+        );
+        expect(listed.items.length).toBeLessThanOrEqual(2);
+        seen.push(...listed.items);
+        total = listed.total;
+        cursor = listed.next_cursor;
+        if (!cursor) break;
+      }
+      expect(cursor).toBeNull();
+      expect(seen.length).toBe(total);
+      expect(new Set(seen.map((item) => item.id)).size).toBe(total);
+      const order = seen.map((item) => item.id).filter((id) => created.includes(id));
+      expect(order).toEqual([...created].reverse());
+      const times = seen.map((item) => Date.parse(item.counted_at));
+      expect(times).toEqual([...times].sort((a, b) => b - a));
+
+      const bad = await ctx.app.handle(call('GET', '/v1/inventory-counts?cursor=no-es-un-cursor'));
+      expect(bad.status).toBe(422);
+    } finally {
+      await ctx.close();
+    }
+  });
+
   it('rechaza un envasado cuyo volumen no es unidades por formato', async () => {
     const ctx = await createTestApp();
     try {

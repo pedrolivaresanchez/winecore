@@ -192,10 +192,12 @@ async function failed(response: Response): Promise<ApiError> {
   }
 }
 
-export function submissionsPath(entityId?: string): string {
-  const params = new URLSearchParams({ limit: '50' })
+export function submissionsPath(entityId?: string, status?: string): string {
+  const params = new URLSearchParams()
   if (entityId) params.set('entity', entityId)
-  return `/v1/regulatory/submissions?${params.toString()}`
+  if (status) params.set('status', status)
+  const query = params.toString()
+  return query ? `/v1/regulatory/submissions?${query}` : '/v1/regulatory/submissions'
 }
 
 export function obligationsPath(input: { entityId?: string; flow?: string; from: string; to: string }): string {

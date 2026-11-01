@@ -4,37 +4,46 @@ import { useEntity } from '@/app/entity-context'
 import { useChromeTitle } from '@/app/shell/shell-context'
 import { ErrorState } from '@/components/ErrorState'
 import { NoPermission } from '@/components/NoPermission'
-import { FRAME_GUTTER, FRAME_STRIP_SCROLL } from '@/ui/frame'
-import { Search, Users } from '@/ui/icons'
+import { FRAME_GUTTER } from '@/ui/frame'
+import { Archive, DownloadSimple, Undo2, Users } from '@/ui/icons'
 import {
   Button,
-  Chip,
   DataGrid,
   EmptyState,
+  FilterBar,
   GlassMenu,
-  Input,
   MenuChip,
   MenuItem,
-  Select,
+  Pagination,
+  StatusPill,
+  useCursorPages,
+  useGridFilterLink,
   useMenuOpen,
   useToast,
+  type FilterDef,
+  type FilterValue,
   type GridColumn,
+  type SelectionAction,
 } from '@/ui'
-import { copy } from '@/i18n'
-import { ApiError, isAbortError } from '@/lib/api'
+import { copy, fill } from '@/i18n'
+import { ApiError } from '@/lib/api'
 import {
   COUNTRIES,
+  archiveContact,
   countryLabel,
   exportContacts,
   listContacts,
   roleLabels,
+  unarchiveContact,
   type ContactKind,
   type ContactQuery,
   type ContactRole,
   type ContactSummary,
 } from '@/lib/contacts'
+import { downloadCsv } from '@/lib/csv'
 import { formatDate } from '@/lib/format'
 import { allows } from '@/lib/permissions'
+import { contactRoleTone } from '@/lib/status-tones'
 import { readStorage, writeStorage } from '@/lib/storage'
 import { iconStroke } from '@/lib/motion'
 import { cn } from '@/lib/cn'
@@ -82,24 +91,56 @@ function readHidden(): Set<ColumnId> {
   }
 }
 
-const KIND_PILLS: { id: '' | ContactKind; label: string }[] = [
-  { id: '', label: 'Todos' },
-  { id: 'company', label: 'Empresas' },
-  { id: 'person', label: 'Personas' },
+const text = copy.lists.contacts
+
+const ROLES: { id: ContactRole; label: string }[] = [
+  { id: 'customer', label: text.roles.customer },
+  { id: 'supplier', label: text.roles.supplier },
+  { id: 'carrier', label: text.roles.carrier },
+  { id: 'logistics_operator', label: text.roles.logistics_operator },
 ]
 
-const ROLE_PILLS: { id: ContactRole; label: string }[] = [
-  { id: 'customer', label: 'Clientes' },
-  { id: 'supplier', label: 'Proveedores' },
-  { id: 'carrier', label: 'Transportistas' },
-  { id: 'logistics_operator', label: 'Operadores logísticos' },
+const FILTERS: FilterDef[] = [
+  {
+    id: 'kind',
+    label: text.kind,
+    kind: 'single',
+    display: 'chips',
+    options: [
+      { value: 'company', label: text.companies },
+      { value: 'person', label: text.people },
+    ],
+  },
+  {
+    id: 'role',
+    label: text.role,
+    kind: 'single',
+    options: ROLES.map((role) => ({ value: role.id, label: role.label, tone: contactRoleTone(role.id) })),
+  },
+  {
+    id: 'country',
+    label: text.country,
+    kind: 'single',
+    options: COUNTRIES.map((item) => ({ value: item.code, label: item.label })),
+  },
+  { id: 'archived', label: copy.contacts.archived, kind: 'toggle' },
 ]
+
+function roleIds(row: ContactSummary): ContactRole[] {
+  const ids: ContactRole[] = []
+  if (row.is_customer) ids.push('customer')
+  if (row.is_supplier) ids.push('supplier')
+  if (row.is_carrier) ids.push('carrier')
+  if (row.is_logistics_operator) ids.push('logistics_operator')
+  return ids
+}
 
 export function ContactList({ me, creating = false }: { me: Me; creating?: boolean }) {
   useChromeTitle(copy.contacts.title)
   const navigate = useNavigate()
   const toast = useToast()
   const columnsMenu = useMenuOpen()
+  const gridFilters = useGridFilterLink()
   const [params, setParams] = useSearchParams()
   const { filter } = useEntity()
   const entity = filter === 'PO' || filter === 'CVPO' ? filter : ''
@@ -110,18 +151,11 @@ export function ContactList({ me, creating = false }: { me: Me; creating?: boole
   const archived = params.get('archived') === 'true'
   const [q, setQ] = useState(params.get('q') ?? '')
   const [debounced, setDebounced] = useState(q)
-  const [items, setItems] = useState<ContactSummary[]>([])
-  const [total, setTotal] = useState(0)
-  const [cursor, setCursor] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [loadingMore, setLoadingMore] = useState(false)
-  const [error, setError] = useState<ApiError | null>(null)
-  const [attempt, setAttempt] = useState(0)
   const [selected, setSelected] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [hidden, setHidden] = useState(readHidden)
-  const [widths, setWidths] = useState<Record<string, number>>({ legal_name: 280, tax_id: 140, roles: 200 })
+  const [widths, setWidths] = useState<Record<string, number>>({ legal_name: 280, tax_id: 140, roles: 220 })
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebounced(q.trim()), 300)
@@ -129,54 +163,36 @@ export function ContactList({ me, creating = false }: { me: Me; creating?: boole
   }, [q])
 
   const query = useMemo<ContactQuery>(
-    () => ({ q: debounced, kind, role, country, entity, archived, limit: 50 }),
+    () => ({ q: debounced, kind, role, country, entity, archived }),
     [archived, country, debounced, entity, kind, role],
   )
 
-  useEffect(() => {
-    const controller = new AbortController()
-    let active = true
-    listContacts(query, controller.signal)
-      .then((page) => {
-        if (!active) return
-        setItems(page.items)
-        setTotal(page.total)
-        setCursor(page.next_cursor)
-        setError(null)
-        setLoading(false)
-      })
-      .catch((err: unknown) => {
-        if (!active || isAbortError(err)) return
-        setError(err instanceof ApiError ? err : new ApiError(0, 'WC_ERROR', copy.error.load))
-        setLoading(false)
-      })
-    return () => {
-      active = false
-      controller.abort()
-    }
-  }, [query, attempt])
+  const pages = useCursorPages<ContactSummary>({
+    queryKey: JSON.stringify(query),
+    storageKey: 'contacts',
+    fetchPage: ({ cursor, limit, signal }) => listContacts({ ...query, cursor: cursor ?? undefined, limit }, signal),
+  })
+  const items = pages.items
+  const loading = pages.loading && items.length === 0
+  const error = pages.error ? (pages.error instanceof ApiError ? pages.error : new ApiError(0, 'WC_ERROR', copy.error.load)) : null
 
-  function setFilter(key: string, value: string) {
+  useEffect(() => {
+    setPicked(new Set())
+  }, [pages.pageKey])
+
+  function setFilter(key: string, value: FilterValue) {
     const next = new URLSearchParams(params)
-    if (value) next.set(key, value)
+    if (value === true) next.set(key, 'true')
+    else if (typeof value === 'string' && value) next.set(key, value)
     else next.delete(key)
     setParams(next)
-    setLoading(true)
   }
 
-  async function loadMore() {
-    if (!cursor) return
-    setLoadingMore(true)
-    try {
-      const page = await listContacts({ ...query, cursor })
-      setItems((current) => [...current, ...page.items])
-      setCursor(page.next_cursor)
-      setTotal(page.total)
-    } catch (err: unknown) {
-      setError(err instanceof ApiError ? err : new ApiError(0, 'WC_ERROR', copy.error.load))
-    } finally {
-      setLoadingMore(false)
-    }
+  function clearFilters() {
+    const next = new URLSearchParams(params)
+    for (const key of ['kind', 'role', 'country', 'archived', 'q']) next.delete(key)
+    setParams(next)
+    setQ('')
   }
 
   function toggleColumn(id: ColumnId) {
@@ -192,17 +208,90 @@ export function ContactList({ me, creating = false }: { me: Me; creating?: boole
 
   const columns = useMemo<GridColumn<ContactSummary>[]>(() => {
     const all: GridColumn<ContactSummary>[] = [
-      { id: 'legal_name', header: 'Nombre fiscal', cell: (row) => row.legal_name },
-      { id: 'trade_name', header: 'Nombre comercial', cell: (row) => row.trade_name || '—' },
-      { id: 'tax_id', header: 'NIF', cell: (row) => row.tax_id || '—' },
-      { id: 'country', header: 'País', cell: (row) => countryLabel(row.country_code) },
-      { id: 'city', header: 'Población', cell: (row) => row.city || '—' },
-      { id: 'email', header: 'Correo', cell: (row) => row.email || '—' },
-      { id: 'roles', header: 'Papel', cell: (row) => roleLabels(row).join(' · ') || '—' },
-      { id: 'updated', header: 'Actualizado', cell: (row) => formatDate(row.updated_at) },
+      { id: 'legal_name', header: COLUMN_LABELS.legal_name, cell: (row) => row.legal_name },
+      { id: 'trade_name', header: COLUMN_LABELS.trade_name, cell: (row) => row.trade_name || '—' },
+      { id: 'tax_id', header: COLUMN_LABELS.tax_id, cell: (row) => row.tax_id || '—' },
+      { id: 'country', header: COLUMN_LABELS.country, cell: (row) => countryLabel(row.country_code) },
+      { id: 'city', header: COLUMN_LABELS.city, cell: (row) => row.city || '—' },
+      { id: 'email', header: COLUMN_LABELS.email, cell: (row) => row.email || '—' },
+      {
+        id: 'roles',
+        header: COLUMN_LABELS.roles,
+        filterValue: (row) => roleLabels(row).join(' · '),
+        cell: (row) => {
+          const ids = roleIds(row)
+          if (ids.length === 0) return '—'
+          return (
+            <span className="flex items-center gap-1">
+              {ids.map((id) => (
+                <StatusPill key={id} tone={contactRoleTone(id)}>
+                  {ROLES.find((item) => item.id === id)?.label}
+                </StatusPill>
+              ))}
+            </span>
+          )
+        },
+      },
+      { id: 'updated', header: COLUMN_LABELS.updated, cell: (row) => formatDate(row.updated_at) },
     ]
     return all.filter((column) => !hidden.has(column.id as ColumnId))
   }, [hidden])
+
+  const chosen = items.filter((item) => picked.has(item.id))
+
+  async function setArchived(next: boolean) {
+    const ids = chosen.map((item) => item.id)
+    const results = await Promise.allSettled(ids.map((id) => (next ? archiveContact(id) : unarchiveContact(id))))
+    const done = results.filter((result) => result.status === 'fulfilled').length
+    if (done === ids.length) toast(fill(next ? text.archivedDone : text.unarchivedDone, { n: String(done) }))
+    else toast(fill(copy.lists.bulk.partial, { done: String(done), n: String(ids.length) }))
+    setPicked(new Set())
+    pages.reload()
+  }
+
+  function exportSelection() {
+    downloadCsv(
+      'contactos-seleccion.csv',
+      COLUMN_IDS.map((id) => COLUMN_LABELS[id]),
+      chosen.map((row) => [
+        row.legal_name,
+        row.trade_name,
+        row.tax_id,
+        countryLabel(row.country_code),
+        row.city,
+        row.email,
+        roleLabels(row).join(' · '),
+        formatDate(row.updated_at),
+      ]),
+    )
+    toast(fill(copy.lists.bulk.exported, { n: String(chosen.length) }))
+  }
+
+  const actions: SelectionAction[] = [
+    ...(canWrite
+      ? [
+          archived
+            ? {
+                id: 'unarchive',
+                label: copy.lists.bulk.unarchive,
+                icon: Undo2,
+                onRun: () => setArchived(false),
+              }
+            : {
+                id: 'archive',
+                label: copy.lists.bulk.archive,
+                icon: Archive,
+                confirm: {
+                  title: fill(text.archiveTitle, { n: String(chosen.length) }),
+                  body: text.archiveBody,
+                  confirmLabel: copy.lists.bulk.archive,
+                },
+                onRun: () => setArchived(true),
+              },
+        ]
+      : []),
+    { id: 'export', label: copy.lists.bulk.exportCsv, icon: DownloadSimple, onRun: exportSelection },
+  ]
 
   const selectedIndex = items.findIndex((item) => item.id === selected)
   const filtersActive = Boolean(debounced || kind || role || country || archived)
@@ -235,98 +324,57 @@ export function ContactList({ me, creating = false }: { me: Me; creating?: boole
         </div>
       </header>
 
-      <div className={cn('flex h-11 shrink-0 items-center gap-1.5 border-b border-border-subtle', FRAME_GUTTER)}>
-        <div className={FRAME_STRIP_SCROLL}>
-          <Input
-            id="buscar-contactos"
-            size="sm"
-            type="search"
-            value={q}
-            placeholder={copy.contacts.search}
-            aria-label={copy.contacts.search}
-            className="w-56 shrink-0"
-            prefix={<Search className="size-3.5" strokeWidth={iconStroke} />}
-            onChange={(event) => setQ(event.target.value)}
-          />
-          <GlassMenu
-            open={columnsMenu.open}
-            onOpenChange={columnsMenu.setOpen}
-            placement="bottom-start"
-            panelClassName="min-w-[200px]"
-            trigger={
-              <MenuChip active={columnsMenu.open} onClick={columnsMenu.toggle} title={copy.contacts.columns}>
-                {copy.contacts.columns}
-              </MenuChip>
-            }
-          >
-            {COLUMN_IDS.map((id) => (
-              <MenuItem
-                key={id}
-                checked={!hidden.has(id)}
-                disabled={id === 'legal_name'}
-                onClick={() => toggleColumn(id)}
-              >
-                {COLUMN_LABELS[id]}
-              </MenuItem>
-            ))}
-          </GlassMenu>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5 md:hidden">
-          {canWrite ? (
-            <Button type="button" variant="primary" size="sm" onClick={() => setCreateOpen(true)}>
-              {copy.contacts.new}
-            </Button>
-          ) : null}
-        </div>
-      </div>
-
-      <div className={cn('flex h-10 shrink-0 items-center gap-1.5 border-b border-border-subtle bg-surface-subtle', FRAME_GUTTER)}>
-        <div className={cn(FRAME_STRIP_SCROLL, '[&>*]:shrink-0')}>
-          {KIND_PILLS.map((pill) => (
-            <Chip key={pill.label} pressed={kind === pill.id} active={kind === pill.id} onClick={() => setFilter('kind', pill.id)}>
-              {pill.label}
-            </Chip>
-          ))}
-          {ROLE_PILLS.map((pill) => (
-            <Chip
-              key={pill.id}
-              pressed={role === pill.id}
-              active={role === pill.id}
-              onClick={() => setFilter('role', role === pill.id ? '' : pill.id)}
+      <FilterBar
+        search={{ id: 'buscar-contactos', value: q, onChange: setQ, placeholder: copy.contacts.search }}
+        filters={FILTERS}
+        values={{ kind, role, country, archived }}
+        onChange={setFilter}
+        onClear={clearFilters}
+        grid={gridFilters}
+        selection={{
+          count: picked.size,
+          pageCount: items.length,
+          onSelectAll: () => setPicked(new Set(items.map((item) => item.id))),
+          onClear: () => setPicked(new Set()),
+          actions,
+        }}
+        trailing={
+          <>
+            <GlassMenu
+              open={columnsMenu.open}
+              onOpenChange={columnsMenu.setOpen}
+              placement="bottom-end"
+              className="max-md:hidden"
+              panelClassName="min-w-[200px]"
+              trigger={
+                <MenuChip active={columnsMenu.open} onClick={columnsMenu.toggle} title={copy.contacts.columns}>
+                  {copy.contacts.columns}
+                </MenuChip>
+              }
             >
-              {pill.label}
-            </Chip>
-          ))}
-          <Select
-            id="filtro-pais"
-            size="sm"
-            aria-label="País"
-            value={country}
-            onChange={(event) => setFilter('country', event.target.value)}
-          >
-            <option value="">País</option>
-            {COUNTRIES.map((item) => (
-              <option key={item.code} value={item.code}>
-                {item.label}
-              </option>
-            ))}
-          </Select>
-          <Chip pressed={archived} active={archived} onClick={() => setFilter('archived', archived ? '' : 'true')}>
-            {copy.contacts.archived}
-          </Chip>
-        </div>
-      </div>
+              {COLUMN_IDS.map((id) => (
+                <MenuItem
+                  key={id}
+                  checked={!hidden.has(id)}
+                  disabled={id === 'legal_name'}
+                  onClick={() => toggleColumn(id)}
+                >
+                  {COLUMN_LABELS[id]}
+                </MenuItem>
+              ))}
+            </GlassMenu>
+            {canWrite ? (
+              <Button type="button" variant="primary" size="sm" className="md:hidden" onClick={() => navigate('/contactos/nuevo')}>
+                {copy.contacts.new}
+              </Button>
+            ) : null}
+          </>
+        }
+      />
 
       {error && items.length === 0 ? (
         <div className="p-4">
-          <ErrorState
-            title={`${copy.error.load} (${error.code})`}
-            detail={error.message}
-            onRetry={() => {
-              setLoading(true)
-              setAttempt((value) => value + 1)
-            }}
-          />
+          <ErrorState title={`${copy.error.load} (${error.code})`} detail={error.message} onRetry={pages.reload} />
         </div>
       ) : (
         <DataGrid
@@ -341,8 +389,9 @@ export function ContactList({ me, creating = false }: { me: Me; creating?: boole
           onOpenRow={(row) => setSelected(row.id)}
           rowHref={(row) => `/contactos/${row.id}`}
           openRowKey={selected}
-          total={total}
-          loading={loading}
+          total={pages.total ?? undefined}
+          loading={pages.loading}
+          filterLink={gridFilters}
           empty={
             <EmptyState
               size="sm"
@@ -360,13 +409,7 @@ export function ContactList({ me, creating = false }: { me: Me; creating?: boole
         />
       )}
 
-      {cursor ? (
-        <div className={cn('flex h-10 shrink-0 items-center border-t border-border-subtle', FRAME_GUTTER)}>
-          <Button type="button" variant="ghost" size="sm" loading={loadingMore} onClick={() => void loadMore()}>
-            {copy.table.loadMore}
-          </Button>
-        </div>
-      ) : null}
+      <Pagination {...pages.pagination} />
 
       <ContactPreview
         id={selected}
@@ -385,7 +428,7 @@ export function ContactList({ me, creating = false }: { me: Me; creating?: boole
         }}
         onCreated={(id) => {
           setCreateOpen(false)
-          setAttempt((value) => value + 1)
+          pages.reload()
           setSelected(id)
           if (creating) navigate('/contactos', { replace: true })
         }}

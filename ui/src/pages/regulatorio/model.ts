@@ -3,6 +3,7 @@ import { ApiError } from '@/lib/api'
 import { formatDate, formatLitres } from '@/lib/format'
 import { entityName } from '@/lib/labels'
 import { allows } from '@/lib/permissions'
+import { statusTone, type StatusTone } from '@/lib/status-tones'
 import type { BadgeTone } from '@/ui'
 import type { Me } from '@/lib/types'
 import type { Submission } from '@/pages/regulatorio/api'
@@ -189,28 +190,28 @@ export function classLabel(value: string): string {
   return classes[value] ?? value
 }
 
-export function statusMeta(status: string, phase: string): { label: string; tone: BadgeTone } {
-  if (phase === 'corrected' || status === 'rectified') return { label: copy.regulatorio.statuses.corrected, tone: 'info' }
+export function statusMeta(status: string, phase: string): { label: string; tone: StatusTone } {
+  if (phase === 'corrected' || status === 'rectified') return { label: copy.regulatorio.statuses.corrected, tone: statusTone('corrected') }
   switch (status) {
     case 'draft':
-      return { label: copy.regulatorio.statuses.draft, tone: 'neutral' }
+      return { label: copy.regulatorio.statuses.draft, tone: statusTone(status) }
     case 'validated':
-      return { label: copy.regulatorio.statuses.validated, tone: 'info' }
+      return { label: copy.regulatorio.statuses.validated, tone: statusTone(status) }
     case 'pending_approval':
-      return { label: copy.regulatorio.statuses.pending_approval, tone: 'warning' }
+      return { label: copy.regulatorio.statuses.pending_approval, tone: statusTone(status) }
     case 'approved':
     case 'submitting':
-      return { label: copy.regulatorio.statuses.approved, tone: 'success' }
+      return { label: copy.regulatorio.statuses.approved, tone: statusTone('approved') }
     case 'submitted':
-      return { label: copy.regulatorio.statuses.submitted, tone: 'info' }
+      return { label: copy.regulatorio.statuses.submitted, tone: statusTone(status) }
     case 'accepted':
-      return { label: copy.regulatorio.statuses.accepted, tone: 'success' }
+      return { label: copy.regulatorio.statuses.accepted, tone: statusTone(status) }
     case 'accepted_with_errors':
-      return { label: copy.regulatorio.statuses.accepted_with_errors, tone: 'warning' }
+      return { label: copy.regulatorio.statuses.accepted_with_errors, tone: statusTone(status) }
     case 'rejected':
-      return { label: copy.regulatorio.statuses.rejected, tone: 'danger' }
+      return { label: copy.regulatorio.statuses.rejected, tone: statusTone(status) }
     case 'cancelled':
-      return { label: copy.regulatorio.statuses.cancelled, tone: 'neutral' }
+      return { label: copy.regulatorio.statuses.cancelled, tone: statusTone(status) }
     default:
       return { label: status, tone: 'neutral' }
   }
@@ -268,13 +269,6 @@ export function validRef(value: string): boolean {
 
 export function validAdvisorRef(value: string): boolean {
   return ADVISOR.test(value.trim())
-}
-
-export function matchesStatus(item: Pick<Submission, 'status' | 'phase'>, filter: string): boolean {
-  if (!filter) return true
-  if (filter === 'corrected') return item.phase === 'corrected' || item.status === 'rectified'
-  if (filter === 'approved') return item.status === 'approved' || item.status === 'submitting'
-  return item.status === filter
 }
 
 export const STATUS_FILTERS = [

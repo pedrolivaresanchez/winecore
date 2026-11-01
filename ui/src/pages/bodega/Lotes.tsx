@@ -1,56 +1,108 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useChromeTitle } from '@/app/shell/shell-context'
 import { ErrorState } from '@/components/ErrorState'
 import { NoPermission } from '@/components/NoPermission'
-import { copy } from '@/i18n'
-import { api, ApiError, isAbortError } from '@/lib/api'
+import { copy, fill } from '@/i18n'
+import { api, ApiError } from '@/lib/api'
 import { listLots, type LotListItem } from '@/lib/cellar'
+import { downloadCsv } from '@/lib/csv'
 import { formatLitres } from '@/lib/format'
 import { allows } from '@/lib/permissions'
 import { iconStroke } from '@/lib/motion'
 import { cn } from '@/lib/cn'
+import { statusTone, type StatusTone } from '@/lib/status-tones'
 import type { Me } from '@/lib/types'
-import { FRAME_GUTTER, FRAME_STRIP_SCROLL } from '@/ui/frame'
-import { Layers, Search } from '@/ui/icons'
-import { Badge, Button, Chip, DataGrid, EmptyState, Input, type GridColumn } from '@/ui'
+import { FRAME_GUTTER } from '@/ui/frame'
+import { DownloadSimple, Layers } from '@/ui/icons'
+import {
+  DataGrid,
+  EmptyState,
+  FilterBar,
+  Pagination,
+  StatusPill,
+  useCursorPages,
+  useGridFilterLink,
+  useToast,
+  type FilterDef,
+  type FilterValue,
+  type GridColumn,
+  type SelectionAction,
+} from '@/ui'
 import { GRID_LABELS, lotKindLabel, lotStatusLabel } from '@/pages/bodega/labels'
 
 type Wine = { id: string; name: string }
 
-const KINDS = [
-  { id: '', label: 'Todos' },
-  { id: 'grape', label: 'Uva' },
-  { id: 'must', label: 'Mosto' },
-  { id: 'wine', label: 'Vino' },
-  { id: 'bottled', label: 'Envasado' },
-] as const
+const KINDS = ['grape', 'must', 'wine', 'bottled'] as const
+const STATUSES = ['active', 'depleted', 'closed'] as const
+
+/** Same hue per stage as the states in Existencias: uva morada, mosto ámbar, vino azul, envasado verde. */
+const KIND_TONE: Record<string, StatusTone> = {
+  grape: 'purple',
+  must: 'warning',
+  wine: 'info',
+  bottled: 'success',
+}
+
+function kindTone(kind: string): StatusTone {
+  return KIND_TONE[kind] ?? 'neutral'
+}
+
+const FILTERS: FilterDef[] = [
+  {
+    id: 'kind',
+    label: copy.lists.lots.kind,
+    kind: 'single',
+    display: 'chips',
+    options: KINDS.map((kind) => ({ value: kind, label: lotKindLabel(kind), tone: kindTone(kind) })),
+  },
+  {
+    id: 'status',
+    label: copy.lists.lots.status,
+    kind: 'single',
+    display: 'menu',
+    options: STATUSES.map((status) => ({ value: status, label: lotStatusLabel(status), tone: statusTone(status) })),
+  },
+  { id: 'organic', label: copy.cellar.organic, kind: 'toggle' },
+]
+
+const COLUMN_LABELS = {
+  code: 'Código',
+  kind: 'Tipo',
+  wine: 'Vino',
+  vintage: 'Añada',
+  status: 'Estado',
+  volume: 'Volumen',
+  place: 'Ubicación',
+}
+
+function volumeText(row: LotListItem): string {
+  return row.qty_units > 0 && row.volume_ml === 0 ? `${row.qty_units} ud` : formatLitres(row.volume_ml / 1000)
+}
 
 export function LotesPage({ me }: { me: Me }) {
   useChromeTitle(copy.cellar.lots)
   const navigate = useNavigate()
+  const toast = useToast()
+  const gridFilters = useGridFilterLink()
+  const [params, setParams] = useSearchParams()
+  const kind = params.get('kind') ?? ''
+  const status = params.get('status') ?? ''
+  const organic = params.get('organic') === '1'
   const [q, setQ] = useState('')
   const [debounced, setDebounced] = useState('')
-  const [kind, setKind] = useState('')
-  const [organic, setOrganic] = useState(false)
-  const [items, setItems] = useState<LotListItem[]>([])
   const [wines, setWines] = useState<Map<string, string>>(new Map())
-  const [total, setTotal] = useState(0)
-  const [cursor, setCursor] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [loadingMore, setLoadingMore] = useState(false)
-  const [error, setError] = useState<ApiError | null>(null)
-  const [attempt, setAttempt] = useState(0)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [widths, setWidths] = useState<Record<string, number>>({
     code: 176,
-    kind: 96,
+    kind: 108,
     wine: 188,
     vintage: 84,
     status: 112,
     volume: 136,
     place: 120,
   })
+  const canRead = allows(me, 'cellar.read')
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebounced(q.trim()), 300)
@@ -58,7 +110,7 @@ export function LotesPage({ me }: { me: Me }) {
   }, [q])
 
   useEffect(() => {
-    if (!allows(me, 'cellar.read')) return
+    if (!canRead) return
     const controller = new AbortController()
     api<{ items?: Wine[] }>('/v1/wines?limit=100', { signal: controller.signal })
       .then((body) => {
@@ -66,80 +118,94 @@ export function LotesPage({ me }: { me: Me }) {
       })
       .catch(() => undefined)
     return () => controller.abort()
-  }, [me])
+  }, [canRead])
+
+  const query = useMemo(() => ({ q: debounced, kind, status, organic }), [debounced, kind, organic, status])
+  const pages = useCursorPages<LotListItem>({
+    queryKey: JSON.stringify(query),
+    storageKey: 'cellar-lots',
+    enabled: canRead,
+    fetchPage: ({ cursor, limit, signal }) => listLots({ ...query, cursor: cursor ?? undefined, limit }, signal),
+  })
+  const rows = pages.items
+  const error = pages.error
+    ? pages.error instanceof ApiError
+      ? pages.error
+      : new ApiError(0, 'WC_ERROR', copy.error.load)
+    : null
 
   useEffect(() => {
-    if (!allows(me, 'cellar.read')) return
-    const controller = new AbortController()
-    let active = true
-    setLoading(true)
-    listLots({ q: debounced, kind, limit: 50 }, controller.signal)
-      .then((page) => {
-        if (!active) return
-        setItems(page.items)
-        setTotal(page.total)
-        setCursor(page.next_cursor)
-        setError(null)
-        setLoading(false)
-      })
-      .catch((err: unknown) => {
-        if (!active || isAbortError(err)) return
-        setError(err instanceof ApiError ? err : new ApiError(0, 'WC_ERROR', copy.error.load))
-        setLoading(false)
-      })
-    return () => {
-      active = false
-      controller.abort()
-    }
-  }, [debounced, kind, me, attempt])
-
-  const rows = useMemo(() => (organic ? items.filter((item) => item.is_organic) : items), [items, organic])
-  const filtersActive = Boolean(debounced || kind || organic)
+    setPicked(new Set())
+  }, [pages.pageKey])
 
   const columns = useMemo<GridColumn<LotListItem>[]>(
     () => [
-      { id: 'code', header: 'Código', cell: (row) => row.code },
-      { id: 'kind', header: 'Tipo', cell: (row) => lotKindLabel(row.kind) },
-      { id: 'wine', header: 'Vino', cell: (row) => (row.wine_id ? wines.get(row.wine_id) : null) || '—' },
-      { id: 'vintage', header: 'Añada', cell: (row) => (row.vintage ? String(row.vintage) : '—') },
+      { id: 'code', header: COLUMN_LABELS.code, cell: (row) => row.code },
+      {
+        id: 'kind',
+        header: COLUMN_LABELS.kind,
+        filterValue: (row) => lotKindLabel(row.kind),
+        cell: (row) => <StatusPill tone={kindTone(row.kind)}>{lotKindLabel(row.kind)}</StatusPill>,
+      },
+      { id: 'wine', header: COLUMN_LABELS.wine, cell: (row) => (row.wine_id ? wines.get(row.wine_id) : null) || '—' },
+      { id: 'vintage', header: COLUMN_LABELS.vintage, cell: (row) => (row.vintage ? String(row.vintage) : '—') },
       {
         id: 'status',
-        header: 'Estado',
-        cell: (row) => (
-          <Badge tone={row.status === 'active' ? 'success' : row.status === 'depleted' ? 'warning' : 'neutral'} size="sm">
-            {lotStatusLabel(row.status)}
-          </Badge>
-        ),
+        header: COLUMN_LABELS.status,
+        filterValue: (row) => lotStatusLabel(row.status),
+        cell: (row) => <StatusPill tone={statusTone(row.status)}>{lotStatusLabel(row.status)}</StatusPill>,
       },
-      {
-        id: 'volume',
-        header: 'Volumen',
-        align: 'right',
-        cell: (row) => (row.qty_units > 0 && row.volume_ml === 0 ? `${row.qty_units} ud` : formatLitres(row.volume_ml / 1000)),
-      },
-      { id: 'place', header: 'Ubicación', cell: (row) => row.vessel_code || row.location_code || '—' },
+      { id: 'volume', header: COLUMN_LABELS.volume, align: 'right', cell: volumeText },
+      { id: 'place', header: COLUMN_LABELS.place, cell: (row) => row.vessel_code || row.location_code || '—' },
     ],
     [wines],
   )
 
-  if (!allows(me, 'cellar.read')) return <NoPermission />
+  if (!canRead) return <NoPermission />
 
+  const filtersActive = Boolean(debounced || kind || status || organic)
+  const loading = pages.loading && rows.length === 0
   const screen = loading ? 'bodega-lotes-cargando' : rows.length === 0 && !filtersActive ? 'bodega-lotes-vacio' : 'bodega-lotes'
 
-  async function loadMore() {
-    if (!cursor) return
-    setLoadingMore(true)
-    try {
-      const page = await listLots({ q: debounced, kind, cursor, limit: 50 })
-      setItems((current) => [...current, ...page.items])
-      setCursor(page.next_cursor)
-      setTotal(page.total)
-    } catch (err: unknown) {
-      setError(err instanceof ApiError ? err : new ApiError(0, 'WC_ERROR', copy.error.load))
-    } finally {
-      setLoadingMore(false)
-    }
+  function setFilter(id: string, value: FilterValue) {
+    const next = new URLSearchParams(params)
+    const text = id === 'organic' ? (value === true ? '1' : '') : typeof value === 'string' ? value : ''
+    if (text) next.set(id, text)
+    else next.delete(id)
+    setParams(next, { replace: true })
   }
+
+  function clearFilters() {
+    const next = new URLSearchParams(params)
+    for (const id of ['kind', 'status', 'organic']) next.delete(id)
+    setParams(next, { replace: true })
+    setQ('')
+  }
+
+  const chosen = rows.filter((row) => picked.has(row.id))
+  const actions: SelectionAction[] = [
+    {
+      id: 'export',
+      label: copy.lists.bulk.exportCsv,
+      icon: DownloadSimple,
+      onRun: () => {
+        downloadCsv(
+          'lotes-seleccion.csv',
+          Object.values(COLUMN_LABELS),
+          chosen.map((row) => [
+            row.code,
+            lotKindLabel(row.kind),
+            (row.wine_id ? wines.get(row.wine_id) : null) ?? '',
+            row.vintage,
+            lotStatusLabel(row.status),
+            volumeText(row),
+            row.vessel_code || row.location_code || '',
+          ]),
+        )
+        toast(fill(copy.lists.bulk.exported, { n: String(chosen.length) }))
+      },
+    },
+  ]
 
   return (
     <div data-screen={screen} className="flex min-h-0 flex-1 flex-col">
@@ -147,43 +213,24 @@ export function LotesPage({ me }: { me: Me }) {
         <Layers className="size-4 shrink-0 text-icon" strokeWidth={iconStroke} />
         <h1 className="min-w-0 truncate text-label font-medium text-ink-900">{copy.cellar.lots}</h1>
       </header>
-      <div className={cn('flex h-11 shrink-0 items-center gap-1.5 border-b border-border-subtle', FRAME_GUTTER)}>
-        <div className={FRAME_STRIP_SCROLL}>
-          <Input
-            id="buscar-lotes"
-            size="sm"
-            type="search"
-            value={q}
-            placeholder={copy.cellar.searchLots}
-            aria-label={copy.cellar.searchLots}
-            className="w-56 shrink-0"
-            prefix={<Search className="size-3.5" strokeWidth={iconStroke} />}
-            onChange={(event) => setQ(event.target.value)}
-          />
-        </div>
-      </div>
-      <div className={cn('flex h-10 shrink-0 items-center gap-1.5 border-b border-border-subtle bg-surface-subtle', FRAME_GUTTER)}>
-        <div className={cn(FRAME_STRIP_SCROLL, '[&>*]:shrink-0')}>
-          {KINDS.map((pill) => (
-            <Chip key={pill.id || 'todos'} pressed={kind === pill.id} active={kind === pill.id} onClick={() => setKind(pill.id)}>
-              {pill.label}
-            </Chip>
-          ))}
-          <Chip pressed={organic} active={organic} onClick={() => setOrganic((value) => !value)}>
-            {copy.cellar.organic}
-          </Chip>
-        </div>
-      </div>
-      {error && items.length === 0 ? (
+      <FilterBar
+        search={{ value: q, onChange: setQ, placeholder: copy.cellar.searchLots, id: 'buscar-lotes' }}
+        filters={FILTERS}
+        values={{ kind, status, organic }}
+        onChange={setFilter}
+        onClear={clearFilters}
+        grid={gridFilters}
+        selection={{
+          count: picked.size,
+          pageCount: rows.length,
+          onSelectAll: () => setPicked(new Set(rows.map((row) => row.id))),
+          onClear: () => setPicked(new Set()),
+          actions,
+        }}
+      />
+      {error && rows.length === 0 ? (
         <div className="p-4">
-          <ErrorState
-            title={`${copy.error.load} (${error.code})`}
-            detail={error.message}
-            onRetry={() => {
-              setLoading(true)
-              setAttempt((value) => value + 1)
-            }}
-          />
+          <ErrorState title={`${copy.error.load} (${error.code})`} detail={error.message} onRetry={pages.reload} />
         </div>
       ) : (
         <DataGrid
@@ -197,8 +244,9 @@ export function LotesPage({ me }: { me: Me }) {
           onSelectedChange={setPicked}
           onOpenRow={(row) => navigate(`/bodega/lotes/${encodeURIComponent(row.code)}`)}
           rowHref={(row) => `/bodega/lotes/${encodeURIComponent(row.code)}`}
-          total={organic ? rows.length : total}
-          loading={loading}
+          total={pages.total ?? undefined}
+          loading={pages.loading}
+          filterLink={gridFilters}
           empty={
             <EmptyState
               size="sm"
@@ -208,13 +256,7 @@ export function LotesPage({ me }: { me: Me }) {
           }
         />
       )}
-      {cursor && !organic ? (
-        <div className={cn('flex h-10 shrink-0 items-center border-t border-border-subtle', FRAME_GUTTER)}>
-          <Button type="button" variant="ghost" size="sm" loading={loadingMore} onClick={() => void loadMore()}>
-            {copy.table.loadMore}
-          </Button>
-        </div>
-      ) : null}
+      <Pagination {...pages.pagination} />
     </div>
   )
 }
