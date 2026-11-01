@@ -238,7 +238,7 @@ describe('perfil documental de la sociedad', () => {
 
       const tried = await call(ctx, 'POST', `${base}/sample`, {
         variant: 'po',
-        email: 'prueba@example.org',
+        email: 'prueba@example.com',
         footer_lines: ['Pie de prueba'],
         kind: 'discount',
         lang: 'en',
@@ -246,7 +246,7 @@ describe('perfil documental de la sociedad', () => {
       expect(tried.status).toBe(200);
       const triedText = extractPdfText(new Uint8Array(await tried.arrayBuffer()));
       expect(triedText).toContain('INVOICE #F260086');
-      expect(triedText).toContain('prueba@example.org');
+      expect(triedText).toContain('prueba@example.com');
       expect(triedText).toContain('Pie de prueba');
       expect(triedText).toContain('DISC.');
       expect(triedText).not.toContain('SUBTOTAL');
