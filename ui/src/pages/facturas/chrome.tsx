@@ -51,7 +51,7 @@ export function RecordFrame({
                 role="tab"
                 aria-selected={tab === item.id}
                 className={cn(
-                  'h-8 shrink-0 border-b-2 px-2 text-label',
+                  'h-8 shrink-0 border-b-2 px-2 text-label max-sm:h-11 max-sm:min-w-11 max-sm:px-3',
                   tab === item.id ? 'border-ink-900 font-medium text-ink-900' : 'border-transparent text-text-tertiary',
                 )}
                 onClick={() => onTab(item.id)}
@@ -72,7 +72,7 @@ export function BackLink() {
     <Link
       to="/facturas"
       aria-label={copy.facturas.title}
-      className="flex size-7 shrink-0 items-center justify-center rounded-md text-ink-900 outline-none hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)"
+      className="flex size-7 max-sm:size-11 shrink-0 items-center justify-center rounded-md text-ink-900 outline-none hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)"
     >
       <ArrowLeft className="size-4" strokeWidth={iconStroke} />
     </Link>

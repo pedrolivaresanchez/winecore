@@ -495,6 +495,7 @@ export function PlanoPage({ me, views }: { me: Me; views?: ReactNode }) {
         <div className="ml-auto flex shrink-0 items-center gap-1.5">
           <SegmentedControl
             size="sm"
+            className={cn(editing && 'max-sm:hidden')}
             aria-label={copy.plano.colour}
             value={colour}
             onChange={setColour}

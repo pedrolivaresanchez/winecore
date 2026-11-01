@@ -154,7 +154,7 @@ export function ApprovalDetail({ id, backTo }: { id: string; backTo: string }) {
       <header className="flex h-11 shrink-0 items-center gap-2 border-b border-border-subtle px-3 sm:px-4">
         <Link
           to={backTo}
-          className="flex size-7 shrink-0 items-center justify-center rounded-md text-ink-900 hover:bg-fill-hover"
+          className="flex size-7 max-sm:size-11 shrink-0 items-center justify-center rounded-md text-ink-900 hover:bg-fill-hover"
           aria-label={copy.approvals.back}
         >
           <ArrowLeft className="size-3.5" strokeWidth={iconStroke} />

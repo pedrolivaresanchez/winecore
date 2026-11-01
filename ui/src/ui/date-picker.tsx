@@ -51,8 +51,8 @@ export type DatePickerProps = {
 }
 
 const sizes = {
-  sm: 'h-7 rounded-[7px] px-2.5 text-label',
-  md: 'h-8 rounded-md px-2.5 text-body',
+  sm: 'h-7 rounded-[7px] px-2.5 text-label max-sm:h-11',
+  md: 'h-8 rounded-md px-2.5 text-body max-sm:h-11',
 }
 
 /**
@@ -157,7 +157,7 @@ export function DatePicker({
                 event.stopPropagation()
                 commit(null)
               }}
-              className="shrink-0 rounded-xs p-0.5 text-icon-muted transition-colors duration-150 hover:text-text"
+              className="shrink-0 rounded-xs p-0.5 text-icon-muted transition-colors duration-150 hover:text-text max-sm:-mr-2 max-sm:p-3.5"
             >
               <X className="size-3" strokeWidth={2} />
             </span>
@@ -213,7 +213,7 @@ export function DatePicker({
                   menu.close()
                 }}
                 className={cn(
-                  'flex size-8 items-center justify-center rounded-md text-label',
+                  'flex size-8 items-center justify-center rounded-md text-label max-sm:size-10',
                   'transition-colors duration-150',
                   isSelected
                     ? 'bg-ink-900 font-medium text-ink-0'
@@ -244,7 +244,7 @@ export function DatePicker({
             className={cn(
               'w-full rounded-md border border-border bg-surface px-2.5',
               'font-medium text-control outline-none',
-              size === 'sm' ? 'h-7 text-label' : 'h-8 text-body',
+              size === 'sm' ? 'h-7 text-label max-sm:h-11' : 'h-8 text-body max-sm:h-11',
               'focus-visible:shadow-(--shadow-focus) focus-visible:border-border-strong',
             )}
           />
@@ -257,7 +257,7 @@ export function DatePicker({
               commit(todayIso(zone))
               menu.close()
             }}
-            className="rounded-md px-2 py-1 text-label font-medium text-control transition-colors duration-150 hover:bg-fill-hover"
+            className="rounded-md px-2 py-1 text-label font-medium text-control transition-colors duration-150 hover:bg-fill-hover max-sm:min-h-11 max-sm:px-3"
           >
             {labels.today}
           </button>
@@ -538,7 +538,7 @@ export function DateRangePicker({
                 event.stopPropagation()
                 onChange({ from: null, to: null })
               }}
-              className="shrink-0 rounded-xs p-0.5 text-icon-muted transition-colors duration-(--duration-quick) hover:text-text"
+              className="shrink-0 rounded-xs p-0.5 text-icon-muted transition-colors duration-(--duration-quick) hover:text-text max-sm:-mr-2 max-sm:p-3.5"
             >
               <X className="size-3" strokeWidth={2} />
             </span>

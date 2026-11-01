@@ -203,13 +203,13 @@ function Frame({
         transition={tween}
       >
         {mobile ? (
-          <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border-subtle px-3 pt-[env(safe-area-inset-top)]">
+          <div className="flex h-[calc(2.75rem+env(safe-area-inset-top))] shrink-0 items-center gap-1 border-b border-border-subtle px-1.5 pt-[env(safe-area-inset-top)]">
             <Tooltip label={copy.nav.expand}>
               <button
                 type="button"
                 onClick={() => setSidebarOpen(true)}
                 aria-label={copy.nav.expand}
-                className="flex size-9 shrink-0 items-center justify-center rounded-md text-ink-900 hover:bg-fill-hover"
+                className="flex size-11 shrink-0 items-center justify-center rounded-md text-ink-900 hover:bg-fill-hover"
               >
                 <PanelLeft className="size-4" strokeWidth={iconStroke} />
               </button>
@@ -219,7 +219,7 @@ function Frame({
               type="button"
               onClick={openAssistant}
               aria-label={copy.assistant.ask}
-              className="flex size-9 shrink-0 items-center justify-center rounded-md text-ink-900 hover:bg-fill-hover"
+              className="flex size-11 shrink-0 items-center justify-center rounded-md text-ink-900 hover:bg-fill-hover"
             >
               <MessageCircle className="size-4" strokeWidth={iconStroke} />
             </button>
@@ -227,7 +227,7 @@ function Frame({
               type="button"
               onClick={openCommand}
               aria-label={copy.command.title}
-              className="flex size-9 shrink-0 items-center justify-center rounded-md text-ink-900 hover:bg-fill-hover"
+              className="flex size-11 shrink-0 items-center justify-center rounded-md text-ink-900 hover:bg-fill-hover"
             >
               <Search className="size-4" strokeWidth={iconStroke} />
             </button>

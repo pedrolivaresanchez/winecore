@@ -65,7 +65,7 @@ export const MenuItem = forwardRef<
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'flex h-7 w-full min-w-0 items-center gap-2 rounded-[6px] px-2 text-left text-label',
+        'flex h-7 w-full min-w-0 items-center gap-2 rounded-[6px] px-2 text-left text-label max-sm:h-11 max-sm:px-3',
         'transition-[color,background-color,transform] duration-(--duration-quick) ease-(--ease-smooth-out)',
         'outline-none focus-visible:bg-fill-hover',
         pressClass,
@@ -157,7 +157,7 @@ export function MenuSearch({
   }, [autoFocus])
 
   return (
-    <div className="-mx-1 -mt-1 mb-1 flex h-9 items-center gap-2 border-b border-border-subtle px-2.5">
+    <div className="-mx-1 -mt-1 mb-1 flex h-9 items-center gap-2 border-b border-border-subtle px-2.5 max-sm:h-11">
       <Search className="size-3.5 shrink-0 text-icon-muted" strokeWidth={iconStroke} />
       <input
         ref={inputRef}

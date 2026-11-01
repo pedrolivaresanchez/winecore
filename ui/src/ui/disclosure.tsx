@@ -124,7 +124,7 @@ export function InfoTip({
         className={cn(
           'relative inline-flex size-4 shrink-0 items-center justify-center rounded-full text-icon-muted outline-none',
           /* 16px drawn, 24px reachable. */
-          'before:absolute before:-inset-1 before:content-[""]',
+          'before:absolute before:-inset-1 before:content-[""] max-sm:before:-inset-3.5',
           'transition-colors duration-(--duration-quick) ease-(--ease-smooth-out)',
           'hover:text-ink-900 focus-visible:text-ink-900 focus-visible:shadow-(--shadow-focus) aria-expanded:text-ink-900',
         )}
@@ -170,7 +170,7 @@ export function WhyPopover({
     <button
       type="button"
       className={cn(
-        'inline-flex h-6 items-center rounded-md px-1.5 text-caption text-text-tertiary outline-none',
+        'inline-flex h-6 items-center rounded-md px-1.5 text-caption text-text-tertiary outline-none max-sm:h-11 max-sm:px-2.5',
         'transition-colors duration-(--duration-quick) ease-(--ease-smooth-out)',
         'hover:bg-fill-hover hover:text-ink-900 focus-visible:shadow-(--shadow-focus) aria-expanded:bg-fill-hover aria-expanded:text-ink-900',
       )}
@@ -239,7 +239,7 @@ export function Reveal({
         aria-controls={bodyId}
         onClick={() => setOpen((current) => !current)}
         className={cn(
-          'group -mx-1 flex min-w-0 items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-label text-text-secondary outline-none',
+          'group -mx-1 flex min-w-0 items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-label text-text-secondary outline-none max-sm:min-h-11',
           'transition-colors duration-(--duration-quick) ease-(--ease-smooth-out)',
           'hover:text-ink-900 focus-visible:shadow-(--shadow-focus)',
         )}
@@ -306,7 +306,7 @@ export function StatusChip({
     >
       <button
         type="button"
-        className="inline-flex rounded-full outline-none focus-visible:shadow-(--shadow-focus)"
+        className="touch-hit inline-flex rounded-full outline-none focus-visible:shadow-(--shadow-focus)"
       >
         <Badge tone={tone} dot={dot} className="cursor-default">
           {children}

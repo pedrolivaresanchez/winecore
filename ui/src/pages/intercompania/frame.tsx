@@ -32,7 +32,7 @@ function ObjectSwitch({ current }: { current: IntercompanyObject }) {
           aria-haspopup="menu"
           aria-expanded={menu.open}
           title={copy.intercompany.switch}
-          className="flex h-7 min-w-0 items-center gap-1 rounded-[7px] px-1.5 text-label font-medium text-ink-900 hover:bg-fill-hover"
+          className="flex h-7 min-w-0 items-center gap-1 rounded-[7px] px-1.5 text-label font-medium text-ink-900 hover:bg-fill-hover max-sm:h-11 max-sm:px-2.5"
         >
           <span className="truncate">{label}</span>
           <ChevronDown className="size-3 shrink-0 text-icon-muted" strokeWidth={iconStroke} />
@@ -137,7 +137,7 @@ export function RecordTabs<T extends string>({
             role="tab"
             aria-selected={value === item.id}
             className={cn(
-              'h-8 shrink-0 border-b-2 px-2 text-label',
+              'h-8 shrink-0 border-b-2 px-2 text-label max-sm:h-11 max-sm:min-w-11 max-sm:px-3',
               value === item.id ? 'border-ink-900 font-medium text-ink-900' : 'border-transparent text-text-tertiary',
             )}
             onClick={() => onChange(item.id)}

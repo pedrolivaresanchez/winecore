@@ -663,6 +663,13 @@ export const SplitBranch = glyph(18, (sw) => (
 export const Sum = glyph(18, (sw) => (
   <>{stroke('M13 3.75H4.75L9.25 9l-4.5 5.25H13', sw)}</>
 ))
+/** Camera: taking a photo of a document. The free packs carry none. */
+export const Camera = glyph(18, (sw) => (
+  <>
+    {stroke('M2.75 6.5a1.75 1.75 0 0 1 1.75-1.75h1.1l.9-1.5h5.5l.9 1.5h1.1a1.75 1.75 0 0 1 1.75 1.75v6a1.75 1.75 0 0 1-1.75 1.75h-9A1.75 1.75 0 0 1 2.75 12.5z', sw)}
+    <circle cx="9" cy="9.5" r="2.5" stroke="currentColor" strokeWidth={sw} fill="none" />
+  </>
+))
 export const Calendar = IconCalendarOutline18
 export const CalendarClock = IconCalendarDaysOutline18
 export const Clock = IconTimer2Outline18

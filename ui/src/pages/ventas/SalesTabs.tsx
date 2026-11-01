@@ -25,7 +25,7 @@ export function SalesHeader({ current, actions }: { current: DocKind; actions?: 
               key={doc}
               type="button"
               className={cn(
-                'h-8 shrink-0 border-b-2 px-2 text-label',
+                'h-8 shrink-0 border-b-2 px-2 text-label max-sm:h-11 max-sm:min-w-11 max-sm:px-3',
                 active ? 'border-ink-900 font-medium text-ink-900' : 'border-transparent text-text-tertiary',
               )}
               aria-current={active ? 'page' : undefined}
@@ -58,7 +58,7 @@ export function SalesSwitch({ current }: { current: DocKind }) {
             onClick={menu.toggle}
             aria-haspopup="menu"
             aria-expanded={menu.open}
-            className="flex h-7 min-w-0 items-center gap-1 rounded-[7px] px-1.5 text-label font-medium text-ink-900 hover:bg-fill-hover"
+            className="flex h-7 min-w-0 items-center gap-1 rounded-[7px] px-1.5 text-label font-medium text-ink-900 hover:bg-fill-hover max-sm:h-11 max-sm:px-2.5"
           >
             <span className="truncate">{docTitle(current)}</span>
             <ChevronDown className="size-3 shrink-0 text-icon-muted" strokeWidth={iconStroke} />

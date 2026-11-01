@@ -22,6 +22,7 @@ import { ScrollEdgeVeil, useScrollEdges } from './scroll-edges'
 import { cn } from '../lib/cn'
 import { isModifiedClick } from '../lib/click'
 import { useScrollRestore } from '../lib/scroll-restore'
+import { useMinWidth } from '../hooks/use-media'
 import { iconStroke } from '../lib/motion'
 import {
   beginRowSelectWith,
@@ -309,8 +310,8 @@ export function DataGrid<Row>(props: DataGridProps<Row>) {
 /** A body row and the sticky footer. `h-9`. The selection dock rises by this. */
 export const GRID_ROW_H = 36
 const ROW_H = GRID_ROW_H
-/** The sticky header's height — `h-9` on every header cell. Part of the scroll maths. */
-const HEAD_H = 36
+/** Under 640px a row, the header and the footer are `h-11`: a finger needs 44px, not 36. */
+const TOUCH_ROW_H = 44
 const DEFAULT_W = 180
 const MIN_W = 96
 const MAX_W = 720
@@ -320,6 +321,8 @@ const MAX_W = 720
  * name — the one thing the row is read by — eight letters.
  */
 const PINNED_MIN_W = 240
+/** In a phone the pinned column leaves room for the next column to show without scrolling. */
+const PINNED_MIN_W_TOUCH = 192
 /** Pointer travel before a header press becomes a reorder rather than a click. */
 const DRAG_THRESHOLD = 5
 
@@ -407,14 +410,16 @@ function DataGridCore<Row>({
   const [editing, setEditing] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   const edges = useScrollEdges(scrollRef)
+  const touch = !useMinWidth(640)
+  const rowH = touch ? TOUCH_ROW_H : ROW_H
 
   const pinnedId = columns[0]?.id
   const widthOf = useCallback(
     (id: string) => {
       const width = clampWidth(widths[id] ?? DEFAULT_W)
-      return id === pinnedId ? Math.max(PINNED_MIN_W, width) : width
+      return id === pinnedId ? Math.max(touch ? PINNED_MIN_W_TOUCH : PINNED_MIN_W, width) : width
     },
-    [widths, pinnedId],
+    [widths, pinnedId, touch],
   )
   const tableWidth = columns.reduce((sum, column) => sum + widthOf(column.id), 0)
 
@@ -503,28 +508,28 @@ function DataGridCore<Row>({
     const count = latest.current.keys.length
     if (!node || count === 0) return null
     const rect = node.getBoundingClientRect()
-    const y = clientY - rect.top + node.scrollTop - HEAD_H
-    const raw = Math.floor(y / ROW_H)
+    const y = clientY - rect.top + node.scrollTop - rowH
+    const raw = Math.floor(y / rowH)
     if (!clamp) {
       if (raw < 0 || raw >= count) return null
       return raw
     }
     return Math.max(0, Math.min(count - 1, raw))
-  }, [])
+  }, [rowH])
 
   const paintFromPointer = useCallback(
     (event: PointerEvent) => {
       const node = scrollRef.current
       if (node) {
         const rect = node.getBoundingClientRect()
-        const foot = Math.max(ROW_H, endClearance)
-        if (event.clientY < rect.top + ROW_H) node.scrollTop -= ROW_H
-        else if (event.clientY > rect.bottom - foot) node.scrollTop += ROW_H
+        const foot = Math.max(rowH, endClearance)
+        if (event.clientY < rect.top + rowH) node.scrollTop -= rowH
+        else if (event.clientY > rect.bottom - foot) node.scrollTop += rowH
       }
       const next = rowIndexAt(event.clientY)
       if (next != null) applyExtend(next)
     },
-    [applyExtend, endClearance, rowIndexAt],
+    [applyExtend, endClearance, rowH, rowIndexAt],
   )
 
   const listenPaint = useCallback(
@@ -663,7 +668,7 @@ function DataGridCore<Row>({
   /**
    * Bring a row inside the viewport, by arithmetic rather than by asking the DOM.
    *
-   * Every row is `ROW_H` tall and the first one starts below a header of `HEAD_H`, so where
+   * Every row is `rowH` tall and the first one starts below a header of the same height, so where
    * a row sits is known without measuring it. Both sticky bands are subtracted: landing a
    * row under the header or behind the footer totals is the same as not scrolling to it.
    */
@@ -673,15 +678,15 @@ function DataGridCore<Row>({
       if (!node) return
       /* The spacer sits under the footer once you have scrolled to it, so a row has to
          clear both or the last one lands in the footer. */
-      const foot = (hasFooter ? ROW_H : 0) + endClearance
-      const top = HEAD_H + index * ROW_H
-      const bottom = top + ROW_H
-      if (top - HEAD_H < node.scrollTop) node.scrollTop = top - HEAD_H
+      const foot = (hasFooter ? rowH : 0) + endClearance
+      const top = rowH + index * rowH
+      const bottom = top + rowH
+      if (top - rowH < node.scrollTop) node.scrollTop = top - rowH
       else if (bottom + foot > node.scrollTop + node.clientHeight) {
         node.scrollTop = bottom + foot - node.clientHeight
       }
     },
-    [endClearance, hasFooter],
+    [endClearance, hasFooter, rowH],
   )
 
   /* The pinned column needs a veil the moment content passes under it — without
@@ -945,7 +950,7 @@ function DataGridCore<Row>({
           <tbody>
             {loading && rows.length === 0
               ? Array.from({ length: 10 }, (_, index) => (
-                  <tr key={`skeleton-${index}`} style={{ height: ROW_H }}>
+                  <tr key={`skeleton-${index}`} className="h-9 max-sm:h-11">
                     {columns.map((column, col) => (
                       <td
                         key={column.id}
@@ -993,7 +998,7 @@ function DataGridCore<Row>({
 
           {hasFooter ? (
             <tfoot>
-              <tr style={{ height: ROW_H }}>
+              <tr className="h-9 max-sm:h-11">
                 {columns.map((column, index) => (
                   <FooterCell
                     key={column.id}
@@ -1092,8 +1097,7 @@ function GridRowInner<Row>({
 
   return (
     <tr
-      className={cn('group/row', marked ? 'is-marked' : null)}
-      style={{ height: ROW_H }}
+      className={cn('group/row h-9 max-sm:h-11', marked ? 'is-marked' : null)}
       onMouseEnter={() => onHover(row, index)}
       onPointerDown={(event) => {
         if (event.button !== 0) return
@@ -1245,8 +1249,11 @@ function PrimaryCell<Row>({
   const mark = column.leading?.(row)
   const label = column.cell(row)
   const nameClass = cn(
-    'min-w-0 w-full truncate rounded-xs text-left text-text outline-none',
+    'touch-hit min-w-0 w-full truncate rounded-xs text-left text-text outline-none',
     'hover:underline underline-offset-2',
+    /* A name that is the only way into the record gets two lines under 640px: a phone
+       has no hover card and a column of eight-letter stubs says nothing. */
+    'max-sm:line-clamp-2 max-sm:whitespace-normal max-sm:break-words',
   )
   /* A hover card already names the record; a native `title` would fire at ~1s and sit
      on top of the peek. Activities have no card, so a truncated name still gets one. */
@@ -1510,7 +1517,7 @@ function HeaderCell<Row>({
       aria-haspopup={hasMenu ? 'menu' : undefined}
       aria-expanded={hasMenu ? menu.open : undefined}
       className={cn(
-        'flex min-w-0 w-full flex-1 items-center gap-1.5 rounded-xs text-left outline-none',
+        'flex min-w-0 w-full flex-1 items-center gap-1.5 rounded-xs text-left outline-none max-sm:h-11',
         column.align === 'right' && 'flex-row-reverse',
         draggable && 'cursor-grab active:cursor-grabbing',
         menu.open && !active && 'text-ink-900',
@@ -1564,7 +1571,7 @@ function HeaderCell<Row>({
       scope="col"
       aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : undefined}
       className={cn(
-        'group/head sticky top-0 z-20 h-9 min-w-0 border-b border-r border-border-subtle',
+        'group/head sticky top-0 z-20 h-9 max-sm:h-11 min-w-0 border-b border-r border-border-subtle',
         'text-left font-normal',
         /* A sort whose only signal is a 12px chevron is a sort you miss on a forty-column
            grid. The wash and the contour are the same info tokens a selected row already
@@ -1678,7 +1685,7 @@ function FooterCell<Row>({
   return (
     <th
       className={cn(
-        'sticky bottom-0 z-20 h-9 min-w-0 overflow-hidden border-t border-r border-border-subtle',
+        'sticky bottom-0 z-20 h-9 max-sm:h-11 min-w-0 overflow-hidden border-t border-r border-border-subtle',
         'bg-surface-subtle text-right font-normal',
         pinned ? cn('left-0 z-30', PINNED_X) : 'px-3',
         pinnedShadow && 'pinned-veil',

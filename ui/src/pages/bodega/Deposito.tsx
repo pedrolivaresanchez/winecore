@@ -205,7 +205,7 @@ function Loaded({
             <FactCard title="Datos">
               <div className="px-4 py-3">
                 {inside ? (
-                  <Link to={`/bodega/lotes/${encodeURIComponent(inside.lot_code)}`} className="text-label font-medium text-ink-900 underline">
+                  <Link to={`/bodega/lotes/${encodeURIComponent(inside.lot_code)}`} className="text-label font-medium text-ink-900 underline max-sm:-my-3.25 max-sm:block max-sm:py-3.25">
                     {inside.lot_code}
                     {inside.wine_name ? ` · ${inside.wine_name}` : ''}
                     {inside.vintage ? ` · ${inside.vintage}` : ''}

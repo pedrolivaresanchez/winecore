@@ -54,6 +54,11 @@ export function draftsFrom(lines: SalesLine[]): DraftLine[] {
   }))
 }
 
+/** The decimal pad of a Spanish phone types a comma; the drafts and the API count in points. */
+export function decimalDot(text: string): string {
+  return text.replace(',', '.')
+}
+
 /** Tariffs carry six decimals; the price field shows the short form. */
 export function shortPrice(value: string | null | undefined): string {
   if (value == null || value === '') return ''

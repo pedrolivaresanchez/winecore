@@ -32,7 +32,7 @@ export type DocumentModalProps = {
 type Pane = 'pdf' | 'details'
 
 const RECORD_LINK = cn(
-  'inline-flex h-7 items-center justify-center whitespace-nowrap rounded-[7px] px-2.5 text-label font-medium text-ink-900',
+  'inline-flex h-7 items-center justify-center whitespace-nowrap rounded-[7px] px-2.5 text-label font-medium text-ink-900 max-sm:h-11 max-sm:px-3.5',
   'outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus-ring',
   textureSecondary,
 )

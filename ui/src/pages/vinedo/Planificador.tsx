@@ -104,7 +104,7 @@ export function Planificador({ me }: { me: Me }) {
                   key={cell}
                   type="button"
                   className={cn(
-                    'flex h-9 flex-col items-center justify-center rounded-[7px] text-caption leading-none',
+                    'flex h-9 flex-col items-center justify-center rounded-[7px] text-caption leading-none max-sm:h-11',
                     day === cell ? 'bg-ink-900 text-ink-0' : 'text-ink-900 hover:bg-fill-hover',
                   )}
                   onClick={() => setDay(cell)}

@@ -881,6 +881,24 @@
   background-image: var(--scroll-veil-end);
 }
 
+/* Área táctil de 44 px en un móvil sin cambiar lo que se ve: el control sigue midiendo lo que
+   mide, y un pseudoelemento centrado recoge el toque. Para casillas, interruptores e iconos
+   sueltos que viven en filas densas donde crecer de verdad rompería la fila. */
+@utility touch-hit {
+  @media (max-width: 639px) {
+    position: relative;
+    &::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: max(100%, 44px);
+      height: max(100%, 44px);
+      transform: translate(-50%, -50%);
+    }
+  }
+}
+
 /* No visible scrollbar — scroll still works; also skips overlay thumbs. */
 @utility scrollbar-none {
   scrollbar-width: none;
@@ -1916,6 +1934,17 @@ button:not(:disabled),
 select:not(:disabled),
 label:has(> button[role='checkbox']:not(:disabled)) {
   cursor: pointer;
+}
+
+/* Teléfono. iOS Safari hace zoom al enfocar un campo con letra menor de 16 px y ya no
+   devuelve la página a su sitio, así que los campos nunca bajan de 16 px aquí. Va fuera de
+   las capas para ganar a las utilidades de tamaño de cada primitivo. */
+@media (max-width: 639px) {
+  input:not([type='checkbox'], [type='radio'], [type='range'], [type='file'], [type='color'], [type='hidden']),
+  select,
+  textarea {
+    font-size: 16px;
+  }
 }
 
 ::selection {

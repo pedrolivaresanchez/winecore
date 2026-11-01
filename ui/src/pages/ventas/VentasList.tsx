@@ -38,6 +38,7 @@ import {
   MenuChip,
   MenuItem,
   Pagination,
+  SkeletonRows,
   StatusPill,
   useCursorPages,
   useGridFilterLink,
@@ -334,6 +335,44 @@ export function VentasList({ me, creating = false }: { me: Me; creating?: boolea
       {error && pages.items.length === 0 ? (
         <div className="p-4">
           <ErrorState title={`${copy.error.load} (${error.code})`} detail={error.message} onRetry={pages.reload} />
+        </div>
+      ) : !desktop ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {loadingFirst ? (
+            <div className="px-3 py-2">
+              <SkeletonRows rows={6} />
+            </div>
+          ) : rows.length === 0 ? (
+            <EmptyState
+              size="sm"
+              title={filtersActive ? copy.sales.noMatch : copy.sales.emptyOrders}
+              description={filtersActive ? undefined : copy.sales.emptyOrdersHint}
+              action={!filtersActive && createButton ? createButton : undefined}
+            />
+          ) : (
+            <ul className="flex flex-col gap-2 p-3">
+              {rows.map((row) => (
+                <li key={row.id}>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`${docPath('order')}/${row.id}`)}
+                    className="flex w-full items-start gap-3 rounded-2xl border border-border-subtle bg-surface p-3 text-left shadow-(--shadow-card)"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-label font-medium text-ink-900">{catalog.customerName(row.customer_id)}</span>
+                      <span className="mt-0.5 block truncate text-caption text-text-tertiary">
+                        {[row.number ?? copy.sales.draft, formatIsoDate(row.order_date), entityName(row.entity_code)].join(' · ')}
+                      </span>
+                    </span>
+                    <span className="flex shrink-0 flex-col items-end gap-1.5">
+                      <span className="text-label font-medium tabular-nums text-ink-900">{formatAmount(row.total)}</span>
+                      <StatusPill tone={statusTone(row.status)}>{orderStatusLabel(row.status)}</StatusPill>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       ) : (
         <DataGrid

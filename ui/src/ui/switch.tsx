@@ -31,7 +31,7 @@ export function Switch({ checked, onChange, disabled, id, className, ...props }:
         onChange(!checked)
       }}
       className={cn(
-        't-toggle relative inline-flex h-6 w-10 shrink-0 items-center rounded-full border px-0.5',
+        't-toggle touch-hit relative inline-flex h-6 w-10 shrink-0 items-center rounded-full border px-0.5',
         'outline-none focus-visible:shadow-(--shadow-focus)',
         init && 'is-init',
         checked ? 'bg-ink-900 border-ink-900' : 'bg-ink-150 border-ink-200',

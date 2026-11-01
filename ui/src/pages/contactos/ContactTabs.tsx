@@ -221,7 +221,7 @@ export function InvoicesTab({ overview, contactId, newInvoice }: { overview: Ove
             action={
               <Link
                 to={`/facturas?customer=${contactId}`}
-                className="rounded-md px-1.5 py-1 text-caption text-text-tertiary outline-none hover:bg-fill-hover hover:text-ink-900 focus-visible:shadow-(--shadow-focus)"
+                className="rounded-md px-1.5 py-1 text-caption max-sm:py-3.5 text-text-tertiary outline-none hover:bg-fill-hover hover:text-ink-900 focus-visible:shadow-(--shadow-focus)"
               >
                 {copy.contactRecord.inInvoices}
               </Link>
@@ -354,7 +354,7 @@ export function ActivityTab({
                           <Link
                             to={entry.doc ? docs.hrefFor(docKey(entry.doc)) : (entry.href ?? '')}
                             state={entry.doc ? { docModal: true } : undefined}
-                            className="block truncate rounded-sm text-label text-ink-900 outline-none hover:underline focus-visible:shadow-(--shadow-focus)"
+                            className="block truncate rounded-sm text-label text-ink-900 outline-none max-sm:-my-3 max-sm:py-3 hover:underline focus-visible:shadow-(--shadow-focus)"
                           >
                             {entry.title}
                           </Link>

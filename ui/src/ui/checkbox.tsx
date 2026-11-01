@@ -41,7 +41,7 @@ export function Checkbox({
       disabled={disabled}
       onClick={() => onChange(!isChecked)}
       className={cn(
-        'flex shrink-0 items-center justify-center rounded-xs border t-check leading-none',
+        'touch-hit flex shrink-0 items-center justify-center rounded-xs border t-check leading-none',
         'outline-none focus-visible:shadow-(--shadow-focus)',
         size === 'sm' ? 'size-4' : 'size-4.5',
         labelled && 'mt-0.5',

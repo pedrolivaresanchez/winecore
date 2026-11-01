@@ -232,7 +232,7 @@ export function DrawerHeader({
           aria-label={labels.close}
           onClick={onClose}
           className={cn(
-            'flex size-8 shrink-0 items-center justify-center rounded-md text-control outline-none sm:size-7',
+            'flex size-11 shrink-0 items-center justify-center rounded-md text-control outline-none sm:size-7',
             'transition-colors hover:bg-fill-hover hover:text-ink-700 focus-visible:shadow-(--shadow-focus)',
           )}
         >
@@ -245,7 +245,7 @@ export function DrawerHeader({
 
 export function DrawerBody({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cn('min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5', className)}>
+    <div className={cn('min-h-0 flex-1 overflow-y-auto px-4 py-4 max-sm:overscroll-contain sm:px-6 sm:py-5', className)}>
       {children}
     </div>
   )

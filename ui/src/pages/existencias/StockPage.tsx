@@ -69,6 +69,15 @@ const FISCAL_LABELS: Record<(typeof FISCAL_IDS)[number], string> = {
   litres: 'Litros',
   units: 'Unidades',
 }
+/** En un móvil caben tres columnas: el recipiente y las cantidades. El resto está en la hoja de cada fila. */
+const PHONE_PHYSICAL_HIDDEN = ['location', 'lot', 'product', 'state', 'owner']
+const PHONE_FISCAL_HIDDEN = ['klass', 'ref', 'lot', 'product']
+const PHONE_WIDTHS = { name: 192, litres: 96, units: 96, place: 192 }
+
+function onPhone(): boolean {
+  return typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
+}
+
 const MATERIAL_LABELS: Record<'sku' | 'name' | 'location' | 'units', string> = {
   sku: 'Referencia',
   name: 'Material',
@@ -119,6 +128,7 @@ export function StockPage({ me }: { me: Me }) {
   const [q, setQ] = useState('')
   const [selected, setSelected] = useState<string | null>(null)
   const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [phone] = useState(onPhone)
   const [widths, setWidths] = useState<Record<string, number>>({
     name: 130,
     location: 160,
@@ -130,12 +140,13 @@ export function StockPage({ me }: { me: Me }) {
     place: 180,
     klass: 150,
     ref: 140,
+    ...(phone ? PHONE_WIDTHS : {}),
   })
   const [materialsOn, setMaterialsOn] = useState(false)
   const [materialRows, setMaterialRows] = useState<MaterialRow[]>([])
   const [materialLoading, setMaterialLoading] = useState(false)
-  const hiddenPhysical = useHiddenColumns('winecore.columns.stock', COLUMN_IDS, ['owner'])
-  const hiddenFiscal = useHiddenColumns('winecore.columns.stock-fiscal', FISCAL_IDS)
+  const hiddenPhysical = useHiddenColumns('winecore.columns.stock', COLUMN_IDS, phone ? PHONE_PHYSICAL_HIDDEN : ['owner'])
+  const hiddenFiscal = useHiddenColumns('winecore.columns.stock-fiscal', FISCAL_IDS, phone ? PHONE_FISCAL_HIDDEN : [])
   const before = isBeforeStockEpoch(at)
   const canCount = allows(me, 'inventory.count')
 

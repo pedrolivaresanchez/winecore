@@ -12,7 +12,7 @@ import { INVOICE_STATE, amount, invoiceDoc, type DocSource, type OverviewInvoice
 export const RECORD_CARD = 'rounded-xl bg-surface shadow-(--shadow-surface)'
 
 const BAR_BUTTON = cn(
-  'flex size-7 shrink-0 items-center justify-center rounded-md text-control outline-none',
+  'flex size-7 shrink-0 items-center justify-center rounded-md text-control outline-none max-sm:size-11',
   'transition-colors duration-(--duration-quick) ease-(--ease-smooth-out)',
   'hover:bg-fill-hover hover:text-ink-900 focus-visible:shadow-(--shadow-focus)',
   'disabled:pointer-events-none disabled:opacity-40',
@@ -75,7 +75,7 @@ export function FoldCard({
           aria-expanded={open}
           aria-controls={bodyId}
           onClick={() => setOpen((value) => !value)}
-          className="-ml-1 flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1 py-0.5 text-left outline-none transition-colors hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)"
+          className="-ml-1 flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-1 py-0.5 text-left max-sm:min-h-11 outline-none transition-colors hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)"
         >
           <ChevronDown className={cn('size-3 shrink-0 text-icon transition-transform', !open && '-rotate-90')} strokeWidth={2} />
           <span className="min-w-0 truncate text-label font-medium text-ink-900">{title}</span>
@@ -127,7 +127,7 @@ export function TabStrip<T extends string>({
       role="tablist"
       aria-label={label}
       onKeyDown={onKey}
-      className="scrollbar-none relative flex h-10 min-w-0 shrink-0 items-center gap-1 overflow-x-auto border-b border-border-subtle px-3"
+      className="scrollbar-none relative flex h-10 min-w-0 shrink-0 items-center gap-1 overflow-x-auto border-b border-border-subtle px-3 max-sm:h-14"
     >
       {tabs.map((tab) => {
         const selected = tab.id === active
@@ -146,7 +146,7 @@ export function TabStrip<T extends string>({
             tabIndex={selected ? 0 : -1}
             onClick={() => onChange(tab.id)}
             className={cn(
-              'flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] pr-2 pl-1.5 text-label whitespace-nowrap outline-none',
+              'flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] pr-2 pl-1.5 text-label whitespace-nowrap outline-none max-sm:h-11 max-sm:pr-3 max-sm:pl-2.5',
               'transition-colors duration-(--duration-quick) ease-(--ease-smooth-out) focus-visible:shadow-(--shadow-focus)',
               selected ? cn(textureSecondary, 'font-medium text-ink-900') : 'border border-transparent bg-transparent text-control hover:bg-fill-hover hover:text-ink-700',
             )}

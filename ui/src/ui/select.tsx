@@ -15,9 +15,9 @@ export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement
  * 32px default, control label, thin ChevronsUpDown.
  */
 const sizes: Record<SelectSize, { root: string; select: string; chevron: string }> = {
-  sm: { root: 'h-7 rounded-[7px]', select: 'pl-2.5 pr-6 text-label', chevron: 'right-1.5 size-3.5' },
-  md: { root: 'h-8 rounded-md', select: 'pl-2.5 pr-7 text-body', chevron: 'right-2 size-3.5' },
-  lg: { root: 'h-9 rounded-lg', select: 'pl-3 pr-8 text-body', chevron: 'right-2.5 size-4' },
+  sm: { root: 'h-7 rounded-[7px] max-sm:h-11', select: 'pl-2.5 pr-6 text-label', chevron: 'right-1.5 size-3.5' },
+  md: { root: 'h-8 rounded-md max-sm:h-11', select: 'pl-2.5 pr-7 text-body', chevron: 'right-2 size-3.5' },
+  lg: { root: 'h-9 rounded-lg max-sm:h-11', select: 'pl-3 pr-8 text-body', chevron: 'right-2.5 size-4' },
 }
 
 export const Select = forwardRef<HTMLSelectElement, SelectProps>(

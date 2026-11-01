@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useChromeTitle } from '@/app/shell/shell-context'
+import { useMinWidth } from '@/hooks/use-media'
 import { FRAME_GUTTER } from '@/ui/frame'
 import { ChevronDown, Receipt } from '@/ui/icons'
 import { Button, FilterBar, GlassMenu, MenuItem, useMenuOpen, type FilterBarProps } from '@/ui'
@@ -13,8 +14,8 @@ type Action = { label: string; onClick: () => void; loading?: boolean }
 
 /**
  * Cobros' four views share one header (the views as tabs, the view's buttons at the end) and
- * one filter row. On a phone the header is gone: the tabs become the bar's switch and the
- * buttons ride at the end of the bar.
+ * one filter row. On a phone the header is gone: the tabs become the bar's switch, the page's
+ * main button stays at the end of the bar and the secondary one rides with the chips.
  */
 export function CobrosFrame({
   screen,
@@ -33,6 +34,7 @@ export function CobrosFrame({
 }) {
   useChromeTitle(copy.cobros.title)
   const [params, setParams] = useSearchParams()
+  const phone = !useMinWidth(768)
 
   function openVista(next: Vista) {
     const query = new URLSearchParams()
@@ -42,18 +44,20 @@ export function CobrosFrame({
     setParams(query, { replace: true })
   }
 
+  const secondaryButton = secondary ? (
+    <Button type="button" variant="secondary" size="sm" loading={secondary.loading} onClick={secondary.onClick}>
+      {secondary.label}
+    </Button>
+  ) : null
+  const actionButton = action ? (
+    <Button type="button" variant="primary" size="sm" loading={action.loading} onClick={action.onClick}>
+      {action.label}
+    </Button>
+  ) : null
   const buttons = (
     <>
-      {secondary ? (
-        <Button type="button" variant="secondary" size="sm" loading={secondary.loading} onClick={secondary.onClick}>
-          {secondary.label}
-        </Button>
-      ) : null}
-      {action ? (
-        <Button type="button" variant="primary" size="sm" loading={action.loading} onClick={action.onClick}>
-          {action.label}
-        </Button>
-      ) : null}
+      {secondaryButton}
+      {actionButton}
     </>
   )
 
@@ -70,7 +74,7 @@ export function CobrosFrame({
                 key={item.id}
                 type="button"
                 className={cn(
-                  'h-8 shrink-0 border-b-2 px-2 text-label',
+                  'h-8 shrink-0 border-b-2 px-2 text-label max-sm:h-11 max-sm:min-w-11 max-sm:px-3',
                   active ? 'border-ink-900 font-medium text-ink-900' : 'border-transparent text-text-tertiary',
                 )}
                 aria-current={active ? 'page' : undefined}
@@ -87,10 +91,21 @@ export function CobrosFrame({
       <FilterBar
         {...bar}
         leading={<VistaSwitch vista={vista} onPick={openVista} />}
+        controls={
+          phone ? (
+            <>
+              {bar.controls}
+              {bar.trailing}
+              {secondaryButton}
+            </>
+          ) : (
+            bar.controls
+          )
+        }
         trailing={
           <>
-            {bar.trailing}
-            {action || secondary ? <span className="flex items-center gap-1.5 md:hidden">{buttons}</span> : null}
+            {phone ? null : bar.trailing}
+            {action || secondary ? <span className="flex items-center gap-1.5 md:hidden">{phone ? actionButton : buttons}</span> : null}
           </>
         }
       />
@@ -115,7 +130,7 @@ function VistaSwitch({ vista, onPick }: { vista: Vista; onPick: (next: Vista) =>
             onClick={menu.toggle}
             aria-haspopup="menu"
             aria-expanded={menu.open}
-            className="flex h-7 min-w-0 items-center gap-1 rounded-[7px] px-1.5 text-label font-medium text-ink-900 hover:bg-fill-hover"
+            className="flex h-7 min-w-0 items-center gap-1 rounded-[7px] px-1.5 text-label font-medium text-ink-900 hover:bg-fill-hover max-sm:h-11 max-sm:px-2.5"
           >
             <span className="truncate">{current.label}</span>
             <ChevronDown className="size-3 shrink-0 text-icon-muted" strokeWidth={iconStroke} />

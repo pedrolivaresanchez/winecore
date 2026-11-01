@@ -61,7 +61,7 @@ export function StatTile({
               tabIndex={0}
               role="note"
               aria-label={explain}
-              className="-m-1 shrink-0 cursor-help rounded-[6px] p-1 text-text-tertiary outline-none transition-colors duration-(--duration-quick) hover:text-ink-900 focus-visible:shadow-(--shadow-focus)"
+              className="-m-1 shrink-0 cursor-help rounded-[6px] p-1 max-sm:-m-3.5 max-sm:p-3.5 text-text-tertiary outline-none transition-colors duration-(--duration-quick) hover:text-ink-900 focus-visible:shadow-(--shadow-focus)"
             >
               <Info className="size-3" strokeWidth={iconStroke} />
             </span>

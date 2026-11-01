@@ -225,7 +225,7 @@ export function CommandPalette({
           aria-expanded
           autoComplete="off"
           spellCheck={false}
-          className="min-w-0 flex-1 bg-transparent text-body text-ink-900 outline-none placeholder:text-text-tertiary"
+          className="min-w-0 flex-1 bg-transparent text-body text-ink-900 outline-none placeholder:text-text-tertiary max-sm:h-11"
         />
         {loading ? <span className="shrink-0 text-caption text-text-tertiary">{copy.command.searching}</span> : null}
       </div>
@@ -261,7 +261,7 @@ export function CommandPalette({
                       }}
                       onClick={() => run(command)}
                       className={cn(
-                        'flex h-9 w-full min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-left text-label outline-none',
+                        'flex h-9 w-full min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-left text-label outline-none max-sm:h-11',
                         selected ? 'bg-fill-hover text-ink-900' : 'text-control',
                       )}
                     >

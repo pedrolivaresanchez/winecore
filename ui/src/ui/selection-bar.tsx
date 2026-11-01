@@ -62,7 +62,7 @@ export function SelectionBar({ count, pageCount, onSelectAll, onClear, actions =
   return (
     <div role="toolbar" aria-label={`${count} ${labels.label}`} data-selection-bar="" className={cn(LIST_BAR, className)}>
       <div className="scrollbar-none flex min-w-0 items-center gap-1 overflow-x-auto rounded-[10px] bg-ink-900 p-1 text-ink-0 shadow-(--shadow-float)">
-        <span className="flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] bg-ink-0/10 pr-1 pl-1.5">
+        <span className="flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] bg-ink-0/10 pr-1 pl-1.5 max-sm:h-11">
           <span className="rounded-md bg-azure-500 px-1.5 text-caption font-medium tabular-nums text-white">{count}</span>
           <span className="text-label text-ink-0/70">{labels.label}</span>
           {onSelectAll && pageCount != null && pageCount > 1 ? (
@@ -72,7 +72,7 @@ export function SelectionBar({ count, pageCount, onSelectAll, onClear, actions =
                 type="button"
                 onClick={allTicked ? onClear : onSelectAll}
                 className={cn(
-                  'flex h-6 items-center rounded-md px-1.5 text-caption font-medium text-ink-0 outline-none',
+                  'flex h-6 items-center rounded-md px-1.5 text-caption font-medium text-ink-0 outline-none max-sm:h-11 max-sm:px-3',
                   'transition-colors duration-(--duration-quick) ease-(--ease-smooth-out)',
                   'hover:bg-ink-0/10 focus-visible:bg-ink-0/10',
                 )}
@@ -87,7 +87,7 @@ export function SelectionBar({ count, pageCount, onSelectAll, onClear, actions =
             title={labels.clear}
             aria-label={labels.clear}
             className={cn(
-              'flex size-6 shrink-0 items-center justify-center rounded-md text-ink-0/60 outline-none',
+              'flex size-6 shrink-0 items-center justify-center rounded-md text-ink-0/60 outline-none max-sm:size-11',
               'transition-colors duration-(--duration-quick) ease-(--ease-smooth-out)',
               'hover:bg-ink-0/10 hover:text-ink-0 focus-visible:bg-ink-0/10',
             )}
@@ -106,7 +106,7 @@ export function SelectionBar({ count, pageCount, onSelectAll, onClear, actions =
               onClick={() => press(action)}
               disabled={action.disabled || busy !== null}
               className={cn(
-                'flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2.5 text-label outline-none',
+                'flex h-7 shrink-0 items-center gap-1.5 rounded-[7px] px-2.5 text-label outline-none max-sm:h-11 max-sm:px-3.5',
                 'transition-colors duration-(--duration-quick) ease-(--ease-smooth-out)',
                 'focus-visible:bg-ink-0/10 disabled:opacity-40',
                 action.tone === 'danger'

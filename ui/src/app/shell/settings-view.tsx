@@ -126,7 +126,7 @@ export function SettingsSidebar({
           type="button"
           onClick={onBack}
           className={cn(
-            'flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-left text-label font-medium text-ink-900',
+            'flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-left text-label font-medium text-ink-900 max-md:h-11',
             'transition-[color,background-color] duration-(--duration-quick) ease-(--ease-smooth-out)',
             'hover:bg-sidebar-hover',
             pressClass,
@@ -162,7 +162,7 @@ export function SettingsSidebar({
                 aria-current={active ? 'page' : undefined}
                 onClick={() => choose(item.id)}
                 className={cn(
-                  'flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-label',
+                  'flex h-7 w-full items-center gap-2 rounded-md px-2 text-left text-label max-md:h-11',
                   'transition-[color,background-color] duration-(--duration-quick) ease-(--ease-smooth-out)',
                   active ? 'bg-sidebar-selected font-medium text-ink-900' : 'text-control hover:bg-sidebar-hover',
                 )}

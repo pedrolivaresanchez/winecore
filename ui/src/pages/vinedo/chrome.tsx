@@ -85,6 +85,7 @@ export function ScoreScale({
             key={score}
             type="button"
             size="sm"
+            className="max-sm:min-w-11"
             variant={value === score ? 'primary' : 'secondary'}
             role="radio"
             aria-checked={value === score}

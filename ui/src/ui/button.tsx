@@ -166,12 +166,13 @@ const variants: Record<ButtonVariant, string> = {
 /**
  * Compact heights: 28 / 32 / 36 — the reference row sits at md (32px). Height never
  * changes with shape, so a squared toolbar and a pill dialog still line up on the grid.
+ * On a phone every size is 44px: a thumb is not a pointer, and the compact scale is for desktop.
  */
 const sizes: Record<ButtonShape, Record<ButtonSize, string>> = {
   pill: {
-    sm: 'h-7 rounded-full px-3 text-label [&_svg]:size-3.5',
-    md: 'h-8 rounded-full px-3.5 text-body [&_svg]:size-3.5',
-    lg: 'h-9 rounded-full px-4 text-body [&_svg]:size-4',
+    sm: 'h-7 rounded-full px-3 text-label [&_svg]:size-3.5 max-sm:h-11',
+    md: 'h-8 rounded-full px-3.5 text-body [&_svg]:size-3.5 max-sm:h-11',
+    lg: 'h-9 rounded-full px-4 text-body [&_svg]:size-4 max-sm:h-11',
   },
   /**
    * Paired radii on the Input scale (7 / 8 / 10), so a button, a field and a select sitting
@@ -180,16 +181,16 @@ const sizes: Record<ButtonShape, Record<ButtonSize, string>> = {
    * carrying eight controls those pixels are the difference between a toolbar and a queue.
    */
   square: {
-    sm: 'h-7 rounded-[7px] px-2.5 text-label [&_svg]:size-3.5',
-    md: 'h-8 rounded-md px-3 text-body [&_svg]:size-3.5',
-    lg: 'h-9 rounded-lg px-3.5 text-body [&_svg]:size-4',
+    sm: 'h-7 rounded-[7px] px-2.5 text-label [&_svg]:size-3.5 max-sm:h-11 max-sm:px-3.5',
+    md: 'h-8 rounded-md px-3 text-body [&_svg]:size-3.5 max-sm:h-11 max-sm:px-3.5',
+    lg: 'h-9 rounded-lg px-3.5 text-body [&_svg]:size-4 max-sm:h-11 max-sm:px-4',
   },
 }
 
 const iconOnlySizes: Record<ButtonSize, string> = {
-  sm: 'w-7 px-0',
-  md: 'w-8 px-0',
-  lg: 'w-9 px-0',
+  sm: 'w-7 px-0 max-sm:w-11',
+  md: 'w-8 px-0 max-sm:w-11',
+  lg: 'w-9 px-0 max-sm:w-11',
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(

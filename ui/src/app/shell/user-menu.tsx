@@ -151,7 +151,7 @@ export function UserMenu({ me, collapsed }: { me: Me; collapsed: boolean }) {
           menu.close()
           openSettings()
         }}
-        className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-body text-control outline-none hover:bg-fill-hover"
+        className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-body text-control outline-none hover:bg-fill-hover max-sm:min-h-11"
       >
         <Settings2 className="size-3.5 shrink-0" strokeWidth={iconStroke} />
         {copy.user.settings}
@@ -160,7 +160,7 @@ export function UserMenu({ me, collapsed }: { me: Me; collapsed: boolean }) {
         type="button"
         role="menuitem"
         onClick={onLogout}
-        className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-body text-danger-600 outline-none hover:bg-danger-50"
+        className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-body text-danger-600 outline-none hover:bg-danger-50 max-sm:min-h-11"
       >
         <LogOut className="size-3.5 shrink-0" strokeWidth={iconStroke} />
         {copy.user.logout}
