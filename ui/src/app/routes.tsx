@@ -66,7 +66,7 @@ export function AppRoutes({ me }: { me: Me }) {
   return (
     <Routes>
       <Route index element={<Panel me={me} />} />
-      <Route path="aprobaciones" element={<ApprovalInbox me={me} />} />
+      <Route path="aprobaciones" element={<ApprovalInbox />} />
       <Route path="aprobaciones/:id" element={<ApprovalPage />} />
       <Route path="contactos" element={<ContactList me={me} />} />
       <Route path="contactos/nuevo" element={<ContactCreate me={me} />} />

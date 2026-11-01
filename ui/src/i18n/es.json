@@ -3167,7 +3167,8 @@
       "label": "seleccionados",
       "selectAll": "Seleccionar todo",
       "clear": "Quitar selección",
-      "cancel": "Cancelar"
+      "cancel": "Cancelar",
+      "selectRow": "Seleccionar {name}"
     },
     "pagination": {
       "range": "{from}–{to} de {total}",
@@ -3233,6 +3234,13 @@
     },
     "lots": {
       "kind": "Tipo",
+      "status": "Estado"
+    },
+    "approvals": {
+      "request": "Solicitud",
+      "entity": "Entidad",
+      "summary": "Resumen",
+      "requestedAt": "Pedida",
       "status": "Estado"
     }
   }
