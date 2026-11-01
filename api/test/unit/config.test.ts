@@ -34,20 +34,6 @@ describe('loadConfig', () => {
     }
   });
 
-  it('lee el asistente de la workforce y lo deja nulo si falta', () => {
-    expect(loadConfig(dev).assistantUrl).toBeNull();
-    expect(loadConfig(dev).assistantToken).toBeNull();
-    const config = loadConfig({
-      ...dev,
-      WINECORE_ASSISTANT_URL: 'https://workforce.example/asistente/run',
-      WINECORE_ASSISTANT_TOKEN: 'token-sintetico',
-    });
-    expect(config.assistantUrl).toBe('https://workforce.example/asistente/run');
-    expect(config.assistantToken).toBe('token-sintetico');
-    expect(() => loadConfig({ ...dev, WINECORE_ASSISTANT_URL: 'ftp://workforce.example' })).toThrow(/WINECORE_ASSISTANT_URL/);
-    expect(() => loadConfig({ ...dev, WINECORE_ASSISTANT_URL: 'https://usuario:clave@example.com/run' })).toThrow(/WINECORE_ASSISTANT_URL/);
-  });
-
   it('rechaza AUTH_MODE=dev en producción', () => {
     expect(() => loadConfig({ NODE_ENV: 'production', AUTH_MODE: 'dev' })).toThrow(/AUTH_MODE/);
   });

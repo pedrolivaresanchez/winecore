@@ -10,8 +10,6 @@ import type { SupplierInvoiceApprovalHook } from './core/purchasing/approval';
 import { noopApprovalHook } from './core/purchasing/approval';
 import type { OcrWorkforce } from './core/purchasing/extract';
 import { ocrFromEnv } from './core/purchasing/timbal';
-import type { AssistantProvider } from './core/assistant/provider';
-import { assistantFromConfig } from './core/assistant/timbal';
 import { bindFinance } from './core/finance/runtime';
 import { installIntegrations } from './core/wiring/integrations';
 import { asDomainError, domainError, errorBody } from './core/errors';
@@ -209,8 +207,6 @@ export interface AppDeps {
   invoiceDocuments?: InvoiceDocumentStore;
   /** Límite de llamadas MCP por minuto y cliente. Por defecto 60. */
   mcpRatePerMinute?: number;
-  /** Modelo del asistente. Por defecto el workflow de `WINECORE_ASSISTANT_URL`. */
-  assistant?: AssistantProvider;
 }
 
 const startedAt = new WeakMap<Request, number>();
@@ -907,14 +903,7 @@ export function createApp(deps: AppDeps) {
     .post('/v1/mcp/clients/:id/revoke', ({ request, params }) => revokeMcpClient(deps.writer, request, params.id, http.now()), {
       beforeHandle: requireOwner(guardDeps),
     })
-    .use(assistantRoutes({
-      guard: guardDeps,
-      writer: deps.writer,
-      now: http.now,
-      provider: deps.assistant ?? assistantFromConfig(deps.config),
-      limiter: mcpLimiter,
-      log,
-    }))
+    .use(assistantRoutes({ guard: guardDeps, writer: deps.writer, now: http.now }))
     .use(vineyardRoutes(guardDeps))
     .use(winemakingRoutes({ writer: deps.writer, guard: guardDeps }))
     .use(vineyardNotebookRoutes(guardDeps))

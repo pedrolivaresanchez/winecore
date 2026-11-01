@@ -13,7 +13,6 @@ export async function createTestApp(options?: {
   approvalHook?: AppDeps['approvalHook'];
   mcpRatePerMinute?: number;
   fetchImpl?: AppDeps['fetchImpl'];
-  assistant?: AppDeps['assistant'];
 }) {
   const client = await createLocalClient(':memory:');
   await migrate(client);
@@ -41,7 +40,6 @@ export async function createTestApp(options?: {
     ocr: options?.ocr,
     approvalHook: options?.approvalHook,
     mcpRatePerMinute: options?.mcpRatePerMinute,
-    assistant: options?.assistant,
   };
   const app = createApp(deps);
   return {
