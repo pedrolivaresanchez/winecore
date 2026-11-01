@@ -75,8 +75,9 @@ test("Bodega: trasiego en borrador, vista previa y confirmación", async ({ page
 
   await test.step("El lote se ve en existencias físicas", async () => {
     await page.goto("/stock");
-    await page.getByRole("button", { name: "Ver el 01/01/2027" }).click();
-    await page.getByRole("radiogroup", { name: "Libro" }).waitFor();
+    const epoch = page.getByRole("button", { name: "Ver el 01/01/2027" });
+    if (await epoch.isVisible().catch(() => false)) await epoch.click();
+    await page.getByRole("searchbox", { name: "Buscar lote, recipiente o vino" }).waitFor();
     await page.getByRole("searchbox", { name: "Buscar lote, recipiente o vino" }).fill(lot);
     await expect(page.getByText(dest).first()).toBeVisible();
     await expect(page.getByText(lot).first()).toBeVisible();

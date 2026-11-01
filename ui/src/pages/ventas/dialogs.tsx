@@ -184,7 +184,7 @@ export function CreateDocument({
       />
       <DialogBody>
         <form
-          id="venta-nueva"
+          id="venta-nueva-form"
           data-screen="ventas-dialogo"
           className="grid gap-4 pb-2"
           onSubmit={(event) => {
@@ -309,7 +309,7 @@ export function CreateDocument({
         <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={saving}>
           {copy.sales.cancel}
         </Button>
-        <Button type="submit" form="venta-nueva" variant="primary" size="sm" loading={saving}>
+        <Button type="submit" form="venta-nueva-form" variant="primary" size="sm" loading={saving}>
           {saving ? copy.sales.creating : copy.sales.create}
         </Button>
       </DialogFooter>

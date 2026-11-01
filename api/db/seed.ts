@@ -194,6 +194,39 @@ export function cellarOperationSeriesStatements(now = new Date()): string[] {
   ]);
 }
 
+/** Presupuesto, pedido, albarán y factura para el año en curso y el siguiente. */
+export function salesDocumentSeriesStatements(now = new Date()): string[] {
+  const year = Number(businessDate(now).slice(0, 4));
+  const kinds = [
+    ['quote', 'PR'],
+    ['sales_order', 'PD'],
+    ['delivery_note', 'AL'],
+    ['invoice', 'FC'],
+  ] as const;
+  return [year, year + 1].flatMap((value) =>
+    kinds.flatMap(([docType, code]) => [
+      salesSeries('PO', docType, code, value),
+      salesSeries('CVPO', docType, code, value),
+    ]),
+  );
+}
+
+function salesSeries(entityCode: string, docType: string, code: string, year: number): string {
+  const prefix = `${code}${String(year).slice(2)}`;
+  return sql`
+    INSERT INTO core.number_series (
+      id, legal_entity_id, doc_type, code, year, prefix, padding, next_value, is_default, is_active
+    )
+    SELECT gen_random_uuid(), e.id, ${docType}, ${code}, ${year}, ${prefix}, 4, 1, TRUE, TRUE
+    FROM core.legal_entity e
+    WHERE e.code = ${entityCode}
+      AND NOT EXISTS (
+        SELECT 1 FROM core.number_series s
+        WHERE s.legal_entity_id = e.id AND s.doc_type = ${docType} AND s.year = ${year}
+      )
+  `;
+}
+
 /** Series PI de factura intercompañía para 2026 y 2027, en P.O y CVPO. */
 export function intercompanySeriesStatements(): string[] {
   return [2026, 2027].flatMap((year) => [

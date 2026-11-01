@@ -4,7 +4,7 @@ import type { Writer } from '../src/core/db/writer';
 import { createWriter } from '../src/core/db/writer';
 import { openClient } from '../src/core/db/open';
 import { migrate } from './migrate';
-import { cellarOperationSeriesStatements } from './seed';
+import { cellarOperationSeriesStatements, salesDocumentSeriesStatements } from './seed';
 import { generateSynthetic, type SyntheticDataset, type SyntheticScale } from './synthetic';
 
 const UUID_COLUMNS = new Set([
@@ -155,6 +155,23 @@ export async function seedDemo(
         WHERE NOT EXISTS (SELECT 1 FROM catalog.product WHERE sku = 'METABI')
       `);
       for (const statement of cellarOperationSeriesStatements()) tx.write(statement);
+      for (const statement of salesDocumentSeriesStatements()) tx.write(statement);
+      tx.write(sql`
+        INSERT INTO billing.billing_rule_set (id, version, status, activated_at, created_by)
+        SELECT gen_random_uuid(), 1, 'active', now(), 'seed-demo'
+        WHERE NOT EXISTS (SELECT 1 FROM billing.billing_rule_set WHERE status = 'active')
+      `);
+      tx.write(sql`
+        INSERT INTO billing.billing_rule (id, rule_set_id, scope, issuing_entity_id)
+        SELECT gen_random_uuid(), s.id, 'default', e.id
+        FROM billing.billing_rule_set s
+        JOIN core.legal_entity e ON e.code = 'CVPO'
+        WHERE s.status = 'active'
+          AND NOT EXISTS (
+            SELECT 1 FROM billing.billing_rule r
+            WHERE r.rule_set_id = s.id AND r.scope = 'default'
+          )
+      `);
       for (const statement of syntheticParcelStatements()) tx.write(statement);
       for (const statement of planLayoutStatements()) tx.write(statement);
     },

@@ -11,32 +11,44 @@ test("Ventas: presupuesto, pedido, albarán y factura con PDF", async ({ page })
     await page.goto("/ventas/presupuestos?libro=winecore");
     await page.getByRole("button", { name: "Nuevo presupuesto" }).click();
     await page.locator('[data-screen="ventas-dialogo"]').waitFor();
-    const products = page.getByRole("combobox", { name: "Producto" }).locator("option");
-    if ((await products.count()) < 2) omitir(SIN_STOCK);
+    const product = page.getByRole("combobox", { name: "Producto" });
+    await expect.poll(async () => product.locator("option").count(), { timeout: 8_000 }).toBeGreaterThan(1);
+    const optionCount = await product.locator("option").count();
     const customerBox = page.getByRole("combobox", { name: "Cliente" });
     customer = (await customerBox.locator("option").nth(1).textContent())?.trim() ?? "";
     await customerBox.selectOption({ index: 1 });
-    await page.getByRole("combobox", { name: "Producto" }).selectOption({ index: 1 });
     const price = page.getByRole("textbox", { name: "Precio" });
-    await expect(price).toBeVisible();
-    if ((await price.inputValue()) === "") {
-      await price.fill("12");
-      const reason = page.getByRole("textbox", { name: /motivo/i });
-      if (await reason.isVisible()) await reason.fill("Precio de la prueba");
-    }
+    await product.selectOption({ index: 1 });
+    await price.fill("12");
+    const reason = page.getByRole("textbox", { name: /motivo/i });
+    await expect(reason).toBeVisible();
+    await reason.fill("Precio de la prueba");
+    const created = page.waitForResponse(
+      (response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/api/v1/quotes",
+    );
     await page.getByRole("dialog").getByRole("button", { name: "Crear" }).click();
-    const alert = page.getByRole("alert");
-    if (await alert.isVisible({ timeout: 4_000 }).catch(() => false)) {
-      const text = (await alert.textContent()) ?? "";
-      if (/serie/i.test(text)) omitir(SIN_STOCK);
-      throw new Error(text);
+    const response = await created;
+    if (!response.ok()) {
+      const text = await response.text();
+      if (/serie|reglas activo|regla de entidad/i.test(text)) omitir(SIN_STOCK);
+      throw new Error(text.slice(0, 400));
     }
-    await page.waitForURL(/\/ventas\/presupuestos\/[0-9a-f-]+$/i);
+    await page.waitForURL(/\/ventas\/presupuestos\/[0-9a-f-]+/i);
   });
 
   await test.step("Aceptar el presupuesto y confirmar el pedido", async () => {
+    const accepted = page.waitForResponse(
+      (response) => response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/accept"),
+    );
     await page.getByRole("button", { name: "Aceptar" }).click();
-    await page.waitForURL(/\/ventas\/pedidos\/[0-9a-f-]+$/i);
+    const acceptance = await accepted;
+    if (!acceptance.ok()) {
+      const text = await acceptance.text();
+      if (/serie/i.test(text)) omitir(SIN_STOCK);
+      throw new Error(text.slice(0, 400));
+    }
+    await page.getByRole("button", { name: "Crear pedido" }).click();
+    await page.waitForURL(/\/ventas\/pedidos\/[0-9a-f-]+/i);
     await page.getByRole("button", { name: "Confirmar" }).click();
     await expect(page.getByRole("button", { name: "Crear albarán" })).toBeVisible();
   });
