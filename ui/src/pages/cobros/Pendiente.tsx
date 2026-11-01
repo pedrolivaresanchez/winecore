@@ -281,7 +281,7 @@ export function Pendiente({ me }: { me: Me }) {
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className={cn('grid grid-cols-2 gap-2 border-b border-border-subtle py-3 lg:grid-cols-4', entities.length > 1 && 'xl:grid-cols-5', FRAME_GUTTER)}>
+          <div className={cn('grid grid-cols-2 gap-2 border-b border-border-subtle py-3 lg:grid-cols-4', entities.length > 1 && 'xl:grid-cols-6', FRAME_GUTTER)}>
             <StatTile
               label={copy.cobros.kpiPending}
               value={pendingCents / 100}
@@ -324,7 +324,7 @@ export function Pendiente({ me }: { me: Me }) {
               href="/cobros?vista=pagos"
             />
             {entities.length > 1 ? (
-              <div className="col-span-2 flex min-w-0 flex-col gap-1.5 rounded-[10px] border border-border-subtle bg-surface-subtle px-3 py-2.5 lg:col-span-4 xl:col-span-1">
+              <div className="col-span-2 flex min-w-0 flex-col gap-1 rounded-[10px] border border-border-subtle bg-surface-subtle px-3 py-2.5 lg:col-span-4 xl:col-span-2">
                 <span className="truncate text-caption text-text-tertiary">{copy.cobros.kpiEntities}</span>
                 {entities.map((row) => (
                   <button
@@ -333,11 +333,17 @@ export function Pendiente({ me }: { me: Me }) {
                     onClick={() => setFilter('entity', entity === row.entity_code ? '' : row.entity_code)}
                     className="-mx-1 flex min-w-0 items-center gap-2 rounded-[6px] px-1 py-0.5 text-left outline-none hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)"
                   >
-                    <StatusPill tone={entityTone(row.entity_code)}>{entityName(row.entity_code)}</StatusPill>
-                    <span className="ml-auto shrink-0 text-label font-medium tabular-nums text-ink-900">{moneyOf(row.pending)}</span>
+                    <StatusPill tone={entityTone(row.entity_code)} className="shrink-0">
+                      {entityName(row.entity_code)}
+                    </StatusPill>
                     {centsOf(row.overdue) > 0 ? (
-                      <span className="shrink-0 text-caption tabular-nums text-danger-600">{fill(copy.cobros.kpiEntityOverdue, { amount: moneyOf(row.overdue) })}</span>
+                      <span className="ml-auto min-w-0 truncate text-caption tabular-nums text-danger-600">
+                        {fill(copy.cobros.kpiEntityOverdue, { amount: moneyOf(row.overdue) })}
+                      </span>
                     ) : null}
+                    <span className={cn('shrink-0 text-label font-medium tabular-nums text-ink-900', centsOf(row.overdue) > 0 ? 'ml-2' : 'ml-auto')}>
+                      {moneyOf(row.pending)}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -555,7 +561,7 @@ function InvoiceLine({
             </Badge>
           ) : null}
         </span>
-        <span className="hidden w-56 shrink-0 truncate text-caption text-text-tertiary md:block">{dates}</span>
+        <span className="hidden w-60 shrink-0 truncate text-caption text-text-tertiary md:block">{dates}</span>
         <span className={cn('w-40 shrink-0 truncate text-caption', state.late ? 'font-medium text-danger-600' : 'text-text-secondary')}>{state.text}</span>
         <span className={cn('w-28 shrink-0 text-right text-label tabular-nums', state.late ? 'text-danger-600' : 'text-ink-900')}>{moneyOf(item.outstanding)}</span>
       </Link>
