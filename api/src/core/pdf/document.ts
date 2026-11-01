@@ -11,6 +11,7 @@ import {
   type TableRow,
   type TotalRow,
 } from './holded-layout';
+import { logPdfFallback, renderFallbackPdf } from './fallback';
 import { customerSpec, issuerSpec, type PartyLike } from './parties';
 import { EMPTY_DOCUMENT_PROFILE, type DocumentProfileView, type DocumentVariant } from './profile';
 import { shipToLines, type ShipToView } from './ship-to';
@@ -163,10 +164,29 @@ export interface DocumentPdfInput {
 }
 
 /**
+ * Documento A4 con la maqueta de Holded. Nunca lanza: si la maqueta completa falla (logotipo
+ * ilegible, dato raro en una línea), la repite sin logotipo, cliente ni envío, y si aun así falla
+ * pinta una hoja sencilla. Un PDF que se abre desde la pantalla no puede acabar en un 500.
+ */
+export async function renderDocumentPdf(input: DocumentPdfInput): Promise<Uint8Array> {
+  try {
+    return await renderDocumentPdfStrict(input);
+  } catch (error) {
+    logPdfFallback('layout', error);
+  }
+  try {
+    return await renderDocumentPdfStrict({ ...input, profile: null, customer: null, shipTo: null, customerReferences: null });
+  } catch (error) {
+    logPdfFallback('bare-layout', error);
+  }
+  return renderFallbackPdf(input);
+}
+
+/**
  * Documento A4 con la maqueta de Holded (la misma que la factura): cabecera con logotipo,
  * emisor, caja del cliente, tabla de líneas y totales. No emite ni altera Verifactu.
  */
-export async function renderDocumentPdf(input: DocumentPdfInput): Promise<Uint8Array> {
+export async function renderDocumentPdfStrict(input: DocumentPdfInput): Promise<Uint8Array> {
   const lang: DocumentPdfLang = input.lang === 'en' ? 'en' : 'es';
   const labels = LABELS[lang];
   const profile = input.profile ?? EMPTY_DOCUMENT_PROFILE;

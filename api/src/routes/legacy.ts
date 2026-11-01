@@ -7,7 +7,8 @@ import { loadLegacyOverview } from '../core/legacy/overview';
 import { holdedDocumentPdfInput, holdedPdfFilename, holdedPdfInput, type HoldedPdfExtras } from '../core/legacy/pdf';
 import { loadCustomerParty } from '../core/pdf/context';
 import { renderDocumentPdf } from '../core/pdf/document';
-import { loadDocumentProfile } from '../core/pdf/profile';
+import { logPdfFallback } from '../core/pdf/fallback';
+import { loadDocumentProfileSafe } from '../core/pdf/profile';
 import { listLegacyProducts } from '../core/legacy/products';
 import type { Writer } from '../core/db/writer';
 
@@ -41,7 +42,7 @@ export async function getLegacyDocumentPdf(writer: Writer, request: Request, id:
 
 async function pdfExtras(writer: Writer, entityId: string, contactId: string | null): Promise<HoldedPdfExtras> {
   return {
-    profile: await loadDocumentProfile(writer, entityId),
+    profile: await loadDocumentProfileSafe(writer, entityId),
     customer: await loadCustomerParty(writer, contactId),
   };
 }
@@ -58,7 +59,13 @@ function pdfResponse(bytes: Uint8Array, filename: string): Response {
 
 /** El original adjunto gana a la copia generada, pero solo si de verdad es un PDF (un escaneo puede ser una foto). */
 async function storedPdf(writer: Writer, table: string, id: string, roles: string[]): Promise<Uint8Array | null> {
-  const links = await listLinks(writer.read.bind(writer), table, id);
+  let links: Awaited<ReturnType<typeof listLinks>>;
+  try {
+    links = await listLinks(writer.read.bind(writer), table, id);
+  } catch (error) {
+    logPdfFallback('stored-links', error);
+    return null;
+  }
   for (const role of roles) {
     const link = links.find((item) => item.role === role && item.mime_type === 'application/pdf');
     if (!link) continue;

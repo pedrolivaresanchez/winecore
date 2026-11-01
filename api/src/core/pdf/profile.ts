@@ -1,6 +1,7 @@
 import { sql } from '../db/sql';
 import type { Tx } from '../db/writer';
 import { bytesFromStored } from '../attachments/store';
+import { logPdfFallback } from './fallback';
 
 /**
  * Datos de la sociedad que salen en sus PDF: logotipo, contacto, líneas de pie y
@@ -95,6 +96,16 @@ export async function loadDocumentProfile(db: Read, legalEntityId: string): Prom
     website: row.website,
     footerLines: row.footerLines,
   };
+}
+
+/** Para los PDF: sin perfil legible el documento sale con la maqueta básica en vez de fallar. */
+export async function loadDocumentProfileSafe(db: Read, legalEntityId: string): Promise<DocumentProfileView> {
+  try {
+    return await loadDocumentProfile(db, legalEntityId);
+  } catch (error) {
+    logPdfFallback('profile', error);
+    return EMPTY_DOCUMENT_PROFILE;
+  }
 }
 
 function textOrNull(value: unknown): string | null {

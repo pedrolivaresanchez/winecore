@@ -3,7 +3,8 @@ import { sql } from '../db/sql';
 import type { Tx } from '../db/writer';
 import type { DocumentPdfSeller } from './document';
 import type { PartyLike } from './parties';
-import { loadDocumentProfile, type DocumentProfileView } from './profile';
+import { logPdfFallback } from './fallback';
+import { loadDocumentProfileSafe, type DocumentProfileView } from './profile';
 
 type Read = Pick<Tx, 'read'>;
 
@@ -35,7 +36,7 @@ export async function loadSellerContext(db: Read, legalEntityId: string): Promis
       province: text(row.province),
       countryCode: text(row.country_code) || 'ES',
     },
-    profile: await loadDocumentProfile(db, legalEntityId),
+    profile: await loadDocumentProfileSafe(db, legalEntityId),
   };
 }
 
@@ -61,8 +62,13 @@ export function partyFromCustomer(view: CustomerView): PartyLike {
 /** Cliente completo para la caja del documento; `null` si el contacto ya no existe. */
 export async function loadCustomerParty(db: Read, customerId: string | null): Promise<PartyLike | null> {
   if (!customerId) return null;
-  const view = await loadCustomer(db, customerId);
-  return view ? partyFromCustomer(view) : null;
+  try {
+    const view = await loadCustomer(db, customerId);
+    return view ? partyFromCustomer(view) : null;
+  } catch (error) {
+    logPdfFallback('customer', error);
+    return null;
+  }
 }
 
 /** Porcentaje de cada código de impuesto (21 para IVA21) para calcular el total de cada línea. */
