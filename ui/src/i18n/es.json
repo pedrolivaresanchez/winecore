@@ -1883,6 +1883,7 @@
     },
     "taxes": {
       "IVA21": "IVA 21 %",
+      "IVA10": "IVA 10 %",
       "IVA21_RE": "IVA 21 % + recargo",
       "EXP_E2": "Exportación",
       "INTRA_E5": "Intracomunitaria",

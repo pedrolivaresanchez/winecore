@@ -290,6 +290,7 @@ export const CONTAINER_OPTIONS: { id: Container; label: string }[] = [
 export const TAX_OPTIONS = [
   { id: "", label: "Sin indicar" },
   { id: "IVA21", label: "IVA 21 %" },
+  { id: "IVA10", label: "IVA 10 %" },
   { id: "IVA21_RE", label: "IVA 21 % + recargo" },
   { id: "IVA21_ALQ", label: "IVA 21 % + retención" },
   { id: "EXP_E2", label: "Exportación exenta" },

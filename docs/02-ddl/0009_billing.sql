@@ -33,6 +33,7 @@ CREATE TABLE billing.tax_code (
 );
 INSERT INTO billing.tax_code(code, name_es, tax, regime_key, qualification, exemption, rate, surcharge_rate, withholding_rate, legal_mention_es, legal_mention_en, requires_vat_id) VALUES
  ('IVA21',      'IVA general 21 %',                         '01','01','S1',NULL, 21.00, 0.00,  0.00, NULL, NULL, false),
+ ('IVA10',      'IVA reducido 10 %',                        '01','01','S1',NULL, 10.00, 0.00,  0.00, NULL, NULL, false),
  ('IVA21_RE',   'IVA 21 % + recargo de equivalencia 5,2 %', '01','18','S1',NULL, 21.00, 5.20,  0.00, NULL, NULL, false),
  ('IVA21_ALQ',  'Arrendamiento local IVA 21 % + ret. 19 %', '01','11','S1',NULL, 21.00, 0.00, 19.00, NULL, NULL, false),
  ('EXP_E2',     'Exportación exenta (art. 21 LIVA)',        '01','02',NULL,'E2',  0.00, 0.00,  0.00,

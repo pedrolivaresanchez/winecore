@@ -76,6 +76,22 @@ export const IVA21: TaxCode = seed({
   requiresVatId: false,
 });
 
+/** IVA reducido 10 % (hostelería, catas). Migración 0045. */
+export const IVA10: TaxCode = seed({
+  code: "IVA10",
+  nameEs: "IVA reducido 10 %",
+  tax: "01",
+  regimeKey: "01",
+  qualification: "S1",
+  exemption: null,
+  rate: "10.00",
+  surchargeRate: "0.00",
+  withholdingRate: "0.00",
+  legalMentionEs: null,
+  legalMentionEn: null,
+  requiresVatId: false,
+});
+
 /** IVA 21 % + recargo de equivalencia 5,2 %. */
 export const IVA21_RE: TaxCode = seed({
   code: "IVA21_RE",
@@ -157,11 +173,12 @@ export const NS_LOC: TaxCode = seed({
   requiresVatId: false,
 });
 
-/** Seed order of `0009_billing.sql`. */
-export const TAX_CODE_SEEDS = [IVA21, IVA21_RE, IVA21_ALQ, EXP_E2, INTRA_E5, NS_LOC] as const;
+/** Seed order of `0009_billing.sql`, then the codes added by later migrations. */
+export const TAX_CODE_SEEDS = [IVA21, IVA21_RE, IVA21_ALQ, EXP_E2, INTRA_E5, NS_LOC, IVA10] as const;
 
 export const TAX_CODES = {
   IVA21,
+  IVA10,
   IVA21_RE,
   IVA21_ALQ,
   EXP_E2,

@@ -237,7 +237,7 @@ export type BatchResult = {
 
 export type SourceKind = 'notes' | 'order' | 'lines'
 
-export const TAX_CODES = ['IVA21', 'IVA21_RE', 'IVA21_ALQ', 'EXP_E2', 'INTRA_E5'] as const
+export const TAX_CODES = ['IVA21', 'IVA10', 'IVA21_RE', 'IVA21_ALQ', 'EXP_E2', 'INTRA_E5'] as const
 
 export const VOID_REASONS = ['duplicate', 'wrong_entity', 'wrong_customer'] as const
 
