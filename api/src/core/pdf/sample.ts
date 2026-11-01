@@ -2,7 +2,9 @@ import { computeInvoice } from '../billing/compute';
 import { IVA21, IVA21_ALQ, type TaxCode } from '../billing/taxCodes';
 import type { InvoiceLang, InvoiceLineView, IssuedInvoice, PartyIdentity } from '../billing/pdf/types';
 import { money } from '../money';
+import type { DocumentPdfInput, DocumentPdfLine, DocumentPdfSeller } from './document';
 import type { DocumentProfileView } from './profile';
+import type { ShipToView } from './ship-to';
 
 /**
  * Documentos de muestra con datos inventados (cliente, líneas, referencias). El emisor y el
@@ -168,5 +170,73 @@ export function sampleInvoice(options: {
     deliveryNoteNumbers: kind === 'invoice' || kind === 'multipage' ? ['A260142'] : [],
     verifactu: { active: false, qrUrl: null, qrModules: null },
     pdfAttachmentId: null,
+  };
+}
+
+export type DocumentSampleKind = 'quote' | 'delivery_note';
+
+export const DOCUMENT_SAMPLE_KINDS: readonly DocumentSampleKind[] = ['quote', 'delivery_note'];
+
+const SAMPLE_SHIP_TO: ShipToView = {
+  name: 'ALMACÉN CENTRAL DE EJEMPLO',
+  line1: 'Avenida del Almacén, 20-22',
+  line2: null,
+  postalCode: '18000',
+  city: 'Granada',
+  province: 'Granada',
+  countryCode: 'ES',
+};
+
+/** Presupuesto o albarán de muestra para la vista previa del perfil documental. */
+export function sampleDocument(options: {
+  seller: DocumentPdfSeller;
+  profile: DocumentProfileView;
+  lang: InvoiceLang;
+  kind: DocumentSampleKind;
+}): DocumentPdfInput {
+  const english = options.lang === 'en';
+  const quote = options.kind === 'quote';
+  const lines: DocumentPdfLine[] = BASE_LINES.map((line) => {
+    const base = money.round2(money.mul(money.fromString(line.quantity), money.fromString(line.unitPrice)));
+    return {
+      description: line.description,
+      quantity: line.quantity,
+      unit: line.unit,
+      unit_price: line.unitPrice,
+      discount_pct: line.discountPct,
+      line_base: money.toString(base),
+      tax_code: 'IVA21',
+      tax_rate: '21',
+      lot: quote ? null : line.lotCode ?? 'Sin lote',
+    };
+  });
+  const subtotal = lines.reduce((sum, line) => money.add(sum, money.fromString(line.line_base ?? '0')), money.fromString('0'));
+  const vat = money.round2(money.mul(subtotal, money.fromString('0.21')));
+  return {
+    lang: options.lang,
+    title: quote ? (english ? 'Quote' : 'Presupuesto') : (english ? 'Delivery note' : 'Albarán'),
+    number: quote ? 'P260012' : 'A260142',
+    issueDate: '2026-10-29',
+    dueLabel: quote ? (english ? 'Valid until' : 'Válido hasta') : null,
+    dueDate: quote ? '2026-11-28' : null,
+    status: quote ? (english ? 'Sent' : 'Enviado') : (english ? 'Issued' : 'Emitido'),
+    meta: quote ? [] : [english ? 'Type Sale' : 'Clase Venta'],
+    partyLabel: english ? 'Customer' : 'Cliente',
+    seller: options.seller,
+    profile: options.profile,
+    customer: SAMPLE_CUSTOMER,
+    customerName: SAMPLE_CUSTOMER.legalName,
+    shipTo: SAMPLE_SHIP_TO,
+    customerReferences: 'PEDIDO 00000001\nCENTRO 0059\nPROVEEDOR 0001929',
+    description: null,
+    lines,
+    priced: quote,
+    totals: quote
+      ? { subtotal: money.toString(subtotal), vat: money.toString(vat), withholding: null, total: money.toString(money.add(subtotal, vat)) }
+      : null,
+    settlement: null,
+    note: quote
+      ? (english ? 'This document is not a tax invoice.' : 'Este documento no es una factura fiscal.')
+      : (english ? 'Delivery note. This is not an invoice.' : 'Albarán de entrega. No es una factura.'),
   };
 }

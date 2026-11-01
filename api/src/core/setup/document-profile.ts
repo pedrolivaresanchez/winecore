@@ -5,11 +5,14 @@ import type { Tx, Writer } from '../db/writer';
 import { domainError } from '../errors';
 import { newId } from '../ids';
 import { inspectLogo } from '../pdf/holded-layout';
+import { isPreviewKind, PREVIEW_KINDS, renderPreviewPdf } from '../pdf/preview';
 import {
   DOCUMENT_VARIANTS,
   EMPTY_DOCUMENT_PROFILE,
   isDocumentVariant,
+  loadDocumentProfile,
   readProfileRow,
+  type DocumentProfileView,
   type DocumentVariant,
   type StoredProfileRow,
 } from '../pdf/profile';
@@ -65,9 +68,14 @@ export async function getDocumentProfile(db: Read, rawCode: string): Promise<Doc
   return present(db, entity, row);
 }
 
-async function present(db: Read, entity: EntityRef, row: StoredProfileRow | null): Promise<DocumentProfileJson> {
-  let logo: DocumentProfileJson['logo'] = null;
-  if (row?.logoAttachmentId) {
+async function present(
+  db: Read,
+  entity: EntityRef,
+  row: StoredProfileRow | null,
+  freshLogo: DocumentProfileJson['logo'] = null,
+): Promise<DocumentProfileJson> {
+  let logo: DocumentProfileJson['logo'] = freshLogo;
+  if (!logo && row?.logoAttachmentId) {
     const meta = await readAttachmentMeta((statement) => db.read(statement), row.logoAttachmentId);
     if (meta) {
       logo = {
@@ -264,14 +272,21 @@ export async function putDocumentLogo(
   }
   const current = await readProfileRow(tx, entity.id);
   const profileId = current?.id ?? newId();
+  const name = file.name.trim() === '' ? 'logotipo' : file.name;
   const stored = await putAttachment(
     tx,
-    { bytes: file.bytes, mime, name: file.name.trim() === '' ? 'logotipo' : file.name },
+    { bytes: file.bytes, mime, name },
     { table: 'core.document_profile', rowId: profileId, role: 'other', createdBy: actor },
   );
   await unlinkOldLogos(tx, profileId, stored.id);
   const saved = await save(tx, actor, entity, current, {}, { set: true, attachmentId: stored.id }, profileId);
-  return present(tx, entity, saved);
+  // Las escrituras de esta transacción aún no se leen: el logotipo recién subido se describe aquí.
+  return present(tx, entity, saved, {
+    attachment_id: stored.id,
+    filename: name,
+    mime_type: mime,
+    size_bytes: file.bytes.byteLength,
+  });
 }
 
 export async function deleteDocumentLogo(tx: Tx, actor: string, rawCode: string): Promise<DocumentProfileJson> {
@@ -308,4 +323,68 @@ export async function readDocumentLogo(
   if (!meta) return null;
   const bytes = await readContent(read, meta.sha256);
   return { bytes, mime: meta.mime_type, filename: meta.filename };
+}
+
+export interface ProfilePreview {
+  bytes: Uint8Array;
+  filename: string;
+}
+
+/**
+ * PDF de muestra con los datos de la sociedad. Lo que llegue en el cuerpo (variante, contacto,
+ * pie) se prueba sin guardarlo; el logotipo es el guardado.
+ */
+export async function previewDocumentProfile(db: Read, rawCode: string, raw: unknown): Promise<ProfilePreview> {
+  const entity = await entityByCode(db, rawCode);
+  const body = raw === undefined || raw === null ? {} : raw;
+  if (typeof body !== 'object' || Array.isArray(body)) {
+    throw domainError('WC_VALIDATION', { body: 'El cuerpo debe ser un objeto' });
+  }
+  const record = body as Record<string, unknown>;
+  const kind = record.kind === undefined ? 'invoice' : record.kind;
+  if (!isPreviewKind(kind)) {
+    throw domainError('WC_VALIDATION', { kind: `Debe ser ${PREVIEW_KINDS.join(', ')}` });
+  }
+  const lang = record.lang === undefined ? 'es' : record.lang;
+  if (lang !== 'es' && lang !== 'en') throw domainError('WC_VALIDATION', { lang: 'Debe ser es o en' });
+  const { kind: _kind, lang: _lang, ...profileFields } = record;
+  const overrides = parseProfileInput(profileFields);
+  const stored = await loadDocumentProfile(db, entity.id);
+  const profile: DocumentProfileView = {
+    variant: overrides.variant ?? stored.variant,
+    logo: stored.logo,
+    email: overrides.email !== undefined ? overrides.email : stored.email,
+    phone: overrides.phone !== undefined ? overrides.phone : stored.phone,
+    website: overrides.website !== undefined ? overrides.website : stored.website,
+    footerLines: overrides.footerLines ?? stored.footerLines,
+  };
+  const rows = await db.read<Record<string, unknown>>(sql`
+    SELECT legal_name, trade_name, tax_id, address_line, postal_code, city, province, country_code, registry_data
+    FROM core.legal_entity WHERE id = CAST(${entity.id} AS UUID)
+  `);
+  const row = rows[0];
+  if (!row) throw domainError('WC_NOT_FOUND');
+  const bytes = await renderPreviewPdf({
+    issuer: {
+      legalName: String(row.legal_name),
+      tradeName: row.trade_name == null ? null : String(row.trade_name),
+      taxId: filled(row.tax_id, '(NIF pendiente)'),
+      addressLine: filled(row.address_line, '(dirección pendiente)'),
+      postalCode: filled(row.postal_code, '00000'),
+      city: filled(row.city, '(población)'),
+      province: filled(row.province, ''),
+      countryCode: filled(row.country_code, 'ES'),
+      registryData: row.registry_data == null ? null : String(row.registry_data),
+    },
+    profile,
+    kind,
+    lang,
+  });
+  return { bytes, filename: `muestra-${kind}-${entity.code.toLowerCase()}.pdf` };
+}
+
+/** La muestra se puede ver aunque falte el domicilio; los huecos se marcan como pendientes y no se guardan. */
+function filled(value: unknown, fallback: string): string {
+  const text = value == null ? '' : String(value).trim();
+  return text === '' ? fallback : text;
 }
