@@ -76,7 +76,7 @@ export const FieldButton = forwardRef<HTMLButtonElement, FieldButtonProps>(funct
       title={title}
       aria-expanded={active === undefined ? undefined : active}
       className={cn(
-        'inline-flex h-7 min-w-0 shrink-0 items-center gap-1.5 rounded-[7px] px-2 text-left text-label',
+        'inline-flex h-7 min-w-0 shrink-0 items-center gap-1.5 rounded-[7px] px-2 text-left text-label max-sm:h-11',
         'outline-none transition-[background-image,border-color,box-shadow,color]',
         'duration-(--duration-quick) ease-(--ease-smooth-out)',
         'focus-visible:border-border-strong focus-visible:shadow-(--shadow-focus)',

@@ -29,7 +29,7 @@ export type PaginationProps = {
 }
 
 const STEP = cn(
-  'flex h-7 items-center gap-1 rounded-[7px] px-2 text-label font-medium text-control outline-none',
+  'flex h-7 items-center justify-center gap-1 rounded-[7px] px-2 text-label font-medium text-control outline-none max-sm:h-11 max-sm:min-w-11',
   'transition-colors duration-(--duration-quick) ease-(--ease-smooth-out)',
   'hover:bg-fill-hover hover:text-ink-900 focus-visible:shadow-(--shadow-focus)',
   'disabled:pointer-events-none disabled:opacity-40',
@@ -69,7 +69,7 @@ export function Pagination({
     <div
       aria-busy={loading || undefined}
       data-pagination=""
-      className={cn('flex h-10 shrink-0 items-center justify-between gap-3 border-t border-border-subtle', FRAME_GUTTER, className)}
+      className={cn('flex h-10 shrink-0 items-center justify-between gap-3 border-t border-border-subtle max-sm:h-14', FRAME_GUTTER, className)}
     >
       <span className="min-w-0 truncate text-label tabular-nums text-text-tertiary">
         {range}

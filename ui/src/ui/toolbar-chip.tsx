@@ -45,7 +45,7 @@ export function Chip({
     <span
       {...data}
       className={cn(
-        'inline-flex h-7 shrink-0 items-center rounded-[7px] text-label',
+        'inline-flex h-7 shrink-0 items-center rounded-[7px] text-label max-sm:h-11',
         'transition-[background-image,background-color,border-color,box-shadow,color] duration-(--duration-quick) ease-(--ease-smooth-out)',
         selected
           ? 'border border-info-500/60 bg-info-50 font-medium text-info-700'
@@ -69,9 +69,9 @@ export function Chip({
         aria-pressed={pressed}
         disabled={!onClick}
         className={cn(
-          'flex h-full min-w-0 items-center gap-1.5 rounded-[6px] outline-none',
+          'flex h-full min-w-0 items-center gap-1.5 rounded-[6px] outline-none max-sm:min-w-11',
           'focus-visible:shadow-(--shadow-focus)',
-          glyphOnly ? 'px-1.5' : cn(Icon ? 'pl-1' : 'pl-2', onClear ? 'pr-1' : 'pr-2'),
+          glyphOnly ? 'px-1.5 max-sm:justify-center' : cn(Icon ? 'pl-1' : 'pl-2', onClear ? 'pr-1' : 'pr-2'),
           onClick && !selected && 'hover:text-ink-900',
         )}
       >
@@ -86,7 +86,7 @@ export function Chip({
           onClick={onClear}
           aria-label={title}
           className={cn(
-            'mr-1 flex size-5 shrink-0 items-center justify-center rounded-[4px] text-icon-muted outline-none',
+            'mr-1 flex size-5 shrink-0 items-center justify-center rounded-[4px] text-icon-muted outline-none max-sm:size-10',
             'hover:bg-fill-muted hover:text-ink-900 focus-visible:shadow-(--shadow-focus)',
           )}
         >

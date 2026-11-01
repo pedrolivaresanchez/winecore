@@ -245,7 +245,7 @@ function FilterRow({
             data-filter-clear=""
             onClick={clearAll}
             className={cn(
-              'flex h-7 items-center gap-1 rounded-[7px] px-2 text-label text-text-secondary outline-none',
+              'flex h-7 items-center gap-1 rounded-[7px] px-2 text-label text-text-secondary outline-none max-sm:h-11 max-sm:px-3',
               'transition-colors duration-(--duration-quick) ease-(--ease-smooth-out)',
               'hover:bg-fill-hover hover:text-ink-900 focus-visible:shadow-(--shadow-focus)',
             )}

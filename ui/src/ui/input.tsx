@@ -18,16 +18,16 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
 }
 
 const fieldSizes: Record<InputSize, { root: string; gap: string }> = {
-  sm: { root: 'h-7 rounded-[7px] px-2.5 text-label [&_svg]:size-3.5', gap: 'gap-1.5' },
-  md: { root: 'h-8 rounded-md px-2.5 text-body [&_svg]:size-3.5', gap: 'gap-2' },
-  lg: { root: 'h-9 rounded-lg px-3 text-body [&_svg]:size-4', gap: 'gap-2' },
+  sm: { root: 'h-7 rounded-[7px] px-2.5 text-label max-sm:h-11 [&_svg]:size-3.5', gap: 'gap-1.5' },
+  md: { root: 'h-8 rounded-md px-2.5 text-body max-sm:h-11 [&_svg]:size-3.5', gap: 'gap-2' },
+  lg: { root: 'h-9 rounded-lg px-3 text-body max-sm:h-11 [&_svg]:size-4', gap: 'gap-2' },
 }
 
 /** Padding and height match Button sizes; always `rounded-full`. */
 const pillSizes: Record<InputSize, { root: string; gap: string }> = {
-  sm: { root: 'h-7 rounded-full px-3 text-label [&_svg]:size-3.5', gap: 'gap-1.5' },
-  md: { root: 'h-8 rounded-full px-3.5 text-body [&_svg]:size-3.5', gap: 'gap-2' },
-  lg: { root: 'h-9 rounded-full px-4 text-body [&_svg]:size-4', gap: 'gap-2' },
+  sm: { root: 'h-7 rounded-full px-3 text-label max-sm:h-11 [&_svg]:size-3.5', gap: 'gap-1.5' },
+  md: { root: 'h-8 rounded-full px-3.5 text-body max-sm:h-11 [&_svg]:size-3.5', gap: 'gap-2' },
+  lg: { root: 'h-9 rounded-full px-4 text-body max-sm:h-11 [&_svg]:size-4', gap: 'gap-2' },
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
@@ -71,7 +71,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
           ref={ref}
           disabled={disabled}
           aria-invalid={invalid || undefined}
-          className="w-full bg-transparent text-control outline-none placeholder:text-text-tertiary disabled:cursor-not-allowed"
+          className="h-full min-w-0 w-full bg-transparent text-control outline-none placeholder:text-text-tertiary disabled:cursor-not-allowed"
           {...props}
         />
         {suffix && <span className="flex shrink-0 items-center text-control">{suffix}</span>}

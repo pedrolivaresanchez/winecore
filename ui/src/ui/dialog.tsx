@@ -241,7 +241,7 @@ export function DialogHeader({
           aria-label={labels.close}
           onClick={onClose}
           className={cn(
-            'flex size-8 shrink-0 items-center justify-center rounded-md text-control outline-none sm:size-7',
+            'flex size-11 shrink-0 items-center justify-center rounded-md text-control outline-none sm:size-7',
             'transition-colors hover:bg-fill-hover hover:text-ink-700 focus-visible:shadow-(--shadow-focus)',
           )}
         >

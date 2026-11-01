@@ -49,13 +49,13 @@ export interface SegmentedControlProps<T extends string> {
  */
 const SIZES = {
   sm: {
-    height: 'h-7',
+    height: 'h-7 max-sm:h-11',
     segment: 'px-1.5 [&_svg]:size-3',
     pillSegment: 'px-2',
     label: 'text-caption',
   },
   md: {
-    height: 'h-8',
+    height: 'h-8 max-sm:h-11',
     segment: 'px-2.5 [&_svg]:size-3.5',
     pillSegment: 'px-3.5',
     label: 'text-label',
@@ -109,6 +109,7 @@ export function SegmentedControl<T extends string>({
               'transition-colors duration-(--duration-fast) ease-(--ease-smooth-out)',
               'focus-visible:shadow-(--shadow-focus)',
               '[&_svg]:shrink-0 [&_svg]:stroke-[1.5]',
+              'max-sm:min-w-11',
               sizeStyles.segment,
               shape === 'pill' && sizeStyles.pillSegment,
               fill ? 'min-w-0 flex-1' : 'shrink-0',
