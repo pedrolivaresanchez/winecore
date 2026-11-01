@@ -140,6 +140,8 @@ function countSummary(data: Record<string, unknown>): string {
 }
 
 const LABEL_KEYS = ['title', 'legal_name', 'name', 'display_name', 'number', 'code', 'sku'] as const;
+/** Un commit devuelve el enlace sin nombre; el título de la herramienta sonaría a volver a crearlo. */
+const CREATED_LINK_LABEL = 'Registro creado';
 
 function internalPath(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -237,7 +239,7 @@ export async function runAssistantTurn(deps: TurnDeps, request: ChatRequest): Pr
       };
     }
     const data = isRecord(result.structuredContent) ? result.structuredContent : {};
-    collectLinks(data, title, links);
+    collectLinks(data, kind === 'commit' ? CREATED_LINK_LABEL : title, links);
     if (kind === 'prepare') {
       const summary = typeof data.summary_es === 'string' ? data.summary_es : title;
       const token = typeof data.confirmation_token === 'string' ? data.confirmation_token : '';

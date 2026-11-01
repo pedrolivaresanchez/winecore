@@ -94,7 +94,7 @@ describe('asistente: disponibilidad y entrada', () => {
     const ctx = await createTestApp({ now: () => NOW });
     try {
       const status = await ctx.app.handle(new Request('http://localhost/v1/assistant/status'));
-      expect(await status.json()).toEqual({ available: false });
+      expect(await status.json()).toEqual({ available: false, tools: [] });
       const response = await chat(ctx.app, ask('¿Qué facturas están pendientes de entrega?'));
       expect(response.status).toBe(503);
       expect(response.body.code).toBe('WC_ASSISTANT_UNAVAILABLE');
@@ -153,6 +153,24 @@ describe('asistente: disponibilidad y entrada', () => {
       expect(names.some((name) => name.endsWith('_commit'))).toBe(false);
       expect(names).not.toContain('billing_invoice_delivery_mark_sent');
       expect(input?.tools.find((tool) => tool.name === 'contacts_search')?.input_schema.type).toBe('object');
+    });
+  });
+
+  test('el estado lista las herramientas que puede usar cada persona', async () => {
+    await withAssistant([], async (ctx) => {
+      const status = async (user: string) => {
+        const response = await ctx.app.handle(new Request('http://localhost/v1/assistant/status', { headers: { 'x-dev-user': user } }));
+        return await response.json() as { available: boolean; tools: string[] };
+      };
+      const owner = await status('owner@winecore.test');
+      expect(owner.available).toBe(true);
+      expect(owner.tools).toContain('contacts_search');
+      expect(owner.tools).toContain('contacts_create_prepare');
+      expect(owner.tools.some((name) => name.endsWith('_commit'))).toBe(false);
+      expect(owner.tools).not.toContain('billing_invoices_pending_delivery_list');
+      const cellar = await status('bodega@winecore.test');
+      expect(cellar.tools).toContain('cellar_vessels_list');
+      expect(cellar.tools).not.toContain('contacts_search');
     });
   });
 });
@@ -308,7 +326,7 @@ describe('asistente: escrituras con confirmación', () => {
       expect(confirmed.status).toBe(200);
       expect(confirmed.body.steps.map((step) => [step.tool, step.ok])).toEqual([['contacts_create_commit', true]]);
       expect(confirmed.body.pending).toBeNull();
-      expect(confirmed.body.links.some((link) => link.path.startsWith('/contactos/'))).toBe(true);
+      expect(confirmed.body.links.find((link) => link.path.startsWith('/contactos/'))?.label).toBe('Registro creado');
       expect(await contacts()).toBe('1');
 
       const audits = await mcpAudits(ctx);

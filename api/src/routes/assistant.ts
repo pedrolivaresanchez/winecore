@@ -9,6 +9,7 @@ import { asDomainError, domainError, errorBody } from '../core/errors';
 import { safeLogMessage } from '../core/redact';
 import { contextForUser } from '../mcp/context';
 import { RateLimiter } from '../mcp/rate';
+import { visibleToolCatalogue } from '../mcp/server';
 
 /** Turnos de chat por minuto y persona. Cada herramienta cuenta además en el límite MCP. */
 export const ASSISTANT_TURNS_PER_MINUTE = 20;
@@ -106,7 +107,18 @@ export function assistantRoutes(deps: AssistantRouteDeps) {
   const log = deps.log ?? ((line: string) => console.log(line));
   const user = { beforeHandle: requireUser(deps.guard) };
   return new Elysia()
-    .get('/v1/assistant/status', () => ({ available: deps.provider.available }), user)
+    .get('/v1/assistant/status', async ({ request }) => {
+      if (!deps.provider.available) return { available: false, tools: [] };
+      const ctx = await contextForUser(deps.writer, sessionOf(request), {
+        now: deps.now,
+        webBaseUrl: '',
+        requestId: requestIdFor(request),
+      });
+      const tools = visibleToolCatalogue(ctx)
+        .filter((tool) => tool.kind === 'read' || tool.kind === 'prepare')
+        .map((tool) => tool.name);
+      return { available: true, tools };
+    }, user)
     .post('/v1/assistant/chat', async ({ request }) => {
       if (!deps.provider.available) throw domainError('WC_ASSISTANT_UNAVAILABLE');
       const input = parseChatRequest(await readBody(request));
