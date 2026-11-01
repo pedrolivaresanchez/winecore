@@ -5,7 +5,7 @@ import { copy } from '@/i18n'
 import { cn } from '@/lib/cn'
 import { iconStroke } from '@/lib/motion'
 import { ArrowLeft, Calendar, ChevronDown } from '@/ui/icons'
-import { Badge, Button, GlassMenu, InfoTip, MenuItem, useMenuOpen } from '@/ui'
+import { Button, GlassMenu, InfoTip, MenuItem, StatusPill, useMenuOpen } from '@/ui'
 import { FRAME_GUTTER, FRAME_STRIP_SCROLL } from '@/ui/frame'
 import { REGULATORY_VIEWS, resultStepLabel, statusMeta, stepIndex, type RegulatoryView } from '@/pages/regulatorio/model'
 
@@ -49,6 +49,15 @@ function ObjectSwitch({ current }: { current: RegulatoryView }) {
   )
 }
 
+/** The view switch for a `FilterBar`'s leading slot: on a phone the header that holds it is gone. */
+export function MobileViewSwitch({ current }: { current: RegulatoryView }) {
+  return (
+    <div className="shrink-0 md:hidden">
+      <ObjectSwitch current={current} />
+    </div>
+  )
+}
+
 export function ListFrame({
   screen,
   view,
@@ -56,6 +65,7 @@ export function ListFrame({
   mobileActions,
   toolbar,
   filters,
+  bar,
   children,
 }: {
   screen: string
@@ -64,6 +74,8 @@ export function ListFrame({
   mobileActions?: ReactNode
   toolbar?: ReactNode
   filters?: ReactNode
+  /** A `FilterBar` in place of the toolbar and filter rows; it carries `MobileViewSwitch` itself. */
+  bar?: ReactNode
   children: ReactNode
 }) {
   const label = REGULATORY_VIEWS.find((item) => item.id === view)?.label ?? copy.regulatorio.title
@@ -75,18 +87,20 @@ export function ListFrame({
         <ObjectSwitch current={view} />
         {actions ? <div className="ml-auto flex shrink-0 items-center gap-1.5">{actions}</div> : null}
       </header>
-      <div className={cn('flex h-11 shrink-0 items-center gap-1.5 border-b border-border-subtle', FRAME_GUTTER)}>
-        <div className="shrink-0 md:hidden">
-          <ObjectSwitch current={view} />
-        </div>
-        <div className={FRAME_STRIP_SCROLL}>{toolbar}</div>
-        {mobileActions ? <div className="flex shrink-0 items-center gap-1.5 md:hidden">{mobileActions}</div> : null}
-      </div>
-      {filters ? (
-        <div className={cn('flex h-10 shrink-0 items-center gap-1.5 border-b border-border-subtle bg-surface-subtle', FRAME_GUTTER)}>
-          <div className={cn(FRAME_STRIP_SCROLL, '[&>*]:shrink-0')}>{filters}</div>
-        </div>
-      ) : null}
+      {bar ?? (
+        <>
+          <div className={cn('flex h-11 shrink-0 items-center gap-1.5 border-b border-border-subtle', FRAME_GUTTER)}>
+            <MobileViewSwitch current={view} />
+            <div className={FRAME_STRIP_SCROLL}>{toolbar}</div>
+            {mobileActions ? <div className="flex shrink-0 items-center gap-1.5 md:hidden">{mobileActions}</div> : null}
+          </div>
+          {filters ? (
+            <div className={cn('flex h-10 shrink-0 items-center gap-1.5 border-b border-border-subtle bg-surface-subtle', FRAME_GUTTER)}>
+              <div className={cn(FRAME_STRIP_SCROLL, '[&>*]:shrink-0')}>{filters}</div>
+            </div>
+          ) : null}
+        </>
+      )}
       {children}
     </div>
   )
@@ -164,9 +178,9 @@ export function Fact({ label, value, mono }: { label: string; value: string; mon
 export function StatusBadge({ status, phase, size = 'md' }: { status: string; phase: string; size?: 'sm' | 'md' }) {
   const meta = statusMeta(status, phase)
   return (
-    <Badge tone={meta.tone} dot size={size}>
+    <StatusPill tone={meta.tone} dot size={size}>
       {meta.label}
-    </Badge>
+    </StatusPill>
   )
 }
 
