@@ -1,11 +1,12 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useChromeTitle } from '@/app/shell/shell-context'
 import { useEntity } from '@/app/entity-context'
-import { ArrowLeft, Plus, RefreshCw } from '@/ui/icons'
+import { ArrowLeft, Camera, FileText, RefreshCw, Upload } from '@/ui/icons'
 import { Alert, Button, SegmentedControl } from '@/ui'
-import { copy } from '@/i18n'
+import { copy, fill } from '@/i18n'
 import { ApiError } from '@/lib/api'
+import { compressImage } from '@/lib/compress-image'
 import { iconStroke } from '@/lib/motion'
 import { cn } from '@/lib/cn'
 import { allows } from '@/lib/permissions'
@@ -15,11 +16,14 @@ import { captureExpense } from '@/pages/gastos/api'
 
 const MAX_BYTES = 10 * 1024 * 1024
 
-type Phase = 'uploading' | 'reading' | 'done' | 'error'
+type Phase = 'preparing' | 'uploading' | 'reading' | 'done' | 'error'
 
 type UploadItem = {
   id: string
   file: File
+  /** What is actually sent: the photo after compression, or the file as it came. */
+  prepared?: File
+  previewUrl?: string
   key: string
   entity: string
   progress: number
@@ -33,25 +37,65 @@ function accepted(file: File): boolean {
   return /\.(png|jpe?g|heic|pdf)$/i.test(file.name)
 }
 
+const sizeFormat = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 1 })
+
+function sizeLabel(bytes: number): string {
+  return bytes >= 1024 * 1024
+    ? `${sizeFormat.format(bytes / (1024 * 1024))} MB`
+    : `${sizeFormat.format(Math.max(1, Math.round(bytes / 1024)))} KB`
+}
+
+function Thumb({ item }: { item: UploadItem }) {
+  const shell = 'flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-ink-100 text-icon-muted'
+  if (item.previewUrl) {
+    return (
+      <span className={shell}>
+        <img
+          src={item.previewUrl}
+          alt={fill(copy.gastos.previewOf, { name: item.file.name })}
+          className="size-full object-contain"
+        />
+      </span>
+    )
+  }
+  return (
+    <span className={shell} aria-hidden>
+      <FileText className="size-6" strokeWidth={iconStroke} />
+    </span>
+  )
+}
+
 export function ExpenseCapture({ me }: { me: Me }) {
   useChromeTitle(copy.gastos.add)
   const navigate = useNavigate()
-  const inputRef = useRef<HTMLInputElement>(null)
+  const cameraRef = useRef<HTMLInputElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const previews = useRef(new Set<string>())
   const { entityCode, entities } = useEntity()
   const [entity, setEntity] = useState<EntityCode>(entityCode ?? entities[0]?.code ?? 'CVPO')
   const [items, setItems] = useState<UploadItem[]>([])
   const [notice, setNotice] = useState<string | null>(null)
   const canWrite = allows(me, 'purchasing.write')
-  const busy = items.some((item) => item.phase === 'uploading' || item.phase === 'reading')
+  const busy = items.some(
+    (item) => item.phase === 'preparing' || item.phase === 'uploading' || item.phase === 'reading',
+  )
+
+  useEffect(() => {
+    const urls = previews.current
+    return () => {
+      for (const url of urls) URL.revokeObjectURL(url)
+      urls.clear()
+    }
+  }, [])
 
   function patch(id: string, partial: Partial<UploadItem>) {
     setItems((current) => current.map((item) => (item.id === id ? { ...item, ...partial } : item)))
   }
 
-  async function upload(item: UploadItem) {
+  async function upload(item: UploadItem, file: File) {
     patch(item.id, { phase: 'uploading', progress: 0, error: undefined })
     try {
-      const invoice = await captureExpense(item.file, item.entity, item.key, (progress) => {
+      const invoice = await captureExpense(file, item.entity, item.key, (progress) => {
         patch(item.id, { progress, phase: progress >= 100 ? 'reading' : 'uploading' })
       })
       patch(item.id, { phase: 'done', progress: 100, invoiceId: invoice.id })
@@ -63,6 +107,22 @@ export function ExpenseCapture({ me }: { me: Me }) {
     }
   }
 
+  async function prepare(item: UploadItem) {
+    let file = item.prepared
+    if (!file) {
+      patch(item.id, { phase: 'preparing', progress: 0, error: undefined })
+      file = await compressImage(item.file)
+      const previewUrl = file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined
+      if (previewUrl) previews.current.add(previewUrl)
+      if (file.size > MAX_BYTES) {
+        patch(item.id, { phase: 'error', prepared: undefined, previewUrl, error: copy.gastos.tooBig })
+        return
+      }
+      patch(item.id, { prepared: file, previewUrl })
+    }
+    await upload(item, file)
+  }
+
   function enqueue(list: File[]) {
     if (!entity) {
       setNotice(copy.gastos.entityRequired)
@@ -72,7 +132,7 @@ export function ExpenseCapture({ me }: { me: Me }) {
     const acceptedFiles: UploadItem[] = []
     let skipped = false
     for (const file of list) {
-      if (!accepted(file) || file.size === 0 || file.size > MAX_BYTES) {
+      if (!accepted(file) || file.size === 0 || (file.type === 'application/pdf' && file.size > MAX_BYTES)) {
         skipped = true
         continue
       }
@@ -82,18 +142,42 @@ export function ExpenseCapture({ me }: { me: Me }) {
         key: `cap-${crypto.randomUUID()}`,
         entity,
         progress: 0,
-        phase: 'uploading',
+        phase: 'preparing',
       })
     }
     if (skipped) setNotice(copy.gastos.skipped)
     if (acceptedFiles.length === 0) return
     setItems((current) => [...acceptedFiles, ...current])
     window.setTimeout(() => {
-      for (const item of acceptedFiles) void upload(item)
+      for (const item of acceptedFiles) void prepare(item)
     }, 0)
   }
 
+  function remove(id: string) {
+    setItems((current) => current.filter((item) => item.id !== id))
+  }
+
+  function statusOf(item: UploadItem): string {
+    switch (item.phase) {
+      case 'preparing':
+        return copy.gastos.preparing
+      case 'reading':
+        return copy.gastos.reading
+      case 'done':
+        return copy.gastos.uploaded
+      case 'error':
+        return copy.gastos.failed
+      default:
+        return `${copy.gastos.uploading} ${item.progress} %`
+    }
+  }
+
   if (!canWrite) return <NoPermission />
+
+  const onPick = (event: React.ChangeEvent<HTMLInputElement>) => {
+    enqueue([...(event.target.files ?? [])])
+    event.target.value = ''
+  }
 
   return (
     <div data-screen={busy ? 'gastos-progreso' : 'gastos-captura'} className="flex min-h-0 flex-1 flex-col">
@@ -103,7 +187,7 @@ export function ExpenseCapture({ me }: { me: Me }) {
         </Button>
         <span className="min-w-0 truncate text-label text-text-tertiary">{copy.gastos.title}</span>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)]">
         <div className="mx-auto flex w-full max-w-xl flex-col gap-5 px-4 py-5">
           <header>
             <h1 className="text-heading font-medium tracking-tight text-ink-900">{copy.gastos.add}</h1>
@@ -122,7 +206,7 @@ export function ExpenseCapture({ me }: { me: Me }) {
           ) : null}
           {notice ? <Alert tone="warning">{notice}</Alert> : null}
           <div
-            className="flex flex-col items-center gap-4 rounded-2xl border border-dashed border-border bg-surface-subtle px-6 py-10"
+            className="flex flex-col gap-3 rounded-2xl border border-dashed border-border bg-surface-subtle p-4 sm:items-center sm:px-6 sm:py-10"
             onDragOver={(event) => event.preventDefault()}
             onDrop={(event) => {
               event.preventDefault()
@@ -130,66 +214,97 @@ export function ExpenseCapture({ me }: { me: Me }) {
             }}
           >
             <input
-              ref={inputRef}
+              ref={cameraRef}
               id="captura-gasto"
               className="sr-only"
               type="file"
               accept="image/*,application/pdf"
               capture="environment"
               multiple
-              onChange={(event) => {
-                enqueue([...(event.target.files ?? [])])
-                event.target.value = ''
-              }}
+              tabIndex={-1}
+              onChange={onPick}
             />
-            <Button type="button" variant="primary" size="lg" onClick={() => inputRef.current?.click()}>
-              <Plus strokeWidth={iconStroke} />
-              {copy.gastos.add}
+            <input
+              ref={fileRef}
+              id="captura-gasto-archivo"
+              className="sr-only"
+              type="file"
+              accept="image/*,application/pdf"
+              multiple
+              tabIndex={-1}
+              onChange={onPick}
+            />
+            <Button
+              type="button"
+              variant="primary"
+              size="lg"
+              className="w-full sm:w-auto"
+              onClick={() => cameraRef.current?.click()}
+            >
+              <Camera strokeWidth={iconStroke} />
+              {copy.gastos.takePhoto}
+            </Button>
+            <p className="text-center text-caption text-text-tertiary">{copy.gastos.captureOr}</p>
+            <Button
+              type="button"
+              variant="secondary"
+              size="lg"
+              className="w-full sm:w-auto"
+              onClick={() => fileRef.current?.click()}
+            >
+              <Upload strokeWidth={iconStroke} />
+              {copy.gastos.uploadFile}
             </Button>
           </div>
           {items.length > 0 ? (
-            <ul className="overflow-hidden rounded-2xl border border-border-subtle bg-surface">
+            <ul aria-live="polite" className="overflow-hidden rounded-2xl border border-border-subtle bg-surface">
               {items.map((item) => (
-                <li key={item.id} className="grid gap-2 border-b border-border-subtle px-4 py-3 last:border-b-0">
-                  <div className="flex items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate text-label text-ink-900">{item.file.name}</span>
-                    <span className="shrink-0 text-caption text-text-tertiary">
-                      {item.phase === 'reading'
-                        ? copy.gastos.reading
-                        : item.phase === 'done'
-                          ? copy.gastos.uploaded
-                          : item.phase === 'error'
-                            ? copy.gastos.failed
-                            : `${item.progress} %`}
+                <li key={item.id} className="flex gap-3 border-b border-border-subtle px-4 py-3 last:border-b-0">
+                  <Thumb item={item} />
+                  <div className="grid min-w-0 flex-1 content-start gap-1.5">
+                    <span className="truncate text-label text-ink-900">{item.file.name}</span>
+                    <span className="text-caption text-text-tertiary">
+                      {statusOf(item)}
+                      {item.prepared ? ` · ${sizeLabel(item.prepared.size)}` : ` · ${sizeLabel(item.file.size)}`}
                     </span>
-                  </div>
-                  {item.phase === 'uploading' || item.phase === 'reading' ? (
-                    <div
-                      role="progressbar"
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={item.phase === 'reading' ? 100 : item.progress}
-                      aria-label={item.phase === 'reading' ? copy.gastos.reading : copy.gastos.uploading}
-                      className="h-1 overflow-hidden rounded-full bg-ink-100"
-                    >
+                    {item.phase === 'preparing' || item.phase === 'uploading' || item.phase === 'reading' ? (
                       <div
-                        className={cn('h-full bg-ink-900', item.phase === 'reading' && 'w-full')}
-                        style={item.phase === 'reading' ? undefined : { width: `${item.progress}%` }}
-                      />
-                    </div>
-                  ) : null}
-                  {item.error ? <p className="text-caption text-danger-600">{item.error}</p> : null}
-                  <div className="flex items-center gap-2">
-                    {item.phase === 'error' ? (
-                      <Button type="button" variant="secondary" size="sm" onClick={() => void upload(item)}>
-                        <RefreshCw strokeWidth={iconStroke} />
-                        {copy.gastos.retry}
-                      </Button>
+                        role="progressbar"
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={item.phase === 'uploading' ? item.progress : undefined}
+                        aria-label={statusOf(item)}
+                        className="h-1 overflow-hidden rounded-full bg-ink-100"
+                      >
+                        <div
+                          className={cn(
+                            'h-full bg-ink-900',
+                            item.phase !== 'uploading' && 'w-full animate-pulse',
+                          )}
+                          style={item.phase === 'uploading' ? { width: `${item.progress}%` } : undefined}
+                        />
+                      </div>
                     ) : null}
-                    {item.invoiceId ? (
-                      <Button type="button" variant="ghost" size="sm" onClick={() => navigate(`/gastos/${item.invoiceId}`)}>
-                        {copy.gastos.review}
-                      </Button>
+                    {item.error ? <p className="text-caption text-danger-600">{item.error}</p> : null}
+                    {item.phase === 'error' || item.invoiceId ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        {item.phase === 'error' ? (
+                          <>
+                            <Button type="button" variant="secondary" size="sm" onClick={() => void prepare(item)}>
+                              <RefreshCw strokeWidth={iconStroke} />
+                              {copy.gastos.retry}
+                            </Button>
+                            <Button type="button" variant="ghost" size="sm" onClick={() => remove(item.id)}>
+                              {copy.gastos.remove}
+                            </Button>
+                          </>
+                        ) : null}
+                        {item.invoiceId ? (
+                          <Button type="button" variant="secondary" size="sm" onClick={() => navigate(`/gastos/${item.invoiceId}`)}>
+                            {copy.gastos.review}
+                          </Button>
+                        ) : null}
+                      </div>
                     ) : null}
                   </div>
                 </li>
