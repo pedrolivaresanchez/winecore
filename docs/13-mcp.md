@@ -1,8 +1,8 @@
 # 13 · Servidor MCP de WineCore (especificación de herramientas)
 
-> Versión 1 · 31-10-2026 · Decisión de arquitectura: ADR 010. Entregable de Fase 1 (§12.5) e implementación en M1 (herramientas de los módulos de M1) y en cada hito (las de sus módulos).
+> Versión 2 · 01-11-2026 · Decisión de Pedro (ADR 010, revisión 2): todo lo que se hace en la app se puede hacer por MCP. La versión 1 (31-10-2026) limitaba el MCP a lecturas y borradores.
 > Clientes: **CVBOT** (cliente MCP externo, en nombre de Pedro), `asistente` y `vendimia-campo` (workforce).
-> El `asistente` no llama al endpoint: `POST /v1/assistant/chat` ejecuta las herramientas en proceso con la sesión de la persona (mismos permisos, auditoría `mcp.call` y límite por minuto), sin herramientas de escritura directa, y solo envía un `*_commit` si el mensaje anterior propuso esa operación y la persona la confirma; el token no llega nunca al modelo.
+> El `asistente` no llama al endpoint: `POST /v1/assistant/chat` ejecuta las herramientas en proceso con la sesión de la persona (mismos permisos, auditoría `mcp.call` y límite por minuto), le ofrece al modelo las herramientas de la pantalla abierta (máximo 70, más `system_tools_search` para encontrar el resto) y solo envía un `*_commit` si el mensaje anterior propuso esa operación y la persona la confirma; el token no llega nunca al modelo.
 
 ## 1. Convenciones
 
@@ -19,7 +19,10 @@
 
 - Cada herramienta declara `permission` (matriz de `07-arquitectura.md` §6). Se comprueba contra los **alcances** del cliente (`core.api_client.scopes`) **y** contra los permisos de la persona representada (`on_behalf_of_user_id`): se aplica el más restrictivo.
 - Alcances de CVBOT por defecto: `read:*`, `write:contacts`, `write:sales.order`, `write:sales.delivery_note`, `write:billing.draft`, `write:billing.dunning_draft`, `write:purchasing.capture`, `write:finance.payment`, `write:cellar.reading`, `write:cellar.tasting`, `write:cellar.operation_draft`, `write:vineyard`, `write:regulatory.draft`, `write:knowledge`.
-- **No existen** herramientas para: aprobar, emitir facturas, anular, enviar a terceros, activar módulos o reglas, gestionar usuarios o permisos, ver secretos o IBAN completos, borrar.
+- Desde la versión 2 hay herramienta para **cada ruta de la app** (`/v1`), aprobar, emitir, anular y marcar como enviado incluidos. Toda escritura va en dos pasos (§3) y los verbos de decisión (`approve`, `issue`, `void`, `send`, `delete`, `decide`, `reject`, `cancel`, `revoke`) solo pueden aparecer en herramientas `_prepare`/`_commit`.
+- Quedan fuera, con su motivo en `api/src/mcp/parity.ts`: inicio de sesión y passkeys, claves de máquina (`/v1/mcp/clients`), el propio chat del asistente, los ajustes de seguridad de aprobaciones y el alta o cambio de personas y roles. Se hacen en la app con la passkey del propietario. Ninguna herramienta lee secretos.
+- Si el propietario activa «Aprobaciones: pedir passkey o código», la API rechaza las aprobaciones por MCP (`WC_STEP_UP_REQUIRED`) y CVBOT da el enlace a la bandeja.
+- Alcances extra de un cliente sin tocar su token: tabla `core.api_client_grant` (DuckDB no permite actualizar la lista `core.api_client.scopes` de un cliente con tokens). Migración 0042: `pedro-owner` recibe `read:*`, `write:*`, `manage:*`, `approve:*`, `issue:*`, `void:*`, `deliver:*`, `count:*`, `operate:*` y `prepare:*`. Los alcances efectivos son la unión de las dos listas; los permisos de la persona representada siguen mandando.
 
 ## 3. Escritura con confirmación (dos pasos)
 
@@ -33,7 +36,17 @@
 3. `X_commit({ confirmation_token, idempotency_key })` → ejecuta exactamente lo previsualizado. Falla si el token caducó, ya se usó, pertenece a otro cliente o los datos de base cambiaron de forma que la vista previa ya no es válida (p. ej. el precio de tarifa cambió): `WC_MCP_CONFIRMATION_INVALID` / `WC_MCP_PREVIEW_STALE` (hay que repetir `prepare`).
 4. Toda llamada queda en auditoría (`mcp.call`) con herramienta, cliente, persona, hash de argumentos y resultado.
 
+### 3.1 Herramientas sobre las rutas de la app (versión 2)
+
+- **Puente** (`api/src/mcp/rest.ts`): la mayoría de herramientas repiten en proceso la ruta `/v1` de la pantalla equivalente con la sesión de la persona representada, así que los permisos, validaciones, aprobaciones y auditoría son exactamente los de la app. Las peticiones llevan `x-request-id: mcp.<id>`, y las escrituras `Idempotency-Key` (fijada en `prepare`) e `If-Match` con el `updated_at` leído en `prepare`. `commit` vuelve a leer el registro y falla con `WC_MCP_PREVIEW_STALE` si cambió.
+- Los PATCH que sustituyen el registro entero se componen sobre el registro actual: la persona solo indica los campos que cambian.
+- **Ficheros**: las subidas llevan `file_base64`, `filename` y `content_type`; las descargas devuelven texto (CSV) o `base64` con `sha256` (PDF, máximo 10 MB). WineCore no envía correos: CVBOT descarga el PDF, lo envía y lo marca como enviado.
+- **Listado**: `tools/list` devuelve todas las herramientas permitidas. `?tools=compact` devuelve solo las principales más la pasarela (`system_tools_search` para buscar por texto y `system_tool_run` para ejecutar una de las encontradas); `?toolsets=billing,sales` filtra por prefijo.
+- **Paridad**: `api/test/mcp/route-parity.test.ts` falla si una ruta `/v1` no tiene herramienta (`routes` en su definición) ni exclusión en `parity.ts`. `bun run scripts/mcp-missing-routes.ts` lista las que faltan.
+
 ## 4. Catálogo
+
+> Las tablas de esta sección son las herramientas de la versión 1 y siguen existiendo. La lista completa (versión 2) sale de `tools/list` con el cliente de cada persona.
 
 ### 4.1 Sistema y aprobaciones (M1)
 
