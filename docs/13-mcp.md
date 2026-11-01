@@ -2,6 +2,7 @@
 
 > Versión 1 · 31-10-2026 · Decisión de arquitectura: ADR 010. Entregable de Fase 1 (§12.5) e implementación en M1 (herramientas de los módulos de M1) y en cada hito (las de sus módulos).
 > Clientes: **CVBOT** (cliente MCP externo, en nombre de Pedro), `asistente` y `vendimia-campo` (workforce).
+> El `asistente` no llama al endpoint: `POST /v1/assistant/chat` ejecuta las herramientas en proceso con la sesión de la persona (mismos permisos, auditoría `mcp.call` y límite por minuto), sin herramientas de escritura directa, y solo envía un `*_commit` si el mensaje anterior propuso esa operación y la persona la confirma; el token no llega nunca al modelo.
 
 ## 1. Convenciones
 
