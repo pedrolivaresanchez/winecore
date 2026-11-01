@@ -115,6 +115,10 @@ describe('MCP regulatorio sobre las rutas de la app', () => {
     expect(file.error ? JSON.stringify(file.data) : 'ok').toBe('ok');
     expect(String(file.data.filename)).toContain('IESA1V2');
     expect(String(file.data.text)).toContain('GRANEL-TINTO');
+    expect(String(file.data.text)).not.toContain('\uFFFD');
+    expect(file.data.charset).toBe('iso-8859-1');
+    const original = Buffer.from(String(file.data.base64), 'base64');
+    expect(new TextDecoder('windows-1252').decode(original)).toBe(String(file.data.text));
 
     const validated = await write('regulatory_submission_validate', { id: submissionId });
     expect(validated.committed.status).toBe('validated');

@@ -257,6 +257,9 @@ async function errorFrom(response: Response): Promise<DomainError> {
   return domainError("WC002", undefined, `La API respondió ${response.status}.`);
 }
 
+/** WHATWG decodes all of these as windows-1252. */
+const LATIN_CHARSETS = new Set(["iso-8859-1", "iso8859-1", "latin1", "us-ascii", "ascii", "windows-1252", "cp1252"]);
+
 async function decode(response: Response): Promise<unknown> {
   if (response.status === 204) return { ok: true };
   const type = (response.headers.get("content-type") ?? "").toLowerCase();
@@ -267,17 +270,26 @@ async function decode(response: Response): Promise<unknown> {
   }
   const filename = filenameOf(response);
   const contentType = type.split(";")[0]?.trim() || "application/octet-stream";
+  const bytes = new Uint8Array(await response.arrayBuffer());
   if (type.startsWith("text/") || type.includes("csv")) {
-    const text = await response.text();
+    const charset = /charset=([^;]+)/.exec(type)?.[1]?.trim().replace(/"/g, "") ?? "utf-8";
+    const utf8 = charset === "utf-8" || charset === "utf8";
+    const decoder = LATIN_CHARSETS.has(charset) ? "windows-1252" : charset.startsWith("utf-16") ? "utf-16" : "utf-8";
+    const text = new TextDecoder(decoder).decode(bytes);
     const clipped = text.length > MAX_TEXT_CHARS;
     return {
       filename,
       content_type: contentType,
       text: clipped ? text.slice(0, MAX_TEXT_CHARS) : text,
       truncated: clipped,
+      // Files filed elsewhere (SILICIE CSV in ISO-8859-1) must keep their exact bytes.
+      ...(utf8 || bytes.length > MAX_FILE_BYTES ? {} : {
+        charset,
+        sha256: new Bun.CryptoHasher("sha256").update(bytes).digest("hex"),
+        base64: Buffer.from(bytes).toString("base64"),
+      }),
     };
   }
-  const bytes = new Uint8Array(await response.arrayBuffer());
   if (bytes.length > MAX_FILE_BYTES) {
     return { filename, content_type: contentType, size_bytes: bytes.length, base64: null, note_es: "El fichero pasa de 10 MB: descárgalo desde la app." };
   }
