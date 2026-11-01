@@ -32,6 +32,7 @@ const ids = {
   holdedQuote: newId(),
   scopedUser: newId(),
   scopedRole: newId(),
+  namesake: newId(),
 };
 
 async function summary(id: string, user?: string) {
@@ -266,5 +267,27 @@ describe('resumen de contacto', () => {
     expect((scoped.receivables as Record<string, unknown>).count).toBe(0);
     expect((scoped.payments as Record<string, unknown>).count).toBe(0);
     expect((scoped.sales as Record<string, unknown[]>).quotes).toEqual([]);
+  });
+
+  it('no casa por nombre si otro contacto se llama igual', async () => {
+    await ctx.writer.withWrite({ type: 'system', id: 'summary-test', requestId: newId() }, async (tx) => {
+      tx.write(sql`
+        INSERT INTO party.contact (
+          id, kind, legal_name, tax_id, tax_id_type, tax_id_country, country_code, is_customer, created_by
+        ) VALUES (
+          CAST(${ids.namesake} AS UUID), 'company', 'Bodega  Sintética Norte S.L.', 'B12000030', 'nif', 'ES', 'ES', TRUE, 'test'
+        )
+      `);
+    });
+
+    const body = await json(await summary(ids.contact));
+    const invoices = body.invoices as Record<string, unknown>;
+    expect((invoices.items as Record<string, unknown>[]).map((row) => row.number)).toEqual([null, 'H-7', 'PF26-1', 'H-3', 'H-1', 'H-4']);
+    expect((body.receivables as Record<string, unknown>).count).toBe(2);
+    expect(((body.sales as Record<string, unknown[]>).quotes as Record<string, unknown>[]).map((row) => row.number)).toEqual(['PR26-1']);
+
+    const namesake = await json(await summary(ids.namesake));
+    expect((namesake.invoices as Record<string, unknown>).total_count).toBe(0);
+    expect((namesake.receivables as Record<string, unknown>).count).toBe(0);
   });
 });

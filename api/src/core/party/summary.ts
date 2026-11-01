@@ -47,7 +47,7 @@ type Row = Record<string, unknown>;
 
 interface Owner {
   id: string;
-  legalName: string;
+  legalName: string | null;
 }
 
 interface InvoiceEntry {
@@ -71,13 +71,18 @@ interface InvoiceEntry {
  * Cada bloque sale a null si el usuario no tiene el permiso de lectura de su módulo.
  * Holded solo enlaza el contacto cuando el nombre era inequívoco al importar; sin enlace
  * se casa por nombre fiscal normalizado y la fila lo indica con `linked_by = name`.
+ * Si otro contacto comparte ese nombre no se casa nada: el documento sería de los dos.
  */
 export async function loadContactSummary(writer: Writer, user: UserCtx, rawId: string, now: Date) {
   const id = pathUuid(rawId);
-  const rows = await writer.read<{ legal_name: string }>(sql`SELECT legal_name FROM party.contact WHERE id = CAST(${id} AS UUID)`);
+  const rows = await writer.read<{ legal_name: string; namesakes: unknown }>(`
+    SELECT c.legal_name,
+           (SELECT count(*) FROM party.contact x WHERE ${nameKey('x.legal_name')} = ${nameKey('c.legal_name')}) AS namesakes
+    FROM party.contact c
+    WHERE c.id = ${uuidOf(id)}`);
   const contact = rows[0];
   if (!contact) throw domainError('WC_NOT_FOUND');
-  const owner: Owner = { id, legalName: String(contact.legal_name) };
+  const owner: Owner = { id, legalName: Number(contact.namesakes) === 1 ? String(contact.legal_name) : null };
   const today = todayMadrid(now);
   const holded = entityPredicate(legacyScope(user, 'both'));
   return {
@@ -460,6 +465,7 @@ function scoped(user: UserCtx, permission: Permission): (column: string) => stri
 }
 
 function ownedBy(owner: Owner, idColumn: string, nameColumn: string): string {
+  if (owner.legalName === null) return `${idColumn} = ${uuidOf(owner.id)}`;
   return `(${idColumn} = ${uuidOf(owner.id)} OR (${idColumn} IS NULL AND ${nameKey(nameColumn)} = ${nameKey(sql`${owner.legalName}`)}))`;
 }
 
