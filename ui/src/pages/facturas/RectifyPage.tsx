@@ -13,6 +13,7 @@ import type { Me } from '@/lib/types'
 import { Button, Checkbox, EmptyState, InfoTip, Input } from '@/ui'
 import { cn } from '@/lib/cn'
 import { createInvoice } from '@/pages/facturas/api'
+import { referencesPayload, shipToDraftOf, shipToPayload } from '@/lib/shipping'
 import { BackLink } from '@/pages/facturas/chrome'
 import { draftsFrom, invoiceTitle, linePayload, stepLabel } from '@/pages/facturas/format'
 import { LineEditor } from '@/pages/facturas/lines'
@@ -103,6 +104,8 @@ function Wizard({ invoice }: { invoice: Invoice }) {
         description: reason,
         language: invoice.language === 'en' ? 'en' : 'es',
         notes: note,
+        ship_to: shipToPayload(shipToDraftOf(invoice.ship_to)) ?? undefined,
+        customer_references: referencesPayload(invoice.customer_references ?? '') ?? undefined,
         lines: linePayload(lines),
         rectifies: [{ invoice_id: invoice.id }],
       })

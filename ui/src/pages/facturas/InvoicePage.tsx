@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useChromeTitle } from '@/app/shell/shell-context'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
@@ -31,6 +31,8 @@ import { DATE_LABELS, day, daysLabel, draftsFrom, entityLabel, invoiceTitle, isO
 import { LineEditor } from '@/pages/facturas/lines'
 import type { AuditItem, DeliveryStatus, Invoice, LineDraft, ValidationResult, VoidReason } from '@/pages/facturas/types'
 import { RecordSkeleton } from '@/components/RecordSkeleton'
+import { ShippingFields } from '@/pages/ventas/shipping'
+import { referencesPayload, shipToDraftOf, shipToPayload, shippingRows, type ShipToDraft } from '@/lib/shipping'
 import { PdfActions, PdfPreview } from '@/pages/documents/PdfPreview'
 import { usePdf } from '@/pages/documents/pdf'
 
@@ -77,6 +79,8 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
   const [language, setLanguage] = useState(invoice.language === 'en' ? 'en' : 'es')
   const [notes, setNotes] = useState(invoice.notes ?? '')
   const [operationDate, setOperationDate] = useState<string | null>(invoice.operation_date)
+  const [shipTo, setShipTo] = useState<ShipToDraft>(() => shipToDraftOf(invoice.ship_to))
+  const [references, setReferences] = useState(invoice.customer_references ?? '')
   const [issues, setIssues] = useState<ValidationResult | null>(null)
   const [busy, setBusy] = useState(false)
   const [issueOpen, setIssueOpen] = useState(false)
@@ -95,6 +99,8 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
     setLanguage(invoice.language === 'en' ? 'en' : 'es')
     setNotes(invoice.notes ?? '')
     setOperationDate(invoice.operation_date)
+    setShipTo(shipToDraftOf(invoice.ship_to))
+    setReferences(invoice.customer_references ?? '')
     setEditing(false)
   }, [invoice])
 
@@ -106,6 +112,8 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
         language,
         notes: notes.trim() || null,
         operation_date: operationDate,
+        ship_to: shipToPayload(shipTo),
+        customer_references: referencesPayload(references),
         lines: linePayload(lines),
       })
       toast(copy.facturas.saved)
@@ -201,7 +209,7 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
     : null
   const blocking = numbering ? [] : errors
   const snapshot = invoice.customer_snapshot
-  const facts = [
+  const facts: { label: string; value: ReactNode }[] = [
     { label: copy.facturas.entity, value: entityLabel(invoice.entity_code) },
     { label: copy.facturas.customer, value: invoice.customer_name || '—' },
     { label: copy.facturas.nif, value: snapshot?.tax_id || '—' },
@@ -223,6 +231,7 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
   }
   if (invoice.void_reason) facts.push({ label: copy.facturas.voidReason, value: invoice.void_reason })
   if (invoice.notes) facts.push({ label: copy.facturas.notes, value: invoice.notes })
+  facts.push(...shippingRows(invoice.ship_to, invoice.customer_references))
 
   return (
     <>
@@ -337,6 +346,13 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
                 <Field id="notas-factura" label={copy.facturas.notes}>
                   <Textarea id="notas-factura" rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} />
                 </Field>
+                <ShippingFields
+                  idPrefix="factura"
+                  shipTo={shipTo}
+                  onShipTo={setShipTo}
+                  references={references}
+                  onReferences={setReferences}
+                />
                 <LineEditor lines={lines} onChange={setLines} />
               </div>
             ) : (

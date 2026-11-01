@@ -40,6 +40,8 @@ import { DATE_LABELS, money } from '@/pages/facturas/format'
 import type { CreateInvoiceBody, SourceKind } from '@/pages/facturas/types'
 import { useIssuer } from '@/pages/ventas/issuer'
 import { LineEditor } from '@/pages/ventas/lines'
+import { ShippingFields } from '@/pages/ventas/shipping'
+import { emptyShipTo, referencesPayload, shipToPayload, type ShipToDraft } from '@/lib/shipping'
 
 const SOURCES: { value: SourceKind; content: string }[] = [
   { value: 'lines', content: copy.facturas.sourceLines },
@@ -67,6 +69,8 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
   const [description, setDescription] = useState('')
   const [language, setLanguage] = useState<'es' | 'en'>('es')
   const [operationDate, setOperationDate] = useState<string | null>(null)
+  const [shipTo, setShipTo] = useState<ShipToDraft>(emptyShipTo)
+  const [references, setReferences] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [badLine, setBadLine] = useState<string | null>(null)
   const [customerBad, setCustomerBad] = useState(false)
@@ -198,6 +202,10 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
       language,
       operation_date: operationDate,
     }
+    const shipPayload = shipToPayload(shipTo)
+    const referencePayload = referencesPayload(references)
+    if (shipPayload) body.ship_to = shipPayload
+    if (referencePayload) body.customer_references = referencePayload
     if (source === 'lines') {
       const problem = lineProblem(lines)
       if (problem) {
@@ -209,6 +217,7 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
       body.lines = lines.map((line) => ({
         product_id: line.productId,
         quantity: line.quantity.trim(),
+        unit: line.unit.trim() || undefined,
         unit_price: line.unitPrice.trim(),
         discount_pct: line.discount.trim() || '0',
         tax_code: line.taxCode,
@@ -380,6 +389,15 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
               <DatePicker size="sm" value={operationDate} labels={DATE_LABELS} onChange={setOperationDate} />
             </Field>
           </div>
+
+          <ShippingFields
+            idPrefix="factura"
+            shipTo={shipTo}
+            onShipTo={setShipTo}
+            references={references}
+            onReferences={setReferences}
+            hint={source === 'lines' ? undefined : copy.shipping.fromSource}
+          />
 
           <div className="grid justify-items-end gap-1">
             <dl aria-live="polite" className="grid min-w-56 grid-cols-[1fr_auto] gap-x-8 gap-y-1 text-label">
