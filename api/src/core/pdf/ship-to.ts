@@ -109,3 +109,40 @@ export function shipToLines(view: ShipToView, lang: PdfLang): string[] {
   if (town !== '') lines.push(town);
   return lines;
 }
+
+/** Dirección guardada en formato canónico (claves en snake_case, sin vacíos), venga como venga el JSON. */
+export function shipToRecord(value: unknown): Record<string, string> | null {
+  const view = shipToFrom(value);
+  if (!view) return null;
+  const entries: [string, string | null][] = [
+    ['name', view.name],
+    ['line1', view.line1],
+    ['line2', view.line2],
+    ['postal_code', view.postalCode],
+    ['city', view.city],
+    ['province', view.province],
+    ['country_code', view.countryCode],
+  ];
+  return Object.fromEntries(entries.filter((entry): entry is [string, string] => entry[1] !== null));
+}
+
+const MAX_REFERENCES_CHARS = 1000;
+const MAX_REFERENCES_LINES = 10;
+
+/** Referencias del cliente (pedido, centro, proveedor…): texto libre de varias líneas. */
+export function parseCustomerReferences(value: unknown, field = 'customer_references'): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string') throw domainError('WC_VALIDATION', { [field]: 'Debe ser texto' });
+  const lines = value.replace(/\r\n?/gu, '\n').split('\n').map((line) => line.replace(/[\u0000-\u0009\u000b-\u001f\u007f]/gu, ' ').trim());
+  while (lines.length > 0 && lines[0] === '') lines.shift();
+  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+  if (lines.length === 0) return null;
+  if (lines.length > MAX_REFERENCES_LINES) {
+    throw domainError('WC_VALIDATION', { [field]: `Como máximo ${MAX_REFERENCES_LINES} líneas` });
+  }
+  const text = lines.join('\n');
+  if (text.length > MAX_REFERENCES_CHARS) {
+    throw domainError('WC_VALIDATION', { [field]: `Máximo ${MAX_REFERENCES_CHARS} caracteres` });
+  }
+  return text;
+}

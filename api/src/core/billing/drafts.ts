@@ -43,6 +43,7 @@ import {
   type RectRow,
   type RectSource,
 } from './rectify';
+import { parseCustomerReferences, parseShipTo, shipToRecord } from '../pdf/ship-to';
 import { raiseIssue } from './issues';
 import type { TaxCode } from './taxCodes';
 import { assertEditable } from './wc080';
@@ -53,6 +54,7 @@ const INCOTERMS = new Set(['EXW', 'FCA', 'CPT', 'CIP', 'DAP', 'DPU', 'DDP', 'FAS
 interface ManualLine {
   productId: string;
   description: string | null;
+  unit: string | null;
   quantity: Decimal;
   unitPrice: Decimal | null;
   discountPct: Decimal;
@@ -78,6 +80,8 @@ interface CreateInput {
   issueDate: string | null;
   notes: string | null;
   incoterm: string | null;
+  shipTo: Record<string, string> | null;
+  customerReferences: string | null;
   fromDeliveryNotes: string[] | null;
   fromOrder: string | null;
   lines: ManualLine[] | null;
@@ -117,6 +121,8 @@ interface Built {
   language: 'es' | 'en';
   notes: string | null;
   incoterm: string | null;
+  shipTo: Record<string, string> | null;
+  customerReferences: string | null;
   paymentMethod: string | null;
   paymentTermsDays: number;
   operationDate: string | null;
@@ -265,6 +271,8 @@ async function buildNew(tx: Tx, input: CreateInput, now: Date): Promise<Built> {
     language,
     notes: input.notes,
     incoterm: input.incoterm,
+    shipTo: input.shipTo ?? sourced.shipTo,
+    customerReferences: input.customerReferences ?? sourced.customerReferences,
     paymentMethod: input.paymentMethod ?? customer.paymentMethod,
     paymentTermsDays: terms,
     operationDate: input.operationDate,
@@ -316,6 +324,7 @@ async function buildUpdate(
   const sourceLines = patch.lines ?? (await loadLines(tx, current.id)).map((line) => ({
     productId: line.productId ?? '',
     description: line.description,
+    unit: line.unit,
     quantity: decimalOf(line.quantity),
     unitPrice: decimalOf(line.unitPrice),
     discountPct: decimalOf(line.discountPct),
@@ -352,6 +361,8 @@ async function buildUpdate(
     language,
     notes: patch.notes === undefined ? current.notes : patch.notes,
     incoterm: patch.incoterm === undefined ? current.incoterm : patch.incoterm,
+    shipTo: patch.shipTo === undefined ? shipToRecord(current.shipTo) : patch.shipTo,
+    customerReferences: patch.customerReferences === undefined ? current.customerReferences : patch.customerReferences,
     paymentMethod: patch.paymentMethod === undefined ? current.paymentMethod : patch.paymentMethod,
     paymentTermsDays: terms,
     operationDate,
@@ -475,7 +486,7 @@ async function enrichLines(
       lotId: lot?.id ?? null,
       lotCode: lot?.code ?? line.lotCode,
       quantity,
-      unit: product.unit,
+      unit: line.unit ?? product.unit,
       unitPrice,
       discountPct: discount,
       lineBase: decimalOf('0'),
@@ -543,13 +554,15 @@ async function sourceLines(tx: Tx, input: CreateInput, exceptInvoiceId: string |
   entityId: string | null;
   channel: string | null;
   salesOrderId: string | null;
+  shipTo: Record<string, string> | null;
+  customerReferences: string | null;
 }> {
   if (input.fromDeliveryNotes && input.fromOrder) {
     throw domainError('WC_VALIDATION', { from_delivery_notes: 'Indica albaranes o un pedido, no los dos' });
   }
   if (input.fromDeliveryNotes) return linesFromNotes(tx, input.fromDeliveryNotes, exceptInvoiceId);
   if (input.fromOrder) return linesFromOrder(tx, input.fromOrder);
-  return { lines: [], customerId: null, entityId: null, channel: null, salesOrderId: null };
+  return { lines: [], customerId: null, entityId: null, channel: null, salesOrderId: null, shipTo: null, customerReferences: null };
 }
 
 async function linesFromNotes(tx: Tx, ids: readonly string[], exceptInvoiceId: string | null): Promise<{
@@ -558,12 +571,16 @@ async function linesFromNotes(tx: Tx, ids: readonly string[], exceptInvoiceId: s
   entityId: string | null;
   channel: string | null;
   salesOrderId: string | null;
+  shipTo: Record<string, string> | null;
+  customerReferences: string | null;
 }> {
   const lines: ManualLine[] = [];
   let customerId: string | null = null;
   let entityId: string | null = null;
   let channel: string | null = null;
   let salesOrderId: string | null = null;
+  let shipTo: Record<string, string> | null = null;
+  const references: string[] = [];
   for (const id of ids) {
     const notes = await tx.read(sql`SELECT * FROM sales.delivery_note WHERE id = CAST(${id} AS UUID)`);
     const note = notes[0];
@@ -587,6 +604,9 @@ async function linesFromNotes(tx: Tx, ids: readonly string[], exceptInvoiceId: s
     entityId = noteEntity;
     channel = channel ?? text(note.channel);
     salesOrderId = salesOrderId ?? (note.sales_order_id == null ? null : idOf(note.sales_order_id));
+    shipTo = shipTo ?? shipToRecord(note.ship_to);
+    const noteReferences = text(note.customer_references);
+    if (noteReferences && !references.includes(noteReferences)) references.push(noteReferences);
     const noteLines = await tx.read(sql`
       SELECT * FROM sales.delivery_note_line
       WHERE delivery_note_id = CAST(${id} AS UUID)
@@ -599,6 +619,7 @@ async function linesFromNotes(tx: Tx, ids: readonly string[], exceptInvoiceId: s
       lines.push({
         productId: idOf(row.product_id),
         description: String(row.description),
+        unit: text(row.unit),
         quantity: decimalOf(row.quantity),
         unitPrice: row.unit_price == null ? null : decimalOf(row.unit_price),
         discountPct: decimalOf(row.discount_pct ?? 0),
@@ -610,7 +631,7 @@ async function linesFromNotes(tx: Tx, ids: readonly string[], exceptInvoiceId: s
       });
     }
   }
-  return { lines, customerId, entityId, channel, salesOrderId };
+  return { lines, customerId, entityId, channel, salesOrderId, shipTo, customerReferences: references.length > 0 ? references.join('\n') : null };
 }
 
 async function assertLineFree(tx: Tx, lineId: string, exceptInvoiceId: string | null): Promise<void> {
@@ -635,6 +656,8 @@ async function linesFromOrder(tx: Tx, orderId: string): Promise<{
   entityId: string | null;
   channel: string | null;
   salesOrderId: string | null;
+  shipTo: Record<string, string> | null;
+  customerReferences: string | null;
 }> {
   const orders = await tx.read(sql`SELECT * FROM sales.sales_order WHERE id = CAST(${orderId} AS UUID)`);
   const order = orders[0];
@@ -650,9 +673,12 @@ async function linesFromOrder(tx: Tx, orderId: string): Promise<{
     entityId: order.legal_entity_id == null ? null : idOf(order.legal_entity_id),
     channel: text(order.channel),
     salesOrderId: orderId.toLowerCase(),
+    shipTo: shipToRecord(order.ship_to),
+    customerReferences: text(order.customer_references),
     lines: rows.map((row) => ({
       productId: idOf(row.product_id),
       description: String(row.description),
+      unit: text(row.unit),
       quantity: decimalOf(row.quantity),
       unitPrice: decimalOf(row.unit_price),
       discountPct: decimalOf(row.discount_pct ?? 0),
@@ -820,7 +846,8 @@ function insertInvoice(tx: Tx, built: Built, actor: Actor, now: Date): void {
       id, legal_entity_id, series_id, status, invoice_type, rectification_kind,
       issue_date, operation_date, customer_id, channel, sales_order_id,
       billing_rule_set_id, billing_rule_id, billing_rule_trace, currency, language,
-      description, legal_mentions, notes, incoterm, subtotal, tax_total, surcharge_total,
+      description, legal_mentions, notes, incoterm, ship_to, customer_references,
+      subtotal, tax_total, surcharge_total,
       withholding_total, total, payment_method, payment_terms_days, legacy_refs,
       created_by, created_at, updated_at
     ) VALUES (
@@ -844,6 +871,8 @@ function insertInvoice(tx: Tx, built: Built, actor: Actor, now: Date): void {
       ${built.mentions},
       ${built.notes},
       ${built.incoterm},
+      ${built.shipTo ? sql.json(built.shipTo) : null},
+      ${built.customerReferences},
       ${built.subtotal == null ? null : decimalOf(built.subtotal)},
       ${built.taxTotal == null ? null : decimalOf(built.taxTotal)},
       ${built.surchargeTotal == null ? null : decimalOf(built.surchargeTotal)},
@@ -954,6 +983,8 @@ function updateHeader(tx: Tx, before: Awaited<ReturnType<typeof loadHeader>>, bu
       legal_mentions = ${built.mentions},
       notes = ${built.notes},
       incoterm = ${built.incoterm},
+      ship_to = ${built.shipTo ? sql.json(built.shipTo) : null},
+      customer_references = ${built.customerReferences},
       subtotal = ${built.subtotal == null ? null : decimalOf(built.subtotal)},
       tax_total = ${built.taxTotal == null ? null : decimalOf(built.taxTotal)},
       surcharge_total = ${built.surchargeTotal == null ? null : decimalOf(built.surchargeTotal)},
@@ -987,6 +1018,8 @@ interface Patch {
   issueDate?: string | null;
   notes?: string | null;
   incoterm?: string | null;
+  shipTo?: Record<string, string> | null;
+  customerReferences?: string | null;
   lines?: ManualLine[];
   noPhysicalReturn?: boolean | null;
   returnDeliveryNote?: string | null;
@@ -1030,6 +1063,8 @@ function parseCreate(raw: unknown): CreateInput {
     issueDate: optionalDay(pick(body, 'issue_date', 'issueDate'), 'issue_date'),
     notes: optionalShort(pick(body, 'notes'), 'notes'),
     incoterm: optionalIncoterm(pick(body, 'incoterm')),
+    shipTo: parseShipTo(pick(body, 'ship_to', 'shipTo')),
+    customerReferences: parseCustomerReferences(pick(body, 'customer_references', 'customerReferences')),
     fromDeliveryNotes: fromNotes,
     fromOrder: fromOrderRaw ? fromOrderRaw.toLowerCase() : null,
     lines: parseLines(pick(body, 'lines')),
@@ -1083,6 +1118,10 @@ function parsePatch(raw: unknown): Patch {
   }
   if (pick(body, 'notes') !== undefined) patch.notes = optionalShort(pick(body, 'notes'), 'notes');
   if (pick(body, 'incoterm') !== undefined) patch.incoterm = optionalIncoterm(pick(body, 'incoterm'));
+  if (pick(body, 'ship_to', 'shipTo') !== undefined) patch.shipTo = parseShipTo(pick(body, 'ship_to', 'shipTo'));
+  if (pick(body, 'customer_references', 'customerReferences') !== undefined) {
+    patch.customerReferences = parseCustomerReferences(pick(body, 'customer_references', 'customerReferences'));
+  }
   if (pick(body, 'lines') !== undefined) {
     const lines = parseLines(pick(body, 'lines'));
     patch.lines = lines ?? [];
@@ -1181,6 +1220,7 @@ function parseLine(value: unknown, index: number): ManualLine {
   return {
     productId: productId.toLowerCase(),
     description: optionalShort(pick(body, 'description'), `${field}.description`),
+    unit: optionalUnit(pick(body, 'unit'), `${field}.unit`),
     quantity,
     unitPrice: priceRaw == null || priceRaw === '' ? null : requiredDecimal(priceRaw, `${field}.unit_price`),
     discountPct: pick(body, 'discount_pct', 'discountPct') == null
@@ -1192,6 +1232,14 @@ function parseLine(value: unknown, index: number): ManualLine {
     deliveryNoteLineId: optionalUuid(pick(body, 'delivery_note_line_id'), `${field}.delivery_note_line_id`),
     orderLineId: optionalUuid(pick(body, 'order_line_id'), `${field}.order_line_id`),
   };
+}
+
+function optionalUnit(value: unknown, field: string): string | null {
+  if (value == null || value === '') return null;
+  if (typeof value !== 'string') throw domainError('WC_VALIDATION', { [field]: 'Debe ser texto' });
+  const unit = value.replace(/[\u0000-\u001f\u007f]/gu, ' ').trim();
+  if (unit.length > 30) throw domainError('WC_VALIDATION', { [field]: 'Máximo 30 caracteres' });
+  return unit === '' ? null : unit;
 }
 
 function objectBody(raw: unknown): Record<string, unknown> {
