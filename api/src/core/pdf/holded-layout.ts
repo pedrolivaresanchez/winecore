@@ -69,6 +69,8 @@ const TOTALS_AFTER_TABLE = 27.92;
 const TOTALS_STEP = 22.8;
 const NOTES_AFTER_TOTALS = 40.89;
 const NOTES_STEP = 13.27;
+const NOTES_TIGHT_GAP = 0.65;
+const NOTES_TIGHT_BLANK = 0.5;
 const LEGAL_AFTER_TOTALS = 26;
 const LEGAL_STEP = 12;
 
@@ -415,9 +417,19 @@ export class HoldedSheet {
     }
     while (items.length > 0 && items[items.length - 1]?.text === '' && items[items.length - 1]?.label === null) items.pop();
     if (items.length === 0) return;
-    let baseline = this.y + this.gapBeforeNotes;
+    const isBlank = (item: { label: string | null; text: string } | undefined): boolean => item !== undefined && item.label === null && item.text === '';
+    const lastBaseline = (gap: number, tight: boolean): number => {
+      let at = this.y + gap;
+      items.forEach((item, index) => {
+        if (index > 0) at += tight && isBlank(items[index - 1]) ? NOTES_STEP * NOTES_TIGHT_BLANK : NOTES_STEP;
+      });
+      return at;
+    };
+    // Con muchas líneas de pie, los huecos se estrechan antes que dejar una hoja con una sola línea.
+    const tight = lastBaseline(this.gapBeforeNotes, false) > CONTENT_BOTTOM && lastBaseline(this.gapBeforeNotes * NOTES_TIGHT_GAP, true) <= CONTENT_BOTTOM;
+    let baseline = this.y + (tight ? this.gapBeforeNotes * NOTES_TIGHT_GAP : this.gapBeforeNotes);
     items.forEach((item, index) => {
-      if (index > 0) baseline += NOTES_STEP;
+      if (index > 0) baseline += tight && isBlank(items[index - 1]) ? NOTES_STEP * NOTES_TIGHT_BLANK : NOTES_STEP;
       if (baseline > CONTENT_BOTTOM) {
         this.continuation();
         baseline = this.y + 10;

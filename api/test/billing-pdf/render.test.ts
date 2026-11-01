@@ -409,6 +409,24 @@ describe('renderInvoicePdf', () => {
     expect(text).toContain('www.ejemplo.example.com\nNº de cuenta: IBAN ES00-SINTETICO\nNº Operador SHC: AN0000EJEMPLO');
   });
 
+  it('con pie, vencimientos, referencias y albarán estrecha los huecos antes que abrir una hoja para una línea', async () => {
+    const text = await textOf(build({
+      taxCode: IVA21,
+      lines: [
+        { qty: '48', unitPrice: '7.90', description: 'Tinto Ejemplo 2023', lotCode: 'E2023A' },
+        { qty: '18', unitPrice: '7.35', description: 'Blanco Ejemplo Reserva Especial 2024' },
+        { qty: '30', unitPrice: '6.30', description: 'Rosado Ejemplo Reserva Especial 2024', lotCode: 'E2024R' },
+      ],
+      shipTo: SHIP_TO,
+      customerReferences: 'PEDIDO 0001\nCENTRO 0059\nPROVEEDOR 0007\nCONTRATO 0042\nRUTA 12',
+      deliveryNoteNumbers: ['A260142'],
+      dues: [{ seq: 1, dueDate: '2026-04-09', amount: '100.00' }],
+      profile: { variant: 'cvpo', email: 'info@example.com', footerLines: [...FOOTER, '', 'Pie de ejemplo 1', '', 'Pie de ejemplo 2', ''] },
+    }), 'es');
+    expect(text).toContain('Pág. 1 de 1');
+    expect(text).toContain('Pie de ejemplo 2\nAlbarán:\nA260142');
+  });
+
   it('pone el descuento por línea y su total solo si hay descuentos', async () => {
     const plain = await textOf(build({ taxCode: IVA21, qty: '6', unitPrice: '8.25' }), 'es');
     expect(plain).not.toContain('DESCUENTO POR ITEM');
