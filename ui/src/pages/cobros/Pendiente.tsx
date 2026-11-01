@@ -454,12 +454,12 @@ function CustomerBlock({
   return (
     <section aria-label={group.customer_name} data-group={group.key} className="overflow-hidden rounded-xl border border-border-subtle bg-surface">
       <header className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-border-subtle bg-surface-subtle px-3 py-2">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2 max-sm:basis-full">
           {group.contact_id ? (
             <Link
               to={`/contactos/${group.contact_id}`}
               title={fill(copy.cobros.openContact, { name: group.customer_name })}
-              className="min-w-0 truncate rounded-[4px] text-label font-medium text-ink-900 outline-none hover:underline focus-visible:shadow-(--shadow-focus)"
+              className="min-w-0 truncate rounded-[4px] text-label font-medium text-ink-900 outline-none hover:underline focus-visible:shadow-(--shadow-focus) max-sm:-my-3 max-sm:py-3"
             >
               {group.customer_name}
             </Link>
@@ -478,7 +478,7 @@ function CustomerBlock({
             </StatusPill>
           ))}
         </div>
-        <div className="flex shrink-0 items-center gap-3">
+        <div className="flex shrink-0 items-center gap-3 max-sm:w-full max-sm:justify-between">
           {overdue > 0 ? (
             <span className="text-caption tabular-nums text-danger-600">{fill(copy.cobros.overdueAmount, { amount: moneyOf(group.amounts.overdue) })}</span>
           ) : null}
@@ -506,7 +506,7 @@ function CustomerBlock({
         <button
           type="button"
           onClick={onToggle}
-          className="flex h-8 w-full items-center border-t border-border-subtle px-3 text-caption text-text-secondary outline-none hover:bg-fill-hover hover:text-ink-900 focus-visible:shadow-(--shadow-focus)"
+          className="flex h-8 w-full items-center border-t border-border-subtle px-3 text-caption text-text-secondary max-sm:h-11 outline-none hover:bg-fill-hover hover:text-ink-900 focus-visible:shadow-(--shadow-focus)"
         >
           {open ? copy.cobros.showLess : fill(copy.cobros.showMore, { count: formatInteger(rest) })}
         </button>

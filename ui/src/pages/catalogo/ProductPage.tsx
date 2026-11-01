@@ -446,7 +446,7 @@ function PricePanel({
     <section className="overflow-hidden rounded-2xl border border-border-subtle bg-surface">
       <div className="flex items-center justify-between gap-3 border-b border-border-subtle px-4 py-2">
         <h2 className="text-caption text-text-tertiary">Precios vigentes</h2>
-        <Link to="/catalogo/tarifas" className="text-caption text-text-tertiary underline">
+        <Link to="/catalogo/tarifas" className="text-caption text-text-tertiary underline max-sm:-my-3 max-sm:py-3">
           Tarifas
         </Link>
       </div>

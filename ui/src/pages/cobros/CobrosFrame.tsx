@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useChromeTitle } from '@/app/shell/shell-context'
+import { useMinWidth } from '@/hooks/use-media'
 import { FRAME_GUTTER } from '@/ui/frame'
 import { ChevronDown, Receipt } from '@/ui/icons'
 import { Button, FilterBar, GlassMenu, MenuItem, useMenuOpen, type FilterBarProps } from '@/ui'
@@ -33,6 +34,7 @@ export function CobrosFrame({
 }) {
   useChromeTitle(copy.cobros.title)
   const [params, setParams] = useSearchParams()
+  const phone = !useMinWidth(768)
 
   function openVista(next: Vista) {
     const query = new URLSearchParams()
@@ -70,7 +72,7 @@ export function CobrosFrame({
                 key={item.id}
                 type="button"
                 className={cn(
-                  'h-8 shrink-0 border-b-2 px-2 text-label',
+                  'h-8 shrink-0 border-b-2 px-2 text-label max-sm:h-11 max-sm:min-w-11 max-sm:px-3',
                   active ? 'border-ink-900 font-medium text-ink-900' : 'border-transparent text-text-tertiary',
                 )}
                 aria-current={active ? 'page' : undefined}
@@ -87,9 +89,19 @@ export function CobrosFrame({
       <FilterBar
         {...bar}
         leading={<VistaSwitch vista={vista} onPick={openVista} />}
+        controls={
+          phone ? (
+            <>
+              {bar.controls}
+              {bar.trailing}
+            </>
+          ) : (
+            bar.controls
+          )
+        }
         trailing={
           <>
-            {bar.trailing}
+            {phone ? null : bar.trailing}
             {action || secondary ? <span className="flex items-center gap-1.5 md:hidden">{buttons}</span> : null}
           </>
         }
@@ -115,7 +127,7 @@ function VistaSwitch({ vista, onPick }: { vista: Vista; onPick: (next: Vista) =>
             onClick={menu.toggle}
             aria-haspopup="menu"
             aria-expanded={menu.open}
-            className="flex h-7 min-w-0 items-center gap-1 rounded-[7px] px-1.5 text-label font-medium text-ink-900 hover:bg-fill-hover"
+            className="flex h-7 min-w-0 items-center gap-1 rounded-[7px] px-1.5 text-label font-medium text-ink-900 hover:bg-fill-hover max-sm:h-11 max-sm:px-2.5"
           >
             <span className="truncate">{current.label}</span>
             <ChevronDown className="size-3 shrink-0 text-icon-muted" strokeWidth={iconStroke} />

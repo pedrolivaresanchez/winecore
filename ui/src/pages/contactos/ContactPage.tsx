@@ -286,7 +286,7 @@ function Loaded({
         </BarButton>
         <Link
           to="/contactos"
-          className="ml-0.5 shrink-0 rounded-md px-1.5 py-1 text-caption text-text-tertiary outline-none transition-colors hover:bg-fill-hover hover:text-ink-900 focus-visible:shadow-(--shadow-focus)"
+          className="ml-0.5 shrink-0 rounded-md px-1.5 py-1 max-sm:py-3.5 text-caption text-text-tertiary outline-none transition-colors hover:bg-fill-hover hover:text-ink-900 focus-visible:shadow-(--shadow-focus)"
         >
           {copy.contactRecord.back}
         </Link>
@@ -453,7 +453,7 @@ function IdentityCard({ contact }: { contact: Contact }) {
   const person = contact.kind === 'person'
   const place = [contact.city, contact.province].filter(Boolean).join(', ')
   const address = contact.addresses.find((item) => item.is_default) ?? contact.addresses[0] ?? null
-  const link = 'text-info-600 underline underline-offset-2 outline-none focus-visible:shadow-(--shadow-focus) rounded-sm'
+  const link = 'text-info-600 underline underline-offset-2 outline-none focus-visible:shadow-(--shadow-focus) rounded-sm max-sm:-my-3 max-sm:py-3'
   return (
     <section className={cn(RECORD_CARD, 'flex flex-col gap-2.5 px-3 py-2.5')}>
       <div className="flex min-w-0 items-start gap-2">

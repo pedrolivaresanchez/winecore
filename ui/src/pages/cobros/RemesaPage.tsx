@@ -136,7 +136,7 @@ function Loaded({ me, remittance, onReload }: { me: Me; remittance: Remittance; 
                 role="tab"
                 aria-selected={tab === item.id}
                 className={cn(
-                  'h-8 shrink-0 border-b-2 px-2 text-label',
+                  'h-8 shrink-0 border-b-2 px-2 text-label max-sm:h-11 max-sm:min-w-11 max-sm:px-3',
                   tab === item.id ? 'border-ink-900 font-medium text-ink-900' : 'border-transparent text-text-tertiary',
                 )}
                 onClick={() => setTab(item.id)}

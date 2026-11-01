@@ -46,7 +46,7 @@ export function SectionTabs<T extends string>({
           role="tab"
           aria-selected={value === item.id}
           className={cn(
-            'h-8 shrink-0 border-b-2 px-2 text-label',
+            'h-8 shrink-0 border-b-2 px-2 text-label max-sm:h-11 max-sm:min-w-11 max-sm:px-3',
             value === item.id ? 'border-ink-900 font-medium text-ink-900' : 'border-transparent text-text-tertiary',
           )}
           onClick={() => onChange(item.id)}

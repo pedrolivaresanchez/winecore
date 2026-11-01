@@ -54,7 +54,7 @@ export function RecordFrame({
                 role="tab"
                 aria-selected={tab === item.id}
                 className={cn(
-                  'h-8 shrink-0 border-b-2 px-2 text-label',
+                  'h-8 shrink-0 border-b-2 px-2 text-label max-sm:h-11 max-sm:min-w-11 max-sm:px-3',
                   tab === item.id ? 'border-ink-900 font-medium text-ink-900' : 'border-transparent text-text-tertiary',
                 )}
                 onClick={() => onTab(item.id)}
@@ -76,7 +76,7 @@ export function BackLink({ to, label }: { to: string; label: string }) {
     <Link
       to={to}
       aria-label={label}
-      className="flex size-7 shrink-0 items-center justify-center rounded-md text-ink-900 outline-none hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)"
+      className="flex size-7 max-sm:size-11 shrink-0 items-center justify-center rounded-md text-ink-900 outline-none hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)"
     >
       <ArrowLeft className="size-4" strokeWidth={iconStroke} />
     </Link>
@@ -270,7 +270,7 @@ export function SalesHistory({ table, id }: { table: string; id: string }) {
 
 export function DocLink({ to, children }: { to: string; children: ReactNode }) {
   return (
-    <Link to={to} className="text-label text-ink-900 underline-offset-2 hover:underline">
+    <Link to={to} className="text-label text-ink-900 underline-offset-2 hover:underline max-sm:-my-3 max-sm:block max-sm:py-3">
       {children}
     </Link>
   )

@@ -1130,7 +1130,7 @@ function Keypad({ onPress }: { onPress: (key: string) => void }) {
           key={key}
           type="button"
           aria-label={key === '⌫' ? 'Borrar' : key === ',' ? 'Coma' : key}
-          className="h-9 rounded-lg bg-surface-subtle text-label font-medium"
+          className="h-11 rounded-lg bg-surface-subtle text-label font-medium"
           onPointerDown={(event) => event.preventDefault()}
           onClick={() => onPress(key)}
         >
@@ -1143,7 +1143,7 @@ function Keypad({ onPress }: { onPress: (key: string) => void }) {
 
 function VesselChips({ vessels, selected, onSelect }: { vessels: Vessel[]; selected: string; onSelect: (vessel: Vessel) => void }) {
   return (
-    <div className="flex gap-1.5 overflow-x-auto pb-1">
+    <div className="flex gap-1.5 overflow-x-auto pb-1 max-sm:max-h-44 max-sm:flex-wrap max-sm:overflow-x-visible max-sm:overflow-y-auto max-sm:overscroll-contain">
       {vessels.map((vessel) => {
         const on = vessel.code === selected
         const disabled = vessel.status !== 'in_service'

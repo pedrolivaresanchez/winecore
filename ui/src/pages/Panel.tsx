@@ -315,7 +315,7 @@ function PanelCard({
         {href && more ? (
           <Link
             to={href}
-            className="shrink-0 rounded-md text-caption text-text-tertiary outline-none transition-colors duration-(--duration-quick) ease-(--ease-smooth-out) hover:text-ink-900 focus-visible:shadow-(--shadow-focus)"
+            className="shrink-0 rounded-md text-caption text-text-tertiary outline-none max-sm:-my-3 max-sm:py-3 transition-colors duration-(--duration-quick) ease-(--ease-smooth-out) hover:text-ink-900 focus-visible:shadow-(--shadow-focus)"
           >
             {more}
           </Link>

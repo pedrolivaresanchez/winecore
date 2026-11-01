@@ -167,7 +167,7 @@ export function EquipoPage({ me, equipmentId }: { me: Me; equipmentId: string })
                 type="button"
                 role="tab"
                 aria-selected={tab === id}
-                className={cn('h-8 shrink-0 border-b-2 px-2 text-label', tab === id ? 'border-ink-900 font-medium text-ink-900' : 'border-transparent text-text-tertiary')}
+                className={cn('h-8 shrink-0 border-b-2 px-2 text-label max-sm:h-11 max-sm:min-w-11 max-sm:px-3', tab === id ? 'border-ink-900 font-medium text-ink-900' : 'border-transparent text-text-tertiary')}
                 onClick={() => setTab(id)}
               >
                 {label}
