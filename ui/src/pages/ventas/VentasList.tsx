@@ -53,6 +53,8 @@ import {
   type GridColumn,
 } from '@/ui'
 import { CreateDelivery, CreateDocument } from '@/pages/ventas/dialogs'
+import { DocumentModal } from '@/pages/documents/DocumentModal'
+import { useDocParam } from '@/pages/documents/use-doc-param'
 
 type Row = {
   id: string
@@ -89,6 +91,7 @@ export function VentasList({ me, doc, creating = false }: { me: Me; doc: DocKind
   const navigate = useNavigate()
   const columnsMenu = useMenuOpen()
   const [params, setParams] = useSearchParams()
+  const opened = useDocParam()
   const { filter, entities } = useEntity()
   const entityId = filter === 'all' ? '' : entities.find((item) => item.code === filter)?.id ?? ''
   const status = params.get('status') ?? ''
@@ -114,6 +117,7 @@ export function VentasList({ me, doc, creating = false }: { me: Me; doc: DocKind
   const aliases = useMemo(() => productAliases(lines), [lines])
   const catalog = useSalesCatalog(aliases)
   const canWrite = allows(me, 'sales.write')
+  const modalSource = doc === 'quote' || doc === 'delivery' ? doc : null
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebounced(q.trim().toLowerCase()), 300)
@@ -443,7 +447,7 @@ export function VentasList({ me, doc, creating = false }: { me: Me; doc: DocKind
           onResize={() => undefined}
           selected={picked}
           onSelectedChange={setPicked}
-          onOpenRow={(row) => navigate(`${docPath(doc)}/${row.id}`)}
+          onOpenRow={(row) => (modalSource ? opened.open(row.id) : navigate(`${docPath(doc)}/${row.id}`))}
           rowHref={(row) => `${docPath(doc)}/${row.id}`}
           scrollKey={`ventas-${doc}`}
           loading={loading}
@@ -487,6 +491,17 @@ export function VentasList({ me, doc, creating = false }: { me: Me; doc: DocKind
           customers={catalog.customers}
           onClose={closeCreate}
           onCreated={created}
+        />
+      ) : null}
+      {modalSource ? (
+        <DocumentModal
+          me={me}
+          source={modalSource}
+          id={opened.id}
+          ids={rows.map((row) => row.id)}
+          onNavigate={opened.move}
+          onClose={opened.close}
+          onChanged={() => setAttempt((value) => value + 1)}
         />
       ) : null}
     </div>

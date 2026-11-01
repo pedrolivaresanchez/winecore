@@ -140,6 +140,7 @@ import { createMcpClient, listMcpClients, revokeMcpClient, rotateMcpClient } fro
 import { getDashboard } from './routes/dashboard';
 import {
   getLegacyDocument,
+  getLegacyDocumentPdf,
   getLegacyDocuments,
   getLegacyInvoice,
   getLegacyInvoicePdf,
@@ -309,6 +310,9 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requireAnyPermission(guardDeps, ['reports.read', 'finance.read', 'sales.read', 'billing.read', 'purchasing.read']),
     })
     .get('/v1/legacy/documents', ({ request }) => getLegacyDocuments(deps.writer, request), {
+      beforeHandle: requireAnyPermission(guardDeps, ['reports.read', 'finance.read', 'sales.read', 'billing.read']),
+    })
+    .get('/v1/legacy/documents/:id/pdf', ({ request, params }) => getLegacyDocumentPdf(deps.writer, request, params.id), {
       beforeHandle: requireAnyPermission(guardDeps, ['reports.read', 'finance.read', 'sales.read', 'billing.read']),
     })
     .get('/v1/legacy/documents/:id', ({ request, params }) => getLegacyDocument(deps.writer, request, params.id), {

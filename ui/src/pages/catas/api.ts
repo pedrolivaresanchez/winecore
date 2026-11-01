@@ -1,6 +1,4 @@
-import { isAuthEnabled } from '@/auth/config'
-import { getAccessToken } from '@/auth/tokens'
-import { ApiError, api } from '@/lib/api'
+import { ApiError, api, apiBlob } from '@/lib/api'
 import { copy } from '@/i18n'
 import type { Wine } from '@/pages/catalogo/model'
 import type { LotListItem, Page } from '@/lib/cellar'
@@ -17,11 +15,6 @@ import type {
 
 export function messageOf(error: unknown): string {
   return error instanceof ApiError ? error.message : copy.error.load
-}
-
-function root(): string {
-  const configured = import.meta.env.VITE_API_BASE_URL
-  return (configured && configured.length > 0 ? configured : '/api').replace(/\/$/, '')
 }
 
 export function listTemplates(signal?: AbortSignal) {
@@ -84,15 +77,13 @@ export function uploadNoteFile(noteId: string, file: File, role: 'photo' | 'othe
 }
 
 export async function attachmentObjectUrl(id: string): Promise<{ url: string; mime: string } | null> {
-  const headers = new Headers({ Accept: '*/*' })
-  if (isAuthEnabled) {
-    const token = getAccessToken()
-    if (token) headers.set('Authorization', `Bearer ${token}`)
+  try {
+    const { blob } = await apiBlob(`/v1/attachments/${encodeURIComponent(id)}`, { headers: { Accept: '*/*' } })
+    return { url: URL.createObjectURL(blob), mime: blob.type }
+  } catch (error) {
+    if (error instanceof ApiError && error.status > 0) return null
+    throw error
   }
-  const response = await fetch(`${root()}/v1/attachments/${encodeURIComponent(id)}`, { headers, cache: 'no-store' })
-  if (!response.ok) return null
-  const blob = await response.blob()
-  return { url: URL.createObjectURL(blob), mime: response.headers.get('content-type') ?? blob.type }
 }
 
 export function listSessions(signal?: AbortSignal) {

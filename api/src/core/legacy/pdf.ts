@@ -1,6 +1,6 @@
 import Decimal from 'decimal.js';
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
-import type { HoldedInvoiceLoaded, LegacyLine } from './detail';
+import type { HoldedDocumentLoaded, HoldedInvoiceLoaded, LegacyLine } from './detail';
 
 const PAGE_W = 595.28;
 const PAGE_H = 841.89;
@@ -11,7 +11,8 @@ const MUTED = rgb(0.38, 0.36, 0.34);
 const RULE = rgb(0.78, 0.75, 0.72);
 const BAND = rgb(0.95, 0.93, 0.9);
 const ACCENT = rgb(0.45, 0.12, 0.16);
-const NOTE = 'Copia generada desde el histórico de Holded. No es un registro Verifactu.';
+const INVOICE_NOTE = 'Copia generada desde el histórico de Holded. No es un registro Verifactu.';
+const DOCUMENT_NOTE = 'Copia generada desde el histórico de Holded.';
 
 const COL = {
   units: 360,
@@ -20,22 +21,28 @@ const COL = {
   tax: RIGHT,
 };
 
+export type HoldedPdfTitle = 'Factura' | 'Factura rectificativa' | 'Presupuesto' | 'Albarán';
+
 export interface HoldedPdfInput {
-  title: 'Factura' | 'Factura rectificativa';
+  title: HoldedPdfTitle;
   number: string;
   issueDate: string;
+  /** Sin etiqueta, la cabecera no lleva segunda fecha (el albarán no vence). */
+  dueLabel: 'Vencimiento' | 'Válido hasta' | null;
   dueDate: string | null;
   status: string;
-  kind: string;
+  partyLabel: 'Cliente' | 'Proveedor' | 'Destino';
   seller: HoldedInvoiceLoaded['seller'];
   customerName: string;
   description: string | null;
   lines: LegacyLine[];
   subtotal: string;
   vat: string;
+  withholding: string | null;
   total: string;
-  paid: string | null;
-  pending: string | null;
+  /** Solo las facturas llevan cobrado y pendiente. */
+  settlement: { paid: string | null; pending: string | null } | null;
+  note: string;
 }
 
 interface Ctx {
@@ -51,8 +58,8 @@ interface Ctx {
   footer: string[];
 }
 
-/** Copia A4, en español, de una factura histórica. No emite ni altera Verifactu. */
-export async function renderHoldedInvoicePdf(input: HoldedPdfInput): Promise<Uint8Array> {
+/** Copia A4, en español, de un documento histórico. No emite ni altera Verifactu. */
+export async function renderHoldedPdf(input: HoldedPdfInput): Promise<Uint8Array> {
   const pdf = await PDFDocument.create({ updateMetadata: false });
   const regular = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
@@ -91,18 +98,44 @@ export function holdedPdfInput(loaded: HoldedInvoiceLoaded): HoldedPdfInput {
     title: holdedInvoiceTitle(detail.number, detail.total),
     number: detail.number,
     issueDate: detail.issue_date,
+    dueLabel: 'Vencimiento',
     dueDate: detail.due_date,
     status: detail.status_holded,
-    kind: detail.kind,
+    partyLabel: detail.kind === 'purchase' ? 'Proveedor' : 'Cliente',
     seller: loaded.seller,
     customerName: detail.counterparty_name,
     description: detail.description,
     lines: detail.lines,
     subtotal: detail.subtotal,
     vat: detail.vat,
+    withholding: detail.withholding,
     total: detail.total,
-    paid: detail.paid,
-    pending: detail.pending,
+    settlement: { paid: detail.paid, pending: detail.pending },
+    note: INVOICE_NOTE,
+  };
+}
+
+export function holdedDocumentPdfInput(loaded: HoldedDocumentLoaded): HoldedPdfInput {
+  const detail = loaded.detail;
+  const quote = detail.kind === 'quote';
+  return {
+    title: quote ? 'Presupuesto' : 'Albarán',
+    number: detail.number,
+    issueDate: detail.issue_date,
+    dueLabel: quote ? 'Válido hasta' : null,
+    dueDate: detail.due_date,
+    status: detail.status_holded,
+    partyLabel: quote ? 'Cliente' : 'Destino',
+    seller: loaded.seller,
+    customerName: detail.counterparty_name,
+    description: detail.description,
+    lines: detail.lines,
+    subtotal: detail.subtotal,
+    vat: detail.vat,
+    withholding: detail.withholding,
+    total: detail.total,
+    settlement: null,
+    note: DOCUMENT_NOTE,
   };
 }
 
@@ -116,9 +149,9 @@ export function holdedInvoiceTitle(number: string, total: string): 'Factura' | '
   return 'Factura';
 }
 
-export function holdedPdfFilename(number: string): string {
+export function holdedPdfFilename(number: string, prefix: 'factura' | 'presupuesto' | 'albaran' = 'factura'): string {
   const safe = number.replace(/[^A-Za-z0-9._-]+/gu, '_').replace(/^_+|_+$/gu, '').slice(0, 80);
-  return `factura-${safe === '' ? 'sin-numero' : safe}.pdf`;
+  return `${prefix}-${safe === '' ? 'sin-numero' : safe}.pdf`;
 }
 
 function paintHeader(ctx: Ctx, input: HoldedPdfInput): void {
@@ -135,7 +168,7 @@ function paintHeader(ctx: Ctx, input: HoldedPdfInput): void {
   const meta = [
     `Número ${blank(input.number)}`,
     `Fecha ${spanishDate(input.issueDate)}`,
-    `Vencimiento ${spanishDate(input.dueDate)}`,
+    ...(input.dueLabel ? [`${input.dueLabel} ${spanishDate(input.dueDate)}`] : []),
     `Estado ${blank(input.status)}`,
   ];
   let metaY = ctx.y + 4;
@@ -157,8 +190,7 @@ function paintParties(ctx: Ctx, input: HoldedPdfInput): void {
     seller.addressLine,
     locality,
   ]);
-  const customerLabel = input.kind === 'purchase' ? 'Proveedor' : 'Cliente';
-  drawBlock(ctx, customerLabel, [input.customerName]);
+  drawBlock(ctx, input.partyLabel, [input.customerName], true);
   if (input.description) drawBlock(ctx, 'Descripción', [input.description]);
 }
 
@@ -193,14 +225,16 @@ function paintTotals(ctx: Ctx, input: HoldedPdfInput): void {
   });
   pair(ctx, 'Base imponible', euros(input.subtotal), false);
   pair(ctx, 'IVA', euros(input.vat), false);
+  if (nonZero(input.withholding)) pair(ctx, 'Retención', euros(input.withholding), false);
   pair(ctx, 'Total', euros(input.total), true);
-  pair(ctx, 'Pagado', input.paid == null ? '—' : euros(input.paid), false);
-  pair(ctx, 'Pendiente', input.pending == null ? '—' : euros(input.pending), false);
+  if (!input.settlement) return;
+  pair(ctx, 'Pagado', input.settlement.paid == null ? '—' : euros(input.settlement.paid), false);
+  pair(ctx, 'Pendiente', input.settlement.pending == null ? '—' : euros(input.settlement.pending), false);
 }
 
-function drawBlock(ctx: Ctx, label: string, lines: string[]): void {
+function drawBlock(ctx: Ctx, label: string, lines: string[], always = false): void {
   const body = lines.flatMap((line) => wrap(ctx.regular, line, 9, RIGHT - MARGIN)).filter((line) => line !== '');
-  if (body.length === 0 && label !== 'Cliente' && label !== 'Proveedor') return;
+  if (body.length === 0 && !always) return;
   ensure(ctx, 14 + body.length * 12);
   const heading = encode(ctx.bold, label);
   ctx.page.drawText(heading, { x: MARGIN, y: ctx.y, size: 9, font: ctx.bold, color: INK });
@@ -306,7 +340,7 @@ function footerLines(input: HoldedPdfInput, font: PDFFont): string[] {
   const locality = [place, seller.province.trim()].filter((part) => part !== '').join(' ');
   const address = [seller.addressLine.trim(), locality].filter((part) => part !== '').join(' · ');
   const lines = address === '' ? [] : wrap(font, address, 8, RIGHT - MARGIN);
-  lines.push(...wrap(font, NOTE, 8, RIGHT - MARGIN));
+  lines.push(...wrap(font, input.note, 8, RIGHT - MARGIN));
   return lines;
 }
 
@@ -396,6 +430,15 @@ function euros(value: string | null): string {
     return `${sign}${grouped},${frac ?? '00'} EUR`;
   } catch {
     return '—';
+  }
+}
+
+function nonZero(value: string | null): value is string {
+  if (value == null || value.trim() === '') return false;
+  try {
+    return !new Decimal(value).isZero();
+  } catch {
+    return false;
   }
 }
 

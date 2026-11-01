@@ -1,6 +1,6 @@
 import { isAuthEnabled } from '@/auth/config'
 import { getAccessToken } from '@/auth/tokens'
-import { ApiError, api, apiText } from '@/lib/api'
+import { ApiError, api, apiBlob, apiText } from '@/lib/api'
 import { copy } from '@/i18n'
 import type { Expense, ExpenseCategory, ExpenseDraft, ExpensePage, ExpenseQuery } from '@/pages/gastos/types'
 
@@ -168,16 +168,11 @@ export function captureExpense(
 }
 
 export async function attachmentObjectUrl(id: string): Promise<{ url: string; mime: string }> {
-  const headers = new Headers({ Accept: '*/*' })
-  if (isAuthEnabled) {
-    const token = getAccessToken()
-    if (token) headers.set('Authorization', `Bearer ${token}`)
+  try {
+    const { blob } = await apiBlob(`/v1/attachments/${id}`, { headers: { Accept: '*/*' } })
+    return { url: URL.createObjectURL(blob), mime: blob.type }
+  } catch (error) {
+    if (error instanceof ApiError && error.status > 0) throw new ApiError(error.status, error.code, copy.gastos.noDocument)
+    throw error
   }
-  const response = await fetch(`${root()}/v1/attachments/${id}`, { headers, cache: 'no-store' })
-  if (!response.ok) {
-    throw new ApiError(response.status, 'WC_ERROR', copy.gastos.noDocument)
-  }
-  const blob = await response.blob()
-  const mime = response.headers.get('content-type') ?? blob.type
-  return { url: URL.createObjectURL(blob), mime }
 }

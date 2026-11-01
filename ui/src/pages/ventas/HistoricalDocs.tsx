@@ -12,11 +12,13 @@ import { allows } from '@/lib/permissions'
 import { entityFilter } from '@/lib/reports'
 import type { Me } from '@/lib/types'
 import { day, entityLabel, money } from '@/pages/facturas/format'
-import { listHoldedDocuments, moneySum, rowMatches, statusOptions, useHoldedDetail, useHoldedPage } from '@/pages/facturas/holded-detail'
-import { HoldedDrawerBody, HoldedFilters, HoldedTotals } from '@/pages/facturas/holded-ui'
+import { listHoldedDocuments, moneySum, rowMatches, statusOptions, useHoldedPage } from '@/pages/facturas/holded-detail'
+import { HoldedFilters, HoldedTotals } from '@/pages/facturas/holded-ui'
+import { DocumentModal } from '@/pages/documents/DocumentModal'
+import { useDocParam } from '@/pages/documents/use-doc-param'
 import { FRAME_GUTTER, FRAME_STRIP_SCROLL } from '@/ui/frame'
 import { Receipt, Search } from '@/ui/icons'
-import { Badge, Button, DataGrid, Drawer, DrawerHeader, EmptyState, Input, type BadgeTone, type GridColumn } from '@/ui'
+import { Badge, Button, DataGrid, EmptyState, Input, type BadgeTone, type GridColumn } from '@/ui'
 
 const GRID_LABELS = {
   addCalculation: 'Añadir cálculo',
@@ -52,14 +54,13 @@ export function HistoricalDocs({ me, kind }: { me: Me; kind: 'quote' | 'delivery
   const [status, setStatus] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
-  const [open, setOpen] = useState<LegacyDocument | null>(null)
+  const doc = useDocParam()
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const scope = `${docKind}\0${entity}`
   const [seenScope, setSeenScope] = useState(scope)
   if (seenScope !== scope) {
     setSeenScope(scope)
     setStatus('')
-    setOpen(null)
   }
   const activeStatus = seenScope === scope ? status : ''
   const page = useHoldedPage(listHoldedDocuments, {
@@ -88,6 +89,7 @@ export function HistoricalDocs({ me, kind }: { me: Me; kind: 'quote' | 'delivery
     () => page.items.filter((row) => rowMatches(row, { status: activeStatus, from, to })),
     [activeStatus, from, page.items, to],
   )
+  const visibleIds = useMemo(() => visible.map((row) => row.id), [visible])
   const statuses = useMemo(() => statusOptions(page.items, activeStatus), [activeStatus, page.items])
   const filtering = Boolean(activeStatus || from || to || debounced)
 
@@ -179,7 +181,8 @@ export function HistoricalDocs({ me, kind }: { me: Me; kind: 'quote' | 'delivery
           onResize={(id, width) => setWidths((current) => ({ ...current, [id]: width }))}
           selected={picked}
           onSelectedChange={setPicked}
-          onOpenRow={(row) => setOpen(row)}
+          onOpenRow={(row) => doc.open(row.id)}
+          rowHref={(row) => doc.hrefFor(row.id)}
           total={gridTotal}
           loading={page.loading}
           empty={
@@ -198,34 +201,14 @@ export function HistoricalDocs({ me, kind }: { me: Me; kind: 'quote' | 'delivery
           </Button>
         </div>
       ) : null}
-      <Drawer open={open != null} onClose={() => setOpen(null)} labelledBy="doc-holded" size="xl">
-        {open ? <DocumentDrawer key={open.id} row={open} onClose={() => setOpen(null)} /> : null}
-      </Drawer>
-    </div>
-  )
-}
-
-function DocumentDrawer({ row, onClose }: { row: LegacyDocument; onClose: () => void }) {
-  const detail = useHoldedDetail(row.id, 'documents')
-  return (
-    <>
-      <DrawerHeader titleId="doc-holded" title={row.number} onClose={onClose} />
-      <HoldedDrawerBody
-        hint={copy.facturas.holdedHint}
-        showPdf={detail.showPdf}
-        pdfBusy={detail.pdfBusy}
-        pdfError={detail.pdfError}
-        onPdf={() => void detail.openPdf()}
-        detailState={detail.state}
-        lines={detail.lines}
-        fields={[
-          { label: copy.sales.date, value: day(row.issue_date) },
-          { label: copy.sales.customer, value: row.counterparty_name },
-          { label: copy.sales.total, value: money(row.total) },
-          { label: copy.sales.status, value: row.status_holded || '—' },
-          { label: copy.sales.entity, value: entityLabel(row.entity_code) },
-        ]}
+      <DocumentModal
+        me={me}
+        source="holded-document"
+        id={doc.id}
+        ids={visibleIds}
+        onNavigate={doc.move}
+        onClose={doc.close}
       />
-    </>
+    </div>
   )
 }

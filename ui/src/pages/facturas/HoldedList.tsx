@@ -11,16 +11,16 @@ import { allows } from '@/lib/permissions'
 import { entityFilter } from '@/lib/reports'
 import type { Me } from '@/lib/types'
 import { day, entityLabel, money } from '@/pages/facturas/format'
-import { listHoldedInvoices, moneySum, rowMatches, statusOptions, useHoldedDetail, useHoldedPage } from '@/pages/facturas/holded-detail'
-import { HoldedDrawerBody, HoldedFilters, HoldedTotals } from '@/pages/facturas/holded-ui'
+import { listHoldedInvoices, moneySum, rowMatches, statusOptions, useHoldedPage } from '@/pages/facturas/holded-detail'
+import { HoldedFilters, HoldedTotals } from '@/pages/facturas/holded-ui'
+import { DocumentModal } from '@/pages/documents/DocumentModal'
+import { useDocParam } from '@/pages/documents/use-doc-param'
 import { FRAME_GUTTER, FRAME_STRIP_SCROLL } from '@/ui/frame'
 import { FileText, Search } from '@/ui/icons'
 import {
   Badge,
   Button,
   DataGrid,
-  Drawer,
-  DrawerHeader,
   EmptyState,
   Input,
   SegmentedControl,
@@ -64,14 +64,13 @@ export function HoldedList({ me, book = 'both' }: { me: Me; book?: 'both' | 'pur
   const [status, setStatus] = useState('')
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
-  const [open, setOpen] = useState<LegacyInvoice | null>(null)
+  const doc = useDocParam()
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const scope = `${kind}\0${entity}`
   const [seenScope, setSeenScope] = useState(scope)
   if (seenScope !== scope) {
     setSeenScope(scope)
     setStatus('')
-    setOpen(null)
   }
   const activeStatus = seenScope === scope ? status : ''
   const page = useHoldedPage(listHoldedInvoices, {
@@ -101,6 +100,7 @@ export function HoldedList({ me, book = 'both' }: { me: Me; book?: 'both' | 'pur
     () => page.items.filter((row) => rowMatches(row, { status: activeStatus, from, to })),
     [activeStatus, from, page.items, to],
   )
+  const visibleIds = useMemo(() => visible.map((row) => row.id), [visible])
   const statuses = useMemo(() => statusOptions(page.items, activeStatus), [activeStatus, page.items])
   const filtering = Boolean(activeStatus || from || to || debounced)
 
@@ -232,7 +232,8 @@ export function HoldedList({ me, book = 'both' }: { me: Me; book?: 'both' | 'pur
           onResize={(id, width) => setWidths((current) => ({ ...current, [id]: width }))}
           selected={picked}
           onSelectedChange={setPicked}
-          onOpenRow={(row) => setOpen(row)}
+          onOpenRow={(row) => doc.open(row.id)}
+          rowHref={(row) => doc.hrefFor(row.id)}
           total={gridTotal}
           loading={page.loading}
           empty={
@@ -252,35 +253,14 @@ export function HoldedList({ me, book = 'both' }: { me: Me; book?: 'both' | 'pur
         </div>
       ) : null}
 
-      <Drawer open={open != null} onClose={() => setOpen(null)} labelledBy="factura-holded" size="xl">
-        {open ? <InvoiceDrawer key={open.id} row={open} onClose={() => setOpen(null)} /> : null}
-      </Drawer>
-    </div>
-  )
-}
-
-function InvoiceDrawer({ row, onClose }: { row: LegacyInvoice; onClose: () => void }) {
-  const detail = useHoldedDetail(row.id, 'invoices')
-  return (
-    <>
-      <DrawerHeader titleId="factura-holded" title={row.number} onClose={onClose} />
-      <HoldedDrawerBody
-        hint={copy.facturas.holdedHint}
-        showPdf={detail.showPdf}
-        pdfBusy={detail.pdfBusy}
-        pdfError={detail.pdfError}
-        onPdf={() => void detail.openPdf()}
-        detailState={detail.state}
-        lines={detail.lines}
-        fields={[
-          { label: copy.facturas.date, value: day(row.issue_date) },
-          { label: copy.facturas.customer, value: row.counterparty_name },
-          { label: copy.facturas.total, value: money(row.total) },
-          { label: copy.facturas.pendingAmount, value: money(row.pending) },
-          { label: copy.facturas.status, value: row.status_holded },
-          { label: copy.facturas.entity, value: entityLabel(row.entity_code) },
-        ]}
+      <DocumentModal
+        me={me}
+        source="holded-invoice"
+        id={doc.id}
+        ids={visibleIds}
+        onNavigate={doc.move}
+        onClose={doc.close}
       />
-    </>
+    </div>
   )
 }
