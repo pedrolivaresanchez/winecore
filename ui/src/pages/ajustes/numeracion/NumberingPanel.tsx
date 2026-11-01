@@ -3,6 +3,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { Field } from '@/components/Field'
 import { NoPermission } from '@/components/NoPermission'
 import { useApi } from '@/hooks/use-api'
+import { useMinWidth } from '@/hooks/use-media'
 import { copy, fill } from '@/i18n'
 import { ApiError, fieldError } from '@/lib/api'
 import { todayMadrid } from '@/lib/sales'
@@ -170,6 +171,7 @@ function EntitySection({
   onDocuments: () => void
   onRetire: (series: Series) => void
 }) {
+  const phone = !useMinWidth(640)
   const place = [entity.address_line, [entity.postal_code, entity.city].filter(Boolean).join(' '), entity.province, entity.country_code]
     .filter(Boolean)
     .join(', ')
@@ -213,20 +215,52 @@ function EntitySection({
           </Button>
         </div>
       </div>
-      <Table
-        variant="card"
-        columns={columns}
-        rows={series}
-        rowKey={(row) => row.id}
-        empty={<p className="px-4 py-3 text-label text-text-tertiary">{copy.numbering.empty}</p>}
-        rowActions={(row) =>
-          row.is_active ? (
-            <Button type="button" variant="ghost" size="sm" onClick={() => onRetire(row)}>
-              {copy.numbering.deactivate}
-            </Button>
-          ) : null
-        }
-      />
+      {phone ? (
+        series.length === 0 ? (
+          <p className="rounded-2xl border border-border-subtle bg-surface px-4 py-3 text-label text-text-tertiary">{copy.numbering.empty}</p>
+        ) : (
+          <ul className="divide-y divide-border-subtle overflow-hidden rounded-2xl border border-border-subtle bg-surface">
+            {series.map((row) => (
+              <li key={row.id} className="flex items-center gap-3 px-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-label font-medium text-ink-900">{`${docLabel(row.doc_type)} · ${row.year}`}</div>
+                  <div className="font-mono text-caption text-text-secondary">{nextNumber(row)}</div>
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                    <Badge size="sm" tone={row.is_active ? 'success' : 'neutral'} dot>
+                      {row.is_active ? copy.numbering.activeBadge : copy.numbering.inactiveBadge}
+                    </Badge>
+                    {row.verifactu ? (
+                      <Badge size="sm" tone="info">
+                        {copy.numbering.verifactuBadge}
+                      </Badge>
+                    ) : null}
+                  </div>
+                </div>
+                {row.is_active ? (
+                  <Button type="button" variant="ghost" size="sm" onClick={() => onRetire(row)}>
+                    {copy.numbering.deactivate}
+                  </Button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )
+      ) : (
+        <Table
+          variant="card"
+          columns={columns}
+          rows={series}
+          rowKey={(row) => row.id}
+          empty={<p className="px-4 py-3 text-label text-text-tertiary">{copy.numbering.empty}</p>}
+          rowActions={(row) =>
+            row.is_active ? (
+              <Button type="button" variant="ghost" size="sm" onClick={() => onRetire(row)}>
+                {copy.numbering.deactivate}
+              </Button>
+            ) : null
+          }
+        />
+      )}
     </section>
   )
 }
