@@ -1,5 +1,5 @@
+import type { RecordDoc } from '@/pages/documents/doc-key'
 import type { BadgeTone } from '@/ui'
-import type { DocSource as ModalSource } from '@/pages/documents/sources'
 
 export type DocSource = 'winecore' | 'holded'
 export type InvoiceState = 'draft' | 'pending' | 'overdue' | 'paid' | 'voided'
@@ -81,11 +81,6 @@ export function overviewPath(id: string): string {
   return `/v1/contacts/${id}/summary`
 }
 
-/** A document the record opens in the document modal, kept in `?doc=<source>:<id>`. */
-export type RecordDoc = { source: ModalSource; id: string }
-
-const MODAL_SOURCES: readonly ModalSource[] = ['holded-invoice', 'holded-document', 'invoice', 'quote', 'delivery']
-
 export function invoiceDoc(doc: { source: DocSource; id: string | null }): RecordDoc | null {
   if (!doc.id) return null
   return { source: doc.source === 'holded' ? 'holded-invoice' : 'invoice', id: doc.id }
@@ -106,19 +101,6 @@ export function salesHref(kind: 'quote' | 'order' | 'delivery', doc: OverviewSal
 /** Holded payments only carry invoice numbers: the invoice list filtered by number is where they are read. */
 export function paymentHref(number: string | null): string | null {
   return number ? `/facturas?q=${encodeURIComponent(number)}` : null
-}
-
-export function docKey(doc: RecordDoc): string {
-  return `${doc.source}:${doc.id}`
-}
-
-export function parseDocKey(value: string | null): RecordDoc | null {
-  if (!value) return null
-  const cut = value.indexOf(':')
-  if (cut <= 0) return null
-  const source = value.slice(0, cut) as ModalSource
-  const id = value.slice(cut + 1)
-  return MODAL_SOURCES.includes(source) && id ? { source, id } : null
 }
 
 export const INVOICE_STATE: Record<InvoiceState, { label: string; tone: BadgeTone }> = {

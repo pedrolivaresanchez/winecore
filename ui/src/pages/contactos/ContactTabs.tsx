@@ -15,7 +15,6 @@ import { cn } from '@/lib/cn'
 import {
   INVOICE_STATE,
   amount,
-  docKey,
   invoiceDoc,
   monthLabel,
   paymentHref,
@@ -26,8 +25,8 @@ import {
   type OverviewPayment,
   type OverviewReceivable,
   type OverviewSalesDoc,
-  type RecordDoc,
 } from '@/pages/contactos/overview'
+import { docKey, type RecordDoc } from '@/pages/documents/doc-key'
 import { useDocParam } from '@/pages/documents/use-doc-param'
 import { DocRow, InvoiceRow, RowList, Section, SourceMark } from '@/pages/contactos/record-ui'
 
@@ -221,7 +220,7 @@ export function InvoicesTab({ overview, contactId, newInvoice }: { overview: Ove
             }
             action={
               <Link
-                to={`/facturas?libro=emitidas&customer=${contactId}`}
+                to={`/facturas?customer=${contactId}`}
                 className="rounded-md px-1.5 py-1 text-caption text-text-tertiary outline-none hover:bg-fill-hover hover:text-ink-900 focus-visible:shadow-(--shadow-focus)"
               >
                 {copy.contactRecord.inInvoices}
