@@ -179,6 +179,7 @@ export const contactsGet = defineReadTool({
       WHERE customer_id = CAST(${input.contact_id} AS UUID)
         AND status = 'issued'
         AND payment_status IN ('unpaid', 'partially_paid')
+        AND COALESCE(origin, 'native') <> 'holded_import'
     `);
     return {
       id: String(row.id),

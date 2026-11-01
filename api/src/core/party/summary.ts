@@ -258,6 +258,7 @@ async function receivablesOf(writer: Writer, owner: Owner, scope: (column: strin
       AND i.status = 'issued'
       AND i.payment_status IN ('unpaid', 'partially_paid')
       AND i.total > i.amount_paid
+      AND COALESCE(i.origin, 'native') <> 'holded_import'
       AND ${scope('i.legal_entity_id')}
   `);
   const legacy = await writer.read<Row>(`

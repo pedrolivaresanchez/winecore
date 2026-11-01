@@ -360,7 +360,11 @@ function holdedInvoices(direction: Direction, entity: string): string {
         JOIN core.legal_entity e ON e.id = h.entity_id
         LEFT JOIN legacy.open_item o ON o.holded_invoice_id = h.id
         ${link.joins}
-       WHERE h.kind = ${sql`${direction}`} AND ${entity}`;
+       WHERE h.kind = ${sql`${direction}`} AND ${entity}
+         AND NOT EXISTS (
+           SELECT 1 FROM ${direction === 'sale' ? 'billing.invoice' : 'purchasing.supplier_invoice'} projected
+           WHERE projected.holded_invoice_id = h.id
+         )`;
 }
 
 function nativeInvoices(entity: string): string {
@@ -376,12 +380,16 @@ function nativeInvoices(entity: string): string {
              CAST(CASE WHEN i.status = 'issued' THEN i.total - i.amount_paid WHEN i.status = 'voided' THEN 0 END AS DECIMAL(14,2)) AS pending,
              i.currency, ${nativeInvoiceBase('i.status', 'i.payment_status')} AS base, FALSE AS flagged_overdue,
              CASE
+               WHEN COALESCE(i.origin, 'native') = 'holded_import' THEN NULL
                WHEN i.status NOT IN ('issued', 'voided') THEN NULL
                WHEN v.send_status = 'rejected' THEN 'rejected'
                WHEN v.send_status IN ('accepted', 'accepted_with_errors', 'not_required') THEN 'accepted'
                ELSE 'pending'
              END AS verifactu,
-             CASE WHEN i.status IN ('issued', 'voided') THEN COALESCE(dl.status, 'none') END AS delivery
+             CASE
+               WHEN COALESCE(i.origin, 'native') = 'holded_import' THEN NULL
+               WHEN i.status IN ('issued', 'voided') THEN COALESCE(dl.status, 'none')
+             END AS delivery
         FROM billing.invoice i
         JOIN core.legal_entity e ON e.id = i.legal_entity_id
         LEFT JOIN party.contact c ON c.id = i.customer_id

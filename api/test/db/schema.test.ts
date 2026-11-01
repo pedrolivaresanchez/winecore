@@ -38,7 +38,8 @@ const EXTRA_COLUMNS: Record<string, readonly string[]> = {
   ],
   "inventory.lot": ["segregated"],
   // 0042 añade los campos que Holded imprime en sus documentos.
-  "billing.invoice": ["ship_to", "customer_references"],
+  "billing.invoice": ["ship_to", "customer_references", "origin", "holded_invoice_id"],
+  "purchasing.supplier_invoice": ["origin", "holded_invoice_id"],
   "sales.quote": ["ship_to", "customer_references"],
   "sales.quote_line": ["unit"],
   "sales.delivery_note": ["customer_references"],
@@ -363,8 +364,8 @@ test("el esquema DuckDB reproduce tablas, vistas y columnas de la referencia", a
   expect(migrations[0]).toBe("0001_core.sql");
   expect(migrations).toContain("0002_core_ops.sql");
   expect(migrations).toContain("0016_legacy.sql");
-  expect(migrations.at(-1)).toBe("0044_cellar_operation_time_idx.sql");
-  expect(migrations).toHaveLength(44);
+  expect(migrations.at(-1)).toBe("0047_holded_native_invoices.sql");
+  expect(migrations).toHaveLength(46);
   await migrate(client);
 
   const refs = referenceObjects(root);

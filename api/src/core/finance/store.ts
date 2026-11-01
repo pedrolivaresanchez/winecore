@@ -69,6 +69,7 @@ export async function listOpenDocuments(tx: Reader, entityId: string | null): Pr
     WHERE i.status = 'issued'
       AND i.payment_status IN ('unpaid', 'partially_paid')
       AND i.total > i.amount_paid
+      AND COALESCE(i.origin, 'native') <> 'holded_import'
       AND (${entityId} IS NULL OR i.legal_entity_id = CAST(${entityId} AS UUID))
   `);
   const suppliers = await tx.read<Record<string, unknown>>(sql`
@@ -80,6 +81,7 @@ export async function listOpenDocuments(tx: Reader, entityId: string | null): Pr
     WHERE s.status = 'approved'
       AND s.payment_status IN ('unpaid', 'partially_paid')
       AND s.total > s.amount_paid
+      AND COALESCE(s.origin, 'native') <> 'holded_import'
       AND (${entityId} IS NULL OR s.legal_entity_id = CAST(${entityId} AS UUID))
   `);
   const openItems = await tx.read<Record<string, unknown>>(openItemQuery(sql`

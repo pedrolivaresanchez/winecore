@@ -47,11 +47,14 @@ export async function loadInvoiceDocument(reader: SqlReader, id: string): Promis
       e.tax_id AS issuer_tax_id, e.address_line, e.postal_code, e.city, e.province,
       e.country_code AS issuer_country, e.registry_data,
       s.code AS series_code,
-      EXISTS (
-        SELECT 1 FROM regulatory.verifactu_installation v
-        WHERE v.legal_entity_id = i.legal_entity_id
-          AND v.is_active
-          AND v.starts_on <= i.issue_date
+      (
+        EXISTS (
+          SELECT 1 FROM regulatory.verifactu_installation v
+          WHERE v.legal_entity_id = i.legal_entity_id
+            AND v.is_active
+            AND v.starts_on <= i.issue_date
+        )
+        AND COALESCE(i.origin, 'native') <> 'holded_import'
       ) AS verifactu_active,
       (
         SELECT r.qr_url FROM regulatory.verifactu_record r

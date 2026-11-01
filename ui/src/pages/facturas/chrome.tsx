@@ -96,7 +96,7 @@ export function InvoiceBadges({ invoice, delivery }: { invoice: Invoice; deliver
       {invoice.invoice_type.startsWith('R') ? <Badge tone="info">{invoice.invoice_type}</Badge> : null}
       <DeliveryBadge status={delivery} />
       {invoice.status === 'issued' || invoice.status === 'voided' ? (
-        <Badge tone={invoice.verifactu_record_id ? 'success' : 'neutral'}>{verifactuLabel(invoice.verifactu_record_id)}</Badge>
+        <Badge tone={invoice.origin === 'holded_import' || !invoice.verifactu_record_id ? 'neutral' : 'success'}>{verifactuLabel(invoice.verifactu_record_id, invoice.origin)}</Badge>
       ) : null}
     </>
   )

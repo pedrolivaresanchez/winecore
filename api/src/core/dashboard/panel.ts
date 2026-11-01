@@ -323,6 +323,7 @@ async function overdueReceivables(writer: Writer, scope: Scope, today: string): 
       WHERE i.status = 'issued'
         AND i.payment_status IN ('unpaid', 'partially_paid')
         AND i.total > i.amount_paid
+        AND COALESCE(i.origin, 'native') <> 'holded_import'
         AND ${predicate}
       GROUP BY i.id, i.total, i.amount_paid
     `),

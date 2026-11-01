@@ -19,6 +19,7 @@ export type InvoiceListItem = {
   invoice_type: string
   series_id: string
   verifactu_record_id: string | null
+  origin?: 'native' | 'holded_import' | string | null
   updated_at: string
 }
 
@@ -115,6 +116,7 @@ export type Invoice = {
   payment_terms_days: number | null
   issued_at: string | null
   verifactu_record_id: string | null
+  origin?: 'native' | 'holded_import' | string | null
   voided_at: string | null
   void_reason: string | null
   updated_at: string
