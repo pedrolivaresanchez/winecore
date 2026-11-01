@@ -9,7 +9,7 @@ type Data = Record<string, unknown>;
 let t: TestApp;
 
 beforeAll(async () => {
-  t = await createTestApp();
+  t = await createTestApp({ mcpRatePerMinute: 1000 });
 });
 
 afterAll(async () => {
@@ -35,9 +35,10 @@ async function tool(name: string, args: unknown): Promise<{ error: boolean; data
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
   }));
   const body = await response.json() as { result?: { isError?: boolean; content?: { type: string; text: string }[] } };
-  const block = body.result?.content?.[0];
+  if (!body.result) throw new Error(`${name}: ${response.status} ${JSON.stringify(body)}`);
+  const block = body.result.content?.[0];
   const data = block?.type === 'text' ? JSON.parse(block.text) as Data : {};
-  return { error: body.result?.isError === true, data };
+  return { error: body.result.isError === true, data };
 }
 
 async function read(name: string, args: unknown): Promise<Data> {
@@ -156,6 +157,14 @@ describe('MCP de catálogo y stock sobre las rutas de la app', () => {
     const invalid = await tool('catalog_product_update_prepare', { id, changes: { sku: 'minúsculas' } });
     expect(invalid.error).toBe(true);
     expect(invalid.data.code).toBe('WC_VALIDATION');
+
+    const weights = await write('catalog_format_update', { id: format.id, changes: { unit_gross_weight_g: 1300, unit_net_weight_g: 1250 } });
+    expect(weights.unit_gross_weight_g).toBe(1300);
+    const retired = await prepare('catalog_wine_update', { id: wine.id, changes: { is_active: false } });
+    expect(retired.preview.route).toBe(`PATCH /v1/wines/${String(wine.id)}`);
+    expect(retired.summary).toStartWith('Archivar el vino');
+    await commit('catalog_wine_update', retired.token);
+    expect(ids(await read('catalog_wines_list', { active: false }))).toContain(String(wine.id));
   });
 
   test('crea una tarifa con un borrador y cambia solo los precios indicados', async () => {
@@ -167,6 +176,8 @@ describe('MCP de catálogo y stock sobre las rutas de la app', () => {
     const lists = await read('catalog_price_lists_list', {});
     const listed = (lists.items as { id: string; active_version: number | null }[]).find((item) => item.id === listId);
     expect(listed?.active_version).toBeNull();
+    const renamed = await write('catalog_price_list_update', { id: listId, changes: { name: 'Tarifa Sintética Horeca', tax_included: true } });
+    expect([renamed.name, renamed.tax_included]).toEqual(['Tarifa Sintética Horeca', true]);
 
     const version = await write('catalog_price_list_version_create', { id: listId, valid_from: '2026-12-01', notes: 'Prueba sintética' });
     expect(version.status).toBe('draft');
