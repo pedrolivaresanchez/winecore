@@ -19,6 +19,8 @@ import {
 export interface PayableDocument {
   targetTable: TargetTable;
   targetId: string;
+  /** Documento que se abre en el visor: la factura de Holded de una partida abierta, o el propio target. */
+  documentId: string;
   legalEntityId: string;
   counterpartyId: string | null;
   counterpartyName: string | null;
@@ -300,7 +302,7 @@ function openItemQuery(where: string): string {
   });
   return `
     WITH ${contactLinkCtes(['sale', 'purchase'])}
-    SELECT o.id, o.entity_id, ${link.id} AS counterparty_contact_id, ${link.match} AS contact_match,
+    SELECT o.id, o.holded_invoice_id, o.entity_id, ${link.id} AS counterparty_contact_id, ${link.match} AS contact_match,
            c.legal_name, c.kind, COALESCE(NULLIF(trim(h.counterparty_name), ''), ${link.lineName}) AS source_name,
            o.direction, o.document_number, o.document_date, o.due_date, o.amount, o.amount_paid, o.status
     FROM legacy.open_item o
@@ -318,6 +320,7 @@ function invoiceOf(row: Record<string, unknown>): PayableDocument {
   return {
     targetTable: 'billing.invoice',
     targetId: String(row.id).toLowerCase(),
+    documentId: String(row.id).toLowerCase(),
     legalEntityId: String(row.legal_entity_id).toLowerCase(),
     counterpartyId: row.customer_id == null ? null : String(row.customer_id).toLowerCase(),
     counterpartyName: textOf(row.legal_name),
@@ -344,6 +347,7 @@ function supplierOf(row: Record<string, unknown>): PayableDocument {
   return {
     targetTable: 'purchasing.supplier_invoice',
     targetId: String(row.id).toLowerCase(),
+    documentId: String(row.id).toLowerCase(),
     legalEntityId: String(row.legal_entity_id).toLowerCase(),
     counterpartyId: row.supplier_id == null ? null : String(row.supplier_id).toLowerCase(),
     counterpartyName: textOf(row.legal_name),
@@ -373,6 +377,7 @@ function openItemOf(row: Record<string, unknown>): PayableDocument {
   return {
     targetTable: 'legacy.open_item',
     targetId: String(row.id).toLowerCase(),
+    documentId: String(row.holded_invoice_id).toLowerCase(),
     legalEntityId: String(row.entity_id).toLowerCase(),
     counterpartyId: row.counterparty_contact_id == null ? null : String(row.counterparty_contact_id).toLowerCase(),
     counterpartyName: textOf(row.legal_name) ?? sourceName,
