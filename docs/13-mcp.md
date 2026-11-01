@@ -46,7 +46,7 @@
 
 ## 4. Catálogo
 
-> Las tablas de esta sección son las herramientas de la versión 1 y siguen existiendo. La lista completa (versión 2) sale de `tools/list` con el cliente de cada persona.
+> Las tablas de esta sección son las herramientas de la versión 1 y siguen existiendo. La lista completa de la versión 2 (429 herramientas) está en `13-mcp-catalogo.md`, generada desde el código; cada cliente ve en `tools/list` solo las que le permiten sus alcances, la persona representada y los módulos activos.
 
 ### 4.1 Sistema y aprobaciones (M1)
 
