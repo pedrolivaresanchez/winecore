@@ -377,7 +377,7 @@ export function Table<T>({
         type="button"
         onClick={() => onSort(column.id, next)}
         className={cn(
-          'flex min-w-0 w-full flex-1 items-center gap-1.5 rounded-xs text-left outline-none',
+          'flex min-w-0 w-full flex-1 items-center gap-1.5 rounded-xs text-left outline-none max-sm:h-11',
           'focus-visible:shadow-(--shadow-focus)',
           column.align === 'right' && 'flex-row-reverse',
         )}
@@ -418,7 +418,7 @@ export function Table<T>({
         : 'bg-surface-subtle text-text-secondary',
       flush
         ? cn(
-            'h-9 border-b border-r border-border-subtle',
+            'h-9 max-sm:h-11 border-b border-r border-border-subtle',
             lead ? 'pr-2 pl-3 sm:pl-4' : 'px-3',
           )
         : 'h-11 border-b border-border px-5',
