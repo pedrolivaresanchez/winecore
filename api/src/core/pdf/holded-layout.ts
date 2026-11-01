@@ -73,8 +73,9 @@ const LEGAL_AFTER_TOTALS = 26;
 const LEGAL_STEP = 12;
 
 const PAGE_NUMBER_BASELINE = 824.86;
-const CONTENT_BOTTOM = 784;
+const CONTENT_BOTTOM = 798;
 const CONTINUATION_TOP = 84;
+const MIN_CONCEPT_WIDTH = 120;
 
 export const INK = rgb(0, 0, 0);
 const MUTED = rgb(0.333, 0.333, 0.333);
@@ -170,6 +171,7 @@ export class HoldedSheet {
   private continuationTitle = '';
   private gapBeforeNotes = NOTES_AFTER_TOTALS;
   private tableColumns: readonly TableColumn[] = [];
+  private tableWidths: number[] = [];
 
   private constructor(
     pdf: PDFDocument,
@@ -350,6 +352,7 @@ export class HoldedSheet {
 
   table(columns: readonly TableColumn[], rows: readonly TableRow[]): void {
     this.tableColumns = columns;
+    this.tableWidths = this.fitColumns(columns, rows);
     const first = rows[0];
     const firstHeight = first ? this.rowHeight(first) : 0;
     this.ensure(HEADER_HEIGHT + firstHeight);
@@ -420,7 +423,7 @@ export class HoldedSheet {
         baseline = this.y + 10;
       }
       if (item.label !== null) {
-        const width = this.text(item.label, MARGIN_X, baseline, { size: 10, font: 'boldItalic' });
+        const width = this.text(item.label, MARGIN_X, baseline, { size: 10, font: 'bold' });
         this.text(item.text, MARGIN_X + width + 3, baseline, { size: 10, font: 'italic' });
       } else if (item.text !== '') {
         this.text(item.text, MARGIN_X, baseline, { size: 10, font: 'italic' });
@@ -530,9 +533,34 @@ export class HoldedSheet {
 
   private columnEdges(): number[] {
     const edges = [TABLE_LEFT];
-    for (const column of this.tableColumns) edges.push((edges[edges.length - 1] ?? TABLE_LEFT) + column.width);
-    const scale = (TABLE_RIGHT - TABLE_LEFT) / ((edges[edges.length - 1] ?? TABLE_RIGHT) - TABLE_LEFT);
-    return edges.map((edge) => TABLE_LEFT + (edge - TABLE_LEFT) * scale);
+    for (const width of this.tableWidths) edges.push((edges[edges.length - 1] ?? TABLE_LEFT) + width);
+    return edges;
+  }
+
+  /**
+   * Anchos de la plantilla, ampliados lo justo para que quepa el importe más largo de cada
+   * columna numérica; lo que sobra o falta lo absorbe la primera columna (el concepto).
+   */
+  private fitColumns(columns: readonly TableColumn[], rows: readonly TableRow[]): number[] {
+    const total = TABLE_RIGHT - TABLE_LEFT;
+    const preferred = columns.reduce((sum, column) => sum + column.width, 0) || total;
+    const widths = columns.map((column) => (column.width * total) / preferred);
+    for (let index = 1; index < columns.length; index += 1) {
+      const header = columns[index]?.header ?? '';
+      let needed = this.measure(header, 9);
+      for (const row of rows) needed = Math.max(needed, this.measure(row.cells[index - 1] ?? '', 9));
+      widths[index] = Math.max(widths[index] ?? 0, Math.ceil((needed + CELL_PAD * 2) * 10) / 10);
+    }
+    const others = widths.slice(1).reduce((sum, width) => sum + width, 0);
+    if (total - others >= MIN_CONCEPT_WIDTH) {
+      widths[0] = total - others;
+      return widths;
+    }
+    const room = total - MIN_CONCEPT_WIDTH;
+    const scale = others === 0 ? 1 : room / others;
+    for (let index = 1; index < widths.length; index += 1) widths[index] = (widths[index] ?? 0) * scale;
+    widths[0] = MIN_CONCEPT_WIDTH;
+    return widths;
   }
 
   private rowHeight(row: TableRow): number {
@@ -540,18 +568,12 @@ export class HoldedSheet {
   }
 
   private conceptLines(row: TableRow): { text: string; bold: boolean }[] {
-    const column = this.tableColumns[0];
-    const width = (column ? column.width : 200) * this.widthScale() - CELL_PAD * 2;
+    const width = (this.tableWidths[0] ?? 200) - CELL_PAD * 2;
     const lines = this.wrap(row.concept.title, 9, width, 'bold').map((text) => ({ text, bold: true }));
     for (const detail of row.concept.detail) {
       for (const text of this.wrap(detail, 9, width)) lines.push({ text, bold: false });
     }
     return lines.length > 0 ? lines : [{ text: '', bold: false }];
-  }
-
-  private widthScale(): number {
-    const total = this.tableColumns.reduce((sum, column) => sum + column.width, 0);
-    return total === 0 ? 1 : (TABLE_RIGHT - TABLE_LEFT) / total;
   }
 
   private tableHeader(): void {
@@ -622,6 +644,14 @@ export class HoldedSheet {
     }
     this.y = CONTINUATION_TOP;
   }
+}
+
+/** Comprueba que los bytes son un PNG o JPEG que se puede incrustar y devuelve su tamaño. */
+export async function inspectLogo(bytes: Uint8Array): Promise<{ width: number; height: number; mime: 'image/png' | 'image/jpeg' }> {
+  const pdf = await PDFDocument.create({ updateMetadata: false });
+  const image = await embedLogo(pdf, bytes);
+  const isPng = bytes.length > 8 && bytes[0] === 0x89 && bytes[1] === 0x50;
+  return { width: image.width, height: image.height, mime: isPng ? 'image/png' : 'image/jpeg' };
 }
 
 async function embedLogo(pdf: PDFDocument, bytes: Uint8Array): Promise<PDFImage> {

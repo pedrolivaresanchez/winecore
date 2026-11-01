@@ -287,6 +287,8 @@ function customerSnapshot(customer: CustomerView): Record<string, unknown> {
     country: customer.country,
     language: customer.language,
     vat_id_validated_at: customer.vatValidatedAt,
+    phone: customer.phone,
+    email: customer.email,
     address: customer.address ? {
       line1: customer.address.line1,
       line2: customer.address.line2,
