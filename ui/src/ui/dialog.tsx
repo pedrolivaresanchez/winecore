@@ -254,7 +254,7 @@ export function DialogHeader({
 
 export function DialogBody({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cn('min-h-0 flex-1 overflow-y-auto px-4 py-1 sm:px-6', className)}>
+    <div className={cn('min-h-0 flex-1 overflow-y-auto px-4 py-1 max-sm:overscroll-contain sm:px-6', className)}>
       {children}
     </div>
   )

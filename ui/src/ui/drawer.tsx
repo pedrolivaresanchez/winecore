@@ -245,7 +245,7 @@ export function DrawerHeader({
 
 export function DrawerBody({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cn('min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5', className)}>
+    <div className={cn('min-h-0 flex-1 overflow-y-auto px-4 py-4 max-sm:overscroll-contain sm:px-6 sm:py-5', className)}>
       {children}
     </div>
   )
