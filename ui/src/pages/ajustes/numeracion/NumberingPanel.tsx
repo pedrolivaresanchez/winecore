@@ -174,7 +174,7 @@ function EntitySection({
     {
       id: 'status',
       header: copy.numbering.status,
-      width: '9rem',
+      width: '11rem',
       clip: false,
       cell: (row) => (
         <span className="flex items-center gap-1.5">

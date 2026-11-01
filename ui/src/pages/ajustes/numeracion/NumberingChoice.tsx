@@ -95,7 +95,9 @@ export function NumberingChoice({
             {holded ? (
               <>
                 <span className="block">{fill(copy.numbering.holdedLast, { number: holded.last_number, date: day(holded.last_date) })}</span>
-                <span className="block">{fill(copy.numbering.range, { first: typedFirst ?? holded.first_number, limit: holded.limit_number })}</span>
+                <span className="block">
+                  {`${fill(copy.numbering.range, { first: typedFirst ?? holded.first_number, limit: holded.limit_number })}${holded.verifactu ? ` ${copy.numbering.verifactu}` : ''}`}
+                </span>
               </>
             ) : (
               copy.numbering.holdedNone
