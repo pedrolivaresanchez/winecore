@@ -27,6 +27,29 @@ describe('createTimbalClient', () => {
     expect(JSON.parse(String(call?.init?.body))).toEqual({ sql: 'SELECT 1', params: [] });
   });
 
+  it('devuelve las columnas BLOB en base64 aunque la Knowledge Base las mande en hexadecimal', async () => {
+    const pdf = Buffer.from('%PDF-1.4\n%\u00e2\u00e3\u00cf\u00d3\n', 'latin1');
+    const fetchImpl: FetchLike = async () =>
+      new Response(
+        JSON.stringify({
+          columns: [
+            { name: 'content', type: 'BLOB' },
+            { name: 'note', type: 'VARCHAR' },
+          ],
+          rows: [
+            { content: pdf.toString('hex'), note: 'deadbeef' },
+            { content: '', note: 'x' },
+          ],
+        }),
+        { status: 200 },
+      );
+    const client = createTimbalClient({ host: 'api.timbal.ai', orgId: '122', kbId: 'kb-1', token: 't', fetchImpl });
+    const rows = await client.query<{ content: string; note: string }>('SELECT content FROM x');
+    expect(Buffer.from(rows[0]!.content, 'base64').equals(pdf)).toBe(true);
+    expect(rows[0]!.note).toBe('deadbeef');
+    expect(rows[1]!.content).toBe('');
+  });
+
   it('no llama a la red real si la respuesta no es correcta', async () => {
     const fetchImpl: FetchLike = async () => new Response('no', { status: 403 });
     const client = createTimbalClient({

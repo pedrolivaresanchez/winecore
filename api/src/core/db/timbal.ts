@@ -52,9 +52,34 @@ export function createTimbalClient(options: TimbalClientOptions): KbClient {
       if ('truncated' in payload && payload.truncated === true) {
         throw new Error('Resultado truncado por la Knowledge Base (más de 10.000 filas): hay que paginar la consulta');
       }
-      return withNullColumns(payload.rows, 'columns' in payload ? payload.columns : undefined) as T[];
+      const columns = 'columns' in payload ? payload.columns : undefined;
+      return withNullColumns(blobsAsBase64(payload.rows, columns), columns) as T[];
     },
   };
+}
+
+// The Knowledge Base sends BLOB values as hex text; the local DuckDB client returns base64 (see local.ts).
+function blobsAsBase64(rows: unknown[], columns: unknown): unknown[] {
+  if (!Array.isArray(columns)) return rows;
+  const blobs = columns
+    .map((column) =>
+      column && typeof column === 'object' && 'name' in column && 'type' in column && column.type === 'BLOB'
+        ? column.name
+        : undefined,
+    )
+    .filter((name): name is string => typeof name === 'string');
+  if (blobs.length === 0) return rows;
+  return rows.map((row) => {
+    if (!row || typeof row !== 'object') return row;
+    const record = row as Record<string, unknown>;
+    for (const name of blobs) {
+      const value = record[name];
+      if (typeof value === 'string' && value.length % 2 === 0 && /^[0-9a-fA-F]*$/.test(value)) {
+        record[name] = Buffer.from(value, 'hex').toString('base64');
+      }
+    }
+    return record;
+  });
 }
 
 // The Knowledge Base omits NULL values from each row; the local DuckDB client returns them as null.
