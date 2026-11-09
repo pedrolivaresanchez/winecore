@@ -1126,7 +1126,7 @@
     "niche_number": null,
     "pallet_count": 2,
     "line_no": 2,
-    "lot_code": "EMUS2023",
+    "lot_code": "EMUS23",
     "wine_label": "LA MUSCAT BLANC D´ARGILA 2023",
     "bottles": 1344,
     "volume_ml": 1008000,
@@ -1135,7 +1135,7 @@
     "organic": true,
     "color": "blanco",
     "state": "packaged_labeled",
-    "note": null,
+    "note": "La hoja TFRP dice EMUS2023. El e-DA a Les Caves de Pyrène imprime EMUS23.",
     "source_sheet": "CVPO TFRP",
     "source_row": 4
   },

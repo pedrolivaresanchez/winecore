@@ -77,10 +77,11 @@ export const CATALOG_WINES: CatalogWine[] = [
 /** Lotes que Pedro usa en varias fichas. No pertenecen a un solo vino. */
 export const SHARED_LOTS = ['LAB2025', 'LAT2025'] as const;
 
-/** El Excel de TFRP dice EMUS2023. En bodega el mismo vino está en EMUS23. */
-export const EXTRA_NAMED_LOTS = [
-  { code: 'EMUS2023', wineCode: 'MUSCAT', vintage: 2023, note: 'Pedro confirma EMUS2023 para el Muscat 2023 de TFRP. En bodega el lote es EMUS23.' },
-] as const;
+/**
+ * El e-DA 26ESD2320000000580006 (17/03/2026) a Les Caves de Pyrène
+ * imprime el lote EMUS23. La celda de TFRP decía EMUS2023; no es otro lote.
+ */
+export const EXTRA_NAMED_LOTS: readonly { code: string; wineCode: string; vintage: number; note: string }[] = [];
 
 export const EXTRA_LOTS = SHARED_LOTS;
 

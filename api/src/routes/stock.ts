@@ -10,7 +10,7 @@ import {
   listMoves,
 } from '../core/inventory/service/stock.service';
 import { unlabeledMap, warehouseLayout } from '../core/inventory/bottled-layout';
-import { disposePlacement } from '../core/inventory/bottled-ledger';
+import { correctPlacement, disposePlacement } from '../core/inventory/bottled-ledger';
 import { actorFrom, readJson } from './stock-http';
 import { balanceQuery, fiscalQuery, formatOf, moveQuery } from './stock-http';
 
@@ -44,6 +44,28 @@ export async function stockWarehouses(writer: Writer) {
 
 export async function unlabeledBottles(writer: Writer) {
   return unlabeledMap(writer);
+}
+
+export async function correctBottled(writer: Writer, request: Request, id: string) {
+  const body = await readJson(request) as {
+    bottles?: unknown;
+    lot_code?: unknown;
+    product_id?: unknown;
+    labeled?: unknown;
+    note?: unknown;
+  };
+  const actor = actorFrom(request);
+  const bottles = typeof body.bottles === 'number' ? body.bottles : Number(body.bottles);
+  return correctPlacement(writer, { ...actor, reason: 'corrección del mapa' }, {
+    placementId: id,
+    bottles,
+    lotCode: typeof body.lot_code === 'string' ? body.lot_code : '',
+    productId: typeof body.product_id === 'string' ? body.product_id : null,
+    labeled: body.labeled === true,
+    note: typeof body.note === 'string' ? body.note : '',
+    actorId: actor.id,
+    at: new Date().toISOString(),
+  });
 }
 
 export async function disposeBottled(writer: Writer, request: Request, id: string) {

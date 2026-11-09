@@ -56,7 +56,8 @@ export async function unlabeledMap(writer: Writer): Promise<{ items: Record<stri
 
 export async function warehouseLayout(writer: Writer): Promise<Record<string, unknown>> {
   const placements = await writer.read<Record<string, unknown>>(`
-    SELECT p.slot_kind, p.slot_code, p.niche_number::VARCHAR AS niche_number, p.pallet_count::VARCHAR AS pallet_count,
+    SELECT p.id::VARCHAR AS id, p.product_id::VARCHAR AS product_id, p.lot_id::VARCHAR AS lot_id,
+           p.slot_kind, p.slot_code, p.niche_number::VARCHAR AS niche_number, p.pallet_count::VARCHAR AS pallet_count,
            p.line_no::VARCHAR AS line_no, p.wine_label, p.lot_code_raw, p.color, p.product_state,
            p.opened_bottles::VARCHAR AS opened_bottles, p.opened_volume_ml::VARCHAR AS opened_volume_ml,
            p.bottle_ml::VARCHAR AS bottle_ml, p.abv_pct::VARCHAR AS abv_pct, p.is_organic, p.not_for_sale,
@@ -69,7 +70,7 @@ export async function warehouseLayout(writer: Writer): Promise<Record<string, un
     LEFT JOIN inventory.lot l ON l.id = p.lot_id
     LEFT JOIN catalog.wine w ON w.id = p.wine_id
     LEFT JOIN cellar.bottled_move m ON m.placement_id = p.id
-    GROUP BY p.id, p.slot_kind, p.slot_code, p.niche_number, p.pallet_count, p.line_no, p.wine_label,
+    GROUP BY p.id, p.product_id, p.lot_id, p.slot_kind, p.slot_code, p.niche_number, p.pallet_count, p.line_no, p.wine_label,
              p.lot_code_raw, p.color, p.product_state, p.opened_bottles, p.opened_volume_ml, p.bottle_ml,
              p.abv_pct, p.is_organic, p.not_for_sale, p.note, p.match_status, p.match_note, l.code, w.name, loc.code
     ORDER BY loc.code, p.slot_kind, p.niche_number NULLS LAST, p.line_no
@@ -92,6 +93,10 @@ export async function warehouseLayout(writer: Writer): Promise<Record<string, un
     ORDER BY i.invoice_date
   `);
   const lineOf = (row: Record<string, unknown>) => ({
+    id: String(row.id).toLowerCase(),
+    product_id: row.product_id == null ? null : String(row.product_id).toLowerCase(),
+    lot_id: row.lot_id == null ? null : String(row.lot_id).toLowerCase(),
+    slot_kind: String(row.slot_kind),
     slot_code: String(row.slot_code),
     niche_number: row.niche_number == null ? null : intOf(row.niche_number),
     pallet_count: row.pallet_count == null ? null : intOf(row.pallet_count),

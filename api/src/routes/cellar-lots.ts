@@ -6,6 +6,7 @@ import {
   lotAdditions,
   lotMoves,
   lotTraceability,
+  updateLot,
 } from '../core/cellar/service/lots';
 import { listAnalyses } from '../core/winemaking/service';
 
@@ -15,6 +16,10 @@ export function listLotRoute(writer: Writer, request: Request) {
 
 export function getLotRoute(writer: Writer, request: Request, code: string) {
   return getLot(writer, request, code);
+}
+
+export function updateLotRoute(writer: Writer, request: Request, code: string) {
+  return updateLot(writer, request, code);
 }
 
 export function lotTraceabilityRoute(writer: Writer, request: Request, code: string) {

@@ -1,5 +1,5 @@
 import { sql } from '../db/sql';
-import type { Tx } from '../db/writer';
+import type { Actor, Tx, Writer } from '../db/writer';
 import { DomainError, domainError } from '../errors';
 import { newId } from '../ids';
 import type { StockMove } from './types';
@@ -359,6 +359,228 @@ export async function disposePlacement(tx: Tx, input: {
     after: { bottles: slot.bottles - input.bottles, reason },
   });
   return { bottles: input.bottles, volume_ml: volume === 0 ? 0 : volume };
+}
+
+const LOT_CODE = /^[A-Z0-9][A-Z0-9./-]{1,29}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Corrección manual de un nicho, jaulón, caja o palet.
+ * La cantidad ajusta el libro de vino envasado. El cambio de etiqueta no.
+ * No hay asiento de SILICIE. El granel no vive en estos huecos.
+ */
+export async function correctPlacement(writer: Writer, actor: Actor, input: {
+  placementId: string;
+  bottles: number;
+  lotCode: string;
+  productId: string | null;
+  labeled: boolean;
+  note: string;
+  actorId: string;
+  at: string;
+}): Promise<{ bottles: number; lot_code: string | null; product_id: string | null; labeled: boolean; note: string | null }> {
+  const placementId = input.placementId.trim().toLowerCase();
+  if (!UUID.test(placementId)) throw new DomainError('WC_VALIDATION', 422, 'Ese hueco no existe', { id: 'UUID no válido' });
+  if (!Number.isInteger(input.bottles) || input.bottles < 0) {
+    throw new DomainError('WC_VALIDATION', 422, 'Las botellas tienen que ser un entero positivo o cero', { bottles: 'No válido' });
+  }
+  const note = input.note.trim();
+  if (note.length > 400) throw new DomainError('WC_VALIDATION', 422, 'La nota es demasiado larga', { note: 'Máximo 400 caracteres' });
+  const lotCode = input.lotCode.trim().toUpperCase();
+  if (lotCode !== '' && !LOT_CODE.test(lotCode)) {
+    throw new DomainError('WC_VALIDATION', 422, 'El código de lote no es válido', { lot_code: 'Mayúsculas, números y . / -' });
+  }
+  const productId = input.productId?.trim().toLowerCase() || null;
+  if (productId && !UUID.test(productId)) {
+    throw new DomainError('WC_VALIDATION', 422, 'El producto no es válido', { product_id: 'UUID no válido' });
+  }
+  const rows = await writer.read<Record<string, unknown>>(sql`
+    SELECT p.id::VARCHAR AS id, p.location_id::VARCHAR AS location_id, p.owner_entity_id::VARCHAR AS owner_id,
+           p.lot_id::VARCHAR AS lot_id, p.product_id::VARCHAR AS product_id, p.bottle_ml::VARCHAR AS bottle_ml,
+           p.slot_kind, p.product_state, p.note, p.wine_label, l.code AS lot_code,
+           coalesce(sum(m.qty_units), 0)::VARCHAR AS bottles
+    FROM cellar.bottled_placement p
+    LEFT JOIN inventory.lot l ON l.id = p.lot_id
+    LEFT JOIN cellar.bottled_move m ON m.placement_id = p.id
+    WHERE p.id = CAST(${placementId} AS UUID)
+    GROUP BY p.id, p.location_id, p.owner_entity_id, p.lot_id, p.product_id, p.bottle_ml,
+             p.slot_kind, p.product_state, p.note, p.wine_label, l.code
+  `);
+  const row = rows[0];
+  if (!row) throw new DomainError('WC_NOT_FOUND', 404, 'Ese hueco no existe');
+  const kind = String(row.slot_kind);
+  if (!['caja', 'nicho', 'jaulon', 'palet'].includes(kind)) {
+    throw new DomainError('WC_VALIDATION', 422, 'Ese hueco no es de envasado');
+  }
+  if (kind === 'jaulon' && input.labeled) {
+    throw new DomainError('WC_VALIDATION', 422, 'Un jaulón se queda sin etiquetar. La etiqueta se pone en Etiquetado.', { labeled: 'No válido' });
+  }
+  const current = intOf(row.bottles);
+  const bottleMl = row.bottle_ml == null || row.bottle_ml === '' ? null : intOf(row.bottle_ml);
+  const previousCode = row.lot_code == null ? '' : String(row.lot_code);
+  const previousProduct = row.product_id == null ? null : idOf(row.product_id);
+  let lotId = row.lot_id == null ? null : idOf(row.lot_id);
+  if (lotCode !== previousCode) {
+    if (lotCode === '') lotId = null;
+    else {
+      const found = await writer.read<{ id: string }>(sql`SELECT id::VARCHAR AS id FROM inventory.lot WHERE code = ${lotCode} LIMIT 1`);
+      if (!found[0]) throw new DomainError('WC_VALIDATION', 422, 'Ese lote no existe', { lot_code: 'Créalo antes en Lotes' });
+      lotId = idOf(found[0].id);
+    }
+  }
+  let wineId: string | null = null;
+  let wineLabel = String(row.wine_label);
+  if (productId) {
+    const products = await writer.read<{ name: string; wine_id: string | null; kind: string; nominal: string | null }>(sql`
+      SELECT p.name, p.wine_id::VARCHAR AS wine_id, p.kind, f.nominal_volume_ml::VARCHAR AS nominal
+      FROM catalog.product p
+      LEFT JOIN catalog.format f ON f.id = p.format_id
+      WHERE p.id = CAST(${productId} AS UUID) AND p.is_active = TRUE
+    `);
+    const product = products[0];
+    if (!product || product.kind !== 'wine') {
+      throw new DomainError('WC_VALIDATION', 422, 'Ese producto no existe', { product_id: 'Elige un vino' });
+    }
+    const nominal = product.nominal == null ? null : intOf(product.nominal);
+    if (bottleMl && nominal && nominal !== bottleMl) {
+      throw new DomainError('WC_VALIDATION', 422, 'El formato del producto no coincide con las botellas', { product_id: 'Mismo volumen' });
+    }
+    wineId = product.wine_id ? idOf(product.wine_id) : null;
+    wineLabel = product.name;
+  }
+  const state = input.labeled ? 'packaged_labeled' : 'packaged_unlabeled';
+  const identityChanged = (productId ?? null) !== previousProduct || (lotId ?? null) !== (row.lot_id == null ? null : idOf(row.lot_id));
+  const qtyChanged = input.bottles !== current;
+  if ((qtyChanged || identityChanged) && input.bottles > 0 && (!productId || !lotId)) {
+    throw new DomainError('WC_VALIDATION', 422, 'Indica producto y lote para corregir la cantidad', { bottles: 'Falta el producto o el lote' });
+  }
+  if (qtyChanged && !bottleMl) {
+    throw new DomainError('WC_VALIDATION', 422, 'Sin formato no se puede corregir la cantidad', { bottles: 'Falta el volumen de la botella' });
+  }
+  if (identityChanged && current > 0 && !bottleMl) {
+    throw new DomainError('WC_VALIDATION', 422, 'Sin formato no se puede cambiar el producto ni el lote', { product_id: 'Falta el volumen de la botella' });
+  }
+  const before = {
+    bottles: current,
+    lot_code: previousCode || null,
+    product_id: previousProduct,
+    labeled: String(row.product_state) === 'packaged_labeled',
+    note: row.note == null ? null : String(row.note),
+  };
+  const after = {
+    bottles: input.bottles,
+    lot_code: lotCode || null,
+    product_id: productId,
+    labeled: input.labeled,
+    note: note || null,
+  };
+  if (JSON.stringify(before) === JSON.stringify(after)) return after;
+  const locationId = idOf(row.location_id);
+  const ownerId = idOf(row.owner_id);
+  const oldLot = row.lot_id == null ? null : idOf(row.lot_id);
+  const delta = input.bottles - current;
+  const kept = await writer.read<Record<string, unknown>>(sql`
+    SELECT id::VARCHAR AS id, occurred_at::VARCHAR AS occurred_at, qty_units::VARCHAR AS qty_units, volume_ml::VARCHAR AS volume_ml,
+           move_type, lot_id::VARCHAR AS lot_id, source_table, source_id::VARCHAR AS source_id,
+           source_line_id::VARCHAR AS source_line_id, reverses_move_id::VARCHAR AS reverses_id, created_by
+    FROM cellar.bottled_move WHERE placement_id = CAST(${placementId} AS UUID)
+  `);
+  const replay = (target: Tx, rows: Record<string, unknown>[]) => {
+    for (const move of rows) {
+      insertBottled(target, {
+        at: String(move.occurred_at),
+        placementId,
+        units: intOf(move.qty_units),
+        volumeMl: intOf(move.volume_ml),
+        moveType: String(move.move_type) as 'opening',
+        lotId: move.lot_id == null ? null : idOf(move.lot_id),
+        sourceTable: String(move.source_table),
+        sourceId: idOf(move.source_id),
+        sourceLineId: move.source_line_id == null ? null : idOf(move.source_line_id),
+        reversesId: move.reverses_id == null ? null : idOf(move.reverses_id),
+        actor: String(move.created_by),
+      });
+    }
+  };
+  await writer.withWrite(actor, async (live) => {
+    live.write(sql`DELETE FROM cellar.bottled_move WHERE placement_id = CAST(${placementId} AS UUID)`);
+  });
+  try {
+    await writer.withWrite(actor, async (live) => {
+      if (bottleMl && (qtyChanged || identityChanged)) {
+        if ((previousProduct ?? '') === (productId ?? '') && (oldLot ?? '') === (lotId ?? '')) {
+          postBookAdjust(live, { locationId, ownerId, lotId, productId, units: input.bottles - current, bottleMl, at: input.at, actorId: input.actorId, placementId });
+        } else {
+          postBookAdjust(live, { locationId, ownerId, lotId: oldLot, productId: previousProduct, units: -current, bottleMl, at: input.at, actorId: input.actorId, placementId });
+          postBookAdjust(live, { locationId, ownerId, lotId, productId, units: input.bottles, bottleMl, at: input.at, actorId: input.actorId, placementId });
+        }
+      }
+      live.write(sql`
+    UPDATE cellar.bottled_placement SET
+      lot_id = CASE WHEN ${lotId} IS NULL THEN NULL ELSE CAST(${lotId} AS UUID) END,
+      lot_code_raw = ${lotCode || null},
+      product_id = CASE WHEN ${productId} IS NULL THEN NULL ELSE CAST(${productId} AS UUID) END,
+      wine_id = CASE
+        WHEN ${productId} IS NULL THEN NULL
+        WHEN ${wineId} IS NULL THEN wine_id
+        ELSE CAST(${wineId} AS UUID)
+      END,
+      wine_label = ${wineLabel},
+      product_state = ${state},
+      note = ${note || null},
+      match_status = CASE WHEN ${productId} IS NULL THEN match_status ELSE 'matched' END
+    WHERE id = CAST(${placementId} AS UUID)
+      `);
+      replay(live, kept);
+      if (delta !== 0 && bottleMl) {
+        insertBottled(live, {
+          at: input.at,
+          placementId,
+          units: delta,
+          volumeMl: delta * bottleMl,
+          moveType: delta > 0 ? 'cellar_in' : 'cellar_out',
+          lotId,
+          sourceTable: 'cellar.bottled_placement',
+          sourceId: placementId,
+          sourceLineId: null,
+          reversesId: null,
+          actor: input.actorId,
+        });
+      }
+      live.audit({ table: 'cellar.bottled_placement', rowId: placementId, action: 'UPDATE', before, after });
+    });
+  } catch (error) {
+    await writer.withWrite(actor, async (live) => replay(live, kept));
+    throw error;
+  }
+  return after;
+}
+
+function postBookAdjust(tx: Tx, input: {
+  locationId: string;
+  ownerId: string;
+  lotId: string | null;
+  productId: string | null;
+  units: number;
+  bottleMl: number;
+  at: string;
+  actorId: string;
+  placementId: string;
+}): void {
+  if (input.units === 0 || !input.lotId || !input.productId) return;
+  const volume = input.units * input.bottleMl;
+  const inbound = input.units > 0;
+  tx.write(sql`
+    INSERT INTO inventory.stock_move (
+      id, occurred_at, move_type, location_id, vessel_id, owner_entity_id, lot_id, product_id,
+      product_state, qty_units, volume_ml, mass_g, source_table, source_id, created_by
+    ) VALUES (
+      CAST(${newId()} AS UUID), CAST(${input.at} AS TIMESTAMPTZ), ${inbound ? 'count_adjust_in' : 'count_adjust_out'},
+      CAST(${input.locationId} AS UUID), NULL, CAST(${input.ownerId} AS UUID), CAST(${input.lotId} AS UUID),
+      CAST(${input.productId} AS UUID), 'packaged_labeled', ${input.units}, ${volume}, 0,
+      'cellar.bottled_placement', CAST(${input.placementId} AS UUID), ${input.actorId}
+    )
+  `);
 }
 
 export type CellarPackagedMove = {

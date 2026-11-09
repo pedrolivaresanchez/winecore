@@ -1,11 +1,13 @@
-import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useChromeTitle } from '@/app/shell/shell-context'
 import { AuditTrail } from '@/components/AuditTrail'
 import { ErrorState } from '@/components/ErrorState'
+import { Field } from '@/components/Field'
 import { NoPermission } from '@/components/NoPermission'
 import { copy } from '@/i18n'
 import { useApi } from '@/hooks/use-api'
+import { ApiError, api } from '@/lib/api'
 import type { Lot, Traceability, TraceEdge, TraceNode } from '@/lib/cellar'
 import type { AuditEvent } from '@/lib/contacts'
 import { formatDateTime, formatLitres, formatPercent } from '@/lib/format'
@@ -13,7 +15,7 @@ import { allows } from '@/lib/permissions'
 import { cn } from '@/lib/cn'
 import { texturePrimary } from '@/ui/button'
 import type { Me } from '@/lib/types'
-import { Alert, Badge, EmptyState, Skeleton } from '@/ui'
+import { Alert, Badge, Button, EmptyState, Input, Select, Skeleton } from '@/ui'
 import { ReadingColumn, RecordBar, SectionTabs } from '@/pages/bodega/chrome'
 import { DisenoTab } from '@/pages/lote-diseno/DisenoTab'
 import { lotKindLabel, lotStatusLabel, moveLabel } from '@/pages/bodega/labels'
@@ -39,6 +41,74 @@ const TABS = [
 type TabId = (typeof TABS)[number]['id']
 type Page<T> = { items: T[]; next_cursor: string | null; total?: number }
 type Wine = { id: string; name: string }
+type ProductHit = { id: string; sku: string; name: string; wine_id: string | null; vintage: number | null }
+
+function LotCorrection({
+  lot,
+  products,
+  onSaved,
+}: {
+  lot: Lot
+  products: ProductHit[]
+  onSaved: (code: string) => void
+}) {
+  const [code, setCode] = useState(lot.code)
+  const [vintage, setVintage] = useState(lot.vintage == null ? '' : String(lot.vintage))
+  const [productId, setProductId] = useState('')
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    if (ready) return
+    if (products.length === 0 && lot.wine_id) return
+    const match = products.find((product) => product.wine_id === lot.wine_id && product.vintage === lot.vintage)
+      ?? products.find((product) => product.wine_id === lot.wine_id)
+    setProductId(match?.id ?? '')
+    setReady(true)
+  }, [products, lot.wine_id, lot.vintage, ready])
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  return (
+    <form
+      className="grid gap-3 rounded-2xl border border-border-subtle p-4"
+      onSubmit={(event) => {
+        event.preventDefault()
+        setSaving(true)
+        setError(null)
+        const year = vintage.trim()
+        api<Lot>(`/v1/lots/${encodeURIComponent(lot.code)}`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            code,
+            vintage: year === '' ? null : Number(year),
+            product_id: productId || null,
+          }),
+        }).then((saved) => onSaved(saved.code)).catch((reason: unknown) => {
+          setError(reason instanceof ApiError ? reason.message : 'No se ha podido guardar')
+        }).finally(() => setSaving(false))
+      }}
+    >
+      <h2 className="text-label font-medium text-ink-900">Corregir lote</h2>
+      <Field id="lot-code" label="Código">
+        <Input id="lot-code" value={code} autoCapitalize="characters" onChange={(event) => setCode(event.target.value.toUpperCase())} />
+      </Field>
+      <Field id="lot-vintage" label="Añada" hint="Vacío si el lote no tiene un solo año.">
+        <Input id="lot-vintage" inputMode="numeric" value={vintage} onChange={(event) => setVintage(event.target.value)} />
+      </Field>
+      <Field id="lot-product" label="Producto">
+        <Select id="lot-product" value={productId} onChange={(event) => setProductId(event.target.value)}>
+          <option value="">Sin producto</option>
+          {products.map((product) => (
+            <option key={product.id} value={product.id}>{product.name} · {product.sku}</option>
+          ))}
+        </Select>
+      </Field>
+      {error ? <Alert tone="danger">{error}</Alert> : null}
+      <div>
+        <Button type="submit" size="sm" loading={saving} disabled={!ready}>Guardar</Button>
+      </div>
+    </form>
+  )
+}
 
 function formatAmount(volumeMl: number, massG = 0): string {
   if (volumeMl > 0) return formatLitres(volumeMl / 1000)
@@ -69,6 +139,8 @@ export function LotePage({ me }: { me: Me }) {
   const lot = useApi<Lot>(allowed ? `/v1/lots/${code}` : null)
   const trace = useApi<Traceability>(allowed ? `/v1/lots/${code}/traceability?direction=both` : null)
   const wines = useApi<{ items: Wine[] }>(allowed ? '/v1/wines?limit=100' : null)
+  const products = useApi<{ items: ProductHit[] }>(allows(me, 'cellar.operate') ? '/v1/products?kind=wine&limit=100' : null)
+  const navigate = useNavigate()
   const [tab, setTab] = useState<TabId>('resumen')
   const analyses = useApi<Page<Record<string, unknown>>>(allowed ? `/v1/lots/${code}/analyses` : null)
   const additions = useApi<Page<Record<string, unknown>>>(allowed && tab === 'adiciones' ? `/v1/lots/${code}/additions` : null)
@@ -125,6 +197,16 @@ export function LotePage({ me }: { me: Me }) {
 
           {tab === 'resumen' ? (
             <div className="grid gap-4">
+              {allows(me, 'cellar.operate') ? (
+                <LotCorrection
+                  lot={item}
+                  products={products.data?.items ?? []}
+                  onSaved={(next) => {
+                    if (next !== item.code) navigate(`/bodega/lotes/${encodeURIComponent(next)}`)
+                    else lot.reload()
+                  }}
+                />
+              ) : null}
               <section className="grid gap-2">
                 <h2 className="text-label font-medium text-ink-900">{copy.cellar.where}</h2>
                 {places.length === 0 ? (

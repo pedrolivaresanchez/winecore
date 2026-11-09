@@ -6,6 +6,8 @@ import type { AuditEvent } from '@/lib/contacts'
 const ACTIONS: Record<string, string> = {
   create: 'Alta',
   update: 'Cambio',
+  UPDATE: 'Cambio',
+  INSERT: 'Alta',
   archive: 'Archivo',
   unarchive: 'Recuperación',
 }
