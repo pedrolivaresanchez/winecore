@@ -3,8 +3,7 @@ import type { Writer } from '../db/writer';
 import { domainError } from '../errors';
 import { money } from '../money';
 import { businessDate, isMadridCivilDate } from '../time';
-import { quoteListCode } from '../catalog/pricing';
-import { priceListCodeForChannel } from './pricing';
+import { priceListCodesForChannel } from './pricing';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -110,17 +109,22 @@ async function loadTaxes(writer: Writer): Promise<CatalogTax[]> {
 }
 
 async function listIdForChannel(writer: Writer, channel: string): Promise<string | null> {
-  const code = priceListCodeForChannel(channel);
-  if (!code) return null;
-  return listIdByCode(writer, code);
+  for (const code of priceListCodesForChannel(channel)) {
+    const found = await listIdByCode(writer, code);
+    if (found) return found;
+  }
+  return null;
 }
 
 async function defaultListId(writer: Writer, channel: string | null): Promise<string | null> {
-  const code = quoteListCode(channel);
-  const primary = await listIdByCode(writer, code);
-  if (primary) return primary;
-  if (code === 'final') return null;
-  return listIdByCode(writer, 'final');
+  const codes = channel ? [...priceListCodesForChannel(channel)] : ['final'];
+  if (codes.length === 0) codes.push('final');
+  for (const code of codes) {
+    const found = await listIdByCode(writer, code);
+    if (found) return found;
+  }
+  if (!codes.includes('final') && channel !== 'eci_edi') return listIdByCode(writer, 'final');
+  return null;
 }
 
 async function listIdByCode(writer: Writer, code: string): Promise<string | null> {
@@ -160,7 +164,7 @@ async function loadProducts(writer: Writer, listId: string | null, day: string):
     FROM catalog.product p
     LEFT JOIN catalog.format f ON f.id = p.format_id
     ${priceJoin}
-    WHERE p.is_active AND p.kind IN ${SELLABLE}
+    WHERE p.is_active AND p.for_sale AND p.kind IN ${SELLABLE}
     ORDER BY p.name, p.sku
   `);
   return rows.map((row) => {

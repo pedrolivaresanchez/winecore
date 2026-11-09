@@ -88,8 +88,8 @@ describe('catálogo de ventas y presupuestos', () => {
     expect(direct.price_list_id).toBe(finalList);
 
     const edi = await json(ctx, 'GET', '/v1/sales/catalog?channel=eci_edi&date=2026-10-31');
-    expect(edi.price_list_id).toBe(fx.priceList);
-    expect(productsOf(edi).find((item) => item.id === fx.product)?.price).toMatchObject({ unit_price: '9.500000' });
+    expect(edi.price_list_id).toBeNull();
+    expect(productsOf(edi).find((item) => item.id === fx.product)?.price).toBeNull();
     expect(productsOf(edi).find((item) => item.id === bare)?.price).toBeNull();
   });
 

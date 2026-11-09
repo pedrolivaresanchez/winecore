@@ -1,0 +1,365 @@
+import type { Writer } from '../db/writer';
+import { sql } from '../db/sql';
+import { newId } from '../ids';
+import { matchBottledLine, type LotRef, type ProductRef, type WineRef } from './bottled-match';
+import {
+  BARRELS,
+  DEMIJOHNS,
+  LEES,
+  OPENING_AT,
+  PHOTO_DATE,
+  TFRP_STORAGE,
+  bottledLines,
+  fold,
+  sumLines,
+  type BottledLine,
+} from './bottled-snapshot';
+
+const ACTOR = { type: 'migration' as const, id: '019c0000-0000-7000-8000-0000000000aa', requestId: 'load-bottled-stock' };
+
+type Report = {
+  already_loaded: boolean;
+  matched: number;
+  unmatched: { wine: string; lot: string | null; where: string; note: string | null }[];
+  totals: Record<string, { bottles: number; litres: string }>;
+  barrels: { loaded: number; full_litres: string; gap: string };
+  pallets: { counted: number; billed: number; price_eur: string };
+  assumptions: string[];
+};
+
+function idOf(value: unknown): string {
+  return String(value).toLowerCase();
+}
+
+function litres(ml: number): string {
+  const negative = ml < 0;
+  const [whole, frac] = (Math.abs(ml) / 1000).toFixed(3).replace(/0+$/, '').replace(/\.$/, '').split('.');
+  const grouped = (whole ?? '0').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  const text = frac ? `${grouped},${frac}` : grouped;
+  return `${negative ? '-' : ''}${text}`;
+}
+
+export async function loadBottledStock(writer: Writer): Promise<Report> {
+  const existing = await writer.read<{ n: string }>(`SELECT count(*)::VARCHAR AS n FROM cellar.bottled_placement`);
+  if (Number(existing[0]?.n ?? 0) > 0) {
+    return report(true, bottledLines(), []);
+  }
+  const entities = await writer.read<{ id: string; code: string }>(`SELECT id::VARCHAR AS id, code FROM core.legal_entity`);
+  const po = entities.find((row) => row.code === 'PO');
+  const cvpo = entities.find((row) => row.code === 'CVPO');
+  if (!po || !cvpo) throw new Error('Faltan las entidades PO y CVPO. Ejecuta antes la semilla.');
+  const poId = idOf(po.id);
+  const cvpoId = idOf(cvpo.id);
+  const locations = await writer.read<{ id: string; code: string }>(`SELECT id::VARCHAR AS id, code FROM inventory.location`);
+  const byCode = new Map(locations.map((row) => [row.code, idOf(row.id)]));
+  const wines = await writer.read<Record<string, unknown>>(`SELECT id::VARCHAR AS id, code, name, color, is_organic FROM catalog.wine WHERE is_active`);
+  const lots = await writer.read<Record<string, unknown>>(`SELECT id::VARCHAR AS id, code, wine_id::VARCHAR AS wine_id FROM inventory.lot WHERE status <> 'closed'`);
+  const products = await writer.read<Record<string, unknown>>(`
+    SELECT p.id::VARCHAR AS id, p.name, p.wine_id::VARCHAR AS wine_id, p.vintage::VARCHAR AS vintage, p.kind,
+           f.nominal_volume_ml::VARCHAR AS nominal
+    FROM catalog.product p
+    LEFT JOIN catalog.format f ON f.id = p.format_id
+    WHERE p.is_active
+  `);
+  const wineRefs: WineRef[] = wines.map((row) => ({
+    id: idOf(row.id), code: String(row.code), name: String(row.name), color: String(row.color), organic: row.is_organic === true,
+  }));
+  const lotRefs: LotRef[] = lots.map((row) => ({ id: idOf(row.id), code: String(row.code), wineId: row.wine_id == null ? null : idOf(row.wine_id) }));
+  const productRefs: ProductRef[] = products.map((row) => ({
+    id: idOf(row.id),
+    name: String(row.name),
+    wineId: row.wine_id == null ? null : idOf(row.wine_id),
+    vintage: row.vintage == null || row.vintage === '' ? null : Number(row.vintage),
+    nominalMl: row.nominal == null || row.nominal === '' ? null : Number(row.nominal),
+    kind: String(row.kind),
+  }));
+  const contact = await writer.read<{ id: string }>(sql`SELECT id::VARCHAR AS id FROM party.contact WHERE tax_id = ${TFRP_STORAGE.taxId} AND archived_at IS NULL LIMIT 1`);
+  const operatorId = contact[0] ? idOf(contact[0].id) : newId();
+  const bodId = byCode.get('BOD') ?? newId();
+  const tfrpId = byCode.get('TFRP') ?? newId();
+  const zone = (code: string) => newId();
+  const zones = {
+    ELAB: zone('ELAB'), BARR: zone('BARR'), NICH: zone('NICH'), CAJA: zone('CAJA'), JAUL: zone('JAUL'), DAMA: zone('DAMA'), PAL: zone('PAL'),
+  };
+  const lines = bottledLines();
+  const unmatched: Report['unmatched'] = [];
+  let matched = 0;
+  const statements: string[] = [];
+  const write = (statement: string) => statements.push(statement);
+
+  if (!contact[0]) {
+    write(sql`
+      INSERT INTO party.contact (
+        id, kind, legal_name, tax_id, tax_id_type, tax_id_country, country_code,
+        is_supplier, is_carrier, is_logistics_operator, notes, created_by
+      ) VALUES (
+        CAST(${operatorId} AS UUID), 'company', ${TFRP_STORAGE.operator}, ${TFRP_STORAGE.taxId}, 'nif', 'ES', 'ES',
+        TRUE, TRUE, TRUE, 'Operador logístico del almacén TFRP', 'load-bottled-stock'
+      )
+    `);
+  }
+  if (!byCode.has('BOD')) {
+    write(sql`
+      INSERT INTO inventory.location (id, code, name, kind, controlling_entity_id, is_virtual)
+      VALUES (CAST(${bodId} AS UUID), 'BOD', 'Bodega Pedro Olivares', 'cellar', CAST(${poId} AS UUID), FALSE)
+    `);
+  }
+  if (!byCode.has('TFRP')) {
+    write(sql`
+      INSERT INTO inventory.location (
+        id, code, name, kind, operator_contact_id, controlling_entity_id, is_virtual
+      ) VALUES (
+        CAST(${tfrpId} AS UUID), 'TFRP', 'Almacén TFRP', 'third_party_warehouse',
+        CAST(${operatorId} AS UUID), CAST(${cvpoId} AS UUID), FALSE
+      )
+    `);
+  }
+  const zoneRows: [string, string, string, string, string][] = [
+    [zones.ELAB, bodId, 'ELAB', 'Nave de depósitos', 'elaboration'],
+    [zones.BARR, bodId, 'BARR', 'Zona barricas', 'barrel_room'],
+    [zones.NICH, bodId, 'NICH', 'Nichos', 'bottle_store'],
+    [zones.CAJA, bodId, 'CAJA', 'Envasado en cajas', 'bottle_store'],
+    [zones.JAUL, bodId, 'JAUL', 'Jaulones', 'bottle_store'],
+    [zones.DAMA, bodId, 'DAMA', 'Damajuanas', 'outdoor'],
+    [zones.PAL, tfrpId, 'PALETS', 'Palets TFRP', 'bottle_store'],
+  ];
+  for (const [id, location, code, name, kind] of zoneRows) {
+    write(sql`
+      INSERT INTO cellar.zone (id, location_id, code, name, kind)
+      SELECT CAST(${id} AS UUID), CAST(${location} AS UUID), ${code}, ${name}, ${kind}
+      WHERE NOT EXISTS (SELECT 1 FROM cellar.zone WHERE code = ${code})
+    `);
+  }
+
+  const vessels = await writer.read<{ id: string; code: string; volume: string }>(`
+    SELECT v.id::VARCHAR AS id, v.code, coalesce(sum(m.volume_ml), 0)::VARCHAR AS volume
+    FROM cellar.vessel v
+    LEFT JOIN inventory.stock_move m ON m.vessel_id = v.id
+    GROUP BY v.id, v.code
+  `);
+  const vesselByCode = new Map(vessels.map((row) => [row.code, { id: idOf(row.id), volume: Number(row.volume) }]));
+  for (const barrel of BARRELS) {
+    const code = `BAR-${String(barrel.number).padStart(2, '0')}`;
+    const found = vesselByCode.get(code);
+    const id = found?.id ?? newId();
+    if (!found) {
+      write(sql`
+        INSERT INTO cellar.vessel (
+          id, code, name, kind, capacity_ml, has_cooling_jacket, material, location_id, zone, status, notes
+        ) VALUES (
+          CAST(${id} AS UUID), ${code}, ${`Barrica ${barrel.number}`}, 'barrel', ${barrel.capacity_ml},
+          FALSE, 'oak', CAST(${bodId} AS UUID), 'BARR', 'in_service', ${barrel.wine}
+        )
+      `);
+    }
+    if (barrel.fill_ml > 0 && (found?.volume ?? 0) === 0) {
+      const lot = matchLotLoose(barrel.wine, lotRefs);
+      write(openingMove(bodId, poId, id, lot, null, 'wine', 0, barrel.fill_ml, id));
+    }
+  }
+  const demijohns = vessels.filter((row) => row.code.startsWith('DAM-')).length;
+  if (demijohns === 0) {
+    for (let index = 1; index <= DEMIJOHNS.units; index += 1) {
+      const id = newId();
+      const code = `DAM-${String(index).padStart(2, '0')}`;
+      write(sql`
+        INSERT INTO cellar.vessel (
+          id, code, name, kind, capacity_ml, has_cooling_jacket, material, location_id, zone, status
+        ) VALUES (
+          CAST(${id} AS UUID), ${code}, ${`Damajuana ${index}`}, 'demijohn', ${DEMIJOHNS.capacity_ml},
+          FALSE, 'glass', CAST(${bodId} AS UUID), 'DAMA', 'in_service'
+        )
+      `);
+      write(sql`
+        INSERT INTO cellar.demijohn (vessel_id, outdoor_aging) VALUES (CAST(${id} AS UUID), TRUE)
+      `);
+      write(openingMove(bodId, poId, id, null, null, 'wine', 0, DEMIJOHNS.fill_ml, id));
+    }
+  }
+  if (!vesselByCode.has(LEES.code)) {
+    const id = newId();
+    write(sql`
+      INSERT INTO cellar.vessel (
+        id, code, name, kind, capacity_ml, has_cooling_jacket, material, location_id, zone, status, notes
+      ) VALUES (
+        CAST(${id} AS UUID), ${LEES.code}, ${LEES.name}, 'other', ${LEES.capacity_ml},
+        FALSE, 'plastic', CAST(${bodId} AS UUID), 'ELAB', 'in_service', 'Lías, foto DEPÓSITOS'
+      )
+    `);
+    write(openingMove(bodId, poId, id, null, null, 'wine', 0, LEES.fill_ml, id));
+  }
+
+  const holders = await writer.read<{ code: string; id: string }>(`SELECT id::VARCHAR AS id, code FROM cellar.holder`);
+  const holderByCode = new Map(holders.map((row) => [row.code, idOf(row.id)]));
+  const nicheNumbers = [...new Set(lines.filter((line) => line.slot_kind === 'nicho' && line.niche_number).map((line) => line.niche_number as number))];
+  for (const number of nicheNumbers) {
+    const code = `NIC-${String(number).padStart(2, '0')}`;
+    if (holderByCode.has(code)) continue;
+    const id = newId();
+    holderByCode.set(code, id);
+    const note = lines.filter((line) => line.slot_code === code).map((line) => line.note).filter(Boolean).join(' · ') || null;
+    write(sql`
+      INSERT INTO cellar.holder (id, location_id, zone_id, code, kind, name, notes)
+      SELECT CAST(${id} AS UUID), CAST(${bodId} AS UUID), z.id, ${code}, 'nicho', ${`Nicho ${number}`}, ${note}
+      FROM cellar.zone z WHERE z.code = 'NICH'
+    `);
+  }
+  for (const line of lines.filter((item) => item.slot_kind === 'jaulon' && item.bottles > 0)) {
+    if (holderByCode.has(line.slot_code) || !line.bottle_ml) continue;
+    const id = newId();
+    holderByCode.set(line.slot_code, id);
+    write(sql`
+      INSERT INTO cellar.holder (
+        id, location_id, zone_id, code, kind, name, cage_number, capacity_units, nominal_volume_ml, notes
+      )
+      SELECT CAST(${id} AS UUID), CAST(${bodId} AS UUID), z.id, ${line.slot_code}, 'jaulon', ${line.wine_label},
+             ${line.line_no}, ${line.bottles}, ${line.bottle_ml}, 'Jaulón sin numerar en la hoja; número de línea'
+      FROM cellar.zone z WHERE z.code = 'JAUL'
+    `);
+  }
+
+  const hide = new Set<string>();
+  for (const line of lines) {
+    const where = line.slot_kind === 'palet' ? tfrpId : bodId;
+    const owner = line.slot_kind === 'palet' ? cvpoId : poId;
+    const linked = matchBottledLine(line, wineRefs, lotRefs, productRefs);
+    if (linked.status === 'matched') matched += 1;
+    else if (line.bottles > 0) unmatched.push({ wine: line.wine_label, lot: line.lot_code, where: line.slot_code, note: linked.note });
+    const id = newId();
+    const holder = holderByCode.get(line.slot_code) ?? null;
+    const zoneCode = line.slot_kind === 'nicho' ? 'NICH' : line.slot_kind === 'jaulon' ? 'JAUL' : line.slot_kind === 'caja' ? 'CAJA' : 'PALETS';
+    write(sql`
+      INSERT INTO cellar.bottled_placement (
+        id, location_id, zone_id, holder_id, slot_kind, slot_code, niche_number, pallet_count, line_no,
+        wine_label, lot_code_raw, wine_id, product_id, lot_id, owner_entity_id, opened_bottles, bottle_ml,
+        opened_volume_ml, abv_pct, is_organic, color, product_state, not_for_sale, note, match_status,
+        match_note, source_sheet, source_row, photo_date
+      )
+      SELECT CAST(${id} AS UUID), CAST(${where} AS UUID), z.id,
+             CASE WHEN ${holder} IS NULL THEN NULL ELSE CAST(${holder} AS UUID) END,
+             ${line.slot_kind}, ${line.slot_code}, ${line.niche_number}, ${line.pallet_count}, ${line.line_no},
+             ${line.wine_label}, ${line.lot_code},
+             CASE WHEN ${linked.wineId} IS NULL THEN NULL ELSE CAST(${linked.wineId} AS UUID) END,
+             CASE WHEN ${linked.productId} IS NULL THEN NULL ELSE CAST(${linked.productId} AS UUID) END,
+             CASE WHEN ${linked.lotId} IS NULL THEN NULL ELSE CAST(${linked.lotId} AS UUID) END,
+             CAST(${owner} AS UUID), ${line.bottles}, ${line.bottle_ml}, ${line.volume_ml},
+             CASE WHEN ${line.abv} IS NULL THEN NULL ELSE CAST(${line.abv} AS DECIMAL(5,2)) END,
+             ${line.organic}, ${line.color}, ${line.state === 'empty' ? 'empty' : line.state}, ${linked.notForSale},
+             ${line.note}, ${linked.status}, ${linked.note}, ${line.source_sheet}, ${line.source_row},
+             CAST(${PHOTO_DATE} AS DATE)
+      FROM cellar.zone z WHERE z.code = ${zoneCode}
+    `);
+    if (line.bottles > 0) {
+      write(sql`
+        INSERT INTO cellar.bottled_move (
+          id, occurred_at, placement_id, qty_units, volume_ml, move_type, lot_id, source_table, source_id, created_by
+        ) VALUES (
+          CAST(${newId()} AS UUID), CAST(${OPENING_AT} AS TIMESTAMPTZ), CAST(${id} AS UUID),
+          ${line.bottles}, ${line.volume_ml}, 'opening',
+          CASE WHEN ${linked.lotId} IS NULL THEN NULL ELSE CAST(${linked.lotId} AS UUID) END,
+          'cellar.bottled_placement', CAST(${id} AS UUID), 'load-bottled-stock'
+        )
+      `);
+    }
+    if (linked.status === 'matched' && linked.lotId && linked.productId && line.bottle_ml) {
+      write(openingMove(where, owner, null, linked.lotId, linked.productId, line.state, line.bottles, line.volume_ml, id));
+    }
+    if (linked.notForSale && linked.productId) hide.add(linked.productId);
+  }
+  for (const productId of hide) {
+    write(sql`UPDATE catalog.product SET for_sale = FALSE WHERE id = CAST(${productId} AS UUID)`);
+  }
+  const storageId = newId();
+  write(sql`
+    INSERT INTO inventory.pallet_storage (
+      id, location_id, operator_name, operator_tax_id, price_eur_per_pallet_month, counted_pallets, notes
+    ) VALUES (
+      CAST(${storageId} AS UUID), CAST(${tfrpId} AS UUID), ${TFRP_STORAGE.operator}, ${TFRP_STORAGE.taxId},
+      CAST(${TFRP_STORAGE.price} AS DECIMAL(12,2)), ${TFRP_STORAGE.countedPallets},
+      'La hoja CVPO TFRP suma 13 palets. Agosto y septiembre facturan 12 a 7,20 €.'
+    )
+  `);
+  for (const invoice of TFRP_STORAGE.invoices) {
+    write(sql`
+      INSERT INTO inventory.pallet_storage_invoice (
+        id, storage_id, invoice_number, invoice_date, billed_pallets, line_amount_eur, mismatch, notes
+      ) VALUES (
+        CAST(${newId()} AS UUID), CAST(${storageId} AS UUID), ${invoice.number}, CAST(${invoice.date} AS DATE),
+        ${invoice.billed}, CAST(${invoice.amount} AS DECIMAL(12,2)), TRUE,
+        ${`${invoice.billed} palets facturados y 13 en la hoja de stock.`}
+      )
+    `);
+  }
+
+  await writer.withWrite(ACTOR, async (tx) => {
+    for (const statement of statements) tx.write(statement);
+  });
+  return report(false, lines, unmatched, matched);
+}
+
+function matchLotLoose(wine: string | null, lots: readonly LotRef[]): string | null {
+  if (!wine) return null;
+  const key = fold(wine);
+  const hits = lots.filter((lot) => fold(lot.code).includes(key));
+  return hits.length === 1 ? hits[0]?.id ?? null : null;
+}
+
+function openingMove(
+  locationId: string,
+  ownerId: string,
+  vesselId: string | null,
+  lotId: string | null,
+  productId: string | null,
+  state: string,
+  units: number,
+  volume: number,
+  sourceId: string,
+): string {
+  return sql`
+    INSERT INTO inventory.stock_move (
+      id, occurred_at, move_type, location_id, vessel_id, owner_entity_id, lot_id, product_id,
+      product_state, qty_units, volume_ml, mass_g, source_table, source_id, created_by
+    ) VALUES (
+      CAST(${newId()} AS UUID), CAST(${OPENING_AT} AS TIMESTAMPTZ), 'opening',
+      CAST(${locationId} AS UUID),
+      CASE WHEN ${vesselId} IS NULL THEN NULL ELSE CAST(${vesselId} AS UUID) END,
+      CAST(${ownerId} AS UUID),
+      CASE WHEN ${lotId} IS NULL THEN NULL ELSE CAST(${lotId} AS UUID) END,
+      CASE WHEN ${productId} IS NULL THEN NULL ELSE CAST(${productId} AS UUID) END,
+      ${state}, ${units}, ${volume}, 0, 'cellar.bottled_placement', CAST(${sourceId} AS UUID), 'load-bottled-stock'
+    )
+  `;
+}
+
+function report(already: boolean, lines: BottledLine[], unmatched: Report['unmatched'], matched = 0): Report {
+  const caja = sumLines(lines, 'caja');
+  const nicho = sumLines(lines, 'nicho');
+  const jaulon = sumLines(lines, 'jaulon');
+  const palet = sumLines(lines, 'palet');
+  const full = BARRELS.reduce((sum, row) => sum + row.fill_ml, 0);
+  return {
+    already_loaded: already,
+    matched,
+    unmatched,
+    totals: {
+      cajas: { bottles: caja.bottles, litres: litres(caja.volume_ml) },
+      nichos: { bottles: nicho.bottles, litres: litres(nicho.volume_ml) },
+      jaulones: { bottles: jaulon.bottles, litres: litres(jaulon.volume_ml) },
+      bodega: { bottles: caja.bottles + nicho.bottles + jaulon.bottles, litres: litres(caja.volume_ml + nicho.volume_ml + jaulon.volume_ml) },
+      tfrp: { bottles: palet.bottles, litres: litres(palet.volume_ml) },
+      barricas: { bottles: BARRELS.filter((row) => row.fill_ml > 0).length, litres: litres(full) },
+    },
+    barrels: { loaded: BARRELS.length, full_litres: litres(full), gap: '16 en la hoja; Pedro recuerda unas 17; 2024 numera 19 más dos tinajas.' },
+    pallets: { counted: 13, billed: 12, price_eur: '7.20' },
+    assumptions: [
+      'El envasado de la bodega es de P.O. El de TFRP es de CVPO.',
+      'Los jaulones son vino sin etiquetar. Cajas, nichos y palets van etiquetados.',
+      'Los jaulones de la hoja no traen número: se numeran por el orden de la línea.',
+      'WINEOUT se queda en stock y no se vende.',
+      'Melós queda ligado al lote 2019 y la Garnacha Pirotécnica al lote EGP2023 si existen. Si no, no se inventan.',
+      'Demorado es añada 2024, lote L2024, aunque tres PDF de tarifa impriman 2023.',
+      'Llueve Llueve, enTreDicho Ft, Bobal Plus y Aplatinao no tienen tarifa: el precio es manual.',
+      'La celda TOTAL de TFRP dice 6.241,50 L y omite los 54 L de Llueve Llueve. Las líneas suman 6.295,50 L y 8.394 botellas.',
+    ],
+  };
+}

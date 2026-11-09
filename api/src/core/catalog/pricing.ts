@@ -6,7 +6,7 @@ import type { Actor, Tx, Writer } from '../db/writer';
 import { sql } from '../db/sql';
 import { domainError } from '../errors';
 import { newId } from '../ids';
-import { priceListCodeForChannel } from '../sales/pricing';
+import { priceListCodeForChannel, priceListCodesForChannel } from '../sales/pricing';
 import { businessDate } from '../time';
 import {
   FieldBag,
@@ -642,19 +642,22 @@ async function resolveList(
     return list;
   }
   if (documentChannel) {
-    const code = priceListCodeForChannel(documentChannel);
-    const found = code ? await listByCode(db, code) : null;
-    if (found) return found;
+    for (const code of priceListCodesForChannel(documentChannel)) {
+      const found = await listByCode(db, code);
+      if (found) return found;
+    }
     throw domainError('WC_VALIDATION', { channel: 'No hay tarifa para este canal' });
   }
   const channel = contact.default_channel;
   if (channel && !priceListCodeForChannel(channel)) {
     throw domainError('WC_VALIDATION', { customer_id: 'Canal sin tarifa' });
   }
-  const code = quoteListCode(channel);
-  const found = await listByCode(db, code);
-  if (found) return found;
-  if (code !== 'final') {
+  const codes = channel ? [...priceListCodesForChannel(channel)] : [quoteListCode(channel)];
+  for (const code of codes.length > 0 ? codes : ['final']) {
+    const found = await listByCode(db, code);
+    if (found) return found;
+  }
+  if (channel !== 'eci_edi') {
     const general = await listByCode(db, 'final');
     if (general) return general;
   }

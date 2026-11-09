@@ -30,6 +30,7 @@ import {
   UUID_RE,
 } from './db';
 import { outbox } from './db';
+import { applyDeliveryBottled, reverseBottledDocument } from '../inventory/bottled-ledger';
 import { entityByCode, onHand, reversalOf, stockMove, writeStockMove, assertPhysical, type MoveDraft } from './moves';
 import { quotePrice } from './pricing';
 import type { ProductRow } from './db';
@@ -72,6 +73,7 @@ export async function issueDeliveryNote(tx: Tx, input: { id: string; actor: Acto
     WHERE id = CAST(${input.id} AS UUID) AND status = 'draft'
   `);
   for (const move of planned) writeStockMove(tx, move, now);
+  await applyDeliveryBottled(tx, planned);
   for (const line of settlements) writeSettlement(tx, line);
   tx.audit({
     table: 'sales.delivery_note',
@@ -145,6 +147,7 @@ export async function voidDelivery(tx: Tx, actor: Actor, id: string, reason: str
   await assertPhysical(tx, reversals);
   await assertSettlementsOpen(tx, id);
   for (const move of reversals) writeStockMove(tx, move, now);
+  await reverseBottledDocument(tx, 'sales.delivery_note', id, occurredAt, actor.id);
   tx.write(sql`
     DELETE FROM billing.intercompany_settlement_line
     WHERE source_table = 'sales.delivery_note_line'

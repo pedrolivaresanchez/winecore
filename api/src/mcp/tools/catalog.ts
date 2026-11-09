@@ -20,7 +20,7 @@ const CHANNEL_LIST: Record<string, string> = {
   direct: "final",
   distributor: "distributor",
   horeca: "final",
-  eci_edi: "distributor",
+  eci_edi: "custom-eci",
   web: "shop",
   fair: "final",
   cellar_shop: "shop",

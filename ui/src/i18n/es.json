@@ -1601,6 +1601,7 @@
   },
   "stock": {
     "title": "Existencias",
+    "warehouses": "Almacenes",
     "moves": "Movimientos",
     "counts": "Aforos",
     "inspection": "Informe de inspección",

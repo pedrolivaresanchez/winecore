@@ -9,6 +9,9 @@ import {
   listFiscalBalances,
   listMoves,
 } from '../core/inventory/service/stock.service';
+import { warehouseLayout } from '../core/inventory/bottled-layout';
+import { disposePlacement } from '../core/inventory/bottled-ledger';
+import { actorFrom, readJson } from './stock-http';
 import { balanceQuery, fiscalQuery, formatOf, moveQuery } from './stock-http';
 
 export async function stockBalances(writer: Writer, request: Request) {
@@ -33,6 +36,24 @@ export async function stockInspection(writer: Writer, request: Request) {
     });
   }
   return document;
+}
+
+export async function stockWarehouses(writer: Writer) {
+  return warehouseLayout(writer);
+}
+
+export async function disposeBottled(writer: Writer, request: Request, id: string) {
+  const body = await readJson(request) as { bottles?: unknown; reason?: unknown };
+  const actor = actorFrom(request);
+  const bottles = Number(body.bottles);
+  const reason = typeof body.reason === 'string' ? body.reason : '';
+  return writer.withWrite(actor, (tx) => disposePlacement(tx, {
+    placementId: id.trim().toLowerCase(),
+    bottles,
+    reason,
+    actorId: actor.id,
+    at: new Date().toISOString(),
+  }));
 }
 
 export async function stockMoves(writer: Writer, request: Request) {
