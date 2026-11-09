@@ -124,6 +124,8 @@ function HoldedHome({ data, attention }: { data: LegacyOverview; attention: Reac
             label={fill(copy.panel.salesCompany, { year: String(data.year), company: companyLabel(code) })}
             value={data.kpis.sales_this_year[code]}
             href={`/facturas?entity=${code}`}
+            count={data.kpis.issued_count[code]}
+            countLabel={issuedLabel}
             empty={copy.panel.noneYear}
             spark={data.months.map((point) => Number(point[code]) || 0)}
           />
@@ -371,6 +373,7 @@ function MoneyTile({
   value,
   href,
   count,
+  countLabel,
   empty,
   spark,
   className,
@@ -379,6 +382,7 @@ function MoneyTile({
   value: string
   href: string
   count?: number
+  countLabel?: (count: number) => string
   empty: string
   spark?: number[]
   className?: string
@@ -395,13 +399,17 @@ function MoneyTile({
       formatted={<FitAmount full={formatMoney(safe)} short={formatCompact(safe, '€')} className="w-full" />}
       href={href}
       spark={quiet ? undefined : spark}
-      hint={quiet ? empty : count != null && count > 0 ? dueLabel(count) : undefined}
+      hint={quiet ? empty : count != null && count > 0 ? (countLabel ?? dueLabel)(count) : undefined}
     />
   )
 }
 
 function dueLabel(count: number): string {
   return count === 1 ? copy.panel.dueOne : fill(copy.panel.dueMany, { count: formatInteger(count) })
+}
+
+function issuedLabel(count: number): string {
+  return count === 1 ? copy.panel.issuedOne : fill(copy.panel.issuedMany, { count: formatInteger(count) })
 }
 
 function firstHref(block: AttentionBlock): string | null {

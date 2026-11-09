@@ -182,10 +182,11 @@ describe('histórico Holded', () => {
     const kpis = both.kpis as Record<string, unknown>;
     expect(both.entity).toBe('both');
     expect(both.year).toBe(2026);
-    // Antes: 210,00 mezclando Holded de P.O (140) y CVPO (70), y el año pasado 25,00.
-    // La copia holded_import de 999,00 no entra. Solo lo emitido en WineCore, por sociedad.
-    expect(kpis.sales_this_year).toEqual({ PO: '200.00', CVPO: '80.00' });
-    expect(kpis.sales_last_year).toEqual({ PO: '30.00', CVPO: '0.00' });
+    // Cada factura una vez, por sociedad: nativas, histórico no proyectado y la copia suelta.
+    // P.O: 200 + 100 + 40 + 999. CVPO: 80 + 70. La anulada de 10 no entra.
+    expect(kpis.sales_this_year).toEqual({ PO: '1339.00', CVPO: '150.00' });
+    expect(kpis.sales_last_year).toEqual({ PO: '55.00', CVPO: '0.00' });
+    expect(kpis.issued_count).toEqual({ PO: 4, CVPO: 2 });
     // Cobros del año: 200 de WineCore (2026) + 40 de Holded (2026) en P.O, y 50 de Holded (2026) en CVPO.
     // Fuera: impagado de 2024 (40), partidas de 2024 (70) y 2023 (12), y la copia holded_import de 999.
     expect(kpis.pending_receivables).toEqual({ PO: '240.00', CVPO: '50.00' });
@@ -197,34 +198,37 @@ describe('histórico Holded', () => {
     expect(both.has_imported).toBe(true);
 
     const recent = both.recent_invoices as { number: string; kind: string }[];
-    expect(recent.map((row) => row.number)).toEqual(['WC-CV', 'WC-PO', 'WC-25', 'WC-24']);
+    expect(recent.map((row) => row.number)).toEqual(['H-IMP', 'WC-CV', 'WC-PO', 'H-170', 'H-110', 'H-140', 'H-100', 'H-025']);
     expect(recent.every((row) => row.kind === 'sale')).toBe(true);
-    expect(recent.some((row) => row.number === 'H-IMP')).toBe(false);
+    expect(recent.some((row) => row.number === 'H-IMP')).toBe(true);
 
     const customers = both.top_customers as { name: string; total: string; invoices: number }[];
-    expect(customers[0]).toEqual({ name: 'Cliente Norte', total: '200.00', invoices: 1 });
-    expect(customers[1]).toEqual({ name: 'Cliente Solo CVPO', total: '80.00', invoices: 1 });
+    expect(customers[0]).toEqual({ name: 'Cliente Norte', total: '1339.00', invoices: 4 });
+    expect(customers[1]).toEqual({ name: 'Cliente Solo CVPO', total: '150.00', invoices: 2 });
 
     const months = both.months as { month: number; PO: string; CVPO: string }[];
     expect(months).toHaveLength(12);
     expect(months.find((row) => row.month === 6)).toEqual({ month: 6, PO: '200.00', CVPO: '0.00' });
     expect(months.find((row) => row.month === 8)).toEqual({ month: 8, PO: '0.00', CVPO: '80.00' });
-    expect(months.find((row) => row.month === 9)).toEqual({ month: 9, PO: '0.00', CVPO: '0.00' });
-    expect(months.find((row) => row.month === 1)).toEqual({ month: 1, PO: '0.00', CVPO: '0.00' });
+    expect(months.find((row) => row.month === 9)).toEqual({ month: 9, PO: '999.00', CVPO: '0.00' });
+    expect(months.find((row) => row.month === 1)).toEqual({ month: 1, PO: '100.00', CVPO: '0.00' });
+    expect(months.find((row) => row.month === 4)).toEqual({ month: 4, PO: '0.00', CVPO: '70.00' });
 
     const poOnly = await json(await ctx.app.handle(new Request('http://localhost/v1/legacy/overview?entity=PO')));
     const poKpis = poOnly.kpis as Record<string, unknown>;
-    expect(poKpis.sales_this_year).toEqual({ PO: '200.00', CVPO: '0.00' });
-    expect(poKpis.sales_last_year).toEqual({ PO: '30.00', CVPO: '0.00' });
+    expect(poKpis.sales_this_year).toEqual({ PO: '1339.00', CVPO: '0.00' });
+    expect(poKpis.sales_last_year).toEqual({ PO: '55.00', CVPO: '0.00' });
+    expect(poKpis.issued_count).toEqual({ PO: 4, CVPO: 0 });
     expect(poKpis.pending_receivables).toEqual({ PO: '240.00', CVPO: '0.00' });
     expect(poKpis.contacts).toBe(3);
     expect(poKpis.open_payables).toBe('15.00');
-    expect((poOnly.recent_invoices as { number: string }[]).map((row) => row.number)).toEqual(['WC-PO', 'WC-25', 'WC-24']);
+    expect((poOnly.recent_invoices as { number: string }[]).map((row) => row.number)).toEqual(['H-IMP', 'WC-PO', 'H-110', 'H-140', 'H-100', 'H-025', 'WC-25', 'H-OLD']);
 
     const cvpoView = await json(await ctx.app.handle(new Request('http://localhost/v1/legacy/overview?entity=CVPO')));
     const cvpoKpis = cvpoView.kpis as Record<string, unknown>;
-    expect(cvpoKpis.sales_this_year).toEqual({ PO: '0.00', CVPO: '80.00' });
+    expect(cvpoKpis.sales_this_year).toEqual({ PO: '0.00', CVPO: '150.00' });
     expect(cvpoKpis.sales_last_year).toEqual({ PO: '0.00', CVPO: '0.00' });
+    expect(cvpoKpis.issued_count).toEqual({ PO: 0, CVPO: 2 });
     expect(cvpoKpis.pending_receivables).toEqual({ PO: '0.00', CVPO: '50.00' });
     expect(cvpoKpis.open_payables).toBe('0.00');
     expect(cvpoKpis.contacts).toBe(3);

@@ -220,7 +220,7 @@ export function litresToMl(text: string): number {
 
 export function mlToEdit(ml: number): string {
   const litres = ml / 1000;
-  const text = litres.toFixed(3).replace(/\.?0+$/, "").replace(".", ",");
+  const text = litres.toFixed(2).replace(/\.?0+$/, "").replace(".", ",");
   return text === "" ? "0" : text;
 }
 

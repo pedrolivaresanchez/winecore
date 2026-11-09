@@ -1828,23 +1828,45 @@ body::-webkit-scrollbar {
    (`@[52rem]:overflow-y-auto`, `lg:overflow-y-auto`) hide the native thumb too.
    The bare `.overflow-y-auto` selector missed those class names, and macOS then
    painted a native bar under the overlay one — two scrollbars on one rail. */
-[class*='overflow-auto']:not([class*='scrollbar-inset']):not([class*='scrollbar-none']),
-[class*='overflow-y-auto']:not([class*='scrollbar-inset']):not([class*='scrollbar-none']),
-[class*='overflow-x-auto']:not([class*='scrollbar-inset']):not([class*='scrollbar-none']),
-[class*='overflow-scroll']:not([class*='scrollbar-inset']):not([class*='scrollbar-none']),
-[class*='overflow-y-scroll']:not([class*='scrollbar-inset']):not([class*='scrollbar-none']),
-[class*='overflow-x-scroll']:not([class*='scrollbar-inset']):not([class*='scrollbar-none']) {
+[class*='overflow-auto']:not([class*='scrollbar-inset']):not([class*='scrollbar-none']):not([data-grid-scroll]),
+[class*='overflow-y-auto']:not([class*='scrollbar-inset']):not([class*='scrollbar-none']):not([data-grid-scroll]),
+[class*='overflow-x-auto']:not([class*='scrollbar-inset']):not([class*='scrollbar-none']):not([data-grid-scroll]),
+[class*='overflow-scroll']:not([class*='scrollbar-inset']):not([class*='scrollbar-none']):not([data-grid-scroll]),
+[class*='overflow-y-scroll']:not([class*='scrollbar-inset']):not([class*='scrollbar-none']):not([data-grid-scroll]),
+[class*='overflow-x-scroll']:not([class*='scrollbar-inset']):not([class*='scrollbar-none']):not([data-grid-scroll]) {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 
-[class*='overflow-auto']:not([class*='scrollbar-inset']):not([class*='scrollbar-none'])::-webkit-scrollbar,
-[class*='overflow-y-auto']:not([class*='scrollbar-inset']):not([class*='scrollbar-none'])::-webkit-scrollbar,
-[class*='overflow-x-auto']:not([class*='scrollbar-inset']):not([class*='scrollbar-none'])::-webkit-scrollbar,
-[class*='overflow-scroll']:not([class*='scrollbar-inset']):not([class*='scrollbar-none'])::-webkit-scrollbar,
-[class*='overflow-y-scroll']:not([class*='scrollbar-inset']):not([class*='scrollbar-none'])::-webkit-scrollbar,
-[class*='overflow-x-scroll']:not([class*='scrollbar-inset']):not([class*='scrollbar-none'])::-webkit-scrollbar {
+[class*='overflow-auto']:not([class*='scrollbar-inset']):not([class*='scrollbar-none']):not([data-grid-scroll])::-webkit-scrollbar,
+[class*='overflow-y-auto']:not([class*='scrollbar-inset']):not([class*='scrollbar-none']):not([data-grid-scroll])::-webkit-scrollbar,
+[class*='overflow-x-auto']:not([class*='scrollbar-inset']):not([class*='scrollbar-none']):not([data-grid-scroll])::-webkit-scrollbar,
+[class*='overflow-scroll']:not([class*='scrollbar-inset']):not([class*='scrollbar-none']):not([data-grid-scroll])::-webkit-scrollbar,
+[class*='overflow-y-scroll']:not([class*='scrollbar-inset']):not([class*='scrollbar-none']):not([data-grid-scroll])::-webkit-scrollbar,
+[class*='overflow-x-scroll']:not([class*='scrollbar-inset']):not([class*='scrollbar-none']):not([data-grid-scroll])::-webkit-scrollbar {
   display: none;
+}
+
+/* Lists keep a real horizontal bar, always, so a mouse can drag it.
+   The overlay thumb stays for the vertical axis. */
+[data-grid-scroll] {
+  overflow-x: scroll;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-ink-400) transparent;
+}
+
+[data-grid-scroll]::-webkit-scrollbar:horizontal {
+  display: block;
+  height: 12px;
+}
+
+[data-grid-scroll]::-webkit-scrollbar-thumb:horizontal {
+  background: var(--color-ink-400);
+  border-radius: 999px;
+}
+
+[data-grid-scroll]::-webkit-scrollbar-track:horizontal {
+  background: var(--color-surface-subtle);
 }
 
 .overlay-scrollbar-thumb {

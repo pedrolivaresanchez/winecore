@@ -24,6 +24,7 @@ export type LegacyOverview = {
   kpis: {
     sales_this_year: CompanyFigures
     sales_last_year: CompanyFigures
+    issued_count: CompanyCounts
     pending_receivables: CompanyFigures
     pending_receivables_count: CompanyCounts
     contacts: number

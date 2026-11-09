@@ -110,9 +110,11 @@ export async function listSalesDocuments(writer: Writer, user: UserCtx, url: URL
   if (query.entity) legacyScope(user, query.entity);
   const books = readableBooks(user, query.kind, query.direction, legacyScope(user, 'both'));
   const readableOrigins = ORIGINS.filter((origin) => readable(books[origin]));
-  // Las facturas de Holded (legacy y origin = 'holded_import') no entran en la lista
-  // operativa: el libro registro las conserva, la lista solo muestra lo emitido aquí.
-  const origins = query.kind === 'invoice' ? readableOrigins.filter((origin) => origin === 'winecore') : readableOrigins;
+  // Las facturas de venta muestran Holded y WineCore, cada una una vez.
+  // La proyección (origin = holded_import) lleva la etiqueta Holded; la fila
+  // legacy no se repite si ya está en billing. Los gastos siguen sin el histórico.
+  const saleInvoices = query.kind === 'invoice' && query.direction === 'sale';
+  const origins = saleInvoices ? readableOrigins : query.kind === 'invoice' ? readableOrigins.filter((origin) => origin === 'winecore') : readableOrigins;
   const visible: Codes = { po: books.holded.po || books.winecore.po, cvpo: books.holded.cvpo || books.winecore.cvpo };
   if (origins.length === 0) throw domainError('WC_FORBIDDEN');
   if (query.entity && !(query.entity === 'PO' ? visible.po : visible.cvpo)) throw domainError('WC_FORBIDDEN');
@@ -137,7 +139,7 @@ export async function listSalesDocuments(writer: Writer, user: UserCtx, url: URL
   const rows = rowsCte(query, books, today, 'list');
   const common = commonFilters(query);
   const askedOrigin = query.origins.length > 0 ? `origin IN (${query.origins.map((origin) => sql`${origin}`).join(', ')})` : 'TRUE';
-  const originOk = query.kind === 'invoice' ? `(origin = 'winecore' AND ${askedOrigin})` : askedOrigin;
+  const originOk = query.kind === 'invoice' && query.direction !== 'sale' ? `(origin = 'winecore' AND ${askedOrigin})` : askedOrigin;
   const entityOk = query.entity ? sql`entity_code = ${query.entity}` : 'TRUE';
   const statusOk = query.statuses.length > 0 ? `status IN (${query.statuses.map((status) => sql`${status}`).join(', ')})` : 'TRUE';
   const excluded = NOT_COUNTED.filter((status) => !query.statuses.includes(status));
@@ -150,10 +152,10 @@ export async function listSalesDocuments(writer: Writer, user: UserCtx, url: URL
       SELECT origin, id, number, CAST(issue_date AS VARCHAR) AS issue_date, CAST(due_date AS VARCHAR) AS due_date,
              customer_id, customer_match, customer_name, entity_code,
              CAST(total AS VARCHAR) AS total, CAST(pending AS VARCHAR) AS pending, currency, status,
-             verifactu, delivery
+             verifactu, delivery, record
         FROM rows
        WHERE ${common} AND ${originOk} AND ${entityOk} AND ${statusOk}
-       ORDER BY ${orderBy(query.sort, query.dir)}
+       ORDER BY ${orderBy(query.sort, query.dir, query.kind)}
        LIMIT ${query.limit} OFFSET ${query.offset}
     `),
     writer.read<Record<string, unknown>>(`
@@ -286,7 +288,7 @@ function rowsCte(
   const ctes = [contactLinkCtes([query.kind === 'invoice' ? query.direction : query.kind])];
   let status: string;
   if (query.kind === 'invoice') {
-    if (holded && mode === 'state') branches.push(holdedInvoices(query.direction, holded));
+    if (holded && (mode === 'state' || query.direction === 'sale')) branches.push(holdedInvoices(query.direction, holded));
     if (native && query.direction === 'purchase') branches.push(nativeSupplierInvoices(native));
     if (native && query.direction === 'sale') {
       ctes.push(INVOICE_TRACKING);
@@ -319,12 +321,12 @@ function rowsCte(
     ),
     rows AS (
       SELECT origin, id, number, issue_date, sort_date, due_date, customer_id, customer_match, customer_name,
-             entity_code, total, pending, currency, ${status} AS status, verifactu, delivery
+             customer_references, entity_code, total, pending, currency, ${status} AS status, verifactu, delivery, record
         FROM docs
     )`;
 }
 
-const UNTRACKED = 'CAST(NULL AS VARCHAR) AS verifactu, CAST(NULL AS VARCHAR) AS delivery';
+const UNTRACKED = `CAST(NULL AS VARCHAR) AS verifactu, CAST(NULL AS VARCHAR) AS delivery, 'legacy' AS record`;
 
 /** Último registro Verifactu y último intento de envío de cada factura emitida en WineCore. */
 const INVOICE_TRACKING = `
@@ -354,7 +356,7 @@ function holdedInvoices(direction: Direction, entity: string): string {
       SELECT 'holded' AS origin, CAST(h.id AS VARCHAR) AS id, h.number, h.issue_date, h.issue_date AS sort_date,
              COALESCE(o.due_date, h.due_date) AS due_date,
              ${link.id} AS customer_id, ${link.match} AS customer_match,
-             h.counterparty_name AS customer_name, e.code AS entity_code,
+             h.counterparty_name AS customer_name, CAST(NULL AS VARCHAR) AS customer_references, e.code AS entity_code,
              CAST(h.total AS DECIMAL(14,2)) AS total,
              CAST(CASE
                WHEN (${base}) = 'void' THEN 0
@@ -373,17 +375,25 @@ function holdedInvoices(direction: Direction, entity: string): string {
          AND NOT EXISTS (
            SELECT 1 FROM ${direction === 'sale' ? 'billing.invoice' : 'purchasing.supplier_invoice'} projected
            WHERE projected.holded_invoice_id = h.id
+              OR (
+                projected.legal_entity_id = h.entity_id
+                AND projected.number = h.number
+                AND projected.issue_date = h.issue_date
+                AND projected.status IN ('issued', 'voided', 'approved')
+              )
          )`;
 }
 
 function nativeInvoices(entity: string): string {
   return `
-      SELECT 'winecore' AS origin, CAST(i.id AS VARCHAR) AS id, i.number, i.issue_date,
+      SELECT CASE WHEN COALESCE(i.origin, 'native') = 'holded_import' THEN 'holded' ELSE 'winecore' END AS origin,
+             CAST(i.id AS VARCHAR) AS id, i.number, i.issue_date,
              COALESCE(i.issue_date, CAST(i.created_at AT TIME ZONE 'Europe/Madrid' AS DATE)) AS sort_date,
              d.due_date,
              CAST(i.customer_id AS VARCHAR) AS customer_id,
              CASE WHEN i.customer_id IS NOT NULL THEN 'contact' END AS customer_match,
              COALESCE(NULLIF(trim(json_extract_string(i.customer_snapshot, '$.name')), ''), c.legal_name, '') AS customer_name,
+             i.customer_references,
              e.code AS entity_code,
              CAST(i.total AS DECIMAL(14,2)) AS total,
              CAST(CASE WHEN i.status = 'issued' THEN i.total - i.amount_paid WHEN i.status = 'voided' THEN 0 END AS DECIMAL(14,2)) AS pending,
@@ -398,7 +408,8 @@ function nativeInvoices(entity: string): string {
              CASE
                WHEN COALESCE(i.origin, 'native') = 'holded_import' THEN NULL
                WHEN i.status IN ('issued', 'voided') THEN COALESCE(dl.status, 'none')
-             END AS delivery
+             END AS delivery,
+             'billing' AS record
         FROM billing.invoice i
         JOIN core.legal_entity e ON e.id = i.legal_entity_id
         LEFT JOIN party.contact c ON c.id = i.customer_id
@@ -407,8 +418,7 @@ function nativeInvoices(entity: string): string {
         ) d ON d.invoice_id = i.id
         LEFT JOIN verifactu_latest v ON v.invoice_id = i.id
         LEFT JOIN delivery_latest dl ON dl.invoice_id = i.id
-       WHERE ${entity}
-         AND COALESCE(i.origin, 'native') <> 'holded_import'`;
+       WHERE ${entity}`;
 }
 
 function nativeSupplierInvoices(entity: string): string {
@@ -419,6 +429,7 @@ function nativeSupplierInvoices(entity: string): string {
              CAST(s.supplier_id AS VARCHAR) AS customer_id,
              CASE WHEN s.supplier_id IS NOT NULL THEN 'contact' END AS customer_match,
              COALESCE(c.legal_name, NULLIF(trim(json_extract_string(s.ocr_extraction, '$.supplier_name')), ''), '') AS customer_name,
+             CAST(NULL AS VARCHAR) AS customer_references,
              e.code AS entity_code,
              CAST(s.total AS DECIMAL(14,2)) AS total,
              CAST(CASE
@@ -447,7 +458,7 @@ function holdedQuotes(entity: string): string {
       SELECT 'holded' AS origin, CAST(h.id AS VARCHAR) AS id, h.number, h.issue_date, h.issue_date AS sort_date,
              h.valid_until AS due_date,
              ${link.id} AS customer_id, ${link.match} AS customer_match,
-             h.counterparty_name AS customer_name, e.code AS entity_code,
+             h.counterparty_name AS customer_name, CAST(NULL AS VARCHAR) AS customer_references, e.code AS entity_code,
              CAST(h.total AS DECIMAL(14,2)) AS total, CAST(NULL AS DECIMAL(14,2)) AS pending,
              'EUR' AS currency, ${holdedQuoteBase('h.status_holded', 'h.invoiced_status')} AS base, FALSE AS flagged_overdue,
              ${UNTRACKED}
@@ -463,7 +474,7 @@ function nativeQuotes(entity: string): string {
              COALESCE(q.issue_date, CAST(q.created_at AT TIME ZONE 'Europe/Madrid' AS DATE)) AS sort_date,
              q.valid_until AS due_date,
              CAST(q.customer_id AS VARCHAR) AS customer_id, 'contact' AS customer_match,
-             COALESCE(c.legal_name, '') AS customer_name, e.code AS entity_code,
+             COALESCE(c.legal_name, '') AS customer_name, q.customer_references, e.code AS entity_code,
              CAST(q.total AS DECIMAL(14,2)) AS total, CAST(NULL AS DECIMAL(14,2)) AS pending,
              q.currency, q.status AS base, FALSE AS flagged_overdue, ${UNTRACKED}
         FROM sales.quote q
@@ -487,6 +498,7 @@ function holdedDeliveryNotes(entity: string): string {
              CAST(NULL AS DATE) AS due_date,
              ${link.id} AS customer_id, ${link.match} AS customer_match,
              COALESCE(${link.lineName}, NULLIF(trim(h.destination), ''), NULLIF(trim(h.description), ''), '') AS customer_name,
+             CAST(NULL AS VARCHAR) AS customer_references,
              e.code AS entity_code,
              CAST(h.total AS DECIMAL(14,2)) AS total, CAST(NULL AS DECIMAL(14,2)) AS pending,
              'EUR' AS currency, ${holdedDeliveryNoteStatus('h.invoiced_status')} AS base, FALSE AS flagged_overdue,
@@ -519,7 +531,7 @@ function nativeDeliveryNotes(entity: string): string {
              CAST(NULL AS DATE) AS due_date,
              CAST(n.customer_id AS VARCHAR) AS customer_id,
              CASE WHEN n.customer_id IS NOT NULL THEN 'contact' END AS customer_match,
-             COALESCE(c.legal_name, tl.name, '') AS customer_name, e.code AS entity_code,
+             COALESCE(c.legal_name, tl.name, '') AS customer_name, n.customer_references, e.code AS entity_code,
              CAST(CASE WHEN n.is_valued THEN COALESCE(t.total, 0) END AS DECIMAL(14,2)) AS total,
              CAST(NULL AS DECIMAL(14,2)) AS pending,
              n.currency, ${nativeDeliveryNoteStatus('n.status', 'n.invoicing_status')} AS base, FALSE AS flagged_overdue,
@@ -539,6 +551,7 @@ function commonFilters(query: Query): string {
     filters.push(sql`(
       strip_accents(lower(COALESCE(number, ''))) LIKE ${pattern} ESCAPE '\\'
       OR strip_accents(lower(customer_name)) LIKE ${pattern} ESCAPE '\\'
+      OR strip_accents(lower(COALESCE(customer_references, ''))) LIKE ${pattern} ESCAPE '\\'
     )`);
   }
   if (query.from) filters.push(sql`sort_date >= CAST(${query.from} AS DATE)`);
@@ -550,14 +563,17 @@ function commonFilters(query: Query): string {
 }
 
 /** Columnas calificadas: sin `rows.` total y pending ordenarían por su alias de texto. */
-function orderBy(sort: Sort, dir: 'asc' | 'desc'): string {
+function orderBy(sort: Sort, dir: 'asc' | 'desc', kind: Query['kind']): string {
   const way = dir === 'asc' ? 'ASC' : 'DESC';
-  const tail = `rows.sort_date DESC, rows.number DESC NULLS LAST, rows.id DESC`;
+  const draftsFirst = kind === 'delivery_note'
+    ? `CASE WHEN rows.number IS NULL OR trim(rows.number) = '' THEN 0 ELSE 1 END, `
+    : '';
+  const tail = `${draftsFirst}rows.sort_date DESC, rows.number DESC NULLS LAST, rows.id DESC`;
   if (sort === 'number') return `lower(rows.number) ${way} NULLS LAST, ${tail}`;
   if (sort === 'customer') return `strip_accents(lower(rows.customer_name)) ${way}, ${tail}`;
   if (sort === 'total') return `rows.total ${way} NULLS LAST, ${tail}`;
   if (sort === 'pending') return `rows.pending ${way} NULLS LAST, ${tail}`;
-  return `rows.sort_date ${way}, rows.number ${way} NULLS LAST, rows.id ${way}`;
+  return `${draftsFirst}rows.sort_date ${way}, rows.number ${way} NULLS LAST, rows.id ${way}`;
 }
 
 function itemOf(row: Record<string, unknown>, query: Query): SalesDocumentItem {
@@ -585,7 +601,7 @@ function itemOf(row: Record<string, unknown>, query: Query): SalesDocumentItem {
     status_label: statusLabel(query.kind, status, query.direction),
     verifactu: oneOf(row.verifactu, VERIFACTU),
     delivery: oneOf(row.delivery, DELIVERIES),
-    api_path: apiPath(origin, query, id),
+    api_path: apiPath(origin, query, id, String(row.record ?? '')),
   };
 }
 
@@ -593,8 +609,8 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[]): T | nul
   return typeof value === 'string' && (allowed as readonly string[]).includes(value) ? value as T : null;
 }
 
-function apiPath(origin: Origin, query: Query, id: string): string {
-  if (origin === 'holded') return query.kind === 'invoice' ? `/v1/legacy/invoices/${id}` : `/v1/legacy/documents/${id}`;
+function apiPath(origin: Origin, query: Query, id: string, record: string): string {
+  if (origin === 'holded' && record !== 'billing') return query.kind === 'invoice' ? `/v1/legacy/invoices/${id}` : `/v1/legacy/documents/${id}`;
   if (query.kind === 'quote') return `/v1/quotes/${id}`;
   if (query.kind === 'delivery_note') return `/v1/delivery-notes/${id}`;
   return query.direction === 'purchase' ? `/v1/supplier-invoices/${id}` : `/v1/invoices/${id}`;

@@ -33,6 +33,8 @@ export interface ReportBody {
   totals: ReportMetrics;
   previous_totals: ReportMetrics | null;
   series: ReportPoint[];
+  /** Subtotales del periodo, una fila por sociedad visible. */
+  companies: { code: 'PO' | 'CVPO'; amount: string; base: string; tax: string; units: string; volume_ml: string }[];
 }
 
 export interface ReportScope {

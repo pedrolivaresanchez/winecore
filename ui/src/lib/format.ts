@@ -79,10 +79,10 @@ export function formatDateTime(value: Date | string | number): string {
   return spaces(dateTimeFormat.format(date));
 }
 
-/** Litros con 3 decimales: `1.234,500 L`. */
+/** Litros con 2 decimales en pantalla: `1.234,50 L`. El valor interno no se redondea aquí. */
 export function formatLitres(value: number): string {
   if (!Number.isFinite(value)) return "—";
-  return `${formatGrouped(value, 3)} L`;
+  return `${formatGrouped(value, 2)} L`;
 }
 
 /** Puntos porcentuales: `21 %`. */

@@ -1,5 +1,6 @@
 import { sql } from '../db/sql';
 import type { Writer } from '../db/writer';
+import { companyOf } from './companies';
 import { addYears, buildReport, foldDocuments, readLine } from './metrics';
 import type { ReportBody, ReportScope } from './types';
 
@@ -18,7 +19,70 @@ export async function salesReport(writer: Writer, scope: ReportScope): Promise<R
       'wine',
     )
     : null;
-  return buildReport('sales', scope, current, previous, null);
+  const body = buildReport('sales', scope, current, previous, null);
+  body.companies = await salesCompanies(writer, scope);
+  return body;
+}
+
+async function salesCompanies(writer: Writer, scope: ReportScope): Promise<ReportBody['companies']> {
+  const rows = await writer.read(sql`
+    WITH billing_docs AS (
+      SELECT e.code AS code, i.total AS amount, i.subtotal AS base, i.tax_total AS tax
+      FROM billing.invoice i
+      JOIN core.legal_entity e ON e.id = i.legal_entity_id
+      WHERE i.status = 'issued'
+        AND i.issue_date BETWEEN CAST(${scope.from} AS DATE) AND CAST(${scope.to} AS DATE)
+        AND ((${scope.po} = TRUE AND e.code = 'PO') OR (${scope.cvpo} = TRUE AND e.code = 'CVPO'))
+        AND NOT EXISTS (
+          SELECT 1
+          FROM billing.invoice_rectification r
+          JOIN billing.invoice rect ON rect.id = r.rectifying_invoice_id
+          WHERE r.relation = 'substituted'
+            AND rect.status = 'issued'
+            AND (
+              r.rectified_invoice_id = i.id
+              OR (
+                r.rectified_number = i.number
+                AND r.rectified_issue_date = i.issue_date
+                AND rect.legal_entity_id = i.legal_entity_id
+              )
+            )
+        )
+    ),
+    holded_docs AS (
+      SELECT e.code, h.total, h.subtotal, (h.vat + COALESCE(h.vat_2, 0))
+      FROM legacy.holded_invoice h
+      JOIN core.legal_entity e ON e.id = h.entity_id
+      WHERE h.kind = 'sale'
+        AND h.issue_date BETWEEN CAST(${scope.from} AS DATE) AND CAST(${scope.to} AS DATE)
+        AND ((${scope.po} = TRUE AND e.code = 'PO') OR (${scope.cvpo} = TRUE AND e.code = 'CVPO'))
+        AND lower(trim(h.status_holded)) NOT IN ('anulado', 'anulada', 'voided', 'cancelled', 'cancelada')
+        AND NOT EXISTS (
+          SELECT 1 FROM billing.invoice bi
+          WHERE bi.holded_invoice_id = h.id
+             OR (
+               bi.legal_entity_id = h.entity_id
+               AND bi.number = h.number
+               AND bi.issue_date = h.issue_date
+               AND bi.status IN ('issued', 'voided')
+             )
+        )
+    )
+    SELECT code,
+           CAST(COALESCE(sum(amount), 0) AS VARCHAR) AS amount,
+           CAST(COALESCE(sum(base), 0) AS VARCHAR) AS base,
+           CAST(COALESCE(sum(tax), 0) AS VARCHAR) AS tax,
+           '0' AS units,
+           '0' AS volume_ml
+    FROM (
+      SELECT * FROM billing_docs
+      UNION ALL
+      SELECT * FROM holded_docs
+    ) docs
+    GROUP BY code
+    ORDER BY code
+  `);
+  return rows.flatMap((row) => companyOf(row));
 }
 
 async function loadSales(writer: Writer, scope: ReportScope, from: string, to: string) {

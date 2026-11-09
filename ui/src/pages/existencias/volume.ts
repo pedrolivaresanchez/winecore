@@ -1,6 +1,6 @@
 import { formatInteger, formatLitres, formatPercent } from "@/lib/format";
 
-/** Litros con 3 decimales a partir de mililitros enteros. */
+/** Litros en pantalla, con 2 decimales, a partir de mililitros enteros. */
 export function formatMl(ml: number): string {
   if (!Number.isFinite(ml)) return "—";
   return formatLitres(ml / 1000);
@@ -71,9 +71,9 @@ export function parseUnits(text: string): number | null | undefined {
 
 export function litresText(ml: number): string {
   const negative = ml < 0;
-  const [whole, frac] = Math.abs(ml / 1000).toFixed(3).split(".");
+  const [whole, frac] = Math.abs(ml / 1000).toFixed(2).split(".");
   const grouped = (whole ?? "0").replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-  return `${negative ? "-" : ""}${grouped},${frac ?? "000"}`;
+  return `${negative ? "-" : ""}${grouped},${frac ?? "00"}`;
 }
 
 export function unitsText(units: number): string {

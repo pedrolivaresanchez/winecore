@@ -13,6 +13,7 @@ import {
   text,
   type Bucket,
 } from './metrics';
+import { companyOf } from './companies';
 import type { GroupBy, ReportBody, ReportScope } from './types';
 
 /**
@@ -30,7 +31,28 @@ export async function stockReport(writer: Writer, scope: ReportScope): Promise<R
     : scope.groupBy === 'year'
       ? scope.to.slice(0, 4)
       : null;
-  return buildReport('stock', scope, current, previous, closingKey);
+  const body = buildReport('stock', scope, current, previous, closingKey);
+  body.companies = await stockCompanies(writer, scope);
+  return body;
+}
+
+async function stockCompanies(writer: Writer, scope: ReportScope) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(scope.to)) return [];
+  const rows = await writer.read(`
+    SELECT e.code AS code,
+           '0.00' AS amount,
+           '0.00' AS base,
+           '0.00' AS tax,
+           CAST(COALESCE(sum(m.qty_units), 0) AS VARCHAR) AS units,
+           CAST(COALESCE(sum(m.volume_ml), 0) AS VARCHAR) AS volume_ml
+    FROM inventory.stock_move m
+    JOIN core.legal_entity e ON e.id = m.owner_entity_id
+    WHERE CAST(m.occurred_at AT TIME ZONE 'Europe/Madrid' AS DATE) <= DATE '${scope.to}'
+      AND ((${scope.po ? 'TRUE' : 'FALSE'} = TRUE AND e.code = 'PO') OR (${scope.cvpo ? 'TRUE' : 'FALSE'} = TRUE AND e.code = 'CVPO'))
+    GROUP BY e.code
+    ORDER BY e.code
+  `);
+  return rows.flatMap((row) => companyOf(row));
 }
 
 async function loadStock(writer: Writer, scope: ReportScope, from: string, to: string): Promise<Map<string, Bucket>> {

@@ -9,7 +9,7 @@ import { downloadCsv, type CsvValue } from '@/lib/csv'
 import { iconStroke } from '@/lib/motion'
 import { allows } from '@/lib/permissions'
 import { entityTone, type StatusTone } from '@/lib/status-tones'
-import type { Me } from '@/lib/types'
+import type { EntityChoice, Me } from '@/lib/types'
 import { toBalance, toFiscal, toMaterial, type MaterialRow } from '@/pages/existencias/adapt'
 import { balanceKey, balancesPath, fiscalBalancesPath, materialsStockPath, ownerEntityId, type FiscalBalance, type StockBalance } from '@/pages/existencias/api'
 import { BookControl } from '@/pages/existencias/components/BookControl'
@@ -21,7 +21,7 @@ import { filterBalances, filterFiscal } from '@/pages/existencias/filters'
 import { GRID_LABELS } from '@/pages/existencias/grid'
 import { PRODUCT_STATES, classLabel, productLabel, stateLabel } from '@/pages/existencias/labels'
 import { assignParams } from '@/pages/existencias/query'
-import { summarizeFiscal, summarizePhysical } from '@/pages/existencias/summarize'
+import { summarizeByOwner, summarizeFiscal, summarizeFiscalByEntity, summarizePhysical } from '@/pages/existencias/summarize'
 import { STOCK_EPOCH_ISO, isBeforeStockEpoch, madridInputToIso } from '@/pages/existencias/time'
 import { useHiddenColumns } from '@/pages/existencias/use-hidden'
 import { asApiError, usePagedList } from '@/pages/existencias/use-list'
@@ -36,6 +36,7 @@ import {
   GlassMenu,
   MenuItem,
   Pagination,
+  SegmentedControl,
   StatusPill,
   useGridFilterLink,
   useLocalPages,
@@ -115,7 +116,7 @@ export function StockPage({ me }: { me: Me }) {
   const toast = useToast()
   const more = useMenuOpen()
   const gridFilters = useGridFilterLink()
-  const { filter, entities } = useEntity()
+  const { filter, setFilter: setCompany, entities } = useEntity()
   const { catalog } = useCatalog(entities)
   const ownerId = ownerEntityId(filter, entities)
   const [params, setParams] = useSearchParams()
@@ -205,6 +206,8 @@ export function StockPage({ me }: { me: Me }) {
   )
   const stats = useMemo(() => summarizePhysical(physicalRows), [physicalRows])
   const fiscalStats = useMemo(() => summarizeFiscal(fiscalRows), [fiscalRows])
+  const byOwner = useMemo(() => summarizeByOwner(physicalRows), [physicalRows])
+  const byEntity = useMemo(() => summarizeFiscalByEntity(fiscalRows), [fiscalRows])
   const locations = useMemo(
     () => [...catalog.locations.values()].map((place) => [place.id, `${place.code} · ${place.name}`] as const),
     [catalog],
@@ -370,15 +373,23 @@ export function StockPage({ me }: { me: Me }) {
 
   if (!allows(me, 'inventory.read')) return <NoPermission />
 
+  const companyLine = (rows: { code: string; volume: string }[]) =>
+    rows.length > 1 ? rows.map((row) => `${row.code} ${row.volume}`).join(' · ') : ''
   const summary = materials
     ? null
     : book === 'physical'
-      ? [copy.stock.bulk, formatMl(stats.bulkMl), ...stats.formats.map((item) => `${item.label} ${formatUnits(item.units)} ${copy.stock.units}`)].join(' · ')
+      ? [
+          copy.stock.bulk,
+          formatMl(stats.bulkMl),
+          ...stats.formats.map((item) => `${item.label} ${formatUnits(item.units)} ${copy.stock.units}`),
+          companyLine(byOwner.map((row) => ({ code: row.code, volume: formatMl(row.bulkMl) }))),
+        ].filter(Boolean).join(' · ')
       : [
           `${copy.stock.bulk} ${formatMl(fiscalStats.bulk.volumeMl)}`,
           `${copy.stock.bulkWood} ${formatMl(fiscalStats.bulk_wood.volumeMl)}`,
           `${copy.stock.packaged} ${formatUnits(fiscalStats.packaged.units)} ${copy.stock.units}`,
-        ].join(' · ')
+          companyLine(byEntity.map((row) => ({ code: row.code, volume: formatMl(row.volumeMl) }))),
+        ].filter(Boolean).join(' · ')
 
   const kinds = (
     <>
@@ -426,6 +437,17 @@ export function StockPage({ me }: { me: Me }) {
           controls={
             <>
               <BookControl value={book} onChange={(value) => assign({ book: value === 'physical' ? null : value, cat: null, state: null, location: null })} />
+              <SegmentedControl<EntityChoice>
+                size="sm"
+                aria-label={copy.stock.company}
+                value={filter}
+                onChange={setCompany}
+                options={[
+                  { value: 'all', content: copy.entity.both },
+                  { value: 'PO', content: copy.entity.po },
+                  { value: 'CVPO', content: copy.entity.cvpo },
+                ]}
+              />
               <DatePicker
                 size="sm"
                 withTime
