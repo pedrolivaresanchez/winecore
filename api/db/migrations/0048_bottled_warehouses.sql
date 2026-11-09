@@ -3,7 +3,10 @@
 -- La foto es del 09/11/2026. El script de carga inserta los saldos; esta migración no los escribe.
 -- No se aplica sola a producción.
 
-ALTER TABLE catalog.product ADD COLUMN for_sale BOOLEAN DEFAULT TRUE;
+-- La KB de Timbal rechaza ADD COLUMN ... DEFAULT dentro de la transacción de migrate.ts.
+ALTER TABLE catalog.product ADD COLUMN for_sale BOOLEAN;
+UPDATE catalog.product SET for_sale = TRUE;
+ALTER TABLE catalog.product ALTER COLUMN for_sale SET DEFAULT TRUE;
 
 -- Hueco físico de una línea del Excel (nicho, caja, jaulón o palet).
 -- opened_* es la foto. El saldo vivo es la suma de cellar.bottled_move.
