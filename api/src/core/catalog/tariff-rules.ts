@@ -35,7 +35,8 @@ const CHANNELS = [
 /** Líneas comunes de los PDF 2026. El precio de Demorado cambia; la añada no. */
 const SHARED: Omit<TariffLine, 'list' | 'price'>[] = [
   { wine: 'Jaén Tinta', vintage: 2024, vintageLabel: '2024', currency: 'EUR', lot: 'EJT2024', formatMl: 750, pdfVintage: 2024 },
-  { wine: 'ECLO', vintage: 2022, vintageLabel: '2022', currency: 'EUR', lot: null, formatMl: 750, pdfVintage: 2022 },
+  // 2022 está agotado. El PDF imprime 2022; la tarifa 2026 es la añada 2024, lote EE2024.
+  { wine: 'ECLO', vintage: 2024, vintageLabel: '2024', currency: 'EUR', lot: 'EE2024', formatMl: 750, pdfVintage: 2022 },
   { wine: 'enTreDicho', vintage: 2021, vintageLabel: '2021-22', currency: 'EUR', lot: 'E202122', formatMl: 750, pdfVintage: null },
   { wine: 'Nebbia', vintage: 2022, vintageLabel: '2022', currency: 'EUR', lot: 'ENB2022', formatMl: 750, pdfVintage: 2022 },
   { wine: 'Apañao', vintage: 2024, vintageLabel: '2024', currency: 'EUR', lot: null, formatMl: 750, pdfVintage: 2024 },
