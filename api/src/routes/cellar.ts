@@ -11,6 +11,7 @@ import {
 import {
   getLotRoute,
   listLotRoute,
+  updateLotRoute,
   lotAdditionsRoute,
   lotAnalysesRoute,
   lotMovesRoute,
@@ -76,6 +77,7 @@ export function cellarRoutes(deps: { writer: Writer; guard: GuardDeps; publicUrl
     .get('/v1/lots/:code/additions', ({ request, params }) => lotAdditionsRoute(writer, request, params.code), read)
     .get('/v1/lots/:code/sales', ({ request, params }) => lotSalesRoute(writer, request, params.code), read)
     .get('/v1/lots/:code', ({ request, params }) => getLotRoute(writer, request, params.code), read)
+    .patch('/v1/lots/:code', ({ request, params }) => updateLotRoute(writer, request, params.code), operate)
     .get('/v1/cellar-operations', ({ request }) => listOperationRoute(writer, request), read)
     .post('/v1/cellar-operations', async ({ request, set }) => {
       const created = await createOperationRoute(writer, request);

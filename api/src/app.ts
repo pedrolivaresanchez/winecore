@@ -188,7 +188,7 @@ import {
 import { salesRoutes } from './routes/sales';
 import { getSalesDocuments } from './routes/sales-documents';
 import { SALES_DOCUMENTS_READ } from './core/sales-documents/list';
-import { disposeBottled, stockBalances, stockFiscalBalances, stockInspection, stockMoves, stockWarehouses, unlabeledBottles } from './routes/stock';
+import { correctBottled, disposeBottled, stockBalances, stockFiscalBalances, stockInspection, stockMoves, stockWarehouses, unlabeledBottles } from './routes/stock';
 import { listRegulatoryObligations, postSyncObligations } from './routes/regulatory-obligations';
 import {
   getRegulatorySubmission,
@@ -690,6 +690,9 @@ export function createApp(deps: AppDeps) {
     })
     .get('/v1/stock/warehouses', () => stockWarehouses(deps.writer), {
       beforeHandle: requirePermission(guardDeps, 'inventory.read'),
+    })
+    .patch('/v1/stock/bottled-placements/:id', ({ request, params }) => correctBottled(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.count'),
     })
     .post('/v1/stock/bottled-placements/:id/dispose', ({ request, params }) => disposeBottled(deps.writer, request, params.id), {
       beforeHandle: requirePermission(guardDeps, 'inventory.count'),

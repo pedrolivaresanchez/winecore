@@ -2,6 +2,8 @@ import { sql } from '../../db/sql';
 import type { Writer } from '../../db/writer';
 import { DomainError, domainError } from '../../errors';
 import {
+  actorFor,
+  auditUpdate,
   boolOf,
   countOf,
   decodeOpCursor,
@@ -12,6 +14,7 @@ import {
   oneOf,
   optionalUuid,
   parseLimit,
+  readJson,
   slicePage,
   textOf,
   textOrNull,
@@ -135,6 +138,140 @@ export async function getLot(writer: Writer, request: Request, code: string): Pr
     descendants,
     positions,
   };
+}
+
+export async function updateLot(writer: Writer, request: Request, code: string): Promise<LotView> {
+  if (!LOT_CODE.test(code)) throw domainError('WC_NOT_FOUND');
+  const body = await readJson(request);
+  const nextCode = typeof body.code === 'string' ? body.code.trim().toUpperCase() : '';
+  if (!LOT_CODE.test(nextCode)) invalid({ code: 'Mayúsculas, números y . / -' });
+  const vintage = vintageOf(body.vintage);
+  const productId = body.product_id === undefined || body.product_id === null || body.product_id === ''
+    ? null
+    : optionalUuid(body.product_id, 'product_id');
+  const user = actorFor(request, 'corrección de lote');
+  let saved = nextCode;
+  const prepared = await writer.withWrite(user, async (tx) => {
+    const rows = await tx.read<Record<string, unknown>>(sql`
+      SELECT id::VARCHAR AS id, producer_entity_id::VARCHAR AS producer, code,
+             wine_id::VARCHAR AS wine_id, vintage
+      FROM inventory.lot WHERE code = ${code}
+    `);
+    if (rows.length === 0) throw domainError('WC_NOT_FOUND');
+    if (rows.length > 1) {
+      throw new DomainError('WC_VALIDATION', 422, 'Hay varios lotes con este código', { code: 'Código repetido' });
+    }
+    const row = rows[0];
+    if (!row) throw domainError('WC_NOT_FOUND');
+    const id = textOf(row.id);
+    const producer = textOf(row.producer);
+    let wineId: string | null = null;
+    if (productId) {
+      const products = await tx.read<{ wine_id: string | null; kind: string; active: boolean }>(sql`
+        SELECT wine_id::VARCHAR AS wine_id, kind, is_active AS active
+        FROM catalog.product WHERE id = CAST(${productId} AS UUID)
+      `);
+      const product = products[0];
+      if (!product || product.active !== true) invalid({ product_id: 'Ese producto no existe' });
+      if (product.kind !== 'wine') invalid({ product_id: 'El lote se asigna a un vino' });
+      if (!product.wine_id) invalid({ product_id: 'Ese producto no tiene vino' });
+      wineId = product.wine_id.toLowerCase();
+    }
+    if (nextCode !== textOf(row.code)) {
+      const clash = await tx.read<{ id: string }>(sql`
+        SELECT id::VARCHAR AS id FROM inventory.lot
+        WHERE producer_entity_id = CAST(${producer} AS UUID) AND code = ${nextCode}
+          AND id <> CAST(${id} AS UUID)
+      `);
+      if (clash[0]) invalid({ code: 'Ya hay un lote con ese código' });
+    }
+    const before = {
+      code: textOf(row.code),
+      vintage: row.vintage == null ? null : intOf(row.vintage),
+      wine_id: textOrNull(row.wine_id),
+    };
+    const after = { code: nextCode, vintage, wine_id: wineId, product_id: productId };
+    const parked = await parkLot(tx, id);
+    return { id, before, after, parked };
+  });
+  try {
+    await writer.withWrite(user, async (tx) => {
+      auditUpdate(tx, 'inventory.lot', prepared.id, prepared.before, prepared.after, sql`
+        UPDATE inventory.lot SET
+          code = ${nextCode},
+          vintage = ${vintage},
+          wine_id = CASE WHEN ${prepared.after.wine_id} IS NULL THEN NULL ELSE CAST(${prepared.after.wine_id} AS UUID) END
+        WHERE id = CAST(${prepared.id} AS UUID)
+      `);
+      restoreLot(tx, prepared.id, prepared.parked);
+    });
+  } catch (error) {
+    await writer.withWrite(user, async (tx) => restoreLot(tx, prepared.id, prepared.parked));
+    throw error;
+  }
+  saved = nextCode;
+  return getLot(writer, request, saved);
+}
+
+type ParkedLot = {
+  stock: string[];
+  fiscal: string[];
+  counts: string[];
+  edges: { child: string; parent: string; operation: string; volume: number; mass: number }[];
+};
+
+async function parkLot(tx: { read: Writer['read']; write: (sql: string) => void }, id: string): Promise<ParkedLot> {
+  const stock = await tx.read<{ id: string }>(sql`SELECT id::VARCHAR AS id FROM inventory.stock_move WHERE lot_id = CAST(${id} AS UUID)`);
+  const fiscal = await tx.read<{ id: string }>(sql`SELECT id::VARCHAR AS id FROM inventory.fiscal_move WHERE lot_id = CAST(${id} AS UUID)`);
+  const counts = await tx.read<{ id: string }>(sql`SELECT id::VARCHAR AS id FROM inventory.inventory_count_line WHERE lot_id = CAST(${id} AS UUID)`);
+  const edges = await tx.read<Record<string, unknown>>(sql`
+    SELECT child_lot_id::VARCHAR AS child, parent_lot_id::VARCHAR AS parent, operation_id::VARCHAR AS operation,
+           volume_ml::VARCHAR AS volume, mass_g::VARCHAR AS mass
+    FROM inventory.lot_edge
+    WHERE child_lot_id = CAST(${id} AS UUID) OR parent_lot_id = CAST(${id} AS UUID)
+  `);
+  if (stock.length > 0) tx.write(sql`UPDATE inventory.stock_move SET lot_id = NULL WHERE lot_id = CAST(${id} AS UUID)`);
+  if (fiscal.length > 0) tx.write(sql`UPDATE inventory.fiscal_move SET lot_id = NULL WHERE lot_id = CAST(${id} AS UUID)`);
+  if (counts.length > 0) tx.write(sql`UPDATE inventory.inventory_count_line SET lot_id = NULL WHERE lot_id = CAST(${id} AS UUID)`);
+  if (edges.length > 0) {
+    tx.write(sql`DELETE FROM inventory.lot_edge WHERE child_lot_id = CAST(${id} AS UUID) OR parent_lot_id = CAST(${id} AS UUID)`);
+  }
+  return {
+    stock: stock.map((row) => row.id),
+    fiscal: fiscal.map((row) => row.id),
+    counts: counts.map((row) => row.id),
+    edges: edges.map((row) => ({
+      child: textOf(row.child),
+      parent: textOf(row.parent),
+      operation: textOf(row.operation),
+      volume: intOf(row.volume),
+      mass: intOf(row.mass),
+    })),
+  };
+}
+
+function restoreLot(tx: { write: (sql: string) => void }, id: string, parked: ParkedLot): void {
+  for (const row of parked.stock) tx.write(sql`UPDATE inventory.stock_move SET lot_id = CAST(${id} AS UUID) WHERE id = CAST(${row} AS UUID)`);
+  for (const row of parked.fiscal) tx.write(sql`UPDATE inventory.fiscal_move SET lot_id = CAST(${id} AS UUID) WHERE id = CAST(${row} AS UUID)`);
+  for (const row of parked.counts) tx.write(sql`UPDATE inventory.inventory_count_line SET lot_id = CAST(${id} AS UUID) WHERE id = CAST(${row} AS UUID)`);
+  for (const edge of parked.edges) {
+    tx.write(sql`
+      INSERT INTO inventory.lot_edge (child_lot_id, parent_lot_id, operation_id, volume_ml, mass_g)
+      VALUES (
+        CAST(${edge.child} AS UUID), CAST(${edge.parent} AS UUID), CAST(${edge.operation} AS UUID),
+        ${edge.volume}, ${edge.mass}
+      )
+    `);
+  }
+}
+
+function vintageOf(value: unknown): number | null {
+  if (value === undefined || value === null || value === '') return null;
+  const text = typeof value === 'number' ? String(value) : typeof value === 'string' ? value.trim() : '';
+  if (!/^\d{4}$/.test(text)) invalid({ vintage: 'La añada es un año' });
+  const year = Number(text);
+  if (year < 1990 || year > 2100) invalid({ vintage: 'La añada está entre 1990 y 2100' });
+  return year;
 }
 
 async function wineNameOf(writer: Writer, wineId: string): Promise<string | null> {
