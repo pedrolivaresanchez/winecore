@@ -7,7 +7,8 @@ import {
   type ApprovalReview,
 } from '../billing/approval';
 import { postInvoiceFiscalExits } from '../billing/fiscal-exit';
-import { onInvoiceIssued } from '../billing/issued';
+import { onInvoiceIssued, onInvoiceVoided } from '../billing/issued';
+import { deductInvoicedBottles, reverseInvoiceStock } from '../inventory/bottled-ledger';
 import { sql } from '../db/sql';
 import type { Tx } from '../db/writer';
 import { domainError } from '../errors';
@@ -22,7 +23,26 @@ export function installIntegrations(): void {
   installed = true;
   setBillingApprovalHook({ review: reviewWithApprovals });
   setRemittanceApproval(remittanceApproval);
-  onInvoiceIssued(postInvoiceFiscalExits);
+  onInvoiceIssued(async (tx, invoice) => {
+    await postInvoiceFiscalExits(tx, invoice);
+    await deductInvoicedBottles(tx, {
+      invoiceId: invoice.id,
+      number: invoice.number,
+      entityCode: invoice.entityCode,
+      issueDate: invoice.issueDate,
+      actorId: 'invoice-issue',
+      lines: invoice.lines.map((line) => ({
+        id: line.id,
+        productId: line.productId,
+        lotId: line.lotId,
+        quantity: line.quantity,
+        deliveryNoteLineId: line.deliveryNoteLineId,
+      })),
+    });
+  });
+  onInvoiceVoided(async (tx, invoice) => {
+    await reverseInvoiceStock(tx, invoice.id, invoice.voidedAt, 'invoice-void');
+  });
 }
 
 async function reviewWithApprovals(tx: Tx, need: ApprovalNeed, now: Date): Promise<ApprovalReview> {

@@ -50,6 +50,7 @@ import {
 } from '@/pages/ventas/chrome'
 import { DeliveryFromOrder, ReasonDialog } from '@/pages/ventas/dialogs'
 import { LineEditor } from '@/pages/ventas/lines'
+import { TariffSelect } from '@/pages/ventas/tariff-select'
 import { ShippingFields } from '@/pages/ventas/shipping'
 import { referencesPayload, shipToDraftOf, shipToPayload, shippingRows, type ShipToDraft } from '@/lib/shipping'
 
@@ -84,6 +85,7 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
   const [editing, setEditing] = useState(false)
   const [lines, setLines] = useState<DraftLine[]>(() => draftsFrom(order.lines))
   const [channel, setChannel] = useState(order.channel)
+  const [priceListId, setPriceListId] = useState('')
   const [notesText, setNotesText] = useState(order.notes ?? '')
   const [incoterm, setIncoterm] = useState(order.incoterm ?? '')
   const [orderDate, setOrderDate] = useState(order.order_date)
@@ -106,6 +108,7 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
     customerId: order.customer_id,
     channel,
     date: orderDate || todayMadrid(),
+    priceListId: priceListId || undefined,
   })
   const products = mergeProducts(offer.products, aliases)
   const places = offer.locations.length > 0 ? offer.locations : catalog.locations
@@ -122,12 +125,12 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
     if (!line.productId || !(Number(line.quantity) > 0)) return
     const stamp = crypto.randomUUID()
     stamps.current[line.key] = stamp
-    getPriceQuote({ customerId: order.customer_id, productId: line.productId, qty: line.quantity, date: orderDate, channel })
+    getPriceQuote({ customerId: order.customer_id, productId: line.productId, qty: line.quantity, date: orderDate, channel, priceListId: priceListId || undefined })
       .then((hit) => {
         if (stamps.current[line.key] !== stamp) return
         setLines((current) =>
           current.map((item) =>
-            item.key === line.key ? { ...item, quoted: hit.unit_price, unitPrice: item.touched ? item.unitPrice : hit.unit_price } : item,
+            item.key === line.key ? { ...item, quoted: hit.unit_price, gross: hit.gross_unit_price ?? null, unitPrice: item.touched ? item.unitPrice : hit.unit_price } : item,
           ),
         )
       })
@@ -292,6 +295,7 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
                   ))}
                 </Select>
               </Field>
+              <TariffSelect id="tarifa-pedido" value={priceListId} onChange={setPriceListId} />
               <Field id="fecha-pedido" label={copy.sales.orderDate}>
                 <DatePicker value={orderDate} onChange={(next) => setOrderDate(next ?? todayMadrid())} labels={DATE_LABELS} timeZone="Europe/Madrid" />
               </Field>

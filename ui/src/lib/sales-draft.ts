@@ -8,6 +8,8 @@ export type DraftLine = {
   discount: string
   unitPrice: string
   quoted: string | null
+  /** PVP with VAT, when the chosen tariff stores a gross price. */
+  gross: string | null
   reason: string
   touched: boolean
   taxCode: string
@@ -25,6 +27,7 @@ export function blankLine(): DraftLine {
     discount: '0',
     unitPrice: '',
     quoted: null,
+    gross: null,
     reason: '',
     touched: false,
     taxCode: '',
@@ -44,6 +47,7 @@ export function draftsFrom(lines: SalesLine[]): DraftLine[] {
     discount: trimQty(line.discount_pct),
     unitPrice: line.unit_price ?? '',
     quoted: line.unit_price,
+    gross: null,
     reason: '',
     touched: false,
     taxCode: line.tax_code ?? '',

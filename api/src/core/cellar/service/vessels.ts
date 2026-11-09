@@ -303,6 +303,9 @@ export async function vesselHistory(writer: Writer, _request: Request, code: str
     WHERE vessel_id = CAST(${row.id} AS UUID) AND source_table = 'cellar.operation'
     UNION
     SELECT operation_id FROM cellar.cleaning_record WHERE vessel_id = CAST(${row.id} AS UUID)
+    UNION
+    SELECT id FROM cellar.operation
+    WHERE json_extract_string(details, '$.focus_vessel_id') = ${row.id}
   )`];
   const where = filters.join(' AND ');
   const page = [...filters];

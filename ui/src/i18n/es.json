@@ -1601,6 +1601,7 @@
   },
   "stock": {
     "title": "Existencias",
+    "warehouses": "Almacenes",
     "moves": "Movimientos",
     "counts": "Aforos",
     "inspection": "Informe de inspección",
@@ -1733,6 +1734,9 @@
     "emptyOrdersHint": "Confirma un pedido para poder servirlo.",
     "customer": "Cliente",
     "channel": "Canal",
+    "tariffAsk": "Tarifa",
+    "tariffDefault": "La del cliente",
+    "tariffGross": "PVP {gross} con IVA. Base {base}. IVA {vat}.",
     "status": "Estado",
     "date": "Fecha",
     "total": "Total",

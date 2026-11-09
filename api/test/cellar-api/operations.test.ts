@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'bun:test';
+import { newId } from '../../src/core/ids';
+import { sql } from '../../src/core/db/sql';
 import { createTestApp } from '../helpers';
 import { call, counts, entityId, seedHolding, seedWarehouse } from './fixtures';
 
@@ -474,6 +476,170 @@ describe('operaciones de bodega', () => {
       expect(missing.status).toBe(409);
       expect(missing.body.code).toBe('WC010');
       expect(await counts(ctx)).toEqual(before);
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  it('filtra, etiqueta, recibe granel y deja la revisión en el depósito', async () => {
+    const ctx = await createTestApp();
+    try {
+      const cellar = await world(ctx);
+      const empty = await call(ctx, 'POST', '/v1/vessels', {
+        code: 'INOX-02',
+        name: 'Depósito vacío',
+        kind: 'tank_storage',
+        capacity_ml: 8_000_000,
+        material: 'stainless_steel',
+        location_id: cellar.locationId,
+        zone: 'Nave 1',
+      });
+      expect(empty.status).toBe(201);
+      const filtered = await call(ctx, 'POST', '/v1/cellar-operations', {
+        op_type: 'filtration',
+        legal_entity_id: cellar.po,
+        occurred_at: '2026-06-15T09:00:00Z',
+        fiscal_date: '2026-06-15',
+        performed_by: 'Operario sintético',
+        lines: [
+          { role: 'input', lot_id: cellar.lotId, vessel_id: cellar.tankId, volume_ml: 300_000, product_state: 'wine' },
+          { role: 'output', lot_id: cellar.lotId, vessel_id: String(empty.body.id), volume_ml: 300_000, product_state: 'wine' },
+        ],
+      }, 'bodega@winecore.test');
+      expect(filtered.status).toBe(201);
+      const filteredOk = await call(ctx, 'POST', `/v1/cellar-operations/${filtered.body.id}/confirm`, undefined, 'bodega@winecore.test');
+      expect(filteredOk.status).toBe(200);
+
+      const bought = await call(ctx, 'POST', '/v1/cellar-operations', {
+        op_type: 'bulk_reception',
+        legal_entity_id: cellar.po,
+        occurred_at: '2026-06-16T09:00:00Z',
+        fiscal_date: '2026-06-16',
+        performed_by: 'Operario sintético',
+        vessel_id: cellar.barrelId,
+        volume_ml: 200_000,
+        product_state: 'wine',
+        lot_code: 'L26COMPRA',
+        vintage: 2026,
+        is_organic: true,
+        excise_product_key: 'CRIANZA-TINTO',
+        abv_pct: '13.50',
+      }, 'bodega@winecore.test');
+      expect(bought.status).toBe(201);
+      const boughtOk = await call(ctx, 'POST', `/v1/cellar-operations/${bought.body.id}/confirm`, undefined, 'bodega@winecore.test');
+      expect(boughtOk.status).toBe(200);
+      const fiscal = boughtOk.body.fiscal_moves as { move_type: string }[];
+      expect(fiscal.map((row) => row.move_type)).toContain('bulk_receipt');
+
+      const productId = newId();
+      const bottledLot = newId();
+      const opening = newId();
+      const placement = newId();
+      await ctx.writer.withWrite({ type: 'system', id: 'cellar-test', requestId: newId() }, async (tx) => {
+        tx.write(sql`
+          INSERT INTO catalog.product (id, sku, name, kind, unit, is_stock_tracked, requires_lot)
+          VALUES (CAST(${productId} AS UUID), ${'B075FLUJO'}, ${'Botella de prueba'}, ${'wine'}, ${'ud'}, TRUE, TRUE)
+        `);
+        tx.write(sql`
+          INSERT INTO inventory.lot (id, producer_entity_id, code, kind, vintage, is_organic, status, origin)
+          VALUES (
+            CAST(${bottledLot} AS UUID), CAST(${cellar.po} AS UUID), ${'B26JAULON'}, ${'bottled'},
+            2026, TRUE, ${'active'}, ${'operation'}
+          )
+        `);
+        tx.write(sql`
+          INSERT INTO inventory.stock_move (
+            id, occurred_at, move_type, location_id, owner_entity_id, lot_id, product_id, product_state,
+            qty_units, volume_ml, mass_g, source_table, source_id, created_by
+          ) VALUES (
+            CAST(${opening} AS UUID),
+            CAST(${'2026-06-01T06:00:00Z'} AS TIMESTAMPTZ),
+            ${'opening'},
+            CAST(${cellar.locationId} AS UUID),
+            CAST(${cellar.po} AS UUID),
+            CAST(${bottledLot} AS UUID),
+            CAST(${productId} AS UUID),
+            ${'packaged_unlabeled'},
+            40,
+            30000,
+            0,
+            ${'inventory.inventory_count'},
+            CAST(${opening} AS UUID),
+            ${'cellar-test'}
+          )
+        `);
+        tx.write(sql`
+          INSERT INTO cellar.bottled_placement (
+            id, location_id, slot_kind, slot_code, line_no, wine_label, lot_id, product_id,
+            owner_entity_id, opened_bottles, bottle_ml, opened_volume_ml, product_state, not_for_sale,
+            match_status, source_sheet, source_row, photo_date
+          ) VALUES (
+            CAST(${placement} AS UUID), CAST(${cellar.locationId} AS UUID), 'jaulon', 'JAU-01', 1, 'Jaulón',
+            CAST(${bottledLot} AS UUID), CAST(${productId} AS UUID), CAST(${cellar.po} AS UUID),
+            40, 750, 30000, 'packaged_unlabeled', FALSE, 'matched', 'test', 1, DATE '2026-11-09'
+          )
+        `);
+        tx.write(sql`
+          INSERT INTO cellar.bottled_move (
+            id, occurred_at, placement_id, qty_units, volume_ml, move_type, lot_id, source_table, source_id, created_by
+          ) VALUES (
+            CAST(${newId()} AS UUID), TIMESTAMPTZ '2026-06-01 08:00:00+02', CAST(${placement} AS UUID),
+            40, 30000, 'opening', CAST(${bottledLot} AS UUID), 'cellar.bottled_placement', CAST(${placement} AS UUID), 'cellar-test'
+          )
+        `);
+      });
+      const labeled = await call(ctx, 'POST', '/v1/cellar-operations', {
+        op_type: 'labeling',
+        legal_entity_id: cellar.po,
+        occurred_at: '2026-06-17T09:00:00Z',
+        fiscal_date: '2026-06-17',
+        performed_by: 'Operario sintético',
+        lines: [
+          {
+            role: 'input', lot_id: bottledLot, location_id: cellar.locationId, owner_entity_id: cellar.po,
+            product_id: productId, product_state: 'packaged_unlabeled', qty_units: 40, volume_ml: 30_000, nominal_volume_ml: 750,
+          },
+          {
+            role: 'output', location_id: cellar.locationId, lot_id: bottledLot, product_id: productId,
+            product_state: 'packaged_labeled', qty_units: 40, volume_ml: 30_000, nominal_volume_ml: 750,
+          },
+        ],
+      }, 'bodega@winecore.test');
+      expect(labeled.status, JSON.stringify(labeled.body)).toBe(201);
+      const labeledOk = await call(ctx, 'POST', `/v1/cellar-operations/${labeled.body.id}/confirm`, undefined, 'bodega@winecore.test');
+      expect(labeledOk.status, JSON.stringify(labeledOk.body)).toBe(200);
+      const moves = labeledOk.body.stock_moves as { product_state: string; qty_units: number }[];
+      expect(moves).toEqual([]);
+      expect(labeledOk.body.fiscal_moves).toEqual([]);
+      const map = await ctx.writer.read<{ code: string; state: string; bottles: string }>(sql`
+        SELECT p.slot_code AS code, p.product_state AS state, coalesce(sum(m.qty_units), 0)::VARCHAR AS bottles
+        FROM cellar.bottled_placement p
+        LEFT JOIN cellar.bottled_move m ON m.placement_id = p.id
+        WHERE p.lot_id = CAST(${bottledLot} AS UUID)
+        GROUP BY p.slot_code, p.product_state
+      `);
+      expect(map.find((row) => row.code === 'JAU-01')?.bottles).toBe('0');
+      expect(map.some((row) => row.state === 'packaged_labeled' && row.bottles === '40')).toBe(true);
+
+      const sample = await call(ctx, 'POST', '/v1/cellar-operations', {
+        op_type: 'sampling',
+        legal_entity_id: cellar.po,
+        occurred_at: '2026-06-18T09:00:00Z',
+        performed_by: 'Operario sintético',
+        vessel_id: cellar.tankId,
+        lot_id: cellar.lotId,
+        sampled_at: '2026-06-18T09:00:00Z',
+        sample_code: 'M-REV-01',
+        destination: 'internal',
+      }, 'bodega@winecore.test');
+      expect(sample.status).toBe(201);
+      const sampleOk = await call(ctx, 'POST', `/v1/cellar-operations/${sample.body.id}/confirm`, undefined, 'bodega@winecore.test');
+      expect(sampleOk.status).toBe(200);
+      const history = await call(ctx, 'GET', '/v1/vessels/INOX-01/history?limit=20', undefined, 'bodega@winecore.test');
+      expect(history.status).toBe(200);
+      const kinds = (history.body.items as { op_type: string }[]).map((row) => row.op_type);
+      expect(kinds).toContain('sampling');
+      expect(kinds).toContain('filtration');
     } finally {
       await ctx.close();
     }

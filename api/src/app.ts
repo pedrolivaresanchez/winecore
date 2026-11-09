@@ -188,7 +188,7 @@ import {
 import { salesRoutes } from './routes/sales';
 import { getSalesDocuments } from './routes/sales-documents';
 import { SALES_DOCUMENTS_READ } from './core/sales-documents/list';
-import { stockBalances, stockFiscalBalances, stockInspection, stockMoves } from './routes/stock';
+import { disposeBottled, stockBalances, stockFiscalBalances, stockInspection, stockMoves, stockWarehouses, unlabeledBottles } from './routes/stock';
 import { listRegulatoryObligations, postSyncObligations } from './routes/regulatory-obligations';
 import {
   getRegulatorySubmission,
@@ -684,6 +684,15 @@ export function createApp(deps: AppDeps) {
     // Existencias (stock): saldos, informe, movimientos y aforos.
     .get('/v1/stock/balances', ({ request }) => stockBalances(deps.writer, request), {
       beforeHandle: requirePermission(guardDeps, 'inventory.read'),
+    })
+    .get('/v1/stock/unlabeled', () => unlabeledBottles(deps.writer), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.read'),
+    })
+    .get('/v1/stock/warehouses', () => stockWarehouses(deps.writer), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.read'),
+    })
+    .post('/v1/stock/bottled-placements/:id/dispose', ({ request, params }) => disposeBottled(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.count'),
     })
     .get('/v1/stock/fiscal-balances', ({ request }) => stockFiscalBalances(deps.writer, request), {
       beforeHandle: requirePermission(guardDeps, 'inventory.read'),

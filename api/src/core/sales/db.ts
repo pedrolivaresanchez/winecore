@@ -247,6 +247,7 @@ export type ProductRow = {
   wine_id: string | null;
   requires_lot: boolean;
   is_stock_tracked: boolean;
+  for_sale: boolean;
   is_active: boolean;
   default_tax_code: string | null;
   gtin: string | null;
@@ -257,7 +258,7 @@ export type ProductRow = {
 export async function loadProduct(tx: Tx, id: string): Promise<ProductRow> {
   const rows = await tx.read<Record<string, unknown>>(sql`
     SELECT p.id, p.sku, p.name, p.name_en, p.kind, p.wine_id, p.requires_lot, p.is_stock_tracked,
-           p.is_active, p.default_tax_code, p.gtin, p.unit, f.nominal_volume_ml
+           p.for_sale, p.is_active, p.default_tax_code, p.gtin, p.unit, f.nominal_volume_ml
     FROM catalog.product p
     LEFT JOIN catalog.format f ON f.id = p.format_id
     WHERE p.id = CAST(${id} AS UUID)
@@ -274,6 +275,7 @@ export async function loadProduct(tx: Tx, id: string): Promise<ProductRow> {
     wine_id: idOrNull(row.wine_id),
     requires_lot: boolOf(row.requires_lot),
     is_stock_tracked: boolOf(row.is_stock_tracked),
+    for_sale: row.for_sale == null ? true : boolOf(row.for_sale),
     is_active: boolOf(row.is_active),
     default_tax_code: textOf(row.default_tax_code),
     gtin: textOf(row.gtin),

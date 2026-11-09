@@ -10,6 +10,7 @@ import { GlassMenu, MenuItem, useMenuOpen } from '@/ui'
 
 const SECTIONS = [
   { id: 'stock', label: copy.stock.title, path: '/stock' },
+  { id: 'warehouses', label: copy.stock.warehouses, path: '/stock/almacenes' },
   { id: 'moves', label: copy.stock.moves, path: '/stock/movimientos' },
   { id: 'counts', label: copy.stock.counts, path: '/stock/aforos' },
 ] as const

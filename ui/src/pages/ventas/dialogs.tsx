@@ -44,6 +44,7 @@ import {
 } from '@/ui'
 import { useIssuer } from '@/pages/ventas/issuer'
 import { LineEditor } from '@/pages/ventas/lines'
+import { TariffSelect } from '@/pages/ventas/tariff-select'
 import { ShippingFields } from '@/pages/ventas/shipping'
 import { emptyShipTo, referencesPayload, shipToPayload, type ShipToDraft } from '@/lib/shipping'
 
@@ -63,6 +64,7 @@ export function CreateDocument({
   const [params] = useSearchParams()
   const [customerId, setCustomerId] = useState(() => params.get('cliente') ?? '')
   const [channel, setChannel] = useState<ChannelCode>('horeca')
+  const [priceListId, setPriceListId] = useState('')
   const [language, setLanguage] = useState('es')
   const [proforma, setProforma] = useState(false)
   const [incoterm, setIncoterm] = useState('')
@@ -82,7 +84,7 @@ export function CreateDocument({
   const [saving, setSaving] = useState(false)
   const stamps = useRef<Record<string, string>>({})
   const offerDate = doc === 'order' ? orderDate : todayMadrid()
-  const offer = useSalesOffer({ customerId: customerId || undefined, channel, date: offerDate })
+  const offer = useSalesOffer({ customerId: customerId || undefined, channel, date: offerDate, priceListId: priceListId || undefined })
   const issuer = useIssuer(customerId, channel)
   const customerOptions = useMemo(() => customers.map(customerOption), [customers])
   const customer = customers.find((item) => item.id === customerId)
@@ -120,13 +122,13 @@ export function CreateDocument({
     if (!nextCustomer || !line.productId || !(Number(line.quantity) > 0)) return
     const stamp = crypto.randomUUID()
     stamps.current[line.key] = stamp
-    getPriceQuote({ customerId: nextCustomer, productId: line.productId, qty: line.quantity, date, channel: nextChannel })
+    getPriceQuote({ customerId: nextCustomer, productId: line.productId, qty: line.quantity, date, channel: nextChannel, priceListId: priceListId || undefined })
       .then((hit) => {
         if (stamps.current[line.key] !== stamp) return
         setLines((current) =>
           current.map((item) =>
             item.key === line.key
-              ? { ...item, quoted: hit.unit_price, unitPrice: item.touched ? item.unitPrice : shortPrice(hit.unit_price) }
+              ? { ...item, quoted: hit.unit_price, gross: hit.gross_unit_price ?? null, unitPrice: item.touched ? item.unitPrice : shortPrice(hit.unit_price) }
               : item,
           ),
         )
@@ -134,7 +136,7 @@ export function CreateDocument({
       .catch((err: unknown) => {
         if (stamps.current[line.key] !== stamp) return
         if (err instanceof ApiError && (err.status === 404 || err.status === 422)) {
-          setLines((current) => current.map((item) => (item.key === line.key ? { ...item, quoted: null } : item)))
+          setLines((current) => current.map((item) => (item.key === line.key ? { ...item, quoted: null, gross: null } : item)))
           return
         }
         setError(errorText(err))
@@ -195,6 +197,7 @@ export function CreateDocument({
           customer_id: customerId,
           legal_entity_id: issuer.entityId || undefined,
           channel,
+          price_list_id: priceListId || null,
           language,
           is_proforma: proforma,
           incoterm: incoterm || null,
@@ -210,6 +213,7 @@ export function CreateDocument({
           customer_id: customerId,
           legal_entity_id: issuer.entityId || undefined,
           channel,
+          price_list_id: priceListId || null,
           source: 'manual',
           order_date: orderDate,
           requested_date: requested,
@@ -278,6 +282,7 @@ export function CreateDocument({
                 ))}
               </Select>
             </Field>
+            <TariffSelect id="tarifa" value={priceListId} onChange={(next) => { setPriceListId(next); setError(null) }} />
             <div className="grid content-start gap-1.5">
               <span className="text-label text-text-secondary">{copy.sales.issuingEntity}</span>
               <SegmentedControl
@@ -413,6 +418,7 @@ export function CreateDelivery({
   const [kind, setKind] = useState<DeliveryKind>('sale')
   const [customerId, setCustomerId] = useState('')
   const [channel, setChannel] = useState<ChannelCode>('horeca')
+  const [priceListId, setPriceListId] = useState('')
   const [fromChoice, setFromChoice] = useState<string | null>(null)
   const [toId, setToId] = useState('')
   const [shipTo, setShipTo] = useState<ShipToDraft>(emptyShipTo)
@@ -422,16 +428,48 @@ export function CreateDelivery({
   const [badLine, setBadLine] = useState<string | null>(null)
   const [customerBad, setCustomerBad] = useState(false)
   const [saving, setSaving] = useState(false)
+  const stamps = useRef<Record<string, string>>({})
   const customerOptions = useMemo(() => customers.map(customerOption), [customers])
   const offer = useSalesOffer({
     customerId: customerId || undefined,
     channel,
     date: todayMadrid(),
+    priceListId: priceListId || undefined,
   })
   const locations = offer.locations
   const fromId = fromChoice ?? locations.find((item) => item.code === 'BOD')?.id ?? locations[0]?.id ?? ''
   const needsCustomer = kind === 'sale' || kind === 'sample'
   const needsTo = kind === 'consignment' || kind === 'transfer' || kind === 'return'
+
+  function quoteLine(line: DraftLine, nextCustomer = customerId, nextChannel = channel, listId = priceListId) {
+    if (!nextCustomer || !line.productId || !(Number(line.quantity) > 0)) return
+    const stamp = crypto.randomUUID()
+    stamps.current[line.key] = stamp
+    getPriceQuote({
+      customerId: nextCustomer,
+      productId: line.productId,
+      qty: line.quantity,
+      date: todayMadrid(),
+      channel: nextChannel,
+      priceListId: listId || undefined,
+    })
+      .then((hit) => {
+        if (stamps.current[line.key] !== stamp) return
+        setLines((current) =>
+          current.map((item) =>
+            item.key === line.key
+              ? { ...item, quoted: hit.unit_price, gross: hit.gross_unit_price ?? null, unitPrice: item.touched ? item.unitPrice : shortPrice(hit.unit_price) }
+              : item,
+          ),
+        )
+      })
+      .catch((err: unknown) => {
+        if (stamps.current[line.key] !== stamp) return
+        if (err instanceof ApiError && (err.status === 404 || err.status === 422)) {
+          setLines((current) => current.map((item) => (item.key === line.key ? { ...item, quoted: null, gross: null } : item)))
+        }
+      })
+  }
 
   function refuse(message: string, customer = false, line: string | null = null) {
     setError(message)
@@ -518,6 +556,10 @@ export function CreateDelivery({
               ))}
             </Select>
           </Field>
+          <TariffSelect id="tarifa-albaran" value={priceListId} onChange={(next) => {
+            setPriceListId(next)
+            for (const line of lines) quoteLine(line, customerId, channel, next)
+          }} />
           {needsCustomer ? (
             <Field id="cliente-albaran" label={copy.sales.customer}>
               <Combobox
@@ -531,6 +573,7 @@ export function CreateDelivery({
                   setCustomerId(next)
                   setCustomerBad(false)
                   setError(null)
+                  for (const line of lines) quoteLine(line, next, channel, priceListId)
                 }}
               />
             </Field>
@@ -573,7 +616,7 @@ export function CreateDelivery({
               setError(null)
               setBadLine(null)
             }}
-            onPrice={() => undefined}
+            onPrice={(line) => quoteLine(line)}
             invalidKey={badLine}
           />
           {needsCustomer ? (

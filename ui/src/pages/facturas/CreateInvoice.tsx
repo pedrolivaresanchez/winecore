@@ -40,6 +40,7 @@ import { DATE_LABELS, money } from '@/pages/facturas/format'
 import type { CreateInvoiceBody, SourceKind } from '@/pages/facturas/types'
 import { useIssuer } from '@/pages/ventas/issuer'
 import { LineEditor } from '@/pages/ventas/lines'
+import { TariffSelect } from '@/pages/ventas/tariff-select'
 import { ShippingFields } from '@/pages/ventas/shipping'
 import { emptyShipTo, referencesPayload, shipToPayload, type ShipToDraft } from '@/lib/shipping'
 
@@ -63,6 +64,7 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
   const [params] = useSearchParams()
   const [source, setSource] = useState<SourceKind>('lines')
   const [customerId, setCustomerId] = useState(() => params.get('cliente') ?? '')
+  const [priceListId, setPriceListId] = useState('')
   const [lines, setLines] = useState<DraftLine[]>([blankLine()])
   const [orderId, setOrderId] = useState('')
   const [noteIds, setNoteIds] = useState<string[]>([])
@@ -81,7 +83,7 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
   const customer = customers.find((item) => item.id === customerId)
   const issuer = useIssuer(customerId, '', 'invoice')
   // No channel: like the invoice itself, prices follow the customer's tariff, then its default channel's.
-  const offer = useSalesOffer({ customerId: customerId || undefined, date: todayMadrid() })
+  const offer = useSalesOffer({ customerId: customerId || undefined, date: todayMadrid(), priceListId: priceListId || undefined })
   const docs = useCustomerDocs(customerId, source)
   const { priceOf, taxOf, rateOf } = offer
 
@@ -179,12 +181,12 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
     if (!nextCustomer || !line.productId || !(Number(line.quantity) > 0)) return
     const stamp = crypto.randomUUID()
     stamps.current[line.key] = stamp
-    getPriceQuote({ customerId: nextCustomer, productId: line.productId, qty: line.quantity, date: todayMadrid() })
+    getPriceQuote({ customerId: nextCustomer, productId: line.productId, qty: line.quantity, date: todayMadrid(), priceListId: priceListId || undefined })
       .then((hit) => {
         if (stamps.current[line.key] !== stamp) return
         setLines((current) =>
           current.map((item) =>
-            item.key === line.key ? { ...item, quoted: hit.unit_price, unitPrice: item.touched ? item.unitPrice : shortPrice(hit.unit_price) } : item,
+            item.key === line.key ? { ...item, quoted: hit.unit_price, gross: hit.gross_unit_price ?? null, unitPrice: item.touched ? item.unitPrice : shortPrice(hit.unit_price) } : item,
           ),
         )
       })
@@ -288,6 +290,7 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
               {entityNote ? <p className="max-w-64 text-caption text-text-tertiary">{entityNote}</p> : null}
             </div>
           </div>
+          <TariffSelect id="tarifa-factura" value={priceListId} onChange={setPriceListId} />
 
           <div className="grid gap-2">
             <div className="flex flex-wrap items-center gap-2">

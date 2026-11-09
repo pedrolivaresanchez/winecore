@@ -124,6 +124,8 @@ export type PriceQuote = {
   product_id: string
   currency: string
   unit_price: string
+  gross_unit_price?: string | null
+  tax_included?: boolean
   price_list_id: string
   version_id: string
   min_qty: string
@@ -297,6 +299,14 @@ export function formatQty(value: string | number | null | undefined): string {
   const trimmed = frac.replace(/0+$/, '')
   const grouped = (whole ?? '0').replace(/\B(?=(\d{3})+(?!\d))/g, '.')
   return trimmed ? `${grouped},${trimmed}` : grouped
+}
+
+/** IVA that remains after the PVP is split into a two-decimal base. 25,00 − 20,66 = 4,34. */
+export function vatBetween(gross: string, base: string): string {
+  const left = Number(gross)
+  const right = Number(base)
+  if (!Number.isFinite(left) || !Number.isFinite(right)) return ''
+  return (Math.round((left - right) * 100) / 100).toFixed(2)
 }
 
 export function formatAmount(value: string | number | null | undefined): string {
@@ -496,7 +506,7 @@ export function createIncident(id: string, body: Record<string, unknown>) {
 }
 
 export function getPriceQuote(
-  query: { customerId: string; productId: string; qty: string; date?: string; channel?: string },
+  query: { customerId: string; productId: string; qty: string; date?: string; channel?: string; priceListId?: string },
   signal?: AbortSignal,
 ) {
   const params = new URLSearchParams({
@@ -506,6 +516,7 @@ export function getPriceQuote(
   })
   if (query.date) params.set('date', query.date)
   if (query.channel) params.set('channel', query.channel)
+  if (query.priceListId) params.set('price_list_id', query.priceListId)
   return api<PriceQuote>(`/v1/price-quote?${params}`, { signal })
 }
 

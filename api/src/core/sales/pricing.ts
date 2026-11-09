@@ -1,23 +1,29 @@
 import { Decimal } from 'decimal.js';
+import { grossToBase } from '../catalog/vat-price';
 import { sql } from '../db/sql';
 import type { Tx } from '../db/writer';
 import { bodyId, decOf, fail, idOf, loadProduct, optionalText, parseDecimal, priceText, taxRateOf, throwIf } from './db';
 
-const CHANNEL_LIST: Record<string, string> = {
-  distributor: 'distributor',
-  horeca: 'distributor',
-  eci_edi: 'distributor',
-  institutional: 'distributor',
-  intercompany: 'distributor',
-  export: 'final',
-  direct: 'final',
-  web: 'final',
-  fair: 'final',
-  cellar_shop: 'shop',
+/** El Corte Inglés no hereda la tarifa de cliente final ni la de distribución. Hostelería usa la suya y, si aún no está cargada, la de distribución. */
+const CHANNEL_LIST: Record<string, readonly string[]> = {
+  distributor: ['distributor'],
+  horeca: ['custom-horeca', 'distributor'],
+  eci_edi: ['custom-eci'],
+  institutional: ['distributor'],
+  intercompany: ['distributor'],
+  export: ['final'],
+  direct: ['final'],
+  web: ['final'],
+  fair: ['final'],
+  cellar_shop: ['shop'],
 };
 
+export function priceListCodesForChannel(channel: string): readonly string[] {
+  return CHANNEL_LIST[channel] ?? [];
+}
+
 export function priceListCodeForChannel(channel: string): string | null {
-  return CHANNEL_LIST[channel] ?? null;
+  return priceListCodesForChannel(channel)[0] ?? null;
 }
 
 export type PriceHit = {
@@ -52,8 +58,13 @@ export async function quotePrice(
   `);
   const row = rows[0];
   if (!row) fail('No hay precio de tarifa para el producto', { product_id: input.productId });
+  const flags = await tx.read<{ tax_included: unknown }>(sql`
+    SELECT tax_included FROM catalog.price_list WHERE id = CAST(${listId} AS UUID)
+  `);
+  const stored = decOf(row.unit_price);
+  const unitPrice = flags[0]?.tax_included === true ? grossToBase(stored) : stored;
   return {
-    unitPrice: decOf(row.unit_price),
+    unitPrice,
     priceListId: idOf(row.price_list_id),
     versionId: idOf(row.version_id),
     minQty: decOf(row.min_qty).toFixed(3),
@@ -61,12 +72,13 @@ export async function quotePrice(
 }
 
 async function listIdForChannel(tx: Tx, channel: string): Promise<string | null> {
-  const code = CHANNEL_LIST[channel];
-  if (!code) return null;
-  const rows = await tx.read<{ id: unknown }>(sql`
-    SELECT id FROM catalog.price_list WHERE code = ${code} AND is_active
-  `);
-  return rows[0] ? idOf(rows[0].id) : null;
+  for (const code of priceListCodesForChannel(channel)) {
+    const rows = await tx.read<{ id: unknown }>(sql`
+      SELECT id FROM catalog.price_list WHERE code = ${code} AND is_active
+    `);
+    if (rows[0]) return idOf(rows[0].id);
+  }
+  return null;
 }
 
 export type CommercialLineInput = {
@@ -118,6 +130,7 @@ export async function resolveLinePrice(
 ): Promise<{ unitPrice: Decimal; taxCode: string; description: string; productName: string }> {
   const product = await loadProduct(tx, line.productId);
   if (!product.is_active) fail('El producto no está activo', { product_id: line.productId });
+  if (!product.for_sale) fail('Este vino no está a la venta', { product_id: line.productId });
   const hit = await quotePrice(tx, {
     productId: line.productId,
     quantity: line.quantity,

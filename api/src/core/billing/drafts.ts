@@ -1,5 +1,6 @@
 import { Decimal } from 'decimal.js';
 import { can, type UserCtx } from '../auth/permissions';
+import { grossToBase } from '../catalog/vat-price';
 import { sql } from '../db/sql';
 import type { Actor, Tx } from '../db/writer';
 import { domainError } from '../errors';
@@ -19,7 +20,7 @@ import {
   today,
 } from './format';
 import { DomainError } from '../errors';
-import { quoteListCode } from '../catalog/pricing';
+import { priceListCodesForChannel } from '../sales/pricing';
 import { sameVersion } from '../party/contacts';
 import {
   findDefaultSeries,
@@ -509,27 +510,26 @@ async function unitPriceOf(
 ): Promise<Decimal> {
   let listId = priceListId;
   if (!listId) {
-    const code = quoteListCode(channel);
-    const lists = await tx.read<{ id: unknown; tax_included: unknown }>(sql`
-      SELECT id, tax_included FROM catalog.price_list
-      WHERE code IN (${code}, 'final') AND is_active
-      ORDER BY code = 'final'
-      LIMIT 1
-    `);
-    const list = lists[0];
+    const codes = channel ? [...priceListCodesForChannel(channel)] : ['final'];
+    if (codes.length === 0) codes.push('final');
+    if (!codes.includes('final') && channel !== 'eci_edi') codes.push('final');
+    let list: { id: unknown; tax_included: unknown } | undefined;
+    for (const code of codes) {
+      const found = await tx.read<{ id: unknown; tax_included: unknown }>(sql`
+        SELECT id, tax_included FROM catalog.price_list WHERE code = ${code} AND is_active LIMIT 1
+      `);
+      if (found[0]) {
+        list = found[0];
+        break;
+      }
+    }
     if (!list) throw domainError('WC_INV_PRICE', { product_id: 'No hay precio para el producto' });
-    if (flag(list.tax_included)) {
-      throw domainError('WC_INV_PRICE', { product_id: 'La tarifa tiene el IVA incluido y no hay regla para sacar la base' });
-    }
     listId = idOf(list.id);
-  } else {
-    const lists = await tx.read<{ tax_included: unknown }>(sql`
-      SELECT tax_included FROM catalog.price_list WHERE id = CAST(${listId} AS UUID)
-    `);
-    if (flag(lists[0]?.tax_included)) {
-      throw domainError('WC_INV_PRICE', { product_id: 'La tarifa tiene el IVA incluido y no hay regla para sacar la base' });
-    }
   }
+  const included = await tx.read<{ tax_included: unknown }>(sql`
+    SELECT tax_included FROM catalog.price_list WHERE id = CAST(${listId} AS UUID)
+  `);
+  const taxIncluded = flag(included[0]?.tax_included);
   const rows = await tx.read<{ unit_price: unknown }>(sql`
     SELECT i.unit_price
     FROM catalog.price_list_item i
@@ -545,7 +545,8 @@ async function unitPriceOf(
   `);
   const row = rows[0];
   if (!row) throw domainError('WC_INV_PRICE', { product_id: 'No hay precio para el producto' });
-  return scale(decimalOf(row.unit_price), 6);
+  const stored = decimalOf(row.unit_price);
+  return scale(taxIncluded ? grossToBase(stored) : stored, 6);
 }
 
 async function sourceLines(tx: Tx, input: CreateInput, exceptInvoiceId: string | null): Promise<{

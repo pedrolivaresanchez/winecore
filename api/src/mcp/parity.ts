@@ -28,4 +28,5 @@ export const NOT_IN_MCP: Readonly<Record<string, string>> = {
   "PUT /v1/approval-policies/:kind": SECURITY,
   "POST /v1/users": PEOPLE,
   "PATCH /v1/users/:id": PEOPLE,
+  "GET /v1/stock/unlabeled": "Botellas sin etiquetar del mapa (jaulón y nicho). El libro físico no las separa; el etiquetado las lee aquí.",
 };

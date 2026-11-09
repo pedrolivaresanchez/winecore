@@ -85,7 +85,7 @@ export async function createSalesOrder(
     `);
     if (dup[0]) fail('La referencia externa ya existe en este origen', { external_ref: input.externalRef });
   }
-  const priced = await priceOrderLines(tx, input.lines, input.orderDate, customer.default_price_list_id, input.channel);
+  const priced = await priceOrderLines(tx, input.lines, input.orderDate, input.priceListId ?? customer.default_price_list_id, input.channel);
   const totals = priceTotals(priced.totals);
   tx.write(sql`
     INSERT INTO sales.sales_order (
@@ -163,7 +163,7 @@ export async function patchSalesOrder(tx: Tx, id: string, raw: unknown): Promise
   const customer = await loadCustomer(tx, input.customerId);
   if (!customer.is_customer) fail('El contacto no es cliente', { customer_id: input.customerId });
   await assertChannel(tx, input.channel);
-  const priced = await priceOrderLines(tx, input.lines, input.orderDate, customer.default_price_list_id, input.channel);
+  const priced = await priceOrderLines(tx, input.lines, input.orderDate, input.priceListId ?? customer.default_price_list_id, input.channel);
   const totals = priceTotals(priced.totals);
   const now = new Date();
   const previous = await loadLines(tx, id);
@@ -568,6 +568,7 @@ type OrderInput = {
   customerReferences: string | null;
   quoteId: string | null;
   lines: CommercialLineInput[];
+  priceListId: string | null;
 };
 
 async function parseOrderBody(tx: Tx, raw: unknown, creating: boolean): Promise<OrderInput> {
@@ -605,8 +606,12 @@ async function parseOrderBody(tx: Tx, raw: unknown, creating: boolean): Promise<
     if (typeof body.ship_to !== 'object' || Array.isArray(body.ship_to)) fields.ship_to = 'Debe ser un objeto';
     else shipTo = body.ship_to as Record<string, unknown>;
   }
-  throwIf(fields);
   const lines = parseCommercialLines(body.lines);
+  const priceListId = body.price_list_id == null || body.price_list_id === ''
+    ? null
+    : (typeof body.price_list_id === 'string' ? body.price_list_id.trim().toLowerCase() : '');
+  if (priceListId === '') fields.price_list_id = 'Identificador no válido';
+  throwIf(fields);
   void tx;
   return {
     customerId,
@@ -625,6 +630,7 @@ async function parseOrderBody(tx: Tx, raw: unknown, creating: boolean): Promise<
     customerReferences,
     quoteId,
     lines,
+    priceListId,
   };
 }
 

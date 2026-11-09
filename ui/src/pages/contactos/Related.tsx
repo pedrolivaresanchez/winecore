@@ -114,7 +114,7 @@ export function AddressBook({
                     setOpen(true);
                   }}
                 >
-                  Editar
+                  Editar dirección
                 </Button>
                 <Button type="button" variant="ghost" size="md" onClick={() => setArchiveId(address.id)}>
                   Archivar
@@ -289,7 +289,7 @@ export function PersonBook({
                     setOpen(true);
                   }}
                 >
-                  Editar
+                  Editar persona
                 </Button>
                 <Button type="button" variant="ghost" size="md" onClick={() => setArchiveId(person.id)}>
                   Archivar

@@ -502,6 +502,9 @@ export function StockPage({ me }: { me: Me }) {
                 <Button type="button" variant="secondary" size="sm" onClick={() => navigate('/stock/aforos?kind=opening')}>
                   {copy.stock.opening}
                 </Button>
+                <Button type="button" variant="secondary" size="sm" onClick={() => navigate('/stock/almacenes')}>
+                  {copy.stock.warehouses}
+                </Button>
               </div>
             }
           />
