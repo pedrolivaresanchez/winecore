@@ -301,6 +301,14 @@ export function formatQty(value: string | number | null | undefined): string {
   return trimmed ? `${grouped},${trimmed}` : grouped
 }
 
+/** IVA that remains after the PVP is split into a two-decimal base. 25,00 − 20,66 = 4,34. */
+export function vatBetween(gross: string, base: string): string {
+  const left = Number(gross)
+  const right = Number(base)
+  if (!Number.isFinite(left) || !Number.isFinite(right)) return ''
+  return (Math.round((left - right) * 100) / 100).toFixed(2)
+}
+
 export function formatAmount(value: string | number | null | undefined): string {
   if (value == null || value === '') return '—'
   const n = typeof value === 'number' ? value : Number(value)

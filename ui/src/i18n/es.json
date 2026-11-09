@@ -1736,7 +1736,7 @@
     "channel": "Canal",
     "tariffAsk": "Tarifa",
     "tariffDefault": "La del cliente",
-    "tariffGross": "PVP {gross} € con IVA. Base {base} €.",
+    "tariffGross": "PVP {gross} con IVA. Base {base}. IVA {vat}.",
     "status": "Estado",
     "date": "Fecha",
     "total": "Total",

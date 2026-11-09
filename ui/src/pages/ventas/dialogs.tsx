@@ -128,7 +128,7 @@ export function CreateDocument({
         setLines((current) =>
           current.map((item) =>
             item.key === line.key
-              ? { ...item, quoted: hit.unit_price, unitPrice: item.touched ? item.unitPrice : shortPrice(hit.unit_price) }
+              ? { ...item, quoted: hit.unit_price, gross: hit.gross_unit_price ?? null, unitPrice: item.touched ? item.unitPrice : shortPrice(hit.unit_price) }
               : item,
           ),
         )
@@ -136,7 +136,7 @@ export function CreateDocument({
       .catch((err: unknown) => {
         if (stamps.current[line.key] !== stamp) return
         if (err instanceof ApiError && (err.status === 404 || err.status === 422)) {
-          setLines((current) => current.map((item) => (item.key === line.key ? { ...item, quoted: null } : item)))
+          setLines((current) => current.map((item) => (item.key === line.key ? { ...item, quoted: null, gross: null } : item)))
           return
         }
         setError(errorText(err))

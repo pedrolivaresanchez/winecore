@@ -2,7 +2,7 @@ import { Combobox, type ComboOption } from '@/components/Combobox'
 import { copy, fill } from '@/i18n'
 import type { CatalogLocation, CatalogLot, CatalogProduct } from '@/lib/sales-catalog'
 import { blankLine, decimalDot, type DraftLine } from '@/lib/sales-draft'
-import { formatAmount, pricesDiffer, TAX_CODES, taxLabel } from '@/lib/sales'
+import { formatAmount, pricesDiffer, TAX_CODES, taxLabel, vatBetween } from '@/lib/sales'
 import { Button, InfoTip, Input, Select } from '@/ui'
 import { useMemo } from 'react'
 
@@ -149,7 +149,15 @@ export function LineEditor({
                 />
               </label>
               {line.productId ? (
-                line.quoted ? (
+                line.gross && line.quoted ? (
+                  <p className="text-caption text-text-tertiary tabular-nums" data-vat-breakdown="true">
+                    {fill(copy.sales.tariffGross, {
+                      gross: formatAmount(line.gross),
+                      base: formatAmount(line.quoted),
+                      vat: formatAmount(vatBetween(line.gross, line.quoted)),
+                    })}
+                  </p>
+                ) : line.quoted ? (
                   <p className="text-caption text-text-tertiary tabular-nums">
                     {fill(copy.sales.tariffPrice, { price: formatAmount(line.quoted) })}
                   </p>

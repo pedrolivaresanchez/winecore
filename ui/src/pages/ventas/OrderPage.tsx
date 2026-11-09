@@ -130,7 +130,7 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
         if (stamps.current[line.key] !== stamp) return
         setLines((current) =>
           current.map((item) =>
-            item.key === line.key ? { ...item, quoted: hit.unit_price, unitPrice: item.touched ? item.unitPrice : hit.unit_price } : item,
+            item.key === line.key ? { ...item, quoted: hit.unit_price, gross: hit.gross_unit_price ?? null, unitPrice: item.touched ? item.unitPrice : hit.unit_price } : item,
           ),
         )
       })
