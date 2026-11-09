@@ -23,10 +23,11 @@ test("Contactos: alta, edición, búsqueda y archivo", async ({ page }) => {
   });
 
   await test.step("Editar el nombre comercial", async () => {
-    await page.getByRole("button", { name: "Editar" }).click();
+    const ficha = page.locator("[data-screen='ficha'] header");
+    await ficha.getByRole("button", { name: "Editar", exact: true }).click();
     await page.locator("#trade_name").fill(TRADE);
     await page.getByRole("button", { name: "Guardar" }).click();
-    await expect(page.getByRole("button", { name: "Editar" })).toBeVisible();
+    await expect(ficha.getByRole("button", { name: "Editar", exact: true })).toBeVisible();
     await expect(page.getByText(TRADE).first()).toBeVisible();
   });
 
