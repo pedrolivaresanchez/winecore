@@ -345,11 +345,14 @@ export async function listProductPrices(writer: Writer, request: Request, id: st
   ];
   const where = filters.join(' AND ');
   const totalRows = await writer.read<{ total: unknown }>(`
-    SELECT count(*) AS total
-    FROM catalog.price_list_item i
-    JOIN catalog.price_list_version v ON v.id = i.version_id
-    JOIN catalog.price_list l ON l.id = v.price_list_id
-    WHERE ${where}
+    SELECT count(*) AS total FROM (
+      SELECT i.id
+      FROM catalog.price_list_item i
+      JOIN catalog.price_list_version v ON v.id = i.version_id
+      JOIN catalog.price_list l ON l.id = v.price_list_id
+      WHERE ${where}
+      QUALIFY row_number() OVER (PARTITION BY v.price_list_id, i.min_qty ORDER BY v.valid_from DESC, v.version DESC) = 1
+    ) latest
   `);
   const listed = [...filters];
   if (cursor) {
@@ -358,6 +361,7 @@ export async function listProductPrices(writer: Writer, request: Request, id: st
       OR (l.code = ${cursor.k} AND i.id > CAST(${cursor.id} AS UUID))
     )`);
   }
+  const latest = `QUALIFY row_number() OVER (PARTITION BY v.price_list_id, i.min_qty ORDER BY v.valid_from DESC, v.version DESC) = 1`;
   const rows = await writer.read(`
     SELECT i.id, i.version_id, i.product_id,
            CAST(i.min_qty AS VARCHAR) AS min_qty,
@@ -369,6 +373,7 @@ export async function listProductPrices(writer: Writer, request: Request, id: st
     JOIN catalog.price_list_version v ON v.id = i.version_id
     JOIN catalog.price_list l ON l.id = v.price_list_id
     WHERE ${listed.join(' AND ')}
+    ${latest}
     ORDER BY l.code, i.id
     LIMIT ${limit + 1}
   `);
@@ -407,8 +412,8 @@ function productFilters(url: URL): string[] {
   if (organic !== null) {
     filters.push(sql`
       EXISTS (
-        SELECT 1 FROM catalog.wine w
-        WHERE w.id = p.wine_id AND w.is_organic = ${organic}
+        SELECT 1 FROM catalog.wine_visible w
+        WHERE w.id = COALESCE(po.wine_id, p.wine_id) AND w.is_organic = ${organic}
       )
     `);
   }

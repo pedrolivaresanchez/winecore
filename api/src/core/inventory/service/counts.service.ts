@@ -1311,22 +1311,53 @@ async function codeMap(reader: Reader, table: string, columns: string, ids: read
   return map;
 }
 
+async function overlayWine(reader: Reader, column: "product_id" | "lot_id", table: string, ids: readonly string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(ids.filter((id) => id.length > 0))];
+  const map = new Map<string, string>();
+  if (unique.length === 0) return map;
+  const rows = await reader.read<Record<string, unknown>>(`
+    SELECT ${column} AS id, wine_id
+    FROM ${table}
+    WHERE ${column} IN (${unique.map((id) => uuidSql(id)).join(", ")})
+  `);
+  for (const row of rows) {
+    if (row.wine_id != null) map.set(asId(row.id), String(row.wine_id).toLowerCase());
+  }
+  return map;
+}
+
 async function presentLines(reader: Reader, lines: readonly CountLineRow[]) {
-  const [locations, vessels, lots, owners, products] = await Promise.all([
+  const productIds = lines.flatMap((line) => (line.product_id ? [line.product_id] : []));
+  const lotIds = lines.flatMap((line) => (line.lot_id ? [line.lot_id] : []));
+  const [locations, vessels, lots, owners, products, productWine, lotWine] = await Promise.all([
     codeMap(reader, "inventory.location", "code, name", lines.map((line) => line.location_id)),
     codeMap(reader, "cellar.vessel", "code, capacity_ml, qr_token", lines.flatMap((line) => (line.vessel_id ? [line.vessel_id] : []))),
-    codeMap(reader, "inventory.lot", "code, vintage, wine_id", lines.flatMap((line) => (line.lot_id ? [line.lot_id] : []))),
+    codeMap(reader, "inventory.lot", "code, vintage, wine_id", lotIds),
     codeMap(reader, "core.legal_entity", "code", lines.map((line) => line.owner_entity_id)),
-    codeMap(reader, "catalog.product", "name, format_id", lines.flatMap((line) => (line.product_id ? [line.product_id] : []))),
+    codeMap(reader, "catalog.product", "name, format_id, wine_id", productIds),
+    overlayWine(reader, "product_id", "catalog.product_overlay", productIds),
+    overlayWine(reader, "lot_id", "inventory.lot_overlay", lotIds),
   ]);
-  const wines = await codeMap(reader, "catalog.wine", "name", [...lots.values()].flatMap((row) => (row.wine_id ? [asId(row.wine_id)] : [])));
+  const wineIds = lines.flatMap((line) => {
+    const overProduct = line.product_id ? productWine.get(line.product_id) : undefined;
+    const overLot = line.lot_id ? lotWine.get(line.lot_id) : undefined;
+    const product = line.product_id ? products.get(line.product_id) : undefined;
+    const lot = line.lot_id ? lots.get(line.lot_id) : undefined;
+    const raw = overProduct ?? overLot ?? (product?.wine_id == null ? undefined : asId(product.wine_id)) ?? (lot?.wine_id == null ? undefined : asId(lot.wine_id));
+    return raw ? [raw] : [];
+  });
+  const wines = await codeMap(reader, "catalog.wine_visible", "name", wineIds);
   const formats = await codeMap(reader, "catalog.format", "nominal_volume_ml", [...products.values()].flatMap((row) => (row.format_id ? [asId(row.format_id)] : [])));
   return lines.map((line) => {
     const location = locations.get(line.location_id);
     const vessel = line.vessel_id ? vessels.get(line.vessel_id) : undefined;
     const lot = line.lot_id ? lots.get(line.lot_id) : undefined;
-    const wine = lot?.wine_id ? wines.get(asId(lot.wine_id)) : undefined;
     const product = line.product_id ? products.get(line.product_id) : undefined;
+    const wineId = (line.product_id ? productWine.get(line.product_id) : undefined)
+      ?? (line.lot_id ? lotWine.get(line.lot_id) : undefined)
+      ?? (product?.wine_id == null ? undefined : asId(product.wine_id))
+      ?? (lot?.wine_id == null ? undefined : asId(lot.wine_id));
+    const wine = wineId ? wines.get(wineId) : undefined;
     const format = product?.format_id ? formats.get(asId(product.format_id)) : undefined;
     const owner = owners.get(line.owner_entity_id);
     return {

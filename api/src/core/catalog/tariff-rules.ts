@@ -110,6 +110,14 @@ export const ECI_LINES: TariffLine[] = [
 /** El Excel de Les Caves no dice la moneda. Se guarda en EUR y queda marcado para que Pedro lo confirme. */
 export const CAVES_CURRENCY_UNSTATED = true;
 
+/**
+ * El PDF dice «Bobal serie Wild» y la ficha de EB2023 se llama «Bobal wild».
+ * Apañao 2024 no entra: hay dos productos y lo decide Pedro.
+ */
+export const WINE_NAME_ALIASES: Record<string, readonly string[]> = {
+  'Bobal serie Wild': ['Bobal wild'],
+};
+
 export const TARIFF_LINES: TariffLine[] = [...channelTariffLines(), ...PYRENE_LINES, ...ECI_LINES];
 
 export const MANUAL_PRICE = [

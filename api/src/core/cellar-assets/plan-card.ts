@@ -206,7 +206,8 @@ async function contentOf(writer: Writer, vesselId: string): Promise<{
   const lots = await writer.read<Record<string, unknown>>(sql`
     SELECT l.code, w.name AS wine_name, l.vintage
     FROM inventory.lot l
-    LEFT JOIN catalog.wine w ON w.id = l.wine_id
+    LEFT JOIN inventory.lot_overlay lo ON lo.lot_id = l.id
+    LEFT JOIN catalog.wine_visible w ON w.id = COALESCE(lo.wine_id, l.wine_id)
     WHERE l.id = CAST(${lotId} AS UUID)
   `);
   const lot = lots[0];

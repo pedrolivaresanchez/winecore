@@ -23,7 +23,9 @@ export async function unlabeledMap(writer: Writer): Promise<{ items: Record<stri
     JOIN inventory.location loc ON loc.id = p.location_id
     JOIN inventory.lot l ON l.id = p.lot_id
     JOIN catalog.product pr ON pr.id = p.product_id
-    LEFT JOIN catalog.wine w ON w.id = pr.wine_id
+    LEFT JOIN catalog.product_overlay po ON po.product_id = pr.id
+    LEFT JOIN inventory.lot_overlay lo ON lo.lot_id = l.id
+    LEFT JOIN catalog.wine_visible w ON w.id = COALESCE(po.wine_id, lo.wine_id, pr.wine_id, l.wine_id)
     LEFT JOIN cellar.bottled_move m ON m.placement_id = p.id
     WHERE p.product_state = 'packaged_unlabeled'
       AND p.slot_kind IN ('jaulon', 'nicho')
@@ -67,8 +69,11 @@ export async function warehouseLayout(writer: Writer): Promise<Record<string, un
            coalesce(sum(m.volume_ml), 0)::VARCHAR AS volume_ml
     FROM cellar.bottled_placement p
     JOIN inventory.location loc ON loc.id = p.location_id
+    LEFT JOIN catalog.product pr ON pr.id = p.product_id
+    LEFT JOIN catalog.product_overlay po ON po.product_id = pr.id
     LEFT JOIN inventory.lot l ON l.id = p.lot_id
-    LEFT JOIN catalog.wine w ON w.id = p.wine_id
+    LEFT JOIN inventory.lot_overlay lo ON lo.lot_id = l.id
+    LEFT JOIN catalog.wine_visible w ON w.id = COALESCE(po.wine_id, lo.wine_id, pr.wine_id, l.wine_id, p.wine_id)
     LEFT JOIN cellar.bottled_move m ON m.placement_id = p.id
     GROUP BY p.id, p.product_id, p.lot_id, p.slot_kind, p.slot_code, p.niche_number, p.pallet_count, p.line_no, p.wine_label,
              p.lot_code_raw, p.color, p.product_state, p.opened_bottles, p.opened_volume_ml, p.bottle_ml,

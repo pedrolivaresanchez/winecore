@@ -1,7 +1,7 @@
 import type { Writer } from '../db/writer';
 import { sql } from '../db/sql';
 import { newId } from '../ids';
-import { CAVES_CURRENCY_UNSTATED, LIST_NAMES, TAX_INCLUDED_LISTS, TARIFF_LINES, type TariffLine } from './tariff-rules';
+import { CAVES_CURRENCY_UNSTATED, LIST_NAMES, TAX_INCLUDED_LISTS, TARIFF_LINES, WINE_NAME_ALIASES, type TariffLine } from './tariff-rules';
 import { fold } from '../inventory/bottled-snapshot';
 
 const ACTOR = { type: 'migration' as const, id: '019c0000-0000-7000-8000-0000000000ab', requestId: 'load-tariffs' };
@@ -39,12 +39,17 @@ export async function loadTariffs(writer: Writer): Promise<TariffLoadReport> {
       AND COALESCE(po.for_sale, p.for_sale, TRUE)
   `);
   const lists = await writer.read<{ id: string; code: string }>(`SELECT id::VARCHAR AS id, code FROM catalog.price_list`);
-  const versions = await writer.read<{ code: string }>(sql`
-    SELECT l.code FROM catalog.price_list_version v
+  const versions = await writer.read<{ code: string; id: string }>(sql`
+    SELECT l.code, v.id::VARCHAR AS id
+    FROM catalog.price_list_version v
     JOIN catalog.price_list l ON l.id = v.price_list_id
-    WHERE v.notes LIKE ${`${NOTE}%`}
+    WHERE v.notes LIKE ${`${NOTE}%`} AND v.status = 'active'
+    ORDER BY v.valid_from DESC, v.version DESC
   `);
-  const done = new Set(versions.map((row) => row.code));
+  const done = new Map<string, string>();
+  for (const row of versions) {
+    if (!done.has(row.code)) done.set(row.code, idOf(row.id));
+  }
   const byList = new Map<string, TariffLine[]>();
   for (const line of TARIFF_LINES) {
     const list = byList.get(line.list) ?? [];
@@ -54,8 +59,36 @@ export async function loadTariffs(writer: Writer): Promise<TariffLoadReport> {
   const statements: string[] = [];
   const report: TariffLoadReport = { loaded: [], skipped: [], unmatched: [] };
   for (const [code, lines] of byList) {
-    if (done.has(code)) {
-      report.skipped.push(code);
+    const loadedVersion = done.get(code);
+    if (loadedVersion) {
+      const have = new Set((await writer.read<{ id: string }>(sql`
+        SELECT product_id::VARCHAR AS id FROM catalog.price_list_item
+        WHERE version_id = CAST(${loadedVersion} AS UUID)
+      `)).map((row) => idOf(row.id)));
+      let prices = 0;
+      for (const line of lines) {
+        const product = matchProduct(products, line);
+        if (!product) {
+          report.unmatched.push({ list: code, wine: line.wine, vintage: line.vintageLabel });
+          continue;
+        }
+        const productId = idOf(product.id);
+        if (have.has(productId)) continue;
+        prices += 1;
+        have.add(productId);
+        statements.push(sql`
+          INSERT INTO catalog.price_list_item (id, version_id, product_id, min_qty, unit_price)
+          SELECT CAST(${newId()} AS UUID), CAST(${loadedVersion} AS UUID), CAST(${productId} AS UUID),
+                 1, CAST(${line.price} AS DECIMAL(14,6))
+          WHERE NOT EXISTS (
+            SELECT 1 FROM catalog.price_list_item
+            WHERE version_id = CAST(${loadedVersion} AS UUID)
+              AND product_id = CAST(${productId} AS UUID)
+              AND min_qty = 1
+          )
+        `);
+      }
+      report.loaded.push({ list: code, prices });
       continue;
     }
     const existing = lists.find((row) => row.code === code);
@@ -89,9 +122,7 @@ export async function loadTariffs(writer: Writer): Promise<TariffLoadReport> {
     `);
     let prices = 0;
     for (const line of lines) {
-      const hits = products.filter((row) => sameWine(row, line));
-      const byLot = line.lot ? hits.filter((row) => fold(String(row.sku)) === fold(line.lot ?? '')) : [];
-      const product = hits.length === 1 ? hits[0] : byLot.length === 1 ? byLot[0] : undefined;
+      const product = matchProduct(products, line);
       if (!product) {
         report.unmatched.push({ list: code, wine: line.wine, vintage: line.vintageLabel });
         continue;
@@ -115,10 +146,18 @@ export async function loadTariffs(writer: Writer): Promise<TariffLoadReport> {
   return report;
 }
 
+function matchProduct(products: Record<string, unknown>[], line: TariffLine): Record<string, unknown> | undefined {
+  const hits = products.filter((row) => sameWine(row, line));
+  const byLot = line.lot ? hits.filter((row) => fold(String(row.sku)) === fold(line.lot ?? '')) : [];
+  return hits.length === 1 ? hits[0] : byLot.length === 1 ? byLot[0] : undefined;
+}
+
 function sameWine(row: Record<string, unknown>, line: TariffLine): boolean {
+  const wineName = fold(String(row.wine_name ?? ''));
   const name = fold(`${row.wine_name ?? ''} ${row.name ?? ''}`);
   const wanted = fold(line.wine);
-  if (!name.includes(wanted) && !wanted.includes(fold(String(row.wine_name ?? '')))) return false;
+  const aliasHit = (WINE_NAME_ALIASES[line.wine] ?? []).some((label) => name.includes(fold(label)));
+  if (!aliasHit && !name.includes(wanted) && !(wineName.length > 0 && wanted.includes(wineName))) return false;
   if (line.vintage == null) return true;
   const vintage = row.vintage == null || row.vintage === '' ? null : Number(row.vintage);
   return vintage === line.vintage;

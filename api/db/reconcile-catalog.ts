@@ -1,5 +1,5 @@
 import { loadConfig } from '../src/config';
-import { reconcileCatalog, type ReconcileReport } from '../src/core/catalog/reconcile';
+import { reconcileCatalog, reconcileFichas, type ReconcileReport } from '../src/core/catalog/reconcile';
 import { createWriter } from '../src/core/db/writer';
 import { openClient } from '../src/core/db/open';
 
@@ -11,11 +11,17 @@ import { openClient } from '../src/core/db/open';
  *   bun run db/reconcile-catalog.ts --apply
  *   bun run db/reconcile-catalog.ts --revert
  *
+ * Las fichas que quedaron sueltas son otro paso. No es un segundo --apply:
+ *   bun run db/reconcile-catalog.ts --fichas
+ *   bun run db/reconcile-catalog.ts --fichas --apply
+ *   bun run db/reconcile-catalog.ts --fichas --revert
+ *
  * En Timbal hace falta WINECORE_CONFIRM_BOTTLED_LOAD=si y el arrendamiento
  * core.writer_lease. Después, en este orden: load:tariffs.
  */
 async function main(): Promise<void> {
   const config = loadConfig(process.env);
+  const fichas = process.argv.includes('--fichas');
   const mode: ReconcileReport['mode'] = process.argv.includes('--revert')
     ? 'revert'
     : process.argv.includes('--apply')
@@ -28,7 +34,8 @@ async function main(): Promise<void> {
   const writer = createWriter(client);
   if (!(await writer.tryAcquireLease())) throw new Error('No se ha adquirido el arrendamiento de escritura');
   try {
-    console.log(JSON.stringify(await reconcileCatalog(writer, mode), null, 2));
+    const report = fichas ? await reconcileFichas(writer, mode) : await reconcileCatalog(writer, mode);
+    console.log(JSON.stringify(report, null, 2));
   } finally {
     writer.stopMaintenance();
     await client.close?.();

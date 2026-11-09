@@ -63,7 +63,7 @@ async function loadExpenses(writer: Writer, scope: ReportScope, from: string, to
            COALESCE(l.line_no, 0) AS line_no,
            CAST(l.product_id AS VARCHAR) AS product_id,
            CASE WHEN p.id IS NULL THEN l.description ELSE p.sku || ' · ' || p.name END AS product_label,
-           CAST(p.wine_id AS VARCHAR) AS wine_id,
+           CAST(COALESCE(po.wine_id, lo.wine_id, p.wine_id, lot.wine_id) AS VARCHAR) AS wine_id,
            w.name AS wine_label,
            s.category_code AS category,
            cat.name_es AS category_label,
@@ -77,8 +77,11 @@ async function loadExpenses(writer: Writer, scope: ReportScope, from: string, to
     LEFT JOIN party.contact c ON c.id = s.supplier_id
     LEFT JOIN purchasing.expense_category cat ON cat.code = s.category_code
     LEFT JOIN catalog.product p ON p.id = l.product_id
+    LEFT JOIN catalog.product_overlay po ON po.product_id = p.id
     LEFT JOIN catalog.format f ON f.id = p.format_id
-    LEFT JOIN catalog.wine w ON w.id = p.wine_id
+    LEFT JOIN inventory.lot lot ON 1 = 0
+    LEFT JOIN inventory.lot_overlay lo ON lo.lot_id = lot.id
+    LEFT JOIN catalog.wine_visible w ON w.id = COALESCE(po.wine_id, lo.wine_id, p.wine_id, lot.wine_id)
   `);
   return rows.map((row) => readLine(row));
 }

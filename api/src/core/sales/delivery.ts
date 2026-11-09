@@ -1055,7 +1055,10 @@ async function insertLines(tx: Tx, noteId: string, lines: ParsedLine[], orderId:
 
 async function assertLot(tx: Tx, lotId: string, product: ProductRow): Promise<void> {
   const rows = await tx.read<Record<string, unknown>>(sql`
-    SELECT id, wine_id, status FROM inventory.lot WHERE id = CAST(${lotId} AS UUID)
+    SELECT l.id, COALESCE(lo.wine_id, l.wine_id) AS wine_id, l.status
+    FROM inventory.lot l
+    LEFT JOIN inventory.lot_overlay lo ON lo.lot_id = l.id
+    WHERE l.id = CAST(${lotId} AS UUID)
   `);
   const lot = rows[0];
   if (!lot) fail('El lote no existe', { lot_id: lotId });

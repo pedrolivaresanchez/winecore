@@ -197,7 +197,8 @@ export async function createAnalysis(writer: Writer, request: Request, code: str
   const wine = await writer.read<{ color: string | null; is_organic: boolean }>(sql`
     SELECT w.color, l.is_organic
     FROM inventory.lot l
-    LEFT JOIN catalog.wine w ON w.id = l.wine_id
+    LEFT JOIN inventory.lot_overlay lo ON lo.lot_id = l.id
+    LEFT JOIN catalog.wine_visible w ON w.id = COALESCE(lo.wine_id, l.wine_id)
     WHERE l.id = CAST(${lot.id} AS UUID)
   `);
   const color = wine[0]?.color ?? null;

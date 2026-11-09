@@ -116,12 +116,17 @@ export async function listVessels(writer: Writer, request: Request): Promise<Lis
   const filters = ['TRUE'];
   if (zone) filters.push(sql`v.zone = ${zone}`);
   if (kind) filters.push(sql`v.kind = ${kind}`);
-  if (status) filters.push(sql`v.status = ${status}`);
+  if (status) filters.push(sql`COALESCE(ov.status, v.status) = ${status}`);
   if (locationId) filters.push(sql`v.location_id = CAST(${locationId} AS UUID)`);
   const where = filters.join(' AND ');
   const page = [...filters];
   if (cursor) page.push(sql`v.code > ${cursor}`);
-  const total = await countOf(writer, `SELECT count(*)::VARCHAR AS total FROM cellar.vessel v WHERE ${where}`);
+  const total = await countOf(writer, `
+    SELECT count(*)::VARCHAR AS total
+    FROM cellar.vessel v
+    LEFT JOIN cellar.vessel_overlay ov ON ov.vessel_id = v.id
+    WHERE ${where}
+  `);
   const rows = await writer.read<Record<string, unknown>>(`
     SELECT ${VESSEL_COLUMNS}
     FROM cellar.vessel v
@@ -562,7 +567,8 @@ async function contentsFor(source: Writer | Tx, vesselIds: readonly string[]): P
     const lots = await source.read<{ id: string; code: string; wine_name: string | null; vintage: number | null }>(`
       SELECT l.id::VARCHAR AS id, l.code, w.name AS wine_name, l.vintage
       FROM inventory.lot l
-      LEFT JOIN catalog.wine w ON w.id = l.wine_id
+      LEFT JOIN inventory.lot_overlay lo ON lo.lot_id = l.id
+      LEFT JOIN catalog.wine_visible w ON w.id = COALESCE(lo.wine_id, l.wine_id)
       WHERE l.id IN (${uuidList(lotIds)})
     `);
     for (const lot of lots) {

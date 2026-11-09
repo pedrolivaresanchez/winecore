@@ -70,7 +70,7 @@ async function loadStock(writer: Writer, scope: ReportScope, from: string, to: s
     SELECT CAST(c.cut_date AS VARCHAR) AS cut_date,
            CAST(m.product_id AS VARCHAR) AS product_id,
            any_value(CASE WHEN p.id IS NULL THEN NULL ELSE p.sku || ' · ' || p.name END) AS product_label,
-           CAST(COALESCE(p.wine_id, lot.wine_id) AS VARCHAR) AS wine_id,
+           CAST(COALESCE(po.wine_id, lo.wine_id, p.wine_id, lot.wine_id) AS VARCHAR) AS wine_id,
            any_value(w.name) AS wine_label,
            any_value(w.category) AS category,
            CAST(m.lot_id AS VARCHAR) AS lot_id,
@@ -82,10 +82,12 @@ async function loadStock(writer: Writer, scope: ReportScope, from: string, to: s
       ON CAST(m.occurred_at AT TIME ZONE 'Europe/Madrid' AS DATE) <= c.cut_date
     JOIN core.legal_entity e ON e.id = m.owner_entity_id
     LEFT JOIN catalog.product p ON p.id = m.product_id
+    LEFT JOIN catalog.product_overlay po ON po.product_id = p.id
     LEFT JOIN inventory.lot lot ON lot.id = m.lot_id
-    LEFT JOIN catalog.wine w ON w.id = COALESCE(p.wine_id, lot.wine_id)
+    LEFT JOIN inventory.lot_overlay lo ON lo.lot_id = lot.id
+    LEFT JOIN catalog.wine_visible w ON w.id = COALESCE(po.wine_id, lo.wine_id, p.wine_id, lot.wine_id)
     WHERE ((${scope.po ? 'TRUE' : 'FALSE'} = TRUE AND e.code = 'PO') OR (${scope.cvpo ? 'TRUE' : 'FALSE'} = TRUE AND e.code = 'CVPO'))
-    GROUP BY c.cut_date, m.product_id, COALESCE(p.wine_id, lot.wine_id), m.lot_id
+    GROUP BY c.cut_date, m.product_id, COALESCE(po.wine_id, lo.wine_id, p.wine_id, lot.wine_id), m.lot_id
   `);
   for (const row of rows) {
     const cut = dateText(row.cut_date);
