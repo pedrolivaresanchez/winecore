@@ -43,11 +43,40 @@ export const CATALOG_WINES: CatalogWine[] = [
   { sku: 'MELOS-2019', wine: 'Melós', wineCode: 'MELOS', name: 'Melós 2019', vintage: 2019, formatMl: 750, color: 'red', organic: true, abv: '15.00', lot: '2019', forSale: true, priced: false },
   { sku: 'BURRO', wine: 'El burro de las gaseosas', wineCode: 'BURRO', name: 'El burro de las gaseosas', vintage: null, formatMl: 750, color: 'red', organic: true, abv: '13.50', lot: null, forSale: true, priced: false },
   { sku: 'EEB2024', wine: 'La Maison du Peter', wineCode: 'MAISON-PETER', name: 'La Maison du Peter 2024', vintage: 2024, formatMl: 750, color: 'red', organic: true, abv: '12.50', lot: 'EEB2024', forSale: true, priced: false },
-  { sku: 'WINEOUT', wine: 'WINEOUT', wineCode: 'WINEOUT', name: 'WINEOUT', vintage: null, formatMl: 750, color: 'red', organic: true, abv: null, lot: null, forSale: false, priced: false },
+  { sku: 'WINEOUT', wine: 'WINEOUT', wineCode: 'WINEOUT', name: 'WINEOUT', vintage: null, formatMl: 750, color: 'red', organic: true, abv: null, lot: 'WINEOUT', forSale: false, priced: false },
   { sku: 'APLATINAO', wine: 'Aplatinao', wineCode: 'APLATINAO', name: 'Aplatinao', vintage: 2014, formatMl: 750, color: 'red', organic: true, abv: '14.50', lot: 'LAT2025', forSale: true, priced: false },
   { sku: 'BOBAL-PLUS-2019', wine: 'Bobal Plus', wineCode: 'BOBAL-PLUS', name: 'Bobal Plus 2019', vintage: 2019, formatMl: 750, color: 'red', organic: true, abv: null, lot: null, forSale: true, priced: false },
   { sku: 'ENT-FT-2016', wine: 'enTreDicho Ft', wineCode: 'ENTREDICHO', name: 'enTreDicho Ft 2016', vintage: 2016, formatMl: 750, color: 'red', organic: true, abv: null, lot: null, forSale: true, priced: false },
   { sku: 'LEM2023', wine: 'La Gran Oxidación', wineCode: 'OXIDACION', name: 'La Gran Oxidación O1', vintage: 2023, formatMl: 500, color: 'white', organic: true, abv: '14.50', lot: 'LEM2023', forSale: true, priced: false },
+  { sku: 'BOBAL-BASIC-2025', wine: 'Bobal Basic', wineCode: 'BOBAL-BASIC', name: 'Bobal basic 2025', vintage: 2025, formatMl: 750, color: 'red', organic: true, abv: '13.50', lot: '2025', forSale: true, priced: false },
+  { sku: 'APLATINAO-MAG', wine: 'Aplatinao', wineCode: 'APLATINAO', name: 'Aplatinao magnum', vintage: 2014, formatMl: 1500, color: 'red', organic: true, abv: '14.50', lot: 'LAT2025', forSale: true, priced: false },
+  { sku: 'SASA-MAG', wine: 'SA&SA', wineCode: 'SASA', name: 'SA&SA MAGNUM', vintage: null, formatMl: 1500, color: 'white', organic: true, abv: null, lot: 'LAB2025', forSale: true, priced: false },
+  { sku: 'ARCAL-2017', wine: 'Arcal', wineCode: 'ARCAL', name: 'Arcal 2017', vintage: 2017, formatMl: 750, color: 'white', organic: true, abv: null, lot: 'LAB2025', forSale: true, priced: false },
+  { sku: 'ARCAL-4', wine: 'Arcal', wineCode: 'ARCAL', name: '4 arcal', vintage: null, formatMl: 750, color: 'white', organic: true, abv: null, lot: 'LAB2025', forSale: true, priced: false },
+  { sku: 'ARCAL-MAG', wine: 'Arcal', wineCode: 'ARCAL', name: '12 magnum arcal', vintage: null, formatMl: 1500, color: 'white', organic: true, abv: null, lot: 'LAB2025', forSale: true, priced: false },
+  { sku: 'PARRAS-MAG', wine: 'Código de Parras', wineCode: 'PARRAS', name: 'C.PARRAS MAGNUM', vintage: null, formatMl: 1500, color: 'red', organic: true, abv: null, lot: 'LAT2025', forSale: true, priced: false },
+  { sku: 'JAEN-23', wine: 'Jaén Tinta', wineCode: 'JAEN-TINTA', name: 'JAEN TINTA 23', vintage: 2023, formatMl: 750, color: 'red', organic: true, abv: null, lot: 'LAT2025', forSale: true, priced: false },
+  { sku: 'LAGARTOS', wine: 'Blend los lagartos', wineCode: 'LAGARTOS', name: 'BLEND LOS LAGARTOS', vintage: null, formatMl: 750, color: 'red', organic: true, abv: null, lot: 'LAT2025', forSale: true, priced: false },
+  { sku: 'FT-LOTE', wine: 'FT', wineCode: 'FT', name: 'FT', vintage: null, formatMl: 750, color: 'red', organic: true, abv: null, lot: 'LAT2025', forSale: true, priced: false },
+  { sku: 'BFT-2009', wine: 'B+/FT', wineCode: 'BFT', name: 'B+/FT 2009', vintage: 2009, formatMl: 750, color: 'red', organic: true, abv: null, lot: 'LAT2025', forSale: true, priced: false },
+  { sku: 'ENT-MAG', wine: 'enTreDicho', wineCode: 'ENTREDICHO', name: '8 magnum entrdicho', vintage: null, formatMl: 1500, color: 'red', organic: true, abv: null, lot: 'LAT2025', forSale: true, priced: false },
+  { sku: 'BOBAL-ENT-MAG', wine: 'Bobal-enTreDicho', wineCode: 'BOBAL-ENT', name: 'Mg Bobal-Entredicho', vintage: null, formatMl: 1500, color: 'red', organic: true, abv: null, lot: 'LAT2025', forSale: true, priced: false },
+  { sku: 'BOTELLASOLD', wine: 'botellasold', wineCode: 'BOTELLASOLD', name: 'botellasold', vintage: null, formatMl: 1500, color: 'red', organic: true, abv: null, lot: 'LAT2025', forSale: true, priced: false },
+  { sku: 'MET-BOBAL', wine: 'metodo bobal', wineCode: 'MET-BOBAL', name: 'metodo bobal', vintage: null, formatMl: 750, color: 'red', organic: true, abv: null, lot: 'LAT2025', forSale: true, priced: false },
+  { sku: 'MET-MUSCAT', wine: 'metodomuscat', wineCode: 'MET-MUSCAT', name: 'metodomuscat 19', vintage: 2019, formatMl: 750, color: 'white', organic: true, abv: null, lot: 'LAB2025', forSale: true, priced: false },
+  { sku: 'JAEN-NEGRO', wine: 'jaen negro', wineCode: 'JAEN-NEGRO', name: 'jaen negro', vintage: null, formatMl: 750, color: 'red', organic: true, abv: null, lot: 'LAT2025', forSale: true, priced: false },
+  { sku: 'METODOS-OLD', wine: 'metodos old', wineCode: 'METODOS', name: 'metodos old', vintage: null, formatMl: 750, color: 'red', organic: true, abv: null, lot: 'LAT2025', forSale: true, priced: false },
+  { sku: 'METODOS-FINAL', wine: 'metodos old final', wineCode: 'METODOS-F', name: 'metodos old final', vintage: null, formatMl: 750, color: 'red', organic: true, abv: null, lot: 'LAT2025', forSale: true, priced: false },
+  { sku: 'OTRAS-ANADAS', wine: 'otras añadas', wineCode: 'OTRAS', name: 'otras añadas', vintage: null, formatMl: 750, color: 'red', organic: true, abv: null, lot: 'LAT2025', forSale: true, priced: false },
+  { sku: 'LAS-VIRGINIAS', wine: 'Las Virginias', wineCode: 'VIRGINIAS', name: 'Las Virginias 2025', vintage: 2025, formatMl: 750, color: 'red', organic: true, abv: '13.50', lot: 'EB2025V', forSale: true, priced: false },
 ];
 
-export const EXTRA_LOTS = ['LAB2025', 'LAT2025'] as const;
+/** Lotes que Pedro usa en varias fichas. No pertenecen a un solo vino. */
+export const SHARED_LOTS = ['LAB2025', 'LAT2025'] as const;
+
+/** El Excel de TFRP dice EMUS2023. En bodega el mismo vino está en EMUS23. */
+export const EXTRA_NAMED_LOTS = [
+  { code: 'EMUS2023', wineCode: 'MUSCAT', vintage: 2023, note: 'Pedro confirma EMUS2023 para el Muscat 2023 de TFRP. En bodega el lote es EMUS23.' },
+] as const;
+
+export const EXTRA_LOTS = SHARED_LOTS;

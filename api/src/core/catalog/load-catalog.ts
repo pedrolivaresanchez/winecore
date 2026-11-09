@@ -1,7 +1,7 @@
 import type { Writer } from '../db/writer';
 import { sql } from '../db/sql';
 import { newId } from '../ids';
-import { CATALOG_WINES, EXTRA_LOTS } from './catalog-snapshot';
+import { CATALOG_WINES, EXTRA_LOTS, EXTRA_NAMED_LOTS, SHARED_LOTS } from './catalog-snapshot';
 
 const ACTOR = { type: 'migration' as const, id: '019c0000-0000-7000-8000-0000000000ac', requestId: 'load-catalog' };
 
@@ -89,19 +89,37 @@ export async function loadCatalog(writer: Writer): Promise<CatalogLoadReport> {
         WHERE sku = ${row.sku}
       `);
     }
+    const shared = (SHARED_LOTS as readonly string[]).includes(row.lot ?? '');
     if (row.lot && !lotId.has(row.lot)) {
       const id = newId();
       lotId.set(row.lot, id);
       createdLots += 1;
+      const lotWine = shared ? null : wid ?? null;
       statements.push(sql`
-        INSERT INTO inventory.lot (id, producer_entity_id, code, kind, wine_id, vintage, is_organic, origin)
+        INSERT INTO inventory.lot (id, producer_entity_id, code, kind, wine_id, vintage, is_organic, origin, notes)
         VALUES (
           CAST(${id} AS UUID), CAST(${poId} AS UUID), ${row.lot}, 'bottled',
-          CASE WHEN ${wid ?? null} IS NULL THEN NULL ELSE CAST(${wid ?? null} AS UUID) END,
-          ${row.vintage}, ${row.organic}, 'opening_count'
+          CASE WHEN ${lotWine} IS NULL THEN NULL ELSE CAST(${lotWine} AS UUID) END,
+          ${row.vintage}, ${row.organic}, 'opening_count',
+          ${shared ? 'Lote de hoja compartido por varias fichas.' : null}
         )
       `);
     }
+  }
+  for (const named of EXTRA_NAMED_LOTS) {
+    if (lotId.has(named.code)) continue;
+    const id = newId();
+    lotId.set(named.code, id);
+    createdLots += 1;
+    const wid = wineId.get(named.wineCode) ?? null;
+    statements.push(sql`
+      INSERT INTO inventory.lot (id, producer_entity_id, code, kind, wine_id, vintage, is_organic, origin, notes)
+      VALUES (
+        CAST(${id} AS UUID), CAST(${poId} AS UUID), ${named.code}, 'bottled',
+        CASE WHEN ${wid} IS NULL THEN NULL ELSE CAST(${wid} AS UUID) END,
+        ${named.vintage}, TRUE, 'opening_count', ${named.note}
+      )
+    `);
   }
   for (const code of EXTRA_LOTS) {
     if (lotId.has(code)) continue;

@@ -25,6 +25,10 @@ describe('foto de envasado', () => {
     expect(lines.find((line) => line.wine_label === 'Garnacha Pirotécnica 2023')?.lot_code).toBe('EGP2023');
     expect(lines.find((line) => line.wine_label === 'DEMORADO 2024')?.lot_code).toBe('L2024');
     expect(lines.find((line) => line.wine_label === 'DEMORADO 2024')?.bottle_ml).toBe(500);
+    const aplatinao = lines.filter((line) => line.niche_number === 8);
+    expect(aplatinao.reduce((sum, line) => sum + line.bottles, 0)).toBe(54);
+    expect(aplatinao.reduce((sum, line) => sum + line.volume_ml, 0)).toBe(45_000);
+    expect(aplatinao.map((line) => line.bottle_ml).sort((left, right) => (left ?? 0) - (right ?? 0))).toEqual([750, 1500]);
   });
 
   it('deja Demorado en 2024 aunque tres PDF impriman 2023', () => {
@@ -44,6 +48,14 @@ describe('foto de envasado', () => {
     const matched = matchBottledLine(line!, wines, [], []);
     expect(matched.wineId).toBeNull();
     expect(matched.status).toBe('unmatched');
+    const entredicho = bottledLines().find((item) => item.wine_label === 'enTreDicho E202122');
+    const products = [
+      { id: 'p2122', name: 'enTreDicho 2021-22', wineId: 'w', vintage: 2021, nominalMl: 750, kind: 'wine', lotCode: 'E202122' },
+      { id: 'p2324', name: 'enTreDicho 23-24', wineId: 'w', vintage: 2023, nominalMl: 750, kind: 'wine', lotCode: '202324' },
+    ];
+    const hit = matchBottledLine(entredicho!, [{ id: 'w', code: 'ENTREDICHO', name: 'enTreDicho', color: 'red', organic: true }], [{ id: 'l', code: 'E202122', wineId: 'w' }], products);
+    expect(hit.productId).toBe('p2122');
+    expect(hit.status).toBe('matched');
   });
 
   it('agota el nicho antes que el siguiente', () => {

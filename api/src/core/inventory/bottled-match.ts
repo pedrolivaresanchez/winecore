@@ -9,6 +9,7 @@ export type ProductRef = {
   vintage: number | null;
   nominalMl: number | null;
   kind: string;
+  lotCode?: string | null;
 };
 
 export type LineMatch = {
@@ -74,13 +75,42 @@ export function matchLot(code: string | null, lots: readonly LotRef[]): { lot: L
   return { lot: null, ambiguous: hits.length > 1 };
 }
 
-export function matchProduct(label: string, wineId: string | null, bottleMl: number | null, products: readonly ProductRef[]): ProductRef | null {
-  if (!wineId || !bottleMl) return null;
-  const candidates = products.filter((product) => product.kind === 'wine' && product.wineId === wineId && product.nominalMl === bottleMl);
+const SHARED_LOT = new Set(['LAB2025', 'LAT2025']);
+
+function sameLot(product: ProductRef, lotCode: string | null): boolean {
+  return Boolean(lotCode && product.lotCode && foldCode(product.lotCode) === foldCode(lotCode));
+}
+
+function pickNamed(label: string, candidates: readonly ProductRef[]): ProductRef | null {
+  const exact = candidates.filter((product) => fold(product.name) === fold(label));
+  if (exact.length === 1) return exact[0] ?? null;
+  const contained = candidates
+    .filter((product) => fold(product.name).length >= 4 && fold(label).includes(fold(product.name)))
+    .sort((left, right) => fold(right.name).length - fold(left.name).length);
+  const top = contained[0];
+  const next = contained[1];
+  if (top && (!next || fold(top.name).length > fold(next.name).length)) return top;
+  return null;
+}
+
+export function matchProduct(
+  label: string,
+  wineId: string | null,
+  bottleMl: number | null,
+  products: readonly ProductRef[],
+  lotCode: string | null = null,
+): ProductRef | null {
+  if (!bottleMl) return null;
+  const sized = products.filter((product) => product.kind === 'wine' && product.nominalMl === bottleMl);
+  const byLot = lotCode ? sized.filter((product) => sameLot(product, lotCode)) : [];
+  if (byLot.length === 1) return byLot[0] ?? null;
+  const named = pickNamed(label, byLot.length > 0 ? byLot : sized.filter((product) => wineId == null || product.wineId === wineId));
+  if (named) return named;
+  const candidates = sized.filter((product) => wineId != null && product.wineId === wineId);
   const years = yearsOf(label);
-  if (years.length === 1) {
-    const vintage = candidates.filter((product) => product.vintage === years[0]);
-    return vintage.length === 1 ? vintage[0] ?? null : null;
+  if (years.length >= 1) {
+    const vintage = candidates.filter((product) => product.vintage != null && years.includes(product.vintage));
+    if (vintage.length === 1) return vintage[0] ?? null;
   }
   return candidates.length === 1 ? candidates[0] ?? null : null;
 }
@@ -98,21 +128,29 @@ export function matchBottledLine(line: BottledLine, wines: readonly WineRef[], l
     };
   }
   const notes: string[] = [];
+  const sheetLot = fold(line.wine_label) === 'bobal xpo' && !line.lot_code
+    ? 'EB2025V'
+    : isWineout(line.wine_label) && !line.lot_code
+      ? 'WINEOUT'
+      : line.lot_code;
+  if (fold(line.wine_label) === 'bobal xpo') notes.push('La hoja dice bobal xpo. Pedro lo nombra Las Virginias, lote EB2025V.');
   if (line.note) notes.push(line.note);
   if (line.bottle_ml == null) notes.push('Los litros no cuadran con un formato entero');
   const wineHit = matchWine(line.wine_label, wines);
   if (wineHit.ambiguous.length > 1) notes.push(`Varios vinos: ${wineHit.ambiguous.join(', ')}`);
-  const lotHit = matchLot(line.lot_code, lots);
+  const lotHit = matchLot(sheetLot, lots);
   if (lotHit.ambiguous) notes.push('Varios lotes con el mismo código');
   let wine = wineHit.wine;
   let lot = lotHit.lot;
-  if (wine && lot?.wineId && lot.wineId !== wine.id) {
+  const sharedLot = Boolean(lot && SHARED_LOT.has(lot.code));
+  if (wine && lot?.wineId && lot.wineId !== wine.id && !sharedLot) {
     notes.push('El lote pertenece a otro vino');
     wine = null;
     lot = null;
   }
   if (!wine && lot?.wineId) wine = wines.find((item) => item.id === lot?.wineId) ?? null;
-  const product = matchProduct(line.wine_label, wine?.id ?? null, line.bottle_ml, products);
+  const product = matchProduct(line.wine_label, wine?.id ?? null, line.bottle_ml, products, sheetLot);
+  if (!wine && product?.wineId) wine = wines.find((item) => item.id === product.wineId) ?? null;
   if (wine && line.color && COLOR[wine.color] && COLOR[wine.color] !== line.color) {
     notes.push(`El catálogo dice ${COLOR[wine.color]} y la hoja ${line.color}`);
   }
@@ -120,7 +158,7 @@ export function matchBottledLine(line: BottledLine, wines: readonly WineRef[], l
   if (!matched) {
     if (!wine) notes.push('Sin vino en el catálogo');
     if (!product) notes.push('Sin producto de esa añada y formato');
-    if (!lot) notes.push(line.lot_code ? `Sin lote ${line.lot_code}` : 'La hoja no trae lote');
+    if (!lot) notes.push(sheetLot ? `Sin lote ${sheetLot}` : 'La hoja no trae lote');
   }
   return {
     wineId: wine?.id ?? null,

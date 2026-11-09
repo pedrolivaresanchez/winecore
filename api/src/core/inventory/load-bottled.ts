@@ -1,6 +1,7 @@
 import type { Writer } from '../db/writer';
 import { sql } from '../db/sql';
 import { newId } from '../ids';
+import { CATALOG_WINES } from '../catalog/catalog-snapshot';
 import { matchBottledLine, type LotRef, type ProductRef, type WineRef } from './bottled-match';
 import {
   BARRELS,
@@ -92,6 +93,140 @@ export async function rebuildPackagedBook(writer: Writer): Promise<{ lines: numb
   return { lines: grouped.size, unmatched };
 }
 
+/** Vuelve a enlazar las líneas ya cargadas con el catálogo actual. */
+export async function rematchBottledPlacements(writer: Writer): Promise<{ updated: number; unmatched: Report['unmatched'] }> {
+  const wines = await writer.read<Record<string, unknown>>(`SELECT id::VARCHAR AS id, code, name, color, is_organic FROM catalog.wine WHERE is_active`);
+  const lots = await writer.read<Record<string, unknown>>(`SELECT id::VARCHAR AS id, code, wine_id::VARCHAR AS wine_id FROM inventory.lot WHERE status <> 'closed'`);
+  const products = await writer.read<Record<string, unknown>>(`
+    SELECT p.id::VARCHAR AS id, p.sku, p.name, p.wine_id::VARCHAR AS wine_id, p.vintage::VARCHAR AS vintage, p.kind,
+           f.nominal_volume_ml::VARCHAR AS nominal
+    FROM catalog.product p
+    LEFT JOIN catalog.format f ON f.id = p.format_id
+    WHERE p.is_active
+  `);
+  const wineRefs: WineRef[] = wines.map((row) => ({
+    id: idOf(row.id), code: String(row.code), name: String(row.name), color: String(row.color), organic: row.is_organic === true,
+  }));
+  const lotRefs: LotRef[] = lots.map((row) => ({ id: idOf(row.id), code: String(row.code), wineId: row.wine_id == null ? null : idOf(row.wine_id) }));
+  const lotBySku = new Map(CATALOG_WINES.flatMap((row) => row.lot ? [[row.sku, row.lot] as const] : []));
+  const productRefs: ProductRef[] = products.map((row) => ({
+    id: idOf(row.id),
+    name: String(row.name),
+    wineId: row.wine_id == null ? null : idOf(row.wine_id),
+    vintage: row.vintage == null || row.vintage === '' ? null : Number(row.vintage),
+    nominalMl: row.nominal == null || row.nominal === '' ? null : Number(row.nominal),
+    kind: String(row.kind),
+    lotCode: lotBySku.get(String(row.sku)) ?? null,
+  }));
+  const placements = await writer.read<Record<string, unknown>>(`
+    SELECT id::VARCHAR AS id, location_id::VARCHAR AS location_id, owner_entity_id::VARCHAR AS owner_id,
+           wine_label, lot_code_raw, bottle_ml::VARCHAR AS bottle_ml,
+           opened_bottles::VARCHAR AS bottles, opened_volume_ml::VARCHAR AS volume,
+           slot_kind, slot_code, niche_number::VARCHAR AS niche_number, color, not_for_sale, note
+    FROM cellar.bottled_placement
+    WHERE source_sheet <> 'verify.local' AND slot_code <> 'JAU-XPO'
+  `);
+  const unmatched: Report['unmatched'] = [];
+  let updated = 0;
+  await writer.withWrite(ACTOR, async (tx) => {
+    for (const row of placements) {
+      const bottle = row.bottle_ml == null || row.bottle_ml === '' ? null : Number(row.bottle_ml);
+      const line: BottledLine = {
+        slot_kind: String(row.slot_kind) as BottledLine['slot_kind'],
+        slot_code: String(row.slot_code),
+        niche_number: null,
+        pallet_count: null,
+        line_no: 1,
+        lot_code: row.lot_code_raw == null ? null : String(row.lot_code_raw),
+        wine_label: String(row.wine_label),
+        bottles: Number(row.bottles),
+        volume_ml: Number(row.volume),
+        bottle_ml: bottle,
+        abv: null,
+        organic: null,
+        color: row.color == null ? null : String(row.color) as BottledLine['color'],
+        state: 'packaged_labeled',
+        note: row.note == null ? null : String(row.note),
+        source_sheet: 'rematch',
+        source_row: 1,
+        not_for_sale: row.not_for_sale === true,
+      };
+      const splitAplatinao = line.wine_label === 'APLATINAO +APMG 3' && line.bottle_ml == null && line.bottles === 54;
+      if (splitAplatinao) {
+        line.bottles = 48;
+        line.volume_ml = 36_000;
+        line.bottle_ml = 750;
+        line.note = 'Reparto para cuadrar 54 botellas y 45 L: 48 de 0,75 L';
+        const magnumId = newId();
+        const magnum = matchBottledLine({
+          ...line,
+          wine_label: 'Aplatinao magnum',
+          bottles: 6,
+          volume_ml: 9_000,
+          bottle_ml: 1500,
+          lot_code: 'LAT2025',
+        }, wineRefs, lotRefs, productRefs);
+        tx.write(sql`
+          INSERT INTO cellar.bottled_move (
+            id, occurred_at, placement_id, qty_units, volume_ml, move_type, source_table, source_id, created_by
+          ) VALUES (
+            CAST(${newId()} AS UUID), CAST(${OPENING_AT} AS TIMESTAMPTZ), CAST(${String(row.id)} AS UUID),
+            -6, -9000, 'cellar_out', 'cellar.bottled_placement', CAST(${String(row.id)} AS UUID), 'load-bottled-stock'
+          )
+        `);
+        tx.write(sql`
+          INSERT INTO cellar.bottled_placement (
+            id, location_id, slot_kind, slot_code, niche_number, line_no, wine_label, lot_code_raw,
+            wine_id, product_id, lot_id, owner_entity_id, opened_bottles, bottle_ml, opened_volume_ml,
+            product_state, not_for_sale, match_status, match_note, note, source_sheet, source_row, photo_date
+          ) VALUES (
+            CAST(${magnumId} AS UUID), CAST(${String(row.location_id)} AS UUID), 'nicho', 'NIC-08',
+            ${row.niche_number == null ? 8 : Number(row.niche_number)}, 2, 'Aplatinao magnum', 'LAT2025',
+            CASE WHEN ${magnum.wineId} IS NULL THEN NULL ELSE CAST(${magnum.wineId} AS UUID) END,
+            CASE WHEN ${magnum.productId} IS NULL THEN NULL ELSE CAST(${magnum.productId} AS UUID) END,
+            CASE WHEN ${magnum.lotId} IS NULL THEN NULL ELSE CAST(${magnum.lotId} AS UUID) END,
+            CAST(${String(row.owner_id)} AS UUID), 6, 1500, 9000, 'packaged_labeled', FALSE,
+            ${magnum.status}, ${magnum.note}, 'Reparto para cuadrar 54 botellas y 45 L: 6 magnum de 1,50 L',
+            'ENVASADO NICHOS NUMERADOS', 1011, DATE '2026-11-09'
+          )
+        `);
+        tx.write(sql`
+          INSERT INTO cellar.bottled_move (
+            id, occurred_at, placement_id, qty_units, volume_ml, move_type, lot_id, source_table, source_id, created_by
+          ) VALUES (
+            CAST(${newId()} AS UUID), CAST(${OPENING_AT} AS TIMESTAMPTZ), CAST(${magnumId} AS UUID),
+            6, 9000, 'opening',
+            CASE WHEN ${magnum.lotId} IS NULL THEN NULL ELSE CAST(${magnum.lotId} AS UUID) END,
+            'cellar.bottled_placement', CAST(${magnumId} AS UUID), 'load-bottled-stock'
+          )
+        `);
+      }
+      const linked = matchBottledLine(line, wineRefs, lotRefs, productRefs);
+      if (linked.status !== 'matched' && line.bottles > 0) {
+        unmatched.push({ wine: line.wine_label, lot: line.lot_code, where: line.slot_code, note: linked.note });
+      } else {
+        updated += 1;
+      }
+      tx.write(sql`
+        UPDATE cellar.bottled_placement SET
+          wine_id = CASE WHEN ${linked.wineId} IS NULL THEN NULL ELSE CAST(${linked.wineId} AS UUID) END,
+          product_id = CASE WHEN ${linked.productId} IS NULL THEN NULL ELSE CAST(${linked.productId} AS UUID) END,
+          lot_id = CASE WHEN ${linked.lotId} IS NULL THEN NULL ELSE CAST(${linked.lotId} AS UUID) END,
+          bottle_ml = ${line.bottle_ml},
+          opened_bottles = ${line.bottles},
+          opened_volume_ml = ${line.volume_ml},
+          not_for_sale = ${linked.notForSale},
+          match_status = ${linked.status},
+          match_note = ${linked.note},
+          note = ${line.note},
+          wine_label = ${fold(line.wine_label) === 'bobal xpo' ? 'Las Virginias 2025' : line.wine_label}
+        WHERE id = CAST(${String(row.id)} AS UUID)
+      `);
+    }
+  });
+  return { updated, unmatched };
+}
+
 export async function loadBottledStock(writer: Writer): Promise<Report> {
   const existing = await writer.read<{ n: string }>(`SELECT count(*)::VARCHAR AS n FROM cellar.bottled_placement`);
   if (Number(existing[0]?.n ?? 0) > 0) {
@@ -108,7 +243,7 @@ export async function loadBottledStock(writer: Writer): Promise<Report> {
   const wines = await writer.read<Record<string, unknown>>(`SELECT id::VARCHAR AS id, code, name, color, is_organic FROM catalog.wine WHERE is_active`);
   const lots = await writer.read<Record<string, unknown>>(`SELECT id::VARCHAR AS id, code, wine_id::VARCHAR AS wine_id FROM inventory.lot WHERE status <> 'closed'`);
   const products = await writer.read<Record<string, unknown>>(`
-    SELECT p.id::VARCHAR AS id, p.name, p.wine_id::VARCHAR AS wine_id, p.vintage::VARCHAR AS vintage, p.kind,
+    SELECT p.id::VARCHAR AS id, p.sku, p.name, p.wine_id::VARCHAR AS wine_id, p.vintage::VARCHAR AS vintage, p.kind,
            f.nominal_volume_ml::VARCHAR AS nominal
     FROM catalog.product p
     LEFT JOIN catalog.format f ON f.id = p.format_id
@@ -118,6 +253,7 @@ export async function loadBottledStock(writer: Writer): Promise<Report> {
     id: idOf(row.id), code: String(row.code), name: String(row.name), color: String(row.color), organic: row.is_organic === true,
   }));
   const lotRefs: LotRef[] = lots.map((row) => ({ id: idOf(row.id), code: String(row.code), wineId: row.wine_id == null ? null : idOf(row.wine_id) }));
+  const lotBySku = new Map(CATALOG_WINES.flatMap((row) => row.lot ? [[row.sku, row.lot] as const] : []));
   const productRefs: ProductRef[] = products.map((row) => ({
     id: idOf(row.id),
     name: String(row.name),
@@ -125,6 +261,7 @@ export async function loadBottledStock(writer: Writer): Promise<Report> {
     vintage: row.vintage == null || row.vintage === '' ? null : Number(row.vintage),
     nominalMl: row.nominal == null || row.nominal === '' ? null : Number(row.nominal),
     kind: String(row.kind),
+    lotCode: lotBySku.get(String(row.sku)) ?? null,
   }));
   const contact = await writer.read<{ id: string }>(sql`SELECT id::VARCHAR AS id FROM party.contact WHERE tax_id = ${TFRP_STORAGE.taxId} AND archived_at IS NULL LIMIT 1`);
   const operatorId = contact[0] ? idOf(contact[0].id) : newId();
@@ -301,7 +438,7 @@ export async function loadBottledStock(writer: Writer): Promise<Report> {
       SELECT CAST(${id} AS UUID), CAST(${where} AS UUID), z.id,
              CASE WHEN ${holder} IS NULL THEN NULL ELSE CAST(${holder} AS UUID) END,
              ${line.slot_kind}, ${line.slot_code}, ${line.niche_number}, ${line.pallet_count}, ${line.line_no},
-             ${line.wine_label}, ${line.lot_code},
+             ${fold(line.wine_label) === 'bobal xpo' ? 'Las Virginias 2025' : line.wine_label}, ${line.lot_code},
              CASE WHEN ${linked.wineId} IS NULL THEN NULL ELSE CAST(${linked.wineId} AS UUID) END,
              CASE WHEN ${linked.productId} IS NULL THEN NULL ELSE CAST(${linked.productId} AS UUID) END,
              CASE WHEN ${linked.lotId} IS NULL THEN NULL ELSE CAST(${linked.lotId} AS UUID) END,
