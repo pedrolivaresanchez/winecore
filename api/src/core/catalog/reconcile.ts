@@ -553,7 +553,7 @@ async function planFichas(writer: Writer): Promise<{ report: FichasReport; ops: 
     if (!duplicate) {
       report.skipped.push('No está el producto LA-GRAN-OXIDACION-O1-2023-B050');
     } else {
-      await hideIfNoStock(writer, report, ops, duplicate.id, 'LA-GRAN-OXIDACION-O1-2023-B050', lem.id);
+      await hideIfSpare(writer, report, ops, duplicate.id, 'LA-GRAN-OXIDACION-O1-2023-B050', lem.id);
     }
   }
   for (const sku of FORMATLESS_SKUS) {
@@ -562,12 +562,12 @@ async function planFichas(writer: Writer): Promise<{ report: FichasReport; ops: 
       report.skipped.push(`No está el producto ${sku}`);
       continue;
     }
-    await hideIfNoStock(writer, report, ops, product.id, sku, null);
+    await hideIfSpare(writer, report, ops, product.id, sku, null);
   }
   return { report, ops };
 }
 
-async function hideIfNoStock(
+async function hideIfSpare(
   writer: Writer,
   report: FichasReport,
   ops: FichasOp[],
@@ -585,8 +585,51 @@ async function hideIfNoStock(
     report.kept.push(`${sku} tiene stock propio (${units} bot., ${(ml / 1000).toFixed(2)} L). No se oculta.`);
     return;
   }
+  const use = await commercialUse(writer, productId);
+  if (use && !(await hasVisibleSibling(writer, productId))) {
+    report.kept.push(`${sku} es el único producto visible de ese vino y añada y tiene ${use}. No se oculta.`);
+    return;
+  }
   report.hidden.push(`${sku} queda oculta. No tiene stock propio.`);
   ops.push({ op: 'hide-product', id: productId, into });
+}
+
+async function commercialUse(writer: Writer, productId: string): Promise<string | null> {
+  const rows = await writer.read<{ tariff: string; delivery: string; invoice: string }>(sql`
+    SELECT
+      (SELECT count(*) FROM catalog.price_list_item i
+        JOIN catalog.price_list_version v ON v.id = i.version_id
+        WHERE i.product_id = CAST(${productId} AS UUID) AND v.status = 'active')::VARCHAR AS tariff,
+      (SELECT count(*) FROM sales.delivery_note_line WHERE product_id = CAST(${productId} AS UUID))::VARCHAR AS delivery,
+      (SELECT count(*) FROM billing.invoice_line WHERE product_id = CAST(${productId} AS UUID))::VARCHAR AS invoice
+  `);
+  const row = rows[0];
+  const parts: string[] = [];
+  if (Number(row?.tariff ?? 0) > 0) parts.push('precios en una tarifa activa');
+  if (Number(row?.delivery ?? 0) > 0) parts.push('líneas de albarán');
+  if (Number(row?.invoice ?? 0) > 0) parts.push('líneas de factura');
+  return parts.length === 0 ? null : parts.join(' y ');
+}
+
+async function hasVisibleSibling(writer: Writer, productId: string): Promise<boolean> {
+  const rows = await writer.read<{ n: string }>(sql`
+    SELECT count(*)::VARCHAR AS n
+    FROM catalog.product other
+    LEFT JOIN catalog.product_overlay ovo ON ovo.product_id = other.id
+    WHERE other.id <> CAST(${productId} AS UUID)
+      AND other.is_active
+      AND NOT COALESCE(ovo.hidden, FALSE)
+      AND COALESCE(ovo.wine_id, other.wine_id) IS NOT DISTINCT FROM (
+        SELECT COALESCE(svo.wine_id, self.wine_id)
+        FROM catalog.product self
+        LEFT JOIN catalog.product_overlay svo ON svo.product_id = self.id
+        WHERE self.id = CAST(${productId} AS UUID)
+      )
+      AND other.vintage IS NOT DISTINCT FROM (
+        SELECT vintage FROM catalog.product WHERE id = CAST(${productId} AS UUID)
+      )
+  `);
+  return Number(rows[0]?.n ?? 0) > 0;
 }
 
 async function productBySku(writer: Writer, sku: string): Promise<{ id: string } | null> {
