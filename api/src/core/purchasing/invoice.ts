@@ -803,7 +803,7 @@ export async function listInvoices(writer: Writer, user: UserCtx, url: URL): Pro
   const limit = limitRaw == null || limitRaw === '' ? 50 : Number(limitRaw);
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) invalid({ limit: 'Debe estar entre 1 y 100' });
   const entityRef = url.searchParams.get('entity') ?? url.searchParams.get('legal_entity_id');
-  const filters = ['TRUE'];
+  const filters = ["COALESCE(i.origin, 'native') <> 'holded_import'"];
   if (status) filters.push(sql`i.status = ${status}`);
   if (!scopeAll(user, 'purchasing.read')) {
     const ids = user.roles.flatMap((role) =>

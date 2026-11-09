@@ -15,21 +15,24 @@ export type LegacyInvoice = {
   entity_code: string
 }
 
+export type CompanyFigures = { PO: string; CVPO: string }
+export type CompanyCounts = { PO: number; CVPO: number }
+
 export type LegacyOverview = {
   entity: EntityFilter
   year: number
   kpis: {
-    sales_this_year: string
-    sales_last_year: string
-    pending_receivables: string
-    pending_receivables_count: number
+    sales_this_year: CompanyFigures
+    sales_last_year: CompanyFigures
+    pending_receivables: CompanyFigures
+    pending_receivables_count: CompanyCounts
     contacts: number
     open_payables: string
     open_payables_count: number
   }
   recent_invoices: LegacyInvoice[]
   top_customers: { name: string; total: string; invoices: number }[]
-  months: { month: number; total: string }[]
+  months: { month: number; PO: string; CVPO: string }[]
   has_imported: boolean
 }
 

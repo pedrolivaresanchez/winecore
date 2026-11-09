@@ -432,6 +432,10 @@ export async function listSalesOrders(writer: Writer, request: Request): Promise
   const filters = ['TRUE'];
   if (status) filters.push(`status = ${sql`${status}`}`);
   if (entity && UUID_RE.test(entity)) filters.push(`legal_entity_id = CAST(${sql`${entity}`} AS UUID)`);
+  else if (entity && /^(po|cvpo)$/i.test(entity.trim())) {
+    const code = entity.trim().toUpperCase();
+    filters.push(`legal_entity_id = (SELECT id FROM core.legal_entity WHERE code = ${sql`${code}`})`);
+  } else if (entity) throw domainError('WC_VALIDATION', { entity: 'La entidad debe ser P.O, CVPO o su identificador' });
   if (customer && UUID_RE.test(customer)) filters.push(`customer_id = CAST(${sql`${customer}`} AS UUID)`);
   if (channel) filters.push(`channel = ${sql`${channel}`}`);
   if (cursor) filters.push(`id < CAST(${sql`${cursor}`} AS UUID)`);

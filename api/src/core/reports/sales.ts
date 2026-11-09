@@ -57,10 +57,13 @@ async function loadSales(writer: Writer, scope: ReportScope, from: string, to: s
         AND lower(trim(h.status_holded)) NOT IN ('anulado', 'anulada', 'voided', 'cancelled', 'cancelada')
         AND NOT EXISTS (
           SELECT 1 FROM billing.invoice bi
-          WHERE bi.legal_entity_id = h.entity_id
-            AND bi.number = h.number
-            AND bi.issue_date = h.issue_date
-            AND bi.status IN ('issued', 'voided')
+          WHERE bi.holded_invoice_id = h.id
+             OR (
+               bi.legal_entity_id = h.entity_id
+               AND bi.number = h.number
+               AND bi.issue_date = h.issue_date
+               AND bi.status IN ('issued', 'voided')
+             )
         )
         AND NOT EXISTS (
           SELECT 1
