@@ -31,7 +31,8 @@ export async function siblingLabels(
   const rows = await db.read<ProductRow>(sql`
     SELECT p.id::VARCHAR AS id, p.sku, p.name, w.code AS wine_code, f.nominal_volume_ml::VARCHAR AS nominal
     FROM catalog.product p
-    JOIN catalog.wine w ON w.id = p.wine_id
+    LEFT JOIN catalog.product_overlay po ON po.product_id = p.id
+    JOIN catalog.wine_visible w ON w.id = COALESCE(po.wine_id, p.wine_id)
     LEFT JOIN catalog.format f ON f.id = p.format_id
     WHERE p.is_active = TRUE AND p.for_sale = TRUE
   `);
@@ -50,7 +51,8 @@ export async function allowedLabelProductIds(db: Readable, sourceProductId: stri
   const rows = await db.read<{ wine_code: string | null; nominal: string | null }>(sql`
     SELECT w.code AS wine_code, f.nominal_volume_ml::VARCHAR AS nominal
     FROM catalog.product p
-    LEFT JOIN catalog.wine w ON w.id = p.wine_id
+    LEFT JOIN catalog.product_overlay po ON po.product_id = p.id
+    LEFT JOIN catalog.wine_visible w ON w.id = COALESCE(po.wine_id, p.wine_id)
     LEFT JOIN catalog.format f ON f.id = p.format_id
     WHERE p.id = CAST(${sourceProductId} AS UUID)
   `);

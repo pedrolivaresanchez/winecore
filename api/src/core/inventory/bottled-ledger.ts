@@ -432,8 +432,9 @@ export async function correctPlacement(writer: Writer, actor: Actor, input: {
   let wineLabel = String(row.wine_label);
   if (productId) {
     const products = await writer.read<{ name: string; wine_id: string | null; kind: string; nominal: string | null }>(sql`
-      SELECT p.name, p.wine_id::VARCHAR AS wine_id, p.kind, f.nominal_volume_ml::VARCHAR AS nominal
+      SELECT p.name, COALESCE(po.wine_id, p.wine_id)::VARCHAR AS wine_id, p.kind, f.nominal_volume_ml::VARCHAR AS nominal
       FROM catalog.product p
+      LEFT JOIN catalog.product_overlay po ON po.product_id = p.id
       LEFT JOIN catalog.format f ON f.id = p.format_id
       WHERE p.id = CAST(${productId} AS UUID) AND p.is_active = TRUE
     `);

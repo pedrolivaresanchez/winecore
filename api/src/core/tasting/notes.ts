@@ -593,7 +593,9 @@ function noteSelect(): string {
     FROM tasting.note n
     JOIN tasting.template t ON t.id = n.template_id
     LEFT JOIN inventory.lot lot ON lot.id = n.lot_id
-    LEFT JOIN catalog.wine wine ON wine.id = COALESCE(n.wine_id, lot.wine_id)
+    LEFT JOIN inventory.lot_overlay lo ON lo.lot_id = lot.id
+    LEFT JOIN catalog.product_overlay po ON po.product_id = n.product_id
+    LEFT JOIN catalog.wine_visible wine ON wine.id = COALESCE(n.wine_id, po.wine_id, lo.wine_id, lot.wine_id)
   `;
 }
 

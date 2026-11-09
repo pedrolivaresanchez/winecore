@@ -150,7 +150,7 @@ async function loadSales(writer: Writer, scope: ReportScope, from: string, to: s
            COALESCE(l.line_no, 0) AS line_no,
            CAST(l.product_id AS VARCHAR) AS product_id,
            CASE WHEN p.id IS NULL THEN l.description ELSE p.sku || ' · ' || p.name END AS product_label,
-           CAST(COALESCE(p.wine_id, lot.wine_id) AS VARCHAR) AS wine_id,
+           CAST(COALESCE(po.wine_id, lo.wine_id, p.wine_id, lot.wine_id) AS VARCHAR) AS wine_id,
            w.name AS wine_label,
            w.category AS category,
            NULL AS category_label,
@@ -163,9 +163,11 @@ async function loadSales(writer: Writer, scope: ReportScope, from: string, to: s
     LEFT JOIN billing.invoice_line l ON l.invoice_id = i.id
     LEFT JOIN party.contact c ON c.id = i.customer_id
     LEFT JOIN catalog.product p ON p.id = l.product_id
+    LEFT JOIN catalog.product_overlay po ON po.product_id = p.id
     LEFT JOIN catalog.format f ON f.id = p.format_id
     LEFT JOIN inventory.lot lot ON lot.id = l.lot_id
-    LEFT JOIN catalog.wine w ON w.id = COALESCE(p.wine_id, lot.wine_id)
+    LEFT JOIN inventory.lot_overlay lo ON lo.lot_id = lot.id
+    LEFT JOIN catalog.wine_visible w ON w.id = COALESCE(po.wine_id, lo.wine_id, p.wine_id, lot.wine_id)
     UNION ALL
     SELECT 'h:' || CAST(h.id AS VARCHAR),
            CAST(h.issue_date AS VARCHAR),
@@ -177,7 +179,7 @@ async function loadSales(writer: Writer, scope: ReportScope, from: string, to: s
            COALESCE(hl.line_seq, 0),
            CAST(hl.matched_product_id AS VARCHAR),
            CASE WHEN p.id IS NULL THEN hl.description ELSE p.sku || ' · ' || p.name END,
-           CAST(p.wine_id AS VARCHAR),
+           CAST(COALESCE(po.wine_id, lo.wine_id, p.wine_id, lot.wine_id) AS VARCHAR),
            w.name,
            w.category,
            NULL,
@@ -195,8 +197,11 @@ async function loadSales(writer: Writer, scope: ReportScope, from: string, to: s
      AND hl.is_draft = FALSE
     LEFT JOIN party.contact c ON c.id = h.counterparty_contact_id
     LEFT JOIN catalog.product p ON p.id = hl.matched_product_id
+    LEFT JOIN catalog.product_overlay po ON po.product_id = p.id
     LEFT JOIN catalog.format f ON f.id = p.format_id
-    LEFT JOIN catalog.wine w ON w.id = p.wine_id
+    LEFT JOIN inventory.lot lot ON 1 = 0
+    LEFT JOIN inventory.lot_overlay lo ON lo.lot_id = lot.id
+    LEFT JOIN catalog.wine_visible w ON w.id = COALESCE(po.wine_id, lo.wine_id, p.wine_id, lot.wine_id)
   `);
   return rows.map((row) => readLine(row));
 }

@@ -354,25 +354,64 @@ function textOf(value: unknown): string | null {
   return text.length === 0 ? null : text;
 }
 
+async function overlayWineId(reader: Reader, column: "product_id" | "lot_id", table: string, ids: readonly string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(ids.filter((id) => id.length > 0))];
+  const map = new Map<string, string>();
+  if (unique.length === 0) return map;
+  const rows = await reader.read<Record<string, unknown>>(`
+    SELECT ${column} AS id, wine_id
+    FROM ${table}
+    WHERE ${column} IN (${unique.map((id) => uuidSql(id)).join(", ")})
+  `);
+  for (const row of rows) {
+    if (row.wine_id != null) map.set(String(row.id).toLowerCase(), String(row.wine_id).toLowerCase());
+  }
+  return map;
+}
+
+function effectiveWineId(
+  productId: string | null | undefined,
+  lotId: string | null | undefined,
+  products: Map<string, Record<string, unknown>>,
+  lots: Map<string, Record<string, unknown>>,
+  productWine: Map<string, string>,
+  lotWine: Map<string, string>,
+): string | null {
+  const overProduct = productId ? productWine.get(productId) : undefined;
+  const overLot = lotId ? lotWine.get(lotId) : undefined;
+  const product = productId ? products.get(productId) : undefined;
+  const lot = lotId ? lots.get(lotId) : undefined;
+  const raw = overProduct ?? overLot ?? (product?.wine_id == null ? undefined : String(product.wine_id)) ?? (lot?.wine_id == null ? undefined : String(lot.wine_id));
+  return raw ? raw.toLowerCase() : null;
+}
+
 async function decorateBalances(reader: Reader, rows: Balance[]): Promise<Balance[]> {
-  const [locations, vessels, lots, owners, products] = await Promise.all([
+  const productIds = rows.flatMap((row) => (row.product_id ? [row.product_id] : []));
+  const lotIds = rows.flatMap((row) => (row.lot_id ? [row.lot_id] : []));
+  const [locations, vessels, lots, owners, products, productWine, lotWine] = await Promise.all([
     rowsById(reader, "inventory.location", "code, name", rows.flatMap((row) => (row.location_id ? [row.location_id] : []))),
     rowsById(reader, "cellar.vessel", "code, capacity_ml", rows.flatMap((row) => (row.vessel_id ? [row.vessel_id] : []))),
-    rowsById(reader, "inventory.lot", "code, vintage, wine_id", rows.flatMap((row) => (row.lot_id ? [row.lot_id] : []))),
+    rowsById(reader, "inventory.lot", "code, vintage, wine_id", lotIds),
     rowsById(reader, "core.legal_entity", "code", rows.flatMap((row) => (row.owner_entity_id ? [row.owner_entity_id] : []))),
-    rowsById(reader, "catalog.product", "name, format_id", rows.flatMap((row) => (row.product_id ? [row.product_id] : []))),
+    rowsById(reader, "catalog.product", "name, format_id, wine_id", productIds),
+    overlayWineId(reader, "product_id", "catalog.product_overlay", productIds),
+    overlayWineId(reader, "lot_id", "inventory.lot_overlay", lotIds),
   ]);
-  const wineIds = [...lots.values()].flatMap((row) => (row.wine_id ? [String(row.wine_id)] : []));
+  const wineIds = rows.flatMap((row) => {
+    const id = effectiveWineId(row.product_id, row.lot_id, products, lots, productWine, lotWine);
+    return id ? [id] : [];
+  });
   const formatIds = [...products.values()].flatMap((row) => (row.format_id ? [String(row.format_id)] : []));
   const [wines, formats] = await Promise.all([
-    rowsById(reader, "catalog.wine", "name", wineIds),
+    rowsById(reader, "catalog.wine_visible", "name", wineIds),
     rowsById(reader, "catalog.format", "nominal_volume_ml", formatIds),
   ]);
   return rows.map((row) => {
     const location = row.location_id ? locations.get(row.location_id) : undefined;
     const vessel = row.vessel_id ? vessels.get(row.vessel_id) : undefined;
     const lot = row.lot_id ? lots.get(row.lot_id) : undefined;
-    const wine = lot?.wine_id ? wines.get(String(lot.wine_id).toLowerCase()) : undefined;
+    const wineId = effectiveWineId(row.product_id, row.lot_id, products, lots, productWine, lotWine);
+    const wine = wineId ? wines.get(wineId) : undefined;
     const product = row.product_id ? products.get(row.product_id) : undefined;
     const format = product?.format_id ? formats.get(String(product.format_id).toLowerCase()) : undefined;
     const owner = row.owner_entity_id ? owners.get(row.owner_entity_id) : undefined;
@@ -426,22 +465,42 @@ async function decorateMoves(
   const vessels = book === "physical"
     ? await rowsById(reader, "cellar.vessel", "code", rows.flatMap((row) => (typeof row.vessel_id === "string" ? [row.vessel_id] : [])))
     : new Map<string, Record<string, unknown>>();
-  const lots = await rowsById(reader, "inventory.lot", "code, vintage, wine_id", rows.flatMap((row) => (typeof row.lot_id === "string" ? [row.lot_id] : [])));
+  const lotIds = rows.flatMap((row) => (typeof row.lot_id === "string" ? [row.lot_id] : []));
+  const productIds = rows.flatMap((row) => (typeof row.product_id === "string" ? [row.product_id] : []));
+  const lots = await rowsById(reader, "inventory.lot", "code, vintage, wine_id", lotIds);
   const owners = book === "physical"
     ? await rowsById(reader, "core.legal_entity", "code", rows.flatMap((row) => (typeof row.owner_entity_id === "string" ? [row.owner_entity_id] : [])))
     : new Map<string, Record<string, unknown>>();
-  const products = await rowsById(reader, "catalog.product", "name", rows.flatMap((row) => (typeof row.product_id === "string" ? [row.product_id] : [])));
+  const products = await rowsById(reader, "catalog.product", "name, wine_id", productIds);
+  const [productWine, lotWine] = await Promise.all([
+    overlayWineId(reader, "product_id", "catalog.product_overlay", productIds),
+    overlayWineId(reader, "lot_id", "inventory.lot_overlay", lotIds),
+  ]);
   const warehouses = book === "fiscal"
     ? await rowsById(reader, "inventory.tax_warehouse", "name, legal_entity_id", rows.flatMap((row) => (typeof row.tax_warehouse_id === "string" ? [row.tax_warehouse_id] : [])))
     : new Map<string, Record<string, unknown>>();
-  const wines = await rowsById(reader, "catalog.wine", "name", [...lots.values()].flatMap((row) => (row.wine_id ? [String(row.wine_id)] : [])));
+  const wineIds = rows.flatMap((row) => {
+    const productId = typeof row.product_id === "string" ? row.product_id : null;
+    const lotId = typeof row.lot_id === "string" ? row.lot_id : null;
+    const id = effectiveWineId(productId, lotId, products, lots, productWine, lotWine);
+    return id ? [id] : [];
+  });
+  const wines = await rowsById(reader, "catalog.wine_visible", "name", wineIds);
   const operationIds = rows.flatMap((row) => (row.source_table === "cellar.operation" && typeof row.source_id === "string" ? [row.source_id] : []));
   const operations = await rowsById(reader, "cellar.operation", "number", operationIds);
   return rows.map((row) => {
     const location = typeof row.location_id === "string" ? locations.get(row.location_id) : undefined;
     const vessel = typeof row.vessel_id === "string" ? vessels.get(row.vessel_id) : undefined;
     const lot = typeof row.lot_id === "string" ? lots.get(row.lot_id) : undefined;
-    const wine = lot?.wine_id ? wines.get(String(lot.wine_id).toLowerCase()) : undefined;
+    const wineId = effectiveWineId(
+      typeof row.product_id === "string" ? row.product_id : null,
+      typeof row.lot_id === "string" ? row.lot_id : null,
+      products,
+      lots,
+      productWine,
+      lotWine,
+    );
+    const wine = wineId ? wines.get(wineId) : undefined;
     const product = typeof row.product_id === "string" ? products.get(row.product_id) : undefined;
     const owner = typeof row.owner_entity_id === "string" ? owners.get(row.owner_entity_id) : undefined;
     const warehouse = typeof row.tax_warehouse_id === "string" ? warehouses.get(row.tax_warehouse_id) : undefined;

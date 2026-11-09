@@ -257,9 +257,10 @@ export type ProductRow = {
 
 export async function loadProduct(tx: Tx, id: string): Promise<ProductRow> {
   const rows = await tx.read<Record<string, unknown>>(sql`
-    SELECT p.id, p.sku, p.name, p.name_en, p.kind, p.wine_id, p.requires_lot, p.is_stock_tracked,
+    SELECT p.id, p.sku, p.name, p.name_en, p.kind, COALESCE(po.wine_id, p.wine_id) AS wine_id, p.requires_lot, p.is_stock_tracked,
            p.for_sale, p.is_active, p.default_tax_code, p.gtin, p.unit, f.nominal_volume_ml
     FROM catalog.product p
+    LEFT JOIN catalog.product_overlay po ON po.product_id = p.id
     LEFT JOIN catalog.format f ON f.id = p.format_id
     WHERE p.id = CAST(${id} AS UUID)
   `);

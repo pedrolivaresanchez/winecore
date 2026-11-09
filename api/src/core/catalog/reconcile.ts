@@ -423,6 +423,408 @@ async function topUpStock(tx: Tx, report: ReconcileReport): Promise<unknown> {
   return { loaded };
 }
 
+const FICHAS = 'catalog-fichas-2026-11';
+const FORMATLESS_SKUS = ['ECLO-2022', 'ENTREDICHO-2122', 'MOLINERA-2023', 'NEBBIA-2022'];
+
+export type FichasReport = {
+  mode: 'dry-run' | 'apply' | 'revert';
+  xpo: string[];
+  o1: string[];
+  hidden: string[];
+  kept: string[];
+  notes: string[];
+  skipped: string[];
+};
+
+type OverlayBefore = {
+  merged_into_id: string | null;
+  name: string | null;
+  wine_id: string | null;
+  hidden: boolean;
+  for_sale: boolean | null;
+};
+
+type FichasChange = {
+  kind: 'wine' | 'product' | 'lot';
+  id: string;
+  before: OverlayBefore | null;
+};
+
+type FichasOp =
+  | { op: 'hide-wine'; id: string; into: string }
+  | { op: 'point-product'; id: string; wineId: string }
+  | { op: 'point-lot'; id: string; wineId: string }
+  | { op: 'hide-product'; id: string; into: string | null };
+
+function emptyFichas(mode: FichasReport['mode']): FichasReport {
+  return { mode, xpo: [], o1: [], hidden: [], kept: [], notes: [], skipped: [] };
+}
+
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+/**
+ * Segundo paso, con su propio código. No repite catalog-bodega-2026-11.
+ * XPO entra en XPO-INTERACTION. O1 no une vinos: OXIDACION también lleva el O2.
+ */
+export async function reconcileFichas(writer: Writer, mode: FichasReport['mode']): Promise<FichasReport> {
+  if (mode === 'revert') return revertFichas(writer);
+  const prior = await writer.read<{ id: string }>(sql`
+    SELECT id::VARCHAR AS id FROM ops.data_repair WHERE code = ${FICHAS} AND reverted_at IS NULL
+  `);
+  if (prior.length > 0) {
+    const report = emptyFichas(mode);
+    report.skipped.push('Ya está aplicada. Para deshacerla: bun run db/reconcile-catalog.ts --fichas --revert');
+    return report;
+  }
+  const planned = await planFichas(writer);
+  planned.report.mode = mode;
+  if (mode === 'dry-run') return planned.report;
+  const changes: FichasChange[] = [];
+  await writer.withWrite(ACTOR, async (tx) => {
+    for (const op of planned.ops) changes.push(...await runFichasOp(tx, op));
+    tx.write(sql`
+      INSERT INTO ops.data_repair (id, code, payload)
+      VALUES (CAST(${newId()} AS UUID), ${FICHAS}, ${sql.json({ changes })})
+    `);
+  });
+  return planned.report;
+}
+
+async function planFichas(writer: Writer): Promise<{ report: FichasReport; ops: FichasOp[] }> {
+  const report = emptyFichas('dry-run');
+  const ops: FichasOp[] = [];
+  report.notes.push('No se actualiza ninguna fila referenciada. Solo tablas laterales.');
+  report.notes.push('OXIDACION no se une: ese vino también lleva el O2 (LEO22023).');
+  const wines = await writer.read<{ id: string; code: string }>(sql`
+    SELECT id::VARCHAR AS id, code FROM catalog.wine WHERE code IN ('XPO-INTERACTION', 'XPO', 'LA-GRAN-OXIDACION-O1', 'OXIDACION')
+  `);
+  const wineByCode = new Map(wines.map((row) => [row.code, idOf(row.id)]));
+  const keep = wineByCode.get('XPO-INTERACTION');
+  const drop = wineByCode.get('XPO');
+  if (!keep || !drop) {
+    report.skipped.push('No está el par XPO-INTERACTION / XPO');
+  } else {
+    report.xpo.push('XPO entra en XPO-INTERACTION. La ficha XPO se oculta.');
+    ops.push({ op: 'hide-wine', id: drop, into: keep });
+    const products = await writer.read<Record<string, unknown>>(sql`
+      SELECT id::VARCHAR AS id, sku, format_id::VARCHAR AS format_id, vintage::VARCHAR AS vintage
+      FROM catalog.product WHERE wine_id = CAST(${drop} AS UUID)
+    `);
+    const kept = await writer.read<Record<string, unknown>>(sql`
+      SELECT id::VARCHAR AS id, format_id::VARCHAR AS format_id, vintage::VARCHAR AS vintage
+      FROM catalog.product WHERE wine_id = CAST(${keep} AS UUID)
+    `);
+    for (const product of products) {
+      const twin = kept.find((row) => row.format_id && row.format_id === product.format_id && row.vintage === product.vintage);
+      if (twin) {
+        report.hidden.push(`${String(product.sku)} se oculta dentro del producto de XPO-INTERACTION.`);
+        ops.push({ op: 'hide-product', id: idOf(product.id), into: idOf(twin.id) });
+      } else {
+        report.xpo.push(`${String(product.sku)} pasa a leerse como XPO-INTERACTION.`);
+        ops.push({ op: 'point-product', id: idOf(product.id), wineId: keep });
+      }
+    }
+    const lots = await writer.read<{ id: string; code: string }>(sql`
+      SELECT id::VARCHAR AS id, code FROM inventory.lot WHERE wine_id = CAST(${drop} AS UUID)
+    `);
+    for (const lot of lots) {
+      report.xpo.push(`El lote ${lot.code} pasa a leerse como XPO-INTERACTION.`);
+      ops.push({ op: 'point-lot', id: idOf(lot.id), wineId: keep });
+    }
+  }
+  const o1 = wineByCode.get('LA-GRAN-OXIDACION-O1');
+  const lem = await productBySku(writer, 'LEM2023');
+  if (!o1 || !lem) {
+    report.skipped.push('No está el vino LA-GRAN-OXIDACION-O1 o el producto LEM2023');
+  } else {
+    report.o1.push('LEM2023 se lee como LA-GRAN-OXIDACION-O1. OXIDACION y LEO22023 no se tocan.');
+    ops.push({ op: 'point-product', id: lem.id, wineId: o1 });
+    const lots = await writer.read<{ id: string; code: string }>(sql`
+      SELECT id::VARCHAR AS id, code FROM inventory.lot WHERE code = 'LEM2023'
+    `);
+    if (lots.length === 0) report.skipped.push('No está el lote LEM2023');
+    for (const lot of lots) {
+      report.o1.push('El lote LEM2023 se lee como LA-GRAN-OXIDACION-O1.');
+      ops.push({ op: 'point-lot', id: idOf(lot.id), wineId: o1 });
+    }
+    const duplicate = await productBySku(writer, 'LA-GRAN-OXIDACION-O1-2023-B050');
+    if (!duplicate) {
+      report.skipped.push('No está el producto LA-GRAN-OXIDACION-O1-2023-B050');
+    } else {
+      await hideIfNoStock(writer, report, ops, duplicate.id, 'LA-GRAN-OXIDACION-O1-2023-B050', lem.id);
+    }
+  }
+  for (const sku of FORMATLESS_SKUS) {
+    const product = await productBySku(writer, sku);
+    if (!product) {
+      report.skipped.push(`No está el producto ${sku}`);
+      continue;
+    }
+    await hideIfNoStock(writer, report, ops, product.id, sku, null);
+  }
+  return { report, ops };
+}
+
+async function hideIfNoStock(
+  writer: Writer,
+  report: FichasReport,
+  ops: FichasOp[],
+  productId: string,
+  sku: string,
+  into: string | null,
+): Promise<void> {
+  const stock = await writer.read<{ units: string; ml: string }>(sql`
+    SELECT COALESCE(SUM(qty_units), 0)::VARCHAR AS units, COALESCE(SUM(volume_ml), 0)::VARCHAR AS ml
+    FROM inventory.stock_move WHERE product_id = CAST(${productId} AS UUID)
+  `);
+  const units = Number(stock[0]?.units ?? 0);
+  const ml = Number(stock[0]?.ml ?? 0);
+  if (units !== 0 || ml !== 0) {
+    report.kept.push(`${sku} tiene stock propio (${units} bot., ${(ml / 1000).toFixed(2)} L). No se oculta.`);
+    return;
+  }
+  report.hidden.push(`${sku} queda oculta. No tiene stock propio.`);
+  ops.push({ op: 'hide-product', id: productId, into });
+}
+
+async function productBySku(writer: Writer, sku: string): Promise<{ id: string } | null> {
+  const rows = await writer.read<{ id: string }>(sql`
+    SELECT id::VARCHAR AS id FROM catalog.product WHERE sku = ${sku} LIMIT 1
+  `);
+  const row = rows[0];
+  return row ? { id: idOf(row.id) } : null;
+}
+
+async function runFichasOp(tx: Tx, op: FichasOp): Promise<FichasChange[]> {
+  if (op.op === 'hide-wine') return [await writeWineHide(tx, op.id, op.into)].filter((row): row is FichasChange => row !== null);
+  if (op.op === 'point-product') return [await writeProductWine(tx, op.id, op.wineId)].filter((row): row is FichasChange => row !== null);
+  if (op.op === 'point-lot') return [await writeLotWine(tx, op.id, op.wineId)].filter((row): row is FichasChange => row !== null);
+  return [await writeProductHide(tx, op.id, op.into)].filter((row): row is FichasChange => row !== null);
+}
+
+async function wineBefore(tx: Tx, id: string): Promise<OverlayBefore | null> {
+  const rows = await tx.read<Record<string, unknown>>(sql`
+    SELECT merged_into_id::VARCHAR AS merged_into_id, name, hidden
+    FROM catalog.wine_overlay WHERE wine_id = CAST(${id} AS UUID)
+  `);
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    merged_into_id: row.merged_into_id == null ? null : idOf(row.merged_into_id),
+    name: row.name == null ? null : String(row.name),
+    wine_id: null,
+    hidden: row.hidden === true,
+    for_sale: null,
+  };
+}
+
+async function productBefore(tx: Tx, id: string): Promise<OverlayBefore | null> {
+  const rows = await tx.read<Record<string, unknown>>(sql`
+    SELECT merged_into_id::VARCHAR AS merged_into_id, wine_id::VARCHAR AS wine_id, hidden, for_sale
+    FROM catalog.product_overlay WHERE product_id = CAST(${id} AS UUID)
+  `);
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    merged_into_id: row.merged_into_id == null ? null : idOf(row.merged_into_id),
+    name: null,
+    wine_id: row.wine_id == null ? null : idOf(row.wine_id),
+    hidden: row.hidden === true,
+    for_sale: row.for_sale == null ? null : row.for_sale === true,
+  };
+}
+
+async function lotBefore(tx: Tx, id: string): Promise<OverlayBefore | null> {
+  const rows = await tx.read<Record<string, unknown>>(sql`
+    SELECT wine_id::VARCHAR AS wine_id FROM inventory.lot_overlay WHERE lot_id = CAST(${id} AS UUID)
+  `);
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    merged_into_id: null,
+    name: null,
+    wine_id: row.wine_id == null ? null : idOf(row.wine_id),
+    hidden: false,
+    for_sale: null,
+  };
+}
+
+async function writeWineHide(tx: Tx, id: string, into: string): Promise<FichasChange | null> {
+  const before = await wineBefore(tx, id);
+  if (before && before.hidden && before.merged_into_id === into) return null;
+  if (!before) {
+    tx.write(sql`
+      INSERT INTO catalog.wine_overlay (wine_id, merged_into_id, hidden)
+      VALUES (CAST(${id} AS UUID), CAST(${into} AS UUID), TRUE)
+    `);
+  } else {
+    tx.write(sql`
+      UPDATE catalog.wine_overlay
+      SET merged_into_id = CAST(${into} AS UUID), hidden = TRUE
+      WHERE wine_id = CAST(${id} AS UUID)
+    `);
+  }
+  return { kind: 'wine', id, before };
+}
+
+async function writeProductWine(tx: Tx, id: string, wineId: string): Promise<FichasChange | null> {
+  const before = await productBefore(tx, id);
+  if (before && before.wine_id === wineId) return null;
+  if (!before) {
+    tx.write(sql`
+      INSERT INTO catalog.product_overlay (product_id, wine_id, hidden)
+      VALUES (CAST(${id} AS UUID), CAST(${wineId} AS UUID), FALSE)
+    `);
+  } else {
+    tx.write(sql`
+      UPDATE catalog.product_overlay SET wine_id = CAST(${wineId} AS UUID)
+      WHERE product_id = CAST(${id} AS UUID)
+    `);
+  }
+  return { kind: 'product', id, before };
+}
+
+async function writeLotWine(tx: Tx, id: string, wineId: string): Promise<FichasChange | null> {
+  const before = await lotBefore(tx, id);
+  if (before && before.wine_id === wineId) return null;
+  if (!before) {
+    tx.write(sql`
+      INSERT INTO inventory.lot_overlay (lot_id, wine_id)
+      VALUES (CAST(${id} AS UUID), CAST(${wineId} AS UUID))
+    `);
+  } else {
+    tx.write(sql`
+      UPDATE inventory.lot_overlay SET wine_id = CAST(${wineId} AS UUID)
+      WHERE lot_id = CAST(${id} AS UUID)
+    `);
+  }
+  return { kind: 'lot', id, before };
+}
+
+async function writeProductHide(tx: Tx, id: string, into: string | null): Promise<FichasChange | null> {
+  const before = await productBefore(tx, id);
+  const intoId = into;
+  if (before && before.hidden && (intoId == null || before.merged_into_id === intoId)) return null;
+  if (!before) {
+    tx.write(sql`
+      INSERT INTO catalog.product_overlay (product_id, merged_into_id, hidden, for_sale)
+      VALUES (
+        CAST(${id} AS UUID),
+        CASE WHEN ${intoId} IS NULL THEN NULL ELSE CAST(${intoId} AS UUID) END,
+        TRUE, FALSE
+      )
+    `);
+  } else {
+    tx.write(sql`
+      UPDATE catalog.product_overlay
+      SET hidden = TRUE, for_sale = FALSE,
+          merged_into_id = CASE WHEN ${intoId} IS NULL THEN merged_into_id ELSE CAST(${intoId} AS UUID) END
+      WHERE product_id = CAST(${id} AS UUID)
+    `);
+  }
+  return { kind: 'product', id, before };
+}
+
+function changesOf(payload: unknown): FichasChange[] {
+  const parsed = typeof payload === 'string' ? JSON.parse(payload) as unknown : payload;
+  if (!parsed || typeof parsed !== 'object' || !('changes' in parsed)) return [];
+  const changes = (parsed as { changes?: unknown }).changes;
+  if (!Array.isArray(changes)) return [];
+  return changes.flatMap((row) => {
+    if (!row || typeof row !== 'object') return [];
+    const change = row as FichasChange;
+    if (change.kind !== 'wine' && change.kind !== 'product' && change.kind !== 'lot') return [];
+    if (typeof change.id !== 'string' || !isUuid(change.id)) return [];
+    return [change];
+  });
+}
+
+async function revertFichas(writer: Writer): Promise<FichasReport> {
+  const rows = await writer.read<{ id: string; payload: unknown }>(sql`
+    SELECT id::VARCHAR AS id, payload FROM ops.data_repair
+    WHERE code = ${FICHAS} AND reverted_at IS NULL
+    ORDER BY applied_at DESC LIMIT 1
+  `);
+  const report = emptyFichas('revert');
+  const row = rows[0];
+  if (!row) {
+    report.skipped.push('No hay una reparación de fichas aplicada.');
+    return report;
+  }
+  const changes = changesOf(row.payload);
+  await writer.withWrite(ACTOR, async (tx) => {
+    for (const change of [...changes].reverse()) await restoreChange(tx, change);
+    tx.write(sql`UPDATE ops.data_repair SET reverted_at = now() WHERE id = CAST(${idOf(row.id)} AS UUID)`);
+  });
+  report.notes.push('Se deshacen solo las anotaciones de este paso. Las filas originales no se habían modificado.');
+  return report;
+}
+
+async function restoreChange(tx: Tx, change: FichasChange): Promise<void> {
+  const before = change.before;
+  if (change.kind === 'wine') {
+    if (!before) {
+      tx.write(sql`DELETE FROM catalog.wine_overlay WHERE wine_id = CAST(${change.id} AS UUID)`);
+      return;
+    }
+    tx.write(sql`
+      UPDATE catalog.wine_overlay
+      SET merged_into_id = CASE WHEN ${before.merged_into_id} IS NULL THEN NULL ELSE CAST(${before.merged_into_id} AS UUID) END,
+          name = ${before.name}, hidden = ${before.hidden}
+      WHERE wine_id = CAST(${change.id} AS UUID)
+    `);
+    return;
+  }
+  if (change.kind === 'lot') {
+    if (!before) {
+      tx.write(sql`DELETE FROM inventory.lot_overlay WHERE lot_id = CAST(${change.id} AS UUID)`);
+      return;
+    }
+    tx.write(sql`
+      UPDATE inventory.lot_overlay
+      SET wine_id = CASE WHEN ${before.wine_id} IS NULL THEN NULL ELSE CAST(${before.wine_id} AS UUID) END
+      WHERE lot_id = CAST(${change.id} AS UUID)
+    `);
+    return;
+  }
+  if (!before) {
+    tx.write(sql`DELETE FROM catalog.product_overlay WHERE product_id = CAST(${change.id} AS UUID)`);
+    return;
+  }
+  tx.write(sql`
+    UPDATE catalog.product_overlay
+    SET merged_into_id = CASE WHEN ${before.merged_into_id} IS NULL THEN NULL ELSE CAST(${before.merged_into_id} AS UUID) END,
+        wine_id = CASE WHEN ${before.wine_id} IS NULL THEN NULL ELSE CAST(${before.wine_id} AS UUID) END,
+        hidden = ${before.hidden},
+        for_sale = ${before.for_sale}
+    WHERE product_id = CAST(${change.id} AS UUID)
+  `);
+}
+
+async function fichasKept(writer: Writer): Promise<{ wines: string[]; products: string[]; lots: string[] }> {
+  const rows = await writer.read<{ payload: unknown }>(sql`
+    SELECT payload FROM ops.data_repair WHERE code = ${FICHAS} AND reverted_at IS NULL
+  `);
+  const wines = new Set<string>();
+  const products = new Set<string>();
+  const lots = new Set<string>();
+  for (const row of rows) {
+    for (const change of changesOf(row.payload)) {
+      if (change.kind === 'wine') wines.add(change.id.toLowerCase());
+      if (change.kind === 'product') products.add(change.id.toLowerCase());
+      if (change.kind === 'lot') lots.add(change.id.toLowerCase());
+    }
+  }
+  return { wines: [...wines], products: [...products], lots: [...lots] };
+}
+
+function except(column: string, ids: string[]): string {
+  if (ids.length === 0) return '';
+  return ` WHERE ${column} NOT IN (${ids.map((id) => `CAST('${id}' AS UUID)`).join(', ')})`;
+}
+
 async function revert(writer: Writer): Promise<ReconcileReport> {
   const rows = await writer.read<Record<string, unknown>>(sql`
     SELECT id::VARCHAR AS id FROM ops.data_repair
@@ -444,6 +846,7 @@ async function revert(writer: Writer): Promise<ReconcileReport> {
     report.skipped.push('No hay una reparación aplicada.');
     return report;
   }
+  const kept = await fichasKept(writer);
   await writer.withWrite(ACTOR, async (tx) => {
     tx.write(`
       DELETE FROM inventory.stock_move
@@ -451,14 +854,17 @@ async function revert(writer: Writer): Promise<ReconcileReport> {
     `);
   });
   await writer.withWrite(ACTOR, async (tx) => {
-    tx.write(`DELETE FROM catalog.wine_overlay`);
-    tx.write(`DELETE FROM catalog.product_overlay`);
-    tx.write(`DELETE FROM inventory.lot_overlay`);
+    tx.write(`DELETE FROM catalog.wine_overlay${except('wine_id', kept.wines)}`);
+    tx.write(`DELETE FROM catalog.product_overlay${except('product_id', kept.products)}`);
+    tx.write(`DELETE FROM inventory.lot_overlay${except('lot_id', kept.lots)}`);
     tx.write(`DELETE FROM cellar.zone_overlay`);
     tx.write(`DELETE FROM cellar.vessel_overlay`);
     tx.write(sql`DELETE FROM catalog.wine WHERE code = 'ENTREDICHO-2324'`);
     tx.write(sql`UPDATE ops.data_repair SET reverted_at = now() WHERE id = CAST(${idOf(row.id)} AS UUID)`);
   });
+  if (kept.wines.length + kept.products.length + kept.lots.length > 0) {
+    report.notes.push('Se conservan las anotaciones de catalog-fichas-2026-11, que sigue aplicada.');
+  }
   report.merges.push({ keep: '', drop: '', why: 'Quitadas las uniones, los nombres y las bajas anotados.', refs: 0 });
   return report;
 }

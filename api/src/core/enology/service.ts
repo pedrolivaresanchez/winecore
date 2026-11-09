@@ -145,7 +145,8 @@ async function lotProfile(writer: Writer, lotId: string): Promise<{ noAddedSulfi
   const rows = await writer.read<{ id: string; no_added_sulfites: unknown; color: string | null }>(sql`
     SELECT l.id::VARCHAR AS id, w.no_added_sulfites, w.color
     FROM inventory.lot l
-    LEFT JOIN catalog.wine w ON w.id = l.wine_id
+    LEFT JOIN inventory.lot_overlay lo ON lo.lot_id = l.id
+    LEFT JOIN catalog.wine_visible w ON w.id = COALESCE(lo.wine_id, l.wine_id)
     WHERE l.id = CAST(${id} AS UUID)
   `);
   const row = rows[0];
