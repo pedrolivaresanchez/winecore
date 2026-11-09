@@ -78,14 +78,22 @@ export async function rebuildPackagedBook(writer: Writer): Promise<{ lines: numb
       volume: (prev?.volume ?? 0) + volume,
     });
   }
+  const openingFilter = `
+    move_type = 'opening'
+      AND vessel_id IS NULL
+      AND product_state IN ('packaged_labeled', 'packaged_unlabeled')
+      AND created_by = 'load-bottled-stock'
+  `;
+  // DuckDB mira las claves foráneas con el estado de antes de la transacción.
+  // Primero se sueltan los reversos; en otra escritura se borra el asiento de apertura.
   await writer.withWrite(ACTOR, async (tx) => {
     tx.write(`
       DELETE FROM inventory.stock_move
-      WHERE move_type = 'opening'
-        AND vessel_id IS NULL
-        AND product_state IN ('packaged_labeled', 'packaged_unlabeled')
-        AND created_by = 'load-bottled-stock'
+      WHERE reverses_move_id IN (SELECT id FROM inventory.stock_move WHERE ${openingFilter})
     `);
+  });
+  await writer.withWrite(ACTOR, async (tx) => {
+    tx.write(`DELETE FROM inventory.stock_move WHERE ${openingFilter}`);
     for (const row of grouped.values()) {
       tx.write(openingMove(row.location, row.owner, null, row.lot, row.product, 'packaged_labeled', row.units, row.volume, newId()));
     }

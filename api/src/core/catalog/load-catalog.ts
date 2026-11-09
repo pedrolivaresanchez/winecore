@@ -24,7 +24,12 @@ function idOf(value: unknown): string {
   return String(value).toLowerCase();
 }
 
-/** Crea el catálogo real y aparta los productos de Holded. No borra filas citadas por facturas o albaranes. */
+/**
+ * Crea el catálogo real y aparta los productos de Holded.
+ * No los borra: DuckDB comprueba las claves foráneas contra el estado anterior
+ * a la transacción, así que borrar precios y producto a la vez falla. Se desactivan
+ * y se dejan las filas hijas. Pedro prefiere desactivar a borrar.
+ */
 export async function loadCatalog(writer: Writer): Promise<CatalogLoadReport> {
   const entities = await writer.read<{ id: string; code: string }>(`SELECT id::VARCHAR AS id, code FROM core.legal_entity`);
   const po = entities.find((row) => row.code === 'PO');
@@ -138,37 +143,14 @@ export async function loadCatalog(writer: Writer): Promise<CatalogLoadReport> {
     WHERE lower(legacy_refs::VARCHAR) LIKE '%holded%'
   `);
   let archived = 0;
-  let removed = 0;
+  const removed = 0;
   for (const row of holded) {
     const id = idOf(row.id);
-    const refs = await writer.read<{ n: string }>(sql`
-      SELECT (
-        (SELECT count(*) FROM billing.invoice_line WHERE product_id = CAST(${id} AS UUID))
-        + (SELECT count(*) FROM sales.quote_line WHERE product_id = CAST(${id} AS UUID))
-        + (SELECT count(*) FROM sales.sales_order_line WHERE product_id = CAST(${id} AS UUID))
-        + (SELECT count(*) FROM sales.delivery_note_line WHERE product_id = CAST(${id} AS UUID))
-        + (SELECT count(*) FROM inventory.stock_move WHERE product_id = CAST(${id} AS UUID))
-        + (SELECT count(*) FROM purchasing.supplier_invoice_line WHERE product_id = CAST(${id} AS UUID))
-        + (SELECT count(*) FROM cellar.operation_line WHERE product_id = CAST(${id} AS UUID))
-        + (SELECT count(*) FROM cellar.material_consumption WHERE product_id = CAST(${id} AS UUID))
-      )::VARCHAR AS n
+    archived += 1;
+    statements.push(sql`
+      UPDATE catalog.product SET is_active = FALSE, for_sale = FALSE
+      WHERE id = CAST(${id} AS UUID)
     `);
-    if (Number(refs[0]?.n ?? 0) > 0) {
-      archived += 1;
-      statements.push(sql`
-        UPDATE catalog.product SET is_active = FALSE, for_sale = FALSE
-        WHERE id = CAST(${id} AS UUID)
-      `);
-    } else {
-      removed += 1;
-      statements.push(sql`DELETE FROM catalog.price_list_item WHERE product_id = CAST(${id} AS UUID)`);
-      statements.push(sql`DELETE FROM catalog.gtin_current WHERE product_id = CAST(${id} AS UUID)`);
-      statements.push(sql`DELETE FROM catalog.customer_item_code WHERE product_id = CAST(${id} AS UUID)`);
-      statements.push(sql`DELETE FROM catalog.standard_cost WHERE product_id = CAST(${id} AS UUID)`);
-      statements.push(sql`DELETE FROM catalog.label_spec WHERE product_id = CAST(${id} AS UUID)`);
-      statements.push(sql`DELETE FROM catalog.format_material WHERE material_product_id = CAST(${id} AS UUID)`);
-      statements.push(sql`DELETE FROM catalog.product WHERE id = CAST(${id} AS UUID)`);
-    }
   }
 
   if (statements.length > 0) {
