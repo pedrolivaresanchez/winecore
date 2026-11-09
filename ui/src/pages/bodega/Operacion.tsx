@@ -113,6 +113,7 @@ type CatalogHit = {
 
 type FormatHit = { id: string; code: string; name: string; nominal_volume_ml: number }
 type PlaceHit = { id: string; code: string; name: string }
+type LabelChoice = { product_id: string; sku: string; name: string; nominal_volume_ml: number | null }
 type JaulonHit = {
   location_id: string
   location_code: string
@@ -125,6 +126,7 @@ type JaulonHit = {
   qty_units: number
   volume_ml: number
   nominal_volume_ml: number | null
+  labels?: LabelChoice[]
 }
 
 type OperationDetail = CellarOperation & {
@@ -886,6 +888,16 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
                       }))}
                     />
                   ) : null}
+                  {op === 'labeling' && (jaulones.data?.items ?? []).some((row) => (row.labels?.length ?? 0) > 0 && row.lot_id === draft.inputs[0]?.lot_id && row.product_id === draft.inputs[0]?.product_id) ? (
+                    <LabelField
+                      source={(jaulones.data?.items ?? []).find((row) => row.lot_id === draft.inputs[0]?.lot_id && row.product_id === draft.inputs[0]?.product_id) ?? null}
+                      value={draft.outputs[0]?.product_id ?? ''}
+                      onSelect={(productId) => change((current) => ({
+                        ...current,
+                        outputs: current.outputs.map((line, index) => index === 0 ? { ...line, product_id: productId } : line),
+                      }))}
+                    />
+                  ) : null}
                   {op === 'blend' || op === 'bottling' || op === 'bleeding' ? (
                     <Field id="new_lot_code" label="Lote nuevo" error={lineMessages(issues, 'new_lot_code', step)[0]} hint="Mayúsculas, sin espacios.">
                       <Input
@@ -1420,6 +1432,21 @@ function PlaceField({
         <option value="">Elige un almacén</option>
         {places.map((place) => (
           <option key={place.id} value={place.id}>{place.code} · {place.name}</option>
+        ))}
+      </Select>
+    </Field>
+  )
+}
+
+function LabelField({ source, value, onSelect }: { source: JaulonHit | null; value: string; onSelect: (productId: string) => void }) {
+  if (!source?.product_id) return null
+  const extras = source.labels ?? []
+  return (
+    <Field id="etiqueta" label="Etiqueta" hint="El lote sigue siendo el del jaulón. Los litros del libro no cambian.">
+      <Select id="etiqueta" value={value} onChange={(event) => onSelect(event.target.value)}>
+        <option value={source.product_id}>{source.product_name ?? 'La del jaulón'}</option>
+        {extras.map((label) => (
+          <option key={label.product_id} value={label.product_id}>{label.name}</option>
         ))}
       </Select>
     </Field>

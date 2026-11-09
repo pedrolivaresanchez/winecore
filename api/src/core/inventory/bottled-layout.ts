@@ -1,3 +1,4 @@
+import { siblingLabels } from '../catalog/label-siblings';
 import type { Writer } from '../db/writer';
 import { BARREL_GAP, BARRELS, DEMIJOHNS, PHOTO_DATE, TFRP_STORAGE } from './bottled-snapshot';
 import { DEMORADO, MANUAL_PRICE, NOT_FOR_SALE } from '../catalog/tariff-rules';
@@ -13,7 +14,8 @@ export async function unlabeledMap(writer: Writer): Promise<{ items: Record<stri
     SELECT loc.id::VARCHAR AS location_id, loc.code AS location_code, loc.name AS location_name,
            p.owner_entity_id::VARCHAR AS owner_entity_id,
            p.lot_id::VARCHAR AS lot_id, l.code AS lot_code,
-           p.product_id::VARCHAR AS product_id, pr.name AS product_name,
+           p.product_id::VARCHAR AS product_id, pr.name AS product_name, w.code AS wine_code,
+           max(p.bottle_ml)::VARCHAR AS bottle_ml,
            coalesce(sum(m.qty_units), 0)::VARCHAR AS qty_units,
            coalesce(sum(m.volume_ml), 0)::VARCHAR AS volume_ml,
            max(CASE WHEN p.slot_kind = 'jaulon' THEN 1 ELSE 0 END)::VARCHAR AS from_cage
@@ -21,15 +23,20 @@ export async function unlabeledMap(writer: Writer): Promise<{ items: Record<stri
     JOIN inventory.location loc ON loc.id = p.location_id
     JOIN inventory.lot l ON l.id = p.lot_id
     JOIN catalog.product pr ON pr.id = p.product_id
+    LEFT JOIN catalog.wine w ON w.id = pr.wine_id
     LEFT JOIN cellar.bottled_move m ON m.placement_id = p.id
     WHERE p.product_state = 'packaged_unlabeled'
       AND p.slot_kind IN ('jaulon', 'nicho')
-    GROUP BY loc.id, loc.code, loc.name, p.owner_entity_id, p.lot_id, l.code, p.product_id, pr.name
+    GROUP BY loc.id, loc.code, loc.name, p.owner_entity_id, p.lot_id, l.code, p.product_id, pr.name, w.code
     HAVING coalesce(sum(m.qty_units), 0) > 0
     ORDER BY from_cage DESC, l.code
   `);
-  return {
-    items: rows.map((row) => ({
+  const items = [];
+  for (const row of rows) {
+    const nominal = row.bottle_ml == null || row.bottle_ml === '' ? null : intOf(row.bottle_ml);
+    const wine = row.wine_code == null ? null : String(row.wine_code);
+    const labels = await siblingLabels(writer, wine, nominal);
+    items.push({
       location_id: String(row.location_id),
       location_code: String(row.location_code),
       location_name: String(row.location_name),
@@ -40,9 +47,11 @@ export async function unlabeledMap(writer: Writer): Promise<{ items: Record<stri
       product_name: String(row.product_name),
       qty_units: intOf(row.qty_units),
       volume_ml: intOf(row.volume_ml),
-      nominal_volume_ml: null,
-    })),
-  };
+      nominal_volume_ml: nominal,
+      labels,
+    });
+  }
+  return { items };
 }
 
 export async function warehouseLayout(writer: Writer): Promise<Record<string, unknown>> {

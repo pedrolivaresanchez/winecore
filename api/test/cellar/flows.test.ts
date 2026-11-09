@@ -74,6 +74,70 @@ describe("planOperation · filtración, etiquetado y entrada", () => {
     expect(plan.newLots).toEqual([]);
   });
 
+  it("etiqueta el jaulón de enTreDicho como Bobastrell sin cambiar el lote ni el libro", () => {
+    const request: LabelingRequest = {
+      ...header({ id: "op-bobastrell" }),
+      op_type: "labeling",
+      tax_warehouse_id: "wh-1",
+      allowed_label_product_ids: ["prod-bobastrell"],
+      lines: [
+        {
+          role: "input",
+          lot: wine,
+          location_id: "loc-bod",
+          owner_entity_id: "entity-po",
+          product_id: "prod-entredicho",
+          qty_units: 12,
+          volume_ml: 9_000,
+          nominal_volume_ml: 750,
+        },
+        {
+          role: "output",
+          location_id: "loc-bod",
+          product_id: "prod-bobastrell",
+          qty_units: 12,
+          volume_ml: 9_000,
+          nominal_volume_ml: 750,
+        },
+      ],
+    };
+    const plan = asOk(planOperation(request, stateOf([]), idSource()));
+    expect(plan.fiscalMoves).toEqual([]);
+    expect(plan.stockMoves).toEqual([]);
+    expect(plan.newLots).toEqual([]);
+  });
+
+  it("rechaza una etiqueta que no está configurada para ese vino", () => {
+    const request: LabelingRequest = {
+      ...header({ id: "op-etiqueta-ajena" }),
+      op_type: "labeling",
+      tax_warehouse_id: "wh-1",
+      lines: [
+        {
+          role: "input",
+          lot: wine,
+          location_id: "loc-bod",
+          owner_entity_id: "entity-po",
+          product_id: "prod-entredicho",
+          qty_units: 12,
+          volume_ml: 9_000,
+          nominal_volume_ml: 750,
+        },
+        {
+          role: "output",
+          location_id: "loc-bod",
+          product_id: "prod-otro",
+          qty_units: 12,
+          volume_ml: 9_000,
+          nominal_volume_ml: 750,
+        },
+      ],
+    };
+    const result = planOperation(request, stateOf([]), idSource());
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe("WC_VALIDATION");
+  });
+
   it("la entrada de vino llena un depósito vacío y anota la recepción fiscal", () => {
     const request: BulkReceptionRequest = {
       ...header({ id: "op-entrada" }),

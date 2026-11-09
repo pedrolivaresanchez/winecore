@@ -23,7 +23,7 @@ describe('IVA de la tarifa', () => {
     expect(ECI_LINES.map((line) => line.price)).toEqual(['9.75', '9.10', '10.50', '22.00', '18.25']);
     expect(demoradoLines().every((line) => line.vintage === 2024 && line.lot === 'L2024')).toBe(true);
     expect(CATALOG_WINES.filter((row) => !row.priced).map((row) => row.sku)).toEqual([
-      'EE2024', 'ENT-2324', 'EN2025', 'ELL2025', 'EGP2023', 'MELOS-2019', 'BURRO', 'EEB2024', 'WINEOUT', 'APLATINAO', 'BOBAL-PLUS-2019', 'ENT-FT-2016', 'LEM2023',
+      'EE2024', 'ENT-2324', 'EN2025', 'BOBASTRELL', 'ELL2025', 'EGP2023', 'MELOS-2019', 'BURRO', 'EEB2024', 'WINEOUT', 'APLATINAO', 'BOBAL-PLUS-2019', 'ENT-FT-2016', 'LEM2023',
       'BOBAL-BASIC-2025', 'APLATINAO-MAG', 'SASA-MAG', 'ARCAL-2017', 'ARCAL-4', 'ARCAL-MAG', 'PARRAS-MAG', 'JAEN-23', 'LAGARTOS', 'FT-LOTE', 'BFT-2009', 'ENT-MAG', 'BOBAL-ENT-MAG', 'BOTELLASOLD', 'MET-BOBAL', 'MET-MUSCAT', 'JAEN-NEGRO', 'METODOS-OLD', 'METODOS-FINAL', 'OTRAS-ANADAS', 'LAS-VIRGINIAS',
     ]);
   });
