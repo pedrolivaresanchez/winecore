@@ -859,7 +859,9 @@ async function persistConfirmed(
     for (const line of materials.lines) insertConsumption(tx, current.id, line);
     for (const move of materials.exits) insertStock(tx, move);
   }
-  await applyOperationBottled(tx, [...plan.stockMoves, ...(materials?.exits ?? [])]);
+  await applyOperationBottled(tx, current.header.op_type === 'labeling'
+    ? labelingMapMoves(current.header.occurred_at, current.header.legal_entity_id, current.id, actorId, current.draft.lines)
+    : [...plan.stockMoves, ...(materials?.exits ?? [])]);
   await applyWinemakingEffects(tx, current.id, plan, {
     at: current.header.occurred_at,
     actorId,
@@ -868,6 +870,40 @@ async function persistConfirmed(
     observations: current.draft.observations,
     endEvidence: current.draft.end_evidence,
     endAnalysisId: current.draft.end_analysis_id,
+  });
+}
+
+/** El etiquetado no parte el libro. Estas filas solo mueven el mapa de botellas. */
+function labelingMapMoves(
+  at: string,
+  entityId: string,
+  operationId: string,
+  actorId: string,
+  lines: readonly ParsedLine[],
+) {
+  const source = lines.find((line) => line.role === 'input');
+  const owner = source?.owner_entity_id ?? entityId;
+  const lotId = source?.lot_id ?? null;
+  return lines.flatMap((line) => {
+    if (!line.location_id || !line.product_id || line.qty_units <= 0) return [];
+    const unlabeled = line.role !== 'output';
+    const sign = unlabeled ? -1 : 1;
+    return [{
+      occurred_at: at,
+      move_type: line.role === 'loss' ? 'loss' : unlabeled ? 'cellar_out' : 'cellar_in',
+      location_id: line.location_id,
+      vessel_id: null,
+      owner_entity_id: owner,
+      lot_id: line.lot_id ?? lotId,
+      product_id: line.product_id,
+      product_state: unlabeled ? 'packaged_unlabeled' : 'packaged_labeled',
+      qty_units: sign * line.qty_units,
+      volume_ml: sign * line.volume_ml,
+      source_table: 'cellar.operation',
+      source_id: operationId,
+      source_line_id: null,
+      created_by: actorId,
+    }];
   });
 }
 

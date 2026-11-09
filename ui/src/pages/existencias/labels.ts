@@ -6,8 +6,7 @@ import { STATUS_TAG_TONE, type TagTone } from "@/ui";
 export const PRODUCT_STATES = [
   { id: "wine", label: "Granel" },
   { id: "must", label: "Mosto" },
-  { id: "packaged_unlabeled", label: "Jaulones (sin etiquetar)" },
-  { id: "packaged_labeled", label: "Etiquetado" },
+  { id: "packaged_labeled", label: "Vino envasado" },
   { id: "grape", label: "Uva" },
   { id: "goods", label: "Mercancía" },
 ] as const;

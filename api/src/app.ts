@@ -188,7 +188,7 @@ import {
 import { salesRoutes } from './routes/sales';
 import { getSalesDocuments } from './routes/sales-documents';
 import { SALES_DOCUMENTS_READ } from './core/sales-documents/list';
-import { disposeBottled, stockBalances, stockFiscalBalances, stockInspection, stockMoves, stockWarehouses } from './routes/stock';
+import { disposeBottled, stockBalances, stockFiscalBalances, stockInspection, stockMoves, stockWarehouses, unlabeledBottles } from './routes/stock';
 import { listRegulatoryObligations, postSyncObligations } from './routes/regulatory-obligations';
 import {
   getRegulatorySubmission,
@@ -683,6 +683,9 @@ export function createApp(deps: AppDeps) {
     .use(catalogRoutes(guardDeps))
     // Existencias (stock): saldos, informe, movimientos y aforos.
     .get('/v1/stock/balances', ({ request }) => stockBalances(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.read'),
+    })
+    .get('/v1/stock/unlabeled', () => unlabeledBottles(deps.writer), {
       beforeHandle: requirePermission(guardDeps, 'inventory.read'),
     })
     .get('/v1/stock/warehouses', () => stockWarehouses(deps.writer), {

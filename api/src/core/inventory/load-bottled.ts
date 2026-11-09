@@ -39,6 +39,59 @@ function litres(ml: number): string {
   return `${negative ? '-' : ''}${text}`;
 }
 
+/** Sustituye el envasado del libro (una fila por hueco y estado) por litros por producto y lote. */
+export async function rebuildPackagedBook(writer: Writer): Promise<{ lines: number; unmatched: Report['unmatched'] }> {
+  const rows = await writer.read<{
+    location: string; owner: string; lot: string; product: string; units: string; volume: string;
+    label: string; lot_code: string | null; slot: string;
+  }>(`
+    SELECT p.location_id::VARCHAR AS location, p.owner_entity_id::VARCHAR AS owner,
+           p.lot_id::VARCHAR AS lot, p.product_id::VARCHAR AS product,
+           coalesce(sum(m.qty_units), 0)::VARCHAR AS units,
+           coalesce(sum(m.volume_ml), 0)::VARCHAR AS volume,
+           p.wine_label AS label, l.code AS lot_code, p.slot_code AS slot
+    FROM cellar.bottled_placement p
+    LEFT JOIN cellar.bottled_move m ON m.placement_id = p.id
+    LEFT JOIN inventory.lot l ON l.id = p.lot_id
+    WHERE p.slot_kind IN ('caja', 'nicho', 'jaulon', 'palet')
+    GROUP BY p.id, p.location_id, p.owner_entity_id, p.lot_id, p.product_id, p.wine_label, l.code, p.slot_code
+  `);
+  const unmatched: Report['unmatched'] = [];
+  const grouped = new Map<string, { location: string; owner: string; lot: string; product: string; units: number; volume: number }>();
+  for (const row of rows) {
+    const units = Number(row.units);
+    const volume = Number(row.volume);
+    if (units <= 0 && volume <= 0) continue;
+    if (!row.lot || !row.product) {
+      unmatched.push({ wine: row.label, lot: row.lot_code, where: row.slot, note: 'Sin producto o sin lote. No entra en el libro.' });
+      continue;
+    }
+    const key = `${row.location}|${row.owner}|${row.lot}|${row.product}`;
+    const prev = grouped.get(key);
+    grouped.set(key, {
+      location: row.location,
+      owner: row.owner,
+      lot: row.lot,
+      product: row.product,
+      units: (prev?.units ?? 0) + units,
+      volume: (prev?.volume ?? 0) + volume,
+    });
+  }
+  await writer.withWrite(ACTOR, async (tx) => {
+    tx.write(`
+      DELETE FROM inventory.stock_move
+      WHERE move_type = 'opening'
+        AND vessel_id IS NULL
+        AND product_state IN ('packaged_labeled', 'packaged_unlabeled')
+        AND created_by = 'load-bottled-stock'
+    `);
+    for (const row of grouped.values()) {
+      tx.write(openingMove(row.location, row.owner, null, row.lot, row.product, 'packaged_labeled', row.units, row.volume, newId()));
+    }
+  });
+  return { lines: grouped.size, unmatched };
+}
+
 export async function loadBottledStock(writer: Writer): Promise<Report> {
   const existing = await writer.read<{ n: string }>(`SELECT count(*)::VARCHAR AS n FROM cellar.bottled_placement`);
   if (Number(existing[0]?.n ?? 0) > 0) {
@@ -154,7 +207,16 @@ export async function loadBottledStock(writer: Writer): Promise<Report> {
     }
     if (barrel.fill_ml > 0 && (found?.volume ?? 0) === 0) {
       const lot = matchLotLoose(barrel.wine, lotRefs);
-      write(openingMove(bodId, poId, id, lot, null, 'wine', 0, barrel.fill_ml, id));
+      const product = matchProductLoose(barrel.wine, productRefs, lotRefs, lot);
+      if (!lot || !product) {
+        unmatched.push({
+          wine: barrel.wine ?? `Barrica ${barrel.number}`,
+          lot: lotRefs.find((row) => row.id === lot)?.code ?? null,
+          where: code,
+          note: 'Granel sin producto o sin lote en el catálogo. El libro no lo agrupa.',
+        });
+      }
+      write(openingMove(bodId, poId, id, lot, product, 'wine', 0, barrel.fill_ml, id));
     }
   }
   const demijohns = vessels.filter((row) => row.code.startsWith('DAM-')).length;
@@ -219,6 +281,7 @@ export async function loadBottledStock(writer: Writer): Promise<Report> {
   }
 
   const hide = new Set<string>();
+  const bottledBook = new Map<string, { location: string; owner: string; lot: string; product: string; units: number; volume: number }>();
   for (const line of lines) {
     const where = line.slot_kind === 'palet' ? tfrpId : bodId;
     const owner = line.slot_kind === 'palet' ? cvpoId : poId;
@@ -261,10 +324,22 @@ export async function loadBottledStock(writer: Writer): Promise<Report> {
         )
       `);
     }
-    if (linked.status === 'matched' && linked.lotId && linked.productId && line.bottle_ml) {
-      write(openingMove(where, owner, null, linked.lotId, linked.productId, line.state, line.bottles, line.volume_ml, id));
+    if (line.bottles > 0 && linked.lotId && linked.productId) {
+      const key = `${where}|${owner}|${linked.lotId}|${linked.productId}`;
+      const prev = bottledBook.get(key);
+      bottledBook.set(key, {
+        location: where,
+        owner,
+        lot: linked.lotId,
+        product: linked.productId,
+        units: (prev?.units ?? 0) + line.bottles,
+        volume: (prev?.volume ?? 0) + line.volume_ml,
+      });
     }
     if (linked.notForSale && linked.productId) hide.add(linked.productId);
+  }
+  for (const row of bottledBook.values()) {
+    write(openingMove(row.location, row.owner, null, row.lot, row.product, 'packaged_labeled', row.units, row.volume, newId()));
   }
   for (const productId of hide) {
     write(sql`UPDATE catalog.product SET for_sale = FALSE WHERE id = CAST(${productId} AS UUID)`);
@@ -295,6 +370,19 @@ export async function loadBottledStock(writer: Writer): Promise<Report> {
     for (const statement of statements) tx.write(statement);
   });
   return report(false, lines, unmatched, matched);
+}
+
+function matchProductLoose(
+  wine: string | null,
+  products: readonly ProductRef[],
+  lots: readonly LotRef[],
+  lotId: string | null,
+): string | null {
+  if (!wine || !lotId) return null;
+  const lot = lots.find((row) => row.id === lotId);
+  if (!lot?.wineId) return null;
+  const hits = products.filter((product) => product.kind === 'wine' && product.wineId === lot.wineId);
+  return hits.length === 1 ? hits[0]?.id ?? null : null;
 }
 
 function matchLotLoose(wine: string | null, lots: readonly LotRef[]): string | null {
@@ -353,7 +441,7 @@ function report(already: boolean, lines: BottledLine[], unmatched: Report['unmat
     pallets: { counted: 13, billed: 12, price_eur: '7.20' },
     assumptions: [
       'El envasado de la bodega es de P.O. El de TFRP es de CVPO.',
-      'Los jaulones son vino sin etiquetar. Cajas, nichos y palets van etiquetados.',
+      'El libro físico agrupa el envasado en litros por producto y lote, sin formato ni jaulón. El mapa guarda el hueco.',
       'Los jaulones de la hoja no traen número: se numeran por el orden de la línea.',
       'WINEOUT se queda en stock y no se vende.',
       'Melós queda ligado al lote 2019 y la Garnacha Pirotécnica al lote EGP2023 si existen. Si no, no se inventan.',

@@ -479,7 +479,7 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
   const goods = useApi<{ items: CatalogHit[] }>(op === 'cleaning' ? '/v1/products?kind=merchandise&limit=100' : null)
   const formats = useApi<{ items: FormatHit[] }>(op === 'bottling' ? '/v1/formats?limit=100' : null)
   const places = useApi<{ items: PlaceHit[] }>(op === 'bottling' || op === 'labeling' ? '/v1/locations?limit=100' : null)
-  const jaulones = useApi<{ items: JaulonHit[] }>(op === 'labeling' ? '/v1/stock/balances?state=packaged_unlabeled&limit=100' : null)
+  const jaulones = useApi<{ items: JaulonHit[] }>(op === 'labeling' ? '/v1/stock/unlabeled' : null)
   const cleaningProducts = [...(cleaners.data?.items ?? []), ...(goods.data?.items ?? [])]
 
   const ensureDraft = useCallback(async (): Promise<string | null> => {
@@ -1428,7 +1428,7 @@ function PlaceField({
 
 function JaulonField({ rows, value, onSelect }: { rows: JaulonHit[]; value: string; onSelect: (row: JaulonHit) => void }) {
   return (
-    <Field id="jaulon" label="Vino sin etiquetar" hint={rows.length === 0 ? 'No hay jaulones en el libro físico.' : 'El etiquetado pasa estas botellas a stock etiquetado.'}>
+    <Field id="jaulon" label="Vino sin etiquetar" hint={rows.length === 0 ? 'No hay botellas sin etiquetar en jaulones ni en nichos.' : 'Sale del jaulón y, si no alcanza, de la parte sin etiquetar de un nicho. El libro no cambia de categoría.'}>
       <Select id="jaulon" value={value} onChange={(event) => {
         const row = rows.find((item) => item.lot_id === event.target.value)
         if (row) onSelect(row)

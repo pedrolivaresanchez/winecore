@@ -9,7 +9,7 @@ import {
   listFiscalBalances,
   listMoves,
 } from '../core/inventory/service/stock.service';
-import { warehouseLayout } from '../core/inventory/bottled-layout';
+import { unlabeledMap, warehouseLayout } from '../core/inventory/bottled-layout';
 import { disposePlacement } from '../core/inventory/bottled-ledger';
 import { actorFrom, readJson } from './stock-http';
 import { balanceQuery, fiscalQuery, formatOf, moveQuery } from './stock-http';
@@ -40,6 +40,10 @@ export async function stockInspection(writer: Writer, request: Request) {
 
 export async function stockWarehouses(writer: Writer) {
   return warehouseLayout(writer);
+}
+
+export async function unlabeledBottles(writer: Writer) {
+  return unlabeledMap(writer);
 }
 
 export async function disposeBottled(writer: Writer, request: Request, id: string) {

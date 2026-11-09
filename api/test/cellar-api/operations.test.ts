@@ -534,6 +534,7 @@ describe('operaciones de bodega', () => {
       const productId = newId();
       const bottledLot = newId();
       const opening = newId();
+      const placement = newId();
       await ctx.writer.withWrite({ type: 'system', id: 'cellar-test', requestId: newId() }, async (tx) => {
         tx.write(sql`
           INSERT INTO catalog.product (id, sku, name, kind, unit, is_stock_tracked, requires_lot)
@@ -567,6 +568,25 @@ describe('operaciones de bodega', () => {
             ${'cellar-test'}
           )
         `);
+        tx.write(sql`
+          INSERT INTO cellar.bottled_placement (
+            id, location_id, slot_kind, slot_code, line_no, wine_label, lot_id, product_id,
+            owner_entity_id, opened_bottles, bottle_ml, opened_volume_ml, product_state, not_for_sale,
+            match_status, source_sheet, source_row, photo_date
+          ) VALUES (
+            CAST(${placement} AS UUID), CAST(${cellar.locationId} AS UUID), 'jaulon', 'JAU-01', 1, 'Jaulón',
+            CAST(${bottledLot} AS UUID), CAST(${productId} AS UUID), CAST(${cellar.po} AS UUID),
+            40, 750, 30000, 'packaged_unlabeled', FALSE, 'matched', 'test', 1, DATE '2026-11-09'
+          )
+        `);
+        tx.write(sql`
+          INSERT INTO cellar.bottled_move (
+            id, occurred_at, placement_id, qty_units, volume_ml, move_type, lot_id, source_table, source_id, created_by
+          ) VALUES (
+            CAST(${newId()} AS UUID), TIMESTAMPTZ '2026-06-01 08:00:00+02', CAST(${placement} AS UUID),
+            40, 30000, 'opening', CAST(${bottledLot} AS UUID), 'cellar.bottled_placement', CAST(${placement} AS UUID), 'cellar-test'
+          )
+        `);
       });
       const labeled = await call(ctx, 'POST', '/v1/cellar-operations', {
         op_type: 'labeling',
@@ -589,8 +609,17 @@ describe('operaciones de bodega', () => {
       const labeledOk = await call(ctx, 'POST', `/v1/cellar-operations/${labeled.body.id}/confirm`, undefined, 'bodega@winecore.test');
       expect(labeledOk.status, JSON.stringify(labeledOk.body)).toBe(200);
       const moves = labeledOk.body.stock_moves as { product_state: string; qty_units: number }[];
-      expect(moves.find((row) => row.product_state === 'packaged_labeled')?.qty_units).toBe(40);
-      expect(moves.find((row) => row.product_state === 'packaged_unlabeled')?.qty_units).toBe(-40);
+      expect(moves).toEqual([]);
+      expect(labeledOk.body.fiscal_moves).toEqual([]);
+      const map = await ctx.writer.read<{ code: string; state: string; bottles: string }>(sql`
+        SELECT p.slot_code AS code, p.product_state AS state, coalesce(sum(m.qty_units), 0)::VARCHAR AS bottles
+        FROM cellar.bottled_placement p
+        LEFT JOIN cellar.bottled_move m ON m.placement_id = p.id
+        WHERE p.lot_id = CAST(${bottledLot} AS UUID)
+        GROUP BY p.slot_code, p.product_state
+      `);
+      expect(map.find((row) => row.code === 'JAU-01')?.bottles).toBe('0');
+      expect(map.some((row) => row.state === 'packaged_labeled' && row.bottles === '40')).toBe(true);
 
       const sample = await call(ctx, 'POST', '/v1/cellar-operations', {
         op_type: 'sampling',

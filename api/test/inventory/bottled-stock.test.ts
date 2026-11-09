@@ -129,6 +129,15 @@ describe('carga de la foto', () => {
         WHERE p.lot_id = CAST(${lot} AS UUID) AND loc.code = 'TFRP'
       `);
       expect(Number(before[0]?.bottles)).toBe(1254);
+      const book = await ctx.writer.read<{ state: string; units: string }>(sql`
+        SELECT product_state AS state, coalesce(sum(qty_units), 0)::VARCHAR AS units
+        FROM inventory.stock_move
+        WHERE lot_id = CAST(${lot} AS UUID) AND move_type = 'opening' AND vessel_id IS NULL
+        GROUP BY product_state
+      `);
+      expect(book.map((row) => row.state)).toEqual(['packaged_labeled']);
+      expect(Number(book[0]?.units)).toBeGreaterThanOrEqual(1254);
+      expect(report.unmatched.some((row) => row.where.startsWith('BAR-'))).toBe(true);
       const { deductInvoicedBottles } = await import('../../src/core/inventory/bottled-ledger');
       await ctx.writer.withWrite({ type: 'system', id: 'invoice-bottles', requestId: newId() }, async (tx) => {
         await deductInvoicedBottles(tx, {

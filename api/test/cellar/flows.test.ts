@@ -63,13 +63,14 @@ describe("planOperation · filtración, etiquetado y entrada", () => {
       ],
     };
     const plan = asOk(planOperation(request, stateOf([]), idSource()));
-    const unlabeled = plan.stockMoves.filter((row) => row.product_state === "packaged_unlabeled");
-    const labeled = plan.stockMoves.filter((row) => row.product_state === "packaged_labeled");
-    expect(unlabeled.map((row) => row.qty_units).sort((a, b) => a - b)).toEqual([-98, -2]);
-    expect(labeled).toMatchObject([{ qty_units: 98, vessel_id: null }]);
-    expect(plan.fiscalMoves.map((row) => [row.move_type, row.product_class, row.units])).toEqual([
-      ["loss", "packaged", -2],
-    ]);
+    expect(plan.fiscalMoves).toEqual([]);
+    expect(plan.stockMoves).toMatchObject([{
+      move_type: "loss",
+      product_state: "packaged_labeled",
+      qty_units: -2,
+      volume_ml: -1_500,
+      vessel_id: null,
+    }]);
     expect(plan.newLots).toEqual([]);
   });
 

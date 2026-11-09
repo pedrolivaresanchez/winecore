@@ -4,10 +4,8 @@ import {
   assertLot,
   fail,
   isSafeInt,
-  realizeFiscal,
   succeed,
 } from "../common";
-import type { FiscalIntent } from "../common";
 import type {
   CellarState,
   IdSource,
@@ -19,9 +17,9 @@ import type {
 } from "../types";
 
 /**
- * Etiquetado: bottled stock leaves `packaged_unlabeled` and the bottles that
- * survive enter `packaged_labeled`. Same lot, no vessel. Breakage is a loss
- * of unlabeled units and, inside a CAE, a packaged fiscal loss.
+ * Etiquetado: las botellas cambian de sitio en el mapa (jaulón o nicho sin
+ * etiquetar → etiquetado). El libro físico no distingue la etiqueta: los litros
+ * de vino envasado no se mueven. La rotura sí resta litros, sin asiento SILICIE.
  */
 export function planLabeling(req: LabelingRequest, _state: CellarState, ids: IdSource): PlanResult {
   const header = assertHeader(req);
@@ -113,49 +111,19 @@ export function planLabeling(req: LabelingRequest, _state: CellarState, ids: IdS
     }
   }
 
-  const stockMoves: StockMoveDraft[] = [
-    packagedMove(req, ids, {
-      move_type: "cellar_out",
-      location_id: source.location_id,
-      owner_entity_id: source.owner_entity_id,
-      lot: source.lot,
-      product_id: source.product_id,
-      product_state: "packaged_unlabeled",
-      qty_units: -dest.qty_units,
-      volume_ml: -dest.volume_ml,
-      loss_kind: null,
-    }),
-    packagedMove(req, ids, {
-      move_type: "cellar_in",
-      location_id: dest.location_id,
-      owner_entity_id: source.owner_entity_id,
-      lot: source.lot,
-      product_id: dest.product_id,
-      product_state: "packaged_labeled",
-      qty_units: dest.qty_units,
-      volume_ml: dest.volume_ml,
-      loss_kind: null,
-    }),
-  ];
-  for (const line of losses) {
-    stockMoves.push(packagedMove(req, ids, {
-      move_type: "loss",
-      location_id: line.location_id,
-      owner_entity_id: source.owner_entity_id,
-      lot: line.lot,
-      product_id: line.product_id,
-      product_state: "packaged_unlabeled",
-      qty_units: -line.qty_units,
-      volume_ml: -line.volume_ml,
-      loss_kind: line.loss_kind,
-    }));
-  }
+  const stockMoves: StockMoveDraft[] = losses.map((line) => packagedMove(req, ids, {
+    move_type: "loss",
+    location_id: line.location_id,
+    owner_entity_id: source.owner_entity_id,
+    lot: line.lot,
+    product_id: line.product_id,
+    product_state: "packaged_labeled",
+    qty_units: -line.qty_units,
+    volume_ml: -line.volume_ml,
+    loss_kind: line.loss_kind,
+  }));
 
-  const fiscal = req.tax_warehouse_id !== null && brokenVolume > 0
-    ? realizeFiscal(req, req.tax_warehouse_id, [fiscalBreakage(source.lot, source.product_id, brokenVolume, brokenUnits, req.reason)], ids)
-    : [];
-
-  return succeed({ stockMoves, fiscalMoves: fiscal, newLots: [], lotEdges: [], vesselsAfter: [] });
+  return succeed({ stockMoves, fiscalMoves: [], newLots: [], lotEdges: [], vesselsAfter: [] });
 }
 
 function assertUnits(qty: number, volume: number, nominal: number, field: string): PlanResult | null {
@@ -218,17 +186,3 @@ function packagedMove(
   };
 }
 
-function fiscalBreakage(lot: LotRef, productId: string, volumeMl: number, units: number, reason: string | null): FiscalIntent {
-  return {
-    move_type: "loss",
-    product_class: "packaged",
-    lot_id: lot.id,
-    product_id: productId,
-    volume_ml: -volumeMl,
-    units: -units,
-    abv_pct: lot.abv_pct,
-    excise_product_key: lot.excise_product_key,
-    nc_code: null,
-    reason,
-  };
-}
