@@ -397,6 +397,7 @@ export function buildReport(
     currency: 'EUR',
     totals,
     previous_totals: previousTotals,
+    companies: [],
     series,
   };
 }

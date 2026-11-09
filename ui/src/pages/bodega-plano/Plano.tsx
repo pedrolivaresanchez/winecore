@@ -615,6 +615,7 @@ export function PlanoPage({ me, views }: { me: Me; views?: ReactNode }) {
               <div className="p-3 sm:p-4">
                 <PlanBoard
                   imageId={zone.plan_attachment_id}
+                  zoneKind={zone.kind}
                   markers={visible}
                   board={board}
                   editing={editing}

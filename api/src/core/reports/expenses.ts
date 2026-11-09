@@ -1,5 +1,6 @@
 import { sql } from '../db/sql';
 import type { Writer } from '../db/writer';
+import { companyOf } from './companies';
 import { addYears, buildReport, foldDocuments, readLine } from './metrics';
 import type { ReportBody, ReportScope } from './types';
 
@@ -17,7 +18,28 @@ export async function expensesReport(writer: Writer, scope: ReportScope): Promis
       'expense',
     )
     : null;
-  return buildReport('expenses', scope, current, previous, null);
+  const body = buildReport('expenses', scope, current, previous, null);
+  body.companies = await expenseCompanies(writer, scope);
+  return body;
+}
+
+async function expenseCompanies(writer: Writer, scope: ReportScope): Promise<ReportBody['companies']> {
+  const rows = await writer.read(sql`
+    SELECT e.code AS code,
+           CAST(COALESCE(sum(s.total), 0) AS VARCHAR) AS amount,
+           CAST(COALESCE(sum(s.subtotal), 0) AS VARCHAR) AS base,
+           CAST(COALESCE(sum(s.tax_total), 0) AS VARCHAR) AS tax,
+           '0' AS units,
+           '0' AS volume_ml
+    FROM purchasing.supplier_invoice s
+    JOIN core.legal_entity e ON e.id = s.legal_entity_id
+    WHERE s.status = 'approved'
+      AND COALESCE(s.accounting_date, s.issue_date) BETWEEN CAST(${scope.from} AS DATE) AND CAST(${scope.to} AS DATE)
+      AND ((${scope.po} = TRUE AND e.code = 'PO') OR (${scope.cvpo} = TRUE AND e.code = 'CVPO'))
+    GROUP BY e.code
+    ORDER BY e.code
+  `);
+  return rows.flatMap((row) => companyOf(row));
 }
 
 async function loadExpenses(writer: Writer, scope: ReportScope, from: string, to: string) {

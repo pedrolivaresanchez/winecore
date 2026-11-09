@@ -20,6 +20,34 @@ export function summarizePhysical(rows: StockBalance[]): { bulkMl: number; forma
   };
 }
 
+export function summarizeByOwner(rows: StockBalance[]): { code: string; bulkMl: number; units: number }[] {
+  const totals = new Map<string, { bulkMl: number; units: number }>()
+  for (const row of rows) {
+    const code = row.owner_code || "—"
+    const current = totals.get(code) ?? { bulkMl: 0, units: 0 }
+    if (row.product_state === "wine" || row.product_state === "must") current.bulkMl += row.volume_ml
+    current.units += row.qty_units
+    totals.set(code, current)
+  }
+  return [...totals.entries()]
+    .sort((left, right) => left[0].localeCompare(right[0], "es"))
+    .map(([code, total]) => ({ code, ...total }))
+}
+
+export function summarizeFiscalByEntity(rows: FiscalBalance[]): { code: string; volumeMl: number; units: number }[] {
+  const totals = new Map<string, { volumeMl: number; units: number }>()
+  for (const row of rows) {
+    const code = row.legal_entity_code || "—"
+    const current = totals.get(code) ?? { volumeMl: 0, units: 0 }
+    current.volumeMl += row.volume_ml
+    current.units += row.units
+    totals.set(code, current)
+  }
+  return [...totals.entries()]
+    .sort((left, right) => left[0].localeCompare(right[0], "es"))
+    .map(([code, total]) => ({ code, ...total }))
+}
+
 export function summarizeFiscal(rows: FiscalBalance[]): Record<"bulk" | "bulk_wood" | "packaged", { volumeMl: number; units: number }> {
   const empty = () => ({ volumeMl: 0, units: 0 });
   const totals = { bulk: empty(), bulk_wood: empty(), packaged: empty() };

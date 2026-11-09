@@ -308,6 +308,22 @@ function ReportBody({ body, chart, measure }: { body: ReportBody; chart: 'bar' |
         ))}
       </div>
 
+      {body.companies && body.companies.length > 1 ? (
+        <section className="flex flex-col gap-2">
+          <h3 className="text-label font-medium text-ink-900">{copy.informes.byCompany}</h3>
+          <ul className="grid gap-2 sm:grid-cols-2">
+            {body.companies.map((company) => (
+              <li key={company.code} className="rounded-xl border border-border-subtle px-3 py-2">
+                <p className="text-caption text-text-tertiary">{company.code === 'PO' ? copy.entity.po : copy.entity.cvpo}</p>
+                <p className="text-label font-medium text-ink-900">
+                  {formatMeasure(metricNumber(company, measure), measure)}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <section className="flex min-w-0 flex-col gap-3">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <h3 className="text-label font-medium text-ink-900">{MEASURE_LABEL[measure]}</h3>

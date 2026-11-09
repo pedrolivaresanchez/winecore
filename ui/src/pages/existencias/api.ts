@@ -47,6 +47,7 @@ export type FiscalBalance = {
   wine_name: string | null;
   volume_ml: number;
   units: number;
+  legal_entity_code?: EntityCode;
 };
 
 export type PhysicalMove = {

@@ -38,6 +38,7 @@ export interface ReportBody {
   totals: ReportMetrics
   previous_totals: ReportMetrics | null
   series: ReportPoint[]
+  companies?: { code: 'PO' | 'CVPO'; amount: string; base: string; tax: string; units: string; volume_ml: string }[]
 }
 
 export interface ReportQuery {

@@ -4,7 +4,8 @@ import { cn } from '@/lib/cn'
 import { attachmentUrl } from '@/pages/bodega-plano/api'
 import { bandOf, faceClass, shapeClass, type ColourMode } from '@/pages/bodega-plano/colours'
 import { clampGeom, NUDGE_STEP } from '@/pages/bodega-plano/geom'
-import type { Geom, PlanMarker } from '@/pages/bodega-plano/types'
+import { PlanSchematic } from '@/pages/bodega-plano/schematic'
+import type { Geom, PlanMarker, ZoneKind } from '@/pages/bodega-plano/types'
 
 function boxStyle(geom: Geom, board: { w: number; h: number }): CSSProperties {
   return {
@@ -16,8 +17,25 @@ function boxStyle(geom: Geom, board: { w: number; h: number }): CSSProperties {
   }
 }
 
+function litresLabel(raw: string): string | null {
+  const value = Number(raw.replace(',', '.'))
+  if (!Number.isFinite(value)) return null
+  const negative = value < 0
+  const [whole, frac] = Math.abs(value).toFixed(2).split('.')
+  const grouped = (whole ?? '0').replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  return `${negative ? '-' : ''}${grouped},${frac ?? '00'} L`
+}
+
+function markerDetail(marker: PlanMarker): string {
+  const litres = litresLabel(marker.litres)
+  if (litres && Number(marker.litres.replace(',', '.')) > 0) return litres
+  if (marker.fill > 0) return `${Math.round(marker.fill)} %`
+  return litres ?? '0,00 L'
+}
+
 export function PlanBoard({
   imageId,
+  zoneKind,
   markers,
   board,
   editing,
@@ -30,6 +48,7 @@ export function PlanBoard({
   onChange,
 }: {
   imageId: string | null
+  zoneKind: ZoneKind | string
   markers: PlanMarker[]
   board: { w: number; h: number }
   editing: boolean
@@ -94,23 +113,25 @@ export function PlanBoard({
         if (editing) onSelect(null)
       }}
     >
-      <PlanBackdrop imageId={imageId} />
+      <PlanBackdrop imageId={imageId} zoneKind={zoneKind} />
       {markers.map((marker) => {
         const active = selected === marker.key || highlight === marker.code
         const kind = marker.subject === 'holder' ? marker.holderKind : marker.vesselKind
         const band = bandOf(colourMode, marker)
-        const label = `${marker.code}, ${Math.round(marker.fill)} %`
+        const detail = markerDetail(marker)
+        const label = `${marker.code}, ${detail}`
         const style = boxStyle(marker.geom, board)
         const face = (
           <span
             className={cn(
-              'flex h-full w-full items-center justify-center overflow-hidden border-2 px-1 text-center shadow-(--shadow-card)',
+              'flex h-full w-full flex-col items-center justify-center overflow-hidden border-2 px-1 text-center shadow-(--shadow-card)',
               shapeClass(marker.subject, kind),
               faceClass(colourMode, marker),
               active && 'outline-2 outline-offset-2 outline-ink-900',
             )}
           >
             <span className="max-w-full truncate text-label font-medium leading-none">{marker.code}</span>
+            <span className="max-w-full truncate text-caption leading-none opacity-80">{detail}</span>
           </span>
         )
         if (!editing) {
@@ -180,7 +201,7 @@ export function PlanBoard({
   )
 }
 
-function PlanBackdrop({ imageId }: { imageId: string | null }) {
+function PlanBackdrop({ imageId, zoneKind }: { imageId: string | null; zoneKind: ZoneKind | string }) {
   const [url, setUrl] = useState<string | null>(null)
 
   useEffect(() => {
@@ -206,14 +227,5 @@ function PlanBackdrop({ imageId }: { imageId: string | null }) {
   }, [imageId])
 
   if (url) return <img src={url} alt="" className="pointer-events-none absolute inset-0 size-full object-fill" />
-  return (
-    <svg className="pointer-events-none absolute inset-0 size-full text-border-subtle" aria-hidden="true">
-      <defs>
-        <pattern id="plano-rejilla" width="48" height="48" patternUnits="userSpaceOnUse">
-          <path d="M 48 0 L 0 0 0 48" fill="none" stroke="currentColor" strokeWidth="1" />
-        </pattern>
-      </defs>
-      <rect width="100%" height="100%" fill="url(#plano-rejilla)" />
-    </svg>
-  )
+  return <PlanSchematic kind={zoneKind} />
 }

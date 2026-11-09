@@ -194,6 +194,7 @@ export function toFiscal(raw: unknown, catalog: Catalog): FiscalBalance {
     tax_warehouse_id: warehouseId,
     tax_warehouse_name: text(row, 'tax_warehouse_name') ?? warehouse?.name ?? 'Establecimiento',
     legal_entity_id: idOf(row, 'legal_entity_id') ?? warehouse?.entityId ?? '',
+    legal_entity_code: entityCode(text(row, 'legal_entity_code'), idOf(row, 'legal_entity_id') ?? warehouse?.entityId ?? '', catalog),
     product_class: classOf(row.product_class),
     excise_product_key: text(row, 'excise_product_key'),
     lot_id: lotId,

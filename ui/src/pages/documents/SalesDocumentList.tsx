@@ -52,6 +52,7 @@ import {
   MenuChip,
   MenuItem,
   Pagination,
+  Select,
   SkeletonRows,
   StatusPill,
   useGridFilterLink,
@@ -70,7 +71,7 @@ type Book = 'invoice' | 'purchase' | 'quote' | 'delivery_note'
 type ColumnId = 'number' | 'date' | 'customer' | 'entity' | 'total' | 'pending' | 'due' | 'status' | 'verifactu' | 'delivery'
 
 const SIZES = [25, 50, 100, 200] as const
-const LIST_KEYS = ['q', 'status', 'entity', 'origin', 'from', 'to', 'customer', 'verifactu', 'delivery', 'page']
+const LIST_KEYS = ['q', 'status', 'entity', 'origin', 'from', 'to', 'year', 'customer', 'verifactu', 'delivery', 'page']
 const DEFAULT_HIDDEN: Record<Book, ColumnId[]> = {
   invoice: ['due', 'verifactu', 'delivery'],
   purchase: ['due'],
@@ -145,6 +146,11 @@ function entityName(code: string): string {
   return code || '—'
 }
 
+function madridYear(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Madrid', year: 'numeric' }).formatToParts(now)
+  return parts.find((part) => part.type === 'year')?.value ?? '2026'
+}
+
 function monthRange(): { from: string; to: string } {
   const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Madrid', year: 'numeric', month: '2-digit' }).formatToParts(new Date())
   const year = parts.find((part) => part.type === 'year')?.value ?? '2026'
@@ -196,6 +202,15 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
   const origin = params.get('origin') === 'holded' || params.get('origin') === 'winecore' ? params.get('origin') ?? '' : ''
   const from = params.get('from') ?? ''
   const to = params.get('to') ?? ''
+  const yearParam = params.get('year')
+  const explicitRange = Boolean(from || to)
+  const noteYear = kind === 'delivery_note' && !explicitRange
+    ? yearParam === 'all'
+      ? ''
+      : yearParam && /^\d{4}$/.test(yearParam)
+        ? yearParam
+        : madridYear()
+    : ''
   const customer = params.get('customer') ?? ''
   const verifactu = tracked ? verifactuOf(params.get('verifactu')) : ''
   const delivery = tracked && DELIVERY_STATES.includes(params.get('delivery') as DeliveryState) ? (params.get('delivery') as DeliveryState) : ''
@@ -249,8 +264,13 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
     if (statuses.length > 0) next.set('status', statuses.join(','))
     if (entity) next.set('entity', entity)
     if (origin) next.set('origin', origin)
-    if (from) next.set('from', from)
-    if (to) next.set('to', to)
+    if (noteYear) {
+      next.set('from', `${noteYear}-01-01`)
+      next.set('to', `${noteYear}-12-31`)
+    } else {
+      if (from) next.set('from', from)
+      if (to) next.set('to', to)
+    }
     if (customer) next.set('customer_id', customer)
     if (verifactu) next.set('verifactu', verifactu)
     if (delivery) next.set('delivery', delivery)
@@ -259,7 +279,7 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
       next.set('dir', dir)
     }
     return next.toString()
-  }, [customer, debounced, delivery, dir, direction, entity, from, kind, origin, page, pageSize, sort, statuses, to, verifactu])
+  }, [customer, debounced, delivery, dir, direction, entity, from, kind, noteYear, origin, page, pageSize, sort, statuses, to, verifactu])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -460,12 +480,14 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
         filterValue: (row) => row.number ?? copy.salesDocs.draft,
         cell: (row) => (
           <span className="flex min-w-0 items-center gap-1.5">
-            <span className={cn('truncate', !row.number && 'text-text-tertiary')}>{row.number ?? copy.salesDocs.draft}</span>
-            {row.origin === 'holded' ? (
-              <Badge size="sm" tone="neutral" className="shrink-0" title={copy.salesDocs.holdedTip}>
-                {copy.salesDocs.holded}
-              </Badge>
-            ) : null}
+            {row.number ? (
+              <span className="truncate">{row.number}</span>
+            ) : (
+              <Badge size="sm" tone="warning" className="shrink-0">{copy.salesDocs.draft}</Badge>
+            )}
+            <Badge size="sm" tone={row.origin === 'holded' ? 'neutral' : 'info'} className="shrink-0" title={row.origin === 'holded' ? copy.salesDocs.holdedTip : undefined}>
+              {row.origin === 'holded' ? copy.salesDocs.holded : copy.salesDocs.winecore}
+            </Badge>
           </span>
         ),
       },
@@ -703,12 +725,42 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
       )}
 
       <FilterBar
-        leading={book === 'quote' || book === 'delivery_note' ? <SalesSwitch current={salesDoc} /> : undefined}
+        leading={
+          book === 'quote' || book === 'delivery_note' ? (
+            <span className="flex items-center gap-1.5">
+              <SalesSwitch current={salesDoc} />
+              {book === 'delivery_note' ? (
+                <Select
+                  size="sm"
+                  aria-label={copy.salesDocs.year}
+                  value={explicitRange ? 'range' : noteYear || 'all'}
+                  onChange={(event) => {
+                    const value = event.target.value
+                    update((next) => {
+                      next.delete('from')
+                      next.delete('to')
+                      if (value === 'all') next.set('year', 'all')
+                      else next.delete('year')
+                      if (value !== 'all' && value !== madridYear()) next.set('year', value)
+                    })
+                  }}
+                >
+                  {explicitRange ? <option value="range">{copy.salesDocs.date}</option> : null}
+                  {[0, 1, 2, 3].map((offset) => {
+                    const value = String(Number(madridYear()) - offset)
+                    return <option key={value} value={value}>{value}</option>
+                  })}
+                  <option value="all">{copy.salesDocs.allYears}</option>
+                </Select>
+              ) : null}
+            </span>
+          ) : undefined
+        }
         search={{
           id: `buscar-${copy.salesDocs.files[book]}`,
           value: q,
           onChange: setQ,
-          placeholder: book === 'purchase' ? copy.salesDocs.searchSupplier : copy.salesDocs.search,
+          placeholder: book === 'purchase' ? copy.salesDocs.searchSupplier : book === 'delivery_note' ? copy.salesDocs.searchNotes : copy.salesDocs.search,
         }}
         filters={filters}
         values={values}
@@ -724,6 +776,9 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
         }}
         trailing={
           <>
+            {book === 'delivery_note' && data ? (
+              <span className="text-label text-text-secondary">{fill(copy.salesDocs.periodTotal, { total: money(data.totals.amount) })}</span>
+            ) : null}
             <GlassMenu
               open={columnsMenu.open}
               onOpenChange={columnsMenu.setOpen}
