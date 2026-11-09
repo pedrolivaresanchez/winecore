@@ -4,6 +4,7 @@ import { planBottledDelta } from '../../src/core/inventory/bottled-allocate';
 import { matchBottledLine } from '../../src/core/inventory/bottled-match';
 import { BARRELS, DECLARED, bottledLines, sumLines } from '../../src/core/inventory/bottled-snapshot';
 import { loadTariffs } from '../../src/core/catalog/load-tariffs';
+import { applyOperationBottled } from '../../src/core/inventory/bottled-ledger';
 import { loadBottledStock } from '../../src/core/inventory/load-bottled';
 import { sql } from '../../src/core/db/sql';
 import { newId } from '../../src/core/ids';
@@ -164,6 +165,106 @@ describe('carga de la foto', () => {
         SELECT currency FROM catalog.price_list WHERE code = 'custom-pyrene'
       `);
       expect(pyrene[0]?.currency).toBe('EUR');
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  it('el etiquetado saca el jaulón sin etiquetar y parte el nicho en dos estados', async () => {
+    const ctx = await createTestApp();
+    try {
+      const po = (await ctx.writer.read<{ id: string }>(`SELECT id::VARCHAR AS id FROM core.legal_entity WHERE code = 'PO'`))[0];
+      const location = newId();
+      const wine = newId();
+      const format = newId();
+      const product = newId();
+      const lot = newId();
+      const jaulon = newId();
+      const niche = newId();
+      await ctx.writer.withWrite({ type: 'system', id: 'label-map', requestId: newId() }, async (tx) => {
+        tx.write(sql`
+          INSERT INTO inventory.location (id, code, name, kind, controlling_entity_id)
+          VALUES (CAST(${location} AS UUID), 'BOD2', 'Bodega prueba', 'cellar', CAST(${po!.id} AS UUID))
+        `);
+        tx.write(sql`INSERT INTO catalog.wine (id, code, name, color) VALUES (CAST(${wine} AS UUID), 'ETQ', 'Etiqueta', 'red')`);
+        tx.write(sql`
+          INSERT INTO catalog.format (id, code, name, container, nominal_volume_ml)
+          VALUES (CAST(${format} AS UUID), 'B075B', 'Botella', 'bottle', 750)
+        `);
+        tx.write(sql`
+          INSERT INTO catalog.product (id, sku, name, kind, wine_id, format_id, unit, requires_lot)
+          VALUES (CAST(${product} AS UUID), 'ETQ-075', 'Etiqueta', 'wine', CAST(${wine} AS UUID), CAST(${format} AS UUID), 'ud', TRUE)
+        `);
+        tx.write(sql`
+          INSERT INTO inventory.lot (id, producer_entity_id, code, kind, wine_id, origin)
+          VALUES (CAST(${lot} AS UUID), CAST(${po!.id} AS UUID), 'ETQ2026', 'bottled', CAST(${wine} AS UUID), 'opening_count')
+        `);
+        for (const [id, kind, code, state, bottles, nicheNumber, sourceRow] of [
+          [jaulon, 'jaulon', 'JAU-09', 'packaged_unlabeled', 100, null, 1],
+          [niche, 'nicho', 'NIC-03', 'packaged_unlabeled', 40, 3, 2],
+        ] as const) {
+          tx.write(sql`
+            INSERT INTO cellar.bottled_placement (
+              id, location_id, slot_kind, slot_code, niche_number, line_no, wine_label, lot_id, product_id,
+              owner_entity_id, opened_bottles, bottle_ml, opened_volume_ml, product_state, not_for_sale,
+              match_status, source_sheet, source_row, photo_date
+            ) VALUES (
+              CAST(${id} AS UUID), CAST(${location} AS UUID), ${kind}, ${code}, ${nicheNumber}, 1, ${code},
+              CAST(${lot} AS UUID), CAST(${product} AS UUID), CAST(${po!.id} AS UUID),
+              ${bottles}, 750, ${bottles * 750}, ${state}, FALSE, 'matched', 'test', ${sourceRow}, DATE '2026-11-09'
+            )
+          `);
+          tx.write(sql`
+            INSERT INTO cellar.bottled_move (
+              id, occurred_at, placement_id, qty_units, volume_ml, move_type, lot_id, source_table, source_id, created_by
+            ) VALUES (
+              CAST(${newId()} AS UUID), TIMESTAMPTZ '2026-11-09 11:00:00+01', CAST(${id} AS UUID),
+              ${bottles}, ${bottles * 750}, 'opening', CAST(${lot} AS UUID), 'cellar.bottled_placement', CAST(${id} AS UUID), 'test'
+            )
+          `);
+        }
+      });
+      const bottling = newId();
+      const labeling = newId();
+      await ctx.writer.withWrite({ type: 'system', id: 'bottle-op', requestId: newId() }, async (tx) => {
+        await applyOperationBottled(tx, [{
+          occurred_at: '2026-11-10T11:00:00+01:00', move_type: 'cellar_in', location_id: location, vessel_id: null,
+          owner_entity_id: po!.id, lot_id: lot, product_id: product, product_state: 'packaged_unlabeled',
+          qty_units: 20, volume_ml: 15000, source_table: 'cellar.operation', source_id: bottling,
+          source_line_id: null, created_by: 'test',
+        }]);
+      });
+      await ctx.writer.withWrite({ type: 'system', id: 'label-op', requestId: newId() }, async (tx) => {
+        await applyOperationBottled(tx, [
+          {
+            occurred_at: '2026-11-10T12:00:00+01:00', move_type: 'cellar_out', location_id: location, vessel_id: null,
+            owner_entity_id: po!.id, lot_id: lot, product_id: product, product_state: 'packaged_unlabeled',
+            qty_units: -130, volume_ml: -97500, source_table: 'cellar.operation', source_id: labeling,
+            source_line_id: null, created_by: 'test',
+          },
+          {
+            occurred_at: '2026-11-10T12:00:00+01:00', move_type: 'cellar_in', location_id: location, vessel_id: null,
+            owner_entity_id: po!.id, lot_id: lot, product_id: product, product_state: 'packaged_labeled',
+            qty_units: 130, volume_ml: 97500, source_table: 'cellar.operation', source_id: labeling,
+            source_line_id: null, created_by: 'test',
+          },
+        ]);
+      });
+      const rows = await ctx.writer.read<{ code: string; state: string; bottles: string }>(sql`
+        SELECT p.slot_code AS code, p.product_state AS state, coalesce(sum(m.qty_units), 0)::VARCHAR AS bottles
+        FROM cellar.bottled_placement p
+        LEFT JOIN cellar.bottled_move m ON m.placement_id = p.id
+        WHERE p.location_id = CAST(${location} AS UUID)
+        GROUP BY p.slot_code, p.product_state
+        ORDER BY p.slot_code, p.product_state
+      `);
+      const balance = new Map(rows.map((row) => [`${row.code}:${row.state}`, Number(row.bottles)]));
+      expect(balance.get('JAU-09:packaged_unlabeled')).toBe(0);
+      expect(balance.get('NIC-03:packaged_unlabeled')).toBe(30);
+      expect(balance.get('NIC-03:packaged_labeled')).toBe(10);
+      expect(rows.some((row) => row.code.startsWith('JAU-') && row.state === 'packaged_labeled')).toBe(false);
+      const boxed = rows.find((row) => row.code.startsWith('CAJ-') && row.state === 'packaged_labeled');
+      expect(Number(boxed?.bottles)).toBe(120);
     } finally {
       await ctx.close();
     }

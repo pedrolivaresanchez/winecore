@@ -51,7 +51,9 @@ CREATE TABLE cellar.bottled_move (
   placement_id     uuid NOT NULL REFERENCES cellar.bottled_placement(id),
   qty_units        INTEGER NOT NULL,
   volume_ml        BIGINT NOT NULL,
-  move_type        VARCHAR NOT NULL CHECK (move_type IN ('opening','delivery_out','invoice_out','return_in','loss','reversal')),
+  move_type        VARCHAR NOT NULL CHECK (move_type IN (
+                     'opening','delivery_out','invoice_out','return_in','loss','reversal','cellar_in','cellar_out'
+                   )),
   lot_id           uuid,
   source_table     VARCHAR NOT NULL CHECK (source_table ~ '^[a-z_]+\.[a-z_]+$'),
   source_id        uuid NOT NULL,
@@ -62,8 +64,8 @@ CREATE TABLE cellar.bottled_move (
   CHECK (qty_units <> 0 OR volume_ml <> 0),
   CHECK (
     move_type = 'reversal'
-    OR (move_type IN ('opening','return_in') AND qty_units > 0 AND volume_ml >= 0)
-    OR (move_type IN ('delivery_out','invoice_out','loss') AND qty_units < 0 AND volume_ml <= 0)
+    OR (move_type IN ('opening','return_in','cellar_in') AND qty_units > 0 AND volume_ml >= 0)
+    OR (move_type IN ('delivery_out','invoice_out','loss','cellar_out') AND qty_units < 0 AND volume_ml <= 0)
   )
 );
 

@@ -1,4 +1,5 @@
 import { noteBarrelFills } from '../../cellar-assets/barrel-fills';
+import { applyOperationBottled } from '../../inventory/bottled-ledger';
 import { assertBottlingChecklist } from '../../hygiene/checklist';
 import { postPlannedConsumptions } from '../../hygiene/stock';
 import { planOperation } from '../engine';
@@ -824,6 +825,7 @@ async function persistConfirmed(
     for (const line of materials.lines) insertConsumption(tx, current.id, line);
     for (const move of materials.exits) insertStock(tx, move);
   }
+  await applyOperationBottled(tx, [...plan.stockMoves, ...(materials?.exits ?? [])]);
   await applyWinemakingEffects(tx, current.id, plan, {
     at: current.header.occurred_at,
     actorId,

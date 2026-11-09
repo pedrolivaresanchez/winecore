@@ -22,6 +22,7 @@ type Line = {
   bottle_ml: number | null
   abv_pct: string | null
   organic: boolean | null
+  state: string
   not_for_sale: boolean
   note: string | null
   match_status: string
@@ -109,6 +110,7 @@ export function WarehousePage({ me }: { me: Me }) {
               </div>
               <p className="text-caption text-text-tertiary">{layout.barrel_gap.note}</p>
               <h3 className="text-label text-ink-900">Nichos</h3>
+              <p className="text-caption text-text-tertiary">Un nicho puede partirse en etiquetado y sin etiquetar. Los jaulones son solo sin etiquetar. Pedro dirá el viernes qué parte de cada nicho va sin etiqueta.</p>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-6">
                 {layout.bodega.niches.map((niche) => (
                   <article key={niche.number} className="rounded-2xl border border-border-subtle bg-surface p-2">
@@ -116,7 +118,7 @@ export function WarehousePage({ me }: { me: Me }) {
                       <p className="text-label font-medium text-ink-900">{niche.number}</p>
                       {niche.empty ? <Badge tone="neutral" size="sm">Vacío</Badge> : <Badge tone="info" size="sm">{niche.bottles}</Badge>}
                     </div>
-                    <p className="mt-1 line-clamp-3 text-caption text-text-tertiary">{niche.empty ? niche.note || 'Sin vino' : niche.lines.map((line) => line.wine_label).join(' · ')}</p>
+                    <p className="mt-1 line-clamp-3 text-caption text-text-tertiary">{niche.empty ? niche.note || 'Sin vino' : niche.lines.map((line) => `${line.wine_label}${line.state === 'packaged_unlabeled' ? ' · sin etiquetar' : ''}`).join(' · ')}</p>
                   </article>
                 ))}
               </div>
