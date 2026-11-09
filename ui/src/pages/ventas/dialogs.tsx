@@ -428,6 +428,7 @@ export function CreateDelivery({
   const [badLine, setBadLine] = useState<string | null>(null)
   const [customerBad, setCustomerBad] = useState(false)
   const [saving, setSaving] = useState(false)
+  const stamps = useRef<Record<string, string>>({})
   const customerOptions = useMemo(() => customers.map(customerOption), [customers])
   const offer = useSalesOffer({
     customerId: customerId || undefined,
@@ -439,6 +440,36 @@ export function CreateDelivery({
   const fromId = fromChoice ?? locations.find((item) => item.code === 'BOD')?.id ?? locations[0]?.id ?? ''
   const needsCustomer = kind === 'sale' || kind === 'sample'
   const needsTo = kind === 'consignment' || kind === 'transfer' || kind === 'return'
+
+  function quoteLine(line: DraftLine, nextCustomer = customerId, nextChannel = channel, listId = priceListId) {
+    if (!nextCustomer || !line.productId || !(Number(line.quantity) > 0)) return
+    const stamp = crypto.randomUUID()
+    stamps.current[line.key] = stamp
+    getPriceQuote({
+      customerId: nextCustomer,
+      productId: line.productId,
+      qty: line.quantity,
+      date: todayMadrid(),
+      channel: nextChannel,
+      priceListId: listId || undefined,
+    })
+      .then((hit) => {
+        if (stamps.current[line.key] !== stamp) return
+        setLines((current) =>
+          current.map((item) =>
+            item.key === line.key
+              ? { ...item, quoted: hit.unit_price, gross: hit.gross_unit_price ?? null, unitPrice: item.touched ? item.unitPrice : shortPrice(hit.unit_price) }
+              : item,
+          ),
+        )
+      })
+      .catch((err: unknown) => {
+        if (stamps.current[line.key] !== stamp) return
+        if (err instanceof ApiError && (err.status === 404 || err.status === 422)) {
+          setLines((current) => current.map((item) => (item.key === line.key ? { ...item, quoted: null, gross: null } : item)))
+        }
+      })
+  }
 
   function refuse(message: string, customer = false, line: string | null = null) {
     setError(message)
@@ -525,7 +556,10 @@ export function CreateDelivery({
               ))}
             </Select>
           </Field>
-          <TariffSelect id="tarifa-albaran" value={priceListId} onChange={setPriceListId} />
+          <TariffSelect id="tarifa-albaran" value={priceListId} onChange={(next) => {
+            setPriceListId(next)
+            for (const line of lines) quoteLine(line, customerId, channel, next)
+          }} />
           {needsCustomer ? (
             <Field id="cliente-albaran" label={copy.sales.customer}>
               <Combobox
@@ -539,6 +573,7 @@ export function CreateDelivery({
                   setCustomerId(next)
                   setCustomerBad(false)
                   setError(null)
+                  for (const line of lines) quoteLine(line, next, channel, priceListId)
                 }}
               />
             </Field>
@@ -581,7 +616,7 @@ export function CreateDelivery({
               setError(null)
               setBadLine(null)
             }}
-            onPrice={() => undefined}
+            onPrice={(line) => quoteLine(line)}
             invalidKey={badLine}
           />
           {needsCustomer ? (
