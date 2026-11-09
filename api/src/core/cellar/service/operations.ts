@@ -114,11 +114,15 @@ const OP_TYPES = [
 const ENGINE_TYPES = [
   'racking',
   'blend',
+  'filtration',
   'addition',
   'bottling',
+  'labeling',
   'loss',
   'destruction',
   'cleaning',
+  'reception',
+  'bulk_reception',
   'crushing_pressing',
   'fermentation_end',
   'fermentation_start',
@@ -138,7 +142,7 @@ const WINEMAKING_START_OPS = new Set([
   'temperature_control',
 ]);
 const NO_VOLUME_OPS = new Set(['delestage', 'temperature_control', 'sampling']);
-const LINE_TYPES = new Set(['racking', 'blend', 'bottling', 'loss', 'destruction']);
+const LINE_TYPES = new Set(['racking', 'filtration', 'blend', 'bottling', 'labeling', 'loss', 'destruction']);
 const STATUSES = ['draft', 'confirmed', 'rectified', 'discarded'] as const;
 const LOSS_KINDS = ['authorized', 'incident'] as const;
 const LOT_CODE = /^[A-Z0-9][A-Z0-9./-]{1,29}$/;
@@ -192,6 +196,17 @@ interface OperationLineView {
   notes: string | null;
 }
 
+interface OperationCommon {
+  id: string;
+  legal_entity_id: string;
+  occurred_at: string;
+  fiscal_date: string;
+  performed_by: string;
+  created_by: string;
+  reason: string | null;
+  approval_request_id: string | null;
+}
+
 interface ParsedHeader {
   op_type: (typeof ENGINE_TYPES)[number];
   legal_entity_id: string;
@@ -216,6 +231,20 @@ interface ParsedLine {
   excise_product_key: string | null;
   nc_code: string | null;
   new_lot_code: string | null;
+  owner_entity_id: string | null;
+}
+
+interface IntakeInput {
+  vessel_id: string;
+  lot_code: string;
+  vintage: number;
+  is_organic: boolean;
+  notes: string | null;
+  mass_g: number | null;
+  volume_ml: number | null;
+  product_state: 'grape' | 'must' | 'wine';
+  excise_product_key: string | null;
+  abv_pct: string | null;
 }
 
 interface AdditionInput {
@@ -273,6 +302,7 @@ interface StoredDraft {
   sample_code: string | null;
   sample_destination: 'internal' | 'lab' | null;
   lab_contact_id: string | null;
+  intake: IntakeInput | null;
 }
 
 export interface OperationPreview {
@@ -603,6 +633,9 @@ function parseBody(body: Record<string, unknown>): { header: ParsedHeader; draft
     }
   }
   const sampling = header.op_type === 'sampling' ? parseSampling(body) : null;
+  const intake = header.op_type === 'reception' || header.op_type === 'bulk_reception'
+    ? parseIntake(body, header.op_type)
+    : null;
   const winemaking = isWinemakingOp(header.op_type);
   const inoculation = optionalInoculation(body.inoculation);
   if (inoculation === 'commercial' && (body.inoculum_product_id === undefined || body.inoculum_product_id === null)) {
@@ -641,6 +674,7 @@ function parseBody(body: Record<string, unknown>): { header: ParsedHeader; draft
       sample_code: sampling?.sample_code ?? null,
       sample_destination: sampling?.destination ?? null,
       lab_contact_id: sampling?.lab_contact_id ?? null,
+      intake,
     },
   };
 }
@@ -911,9 +945,14 @@ async function buildRequest(
     reason: header.reason,
     approval_request_id: approvalRequestId,
   };
-  if (header.op_type === 'racking') return buildTransfer(tx, common, lines);
+  if (header.op_type === 'racking' || header.op_type === 'filtration') {
+    return buildTransfer(tx, common, lines, header.op_type);
+  }
   if (header.op_type === 'blend') return buildBlend(tx, common, lines, draft.new_lot);
   if (header.op_type === 'bottling') return buildBottling(tx, common, lines, draft.new_lot);
+  if (header.op_type === 'labeling') return buildLabeling(tx, common, lines);
+  if (header.op_type === 'reception') return buildGrapeReception(common, draft.intake);
+  if (header.op_type === 'bulk_reception') return buildBulkReception(common, draft.intake);
   if (header.op_type === 'loss') return buildLoss(tx, common, lines, 'loss');
   if (header.op_type === 'destruction') return buildLoss(tx, common, lines, 'destruction');
   if (header.op_type === 'addition') return buildAddition(tx, common, draft.addition);
@@ -950,8 +989,10 @@ function vesselIdsOf(request: OperationRequest): string[] {
     || request.op_type === 'sampling'
   ) ids.add(request.vessel_id);
   if (request.op_type === 'cleaning' && request.cleaning.vessel_id) ids.add(request.cleaning.vessel_id);
+  if (request.op_type === 'reception' || request.op_type === 'bulk_reception') ids.add(request.vessel_id);
   if (
     request.op_type === 'racking'
+    || request.op_type === 'filtration'
     || request.op_type === 'blend'
     || request.op_type === 'bottling'
     ||     request.op_type === 'loss'
@@ -973,6 +1014,7 @@ async function buildTransfer(
   tx: Tx,
   common: OperationRequest extends TransferRequest ? never : Omit<TransferRequest, 'op_type' | 'lines'>,
   lines: readonly ParsedLine[],
+  op: 'racking' | 'filtration' = 'racking',
 ): Promise<TransferRequest> {
   const engine: TransferLine[] = [];
   for (let index = 0; index < lines.length; index += 1) {
@@ -999,7 +1041,124 @@ async function buildTransfer(
       product_state: state,
     });
   }
-  return { ...common, op_type: 'racking', lines: engine };
+  return { ...common, op_type: op, lines: engine };
+}
+
+async function buildLabeling(
+  tx: Tx,
+  common: OperationCommon,
+  lines: readonly ParsedLine[],
+): Promise<OperationRequest> {
+  if (lines.length === 0) invalid({ lines: 'El etiquetado no tiene líneas' });
+  const engine: {
+    role: 'input' | 'output' | 'loss';
+    lot?: LotRef;
+    location_id: string;
+    owner_entity_id?: string;
+    product_id: string;
+    qty_units: number;
+    volume_ml: number;
+    nominal_volume_ml: number;
+    loss_kind?: LossKind;
+  }[] = [];
+  let warehouse: string | null = null;
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!line) continue;
+    const field = `lines[${index}]`;
+    if (!line.location_id) invalid({ [`${field}.location_id`]: 'El etiquetado necesita una ubicación' });
+    if (!line.product_id) invalid({ [`${field}.product_id`]: 'Falta el producto envasado' });
+    if (line.nominal_volume_ml === null) invalid({ [`${field}.nominal_volume_ml`]: 'Falta el volumen nominal' });
+    if (line.qty_units <= 0) invalid({ [`${field}.qty_units`]: 'Las botellas deben ser positivas' });
+    if (index === 0) warehouse = await warehouseOf(tx, line.location_id);
+    if (line.role === 'output') {
+      if (line.product_state !== 'packaged_labeled') {
+        invalid({ [`${field}.product_state`]: 'El destino del etiquetado sale etiquetado' });
+      }
+      engine.push({
+        role: 'output',
+        location_id: line.location_id,
+        product_id: line.product_id,
+        qty_units: line.qty_units,
+        volume_ml: line.volume_ml,
+        nominal_volume_ml: line.nominal_volume_ml,
+      });
+      continue;
+    }
+    if (line.product_state !== 'packaged_unlabeled') {
+      invalid({ [`${field}.product_state`]: 'El jaulón está sin etiquetar' });
+    }
+    const lot = await requireLot(tx, line.lot_id, `${field}.lot_id`);
+    if (line.role === 'loss') {
+      engine.push({
+        role: 'loss',
+        lot,
+        location_id: line.location_id,
+        product_id: line.product_id,
+        qty_units: line.qty_units,
+        volume_ml: line.volume_ml,
+        nominal_volume_ml: line.nominal_volume_ml,
+        loss_kind: requireLossKind(line.loss_kind, field),
+      });
+      continue;
+    }
+    engine.push({
+      role: 'input',
+      lot,
+      location_id: line.location_id,
+      owner_entity_id: line.owner_entity_id ?? common.legal_entity_id,
+      product_id: line.product_id,
+      qty_units: line.qty_units,
+      volume_ml: line.volume_ml,
+      nominal_volume_ml: line.nominal_volume_ml,
+    });
+  }
+  return { ...common, op_type: 'labeling', tax_warehouse_id: warehouse, lines: engine } as OperationRequest;
+}
+
+function buildGrapeReception(common: OperationCommon, intake: IntakeInput | null): OperationRequest {
+  if (!intake || intake.product_state !== 'grape' || intake.mass_g === null) {
+    invalid({ mass_g: 'La entrada de uva necesita la masa' });
+  }
+  return {
+    ...common,
+    op_type: 'reception',
+    vessel_id: intake.vessel_id,
+    mass_g: intake.mass_g,
+    lot_code: intake.lot_code,
+    vintage: intake.vintage,
+    is_organic: intake.is_organic,
+    notes: intake.notes,
+    occupying_lot_id: null,
+  };
+}
+
+function buildBulkReception(common: OperationCommon, intake: IntakeInput | null): OperationRequest {
+  if (!intake || intake.volume_ml === null || (intake.product_state !== 'must' && intake.product_state !== 'wine')) {
+    invalid({ volume_ml: 'La entrada a granel necesita litros de mosto o vino' });
+  }
+  return {
+    ...common,
+    op_type: 'bulk_reception',
+    vessel_id: intake.vessel_id,
+    volume_ml: intake.volume_ml,
+    product_state: intake.product_state,
+    lot_code: intake.lot_code,
+    vintage: intake.vintage,
+    is_organic: intake.is_organic,
+    notes: intake.notes,
+    excise_product_key: intake.excise_product_key,
+    abv_pct: intake.abv_pct,
+  };
+}
+
+async function warehouseOf(tx: Tx, locationId: string): Promise<string | null> {
+  const rows = await tx.read<{ tax_warehouse_id: string | null }>(sql`
+    SELECT tax_warehouse_id::VARCHAR AS tax_warehouse_id
+    FROM inventory.location
+    WHERE id = CAST(${locationId} AS UUID)
+  `);
+  return rows[0]?.tax_warehouse_id ?? null;
 }
 
 async function blendSegregation(tx: Tx, lines: readonly ParsedLine[]): Promise<'segregated' | 'healthy'> {
@@ -1718,6 +1877,9 @@ async function assertReferences(tx: Tx, draft: StoredDraft): Promise<void> {
     if (!contacts[0]) invalid({ destination: 'El laboratorio no existe' });
     if (contacts[0].is_supplier !== true) invalid({ destination: 'El laboratorio tiene que ser un proveedor' });
   }
+  if (draft.intake) {
+    await assertRow(tx, 'cellar.vessel', draft.intake.vessel_id, 'vessel_id', 'El recipiente no existe');
+  }
   if (draft.cleaning) {
     await assertRow(tx, 'catalog.product', draft.cleaning.product_id, 'cleaning.product_id', 'El producto de limpieza no existe');
     if (draft.cleaning.location_id) {
@@ -1741,7 +1903,12 @@ function asStored(value: unknown): StoredDraft | null {
   if (typeof record.fiscal_date !== 'string' || !Array.isArray(record.lines)) return null;
   return {
     fiscal_date: record.fiscal_date,
-    lines: record.lines.map((line) => ({ ...line, mass_g: line.mass_g ?? 0, new_lot_code: line.new_lot_code ?? null })),
+    lines: record.lines.map((line) => ({
+      ...line,
+      mass_g: line.mass_g ?? 0,
+      new_lot_code: line.new_lot_code ?? null,
+      owner_entity_id: line.owner_entity_id ?? null,
+    })),
     new_lot: record.new_lot ?? null,
     addition: record.addition
       ? {
@@ -1774,7 +1941,15 @@ function asStored(value: unknown): StoredDraft | null {
       ? record.sample_destination
       : null,
     lab_contact_id: typeof record.lab_contact_id === 'string' ? record.lab_contact_id : null,
+    intake: intakeOf(record.intake),
   };
+}
+
+function intakeOf(value: unknown): IntakeInput | null {
+  if (value === null || value === undefined || typeof value !== 'object' || Array.isArray(value)) return null;
+  const row = value as IntakeInput;
+  if (typeof row.vessel_id !== 'string' || typeof row.lot_code !== 'string') return null;
+  return row;
 }
 
 function postingInstant(occurredAt: string, locks: readonly PeriodLock[]): { instant: string; regularization: boolean } {
@@ -2334,6 +2509,7 @@ function parseWinemakingLines(body: Record<string, unknown>): ParsedLine[] {
       nc_code: null,
       mass_g: mass,
       new_lot_code: optionalLotCode(line.new_lot_code, `${field}.new_lot_code`),
+      owner_entity_id: optionalUuid(line.owner_entity_id, `${field}.owner_entity_id`),
     };
   });
 }
@@ -2343,6 +2519,31 @@ function optionalAbv(value: unknown): string | null {
   const text = requireText(value, 'abv_pct', 10);
   if (!/^(0|[1-9]\d?)(?:\.\d{1,2})?$/.test(text)) invalid({ abv_pct: 'El grado no es válido' });
   return text;
+}
+
+function parseIntake(body: Record<string, unknown>, op: 'reception' | 'bulk_reception'): IntakeInput {
+  const vesselId = requireUuid(body.vessel_id, 'vessel_id');
+  const lotCode = requireText(body.lot_code, 'lot_code', 30).toUpperCase();
+  if (!LOT_CODE.test(lotCode)) invalid({ lot_code: 'El código de lote no es válido' });
+  if (typeof body.vintage !== 'number' || !Number.isSafeInteger(body.vintage) || body.vintage < 1990 || body.vintage > 2100) {
+    invalid({ vintage: 'La añada no es válida' });
+  }
+  const vintage = body.vintage;
+  if (typeof body.is_organic !== 'boolean') invalid({ is_organic: 'Falta si es ecológico' });
+  const shared = {
+    vessel_id: vesselId,
+    lot_code: lotCode,
+    vintage,
+    is_organic: body.is_organic,
+    notes: optionalText(body.notes, 'notes', 500),
+    excise_product_key: optionalText(body.excise_product_key, 'excise_product_key', 40),
+    abv_pct: optionalAbv(body.abv_pct),
+  };
+  if (op === 'reception') {
+    return { ...shared, mass_g: positiveInt(body.mass_g, 'mass_g'), volume_ml: null, product_state: 'grape' };
+  }
+  const state = oneOf(body.product_state, 'product_state', ['must', 'wine'] as const);
+  return { ...shared, mass_g: null, volume_ml: positiveInt(body.volume_ml, 'volume_ml'), product_state: state };
 }
 
 function parseSampling(body: Record<string, unknown>): {
@@ -2440,6 +2641,7 @@ function parseLine(value: unknown, index: number): ParsedLine {
     nc_code: optionalText(line.nc_code, `${field}.nc_code`, 8),
     mass_g: 0,
     new_lot_code: null,
+    owner_entity_id: optionalUuid(line.owner_entity_id, `${field}.owner_entity_id`),
   };
 }
 

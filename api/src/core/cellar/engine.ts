@@ -4,6 +4,8 @@ import { planBlend } from "./ops/blend";
 import { planBottling } from "./ops/bottling";
 import { planCleaning } from "./ops/cleaning";
 import { planLoss } from "./ops/loss";
+import { planBulkReception } from "./ops/bulk-reception";
+import { planLabeling } from "./ops/labeling";
 import { planReception } from "./ops/reception";
 import { planTransfer } from "./ops/transfer";
 import { planBleeding } from "../winemaking/bleeding";
@@ -29,6 +31,7 @@ export function planOperation(
   }
   switch (req.op_type) {
     case "racking":
+    case "filtration":
       return planTransfer(req, state, ids);
     case "blend":
       return planBlend(req, state, ids);
@@ -36,6 +39,8 @@ export function planOperation(
       return planAddition(req, state, ids);
     case "bottling":
       return planBottling(req, state, ids);
+    case "labeling":
+      return planLabeling(req, state, ids);
     case "loss":
     case "destruction":
       return planLoss(req, state, ids);
@@ -43,6 +48,8 @@ export function planOperation(
       return planCleaning(req, state, ids);
     case "reception":
       return planReception(req, state, ids);
+    case "bulk_reception":
+      return planBulkReception(req, state, ids);
     case "crushing_pressing":
       return planPressing(req, state, ids);
     case "fermentation_start":

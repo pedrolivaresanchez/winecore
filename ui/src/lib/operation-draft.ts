@@ -32,6 +32,9 @@ export type DraftLine = {
   notes: string;
   child_lot_code: string;
   product_state: "grape" | "must" | "wine" | "packaged_unlabeled" | "packaged_labeled";
+  location_id: string;
+  product_id: string;
+  owner_entity_id: string;
 };
 
 export type Draft = {
@@ -59,6 +62,19 @@ export type Draft = {
   started_at: string;
   ended_at: string;
   process_notes: string;
+  product_id: string;
+  pack_state: "packaged_unlabeled" | "packaged_labeled";
+  location_id: string;
+  additive_product_id: string;
+  organic_approved: boolean;
+  cleaning_product_id: string;
+  mass_text: string;
+  vintage_text: string;
+  is_organic: boolean;
+  sample_code: string;
+  intake_state: "must" | "wine";
+  excise_product_key: string;
+  nc_code: string;
 };
 
 export type Issue = { step: WizardStep; key: string; code: string; message: string };
@@ -137,6 +153,21 @@ const EFFECTS: Record<OpType, { fisico: string; sisv: string; silicie: string }>
     sisv: "Consigna de temperatura",
     silicie: "Sin asiento",
   },
+  reception: {
+    fisico: "Entran kilos de uva al depósito",
+    sisv: "Entrada de uva",
+    silicie: "Asiento de entrada de uva",
+  },
+  bulk_reception: {
+    fisico: "Entra mosto o vino a un depósito vacío",
+    sisv: "Entrada a granel",
+    silicie: "Asiento de recepción si es vino",
+  },
+  sampling: {
+    fisico: "No mueve volumen",
+    sisv: "Toma de muestras",
+    silicie: "Sin asiento",
+  },
 };
 
 export function readTipo(value: string | null): OpType | "" {
@@ -163,6 +194,9 @@ export function emptyLine(): DraftLine {
     notes: "",
     child_lot_code: "",
     product_state: "wine",
+    location_id: "",
+    product_id: "",
+    owner_entity_id: "",
   };
 }
 
@@ -192,6 +226,19 @@ export function emptyDraft(op: OpType | "", performedBy: string): Draft {
     started_at: localNow(),
     ended_at: localNow(),
     process_notes: "",
+    product_id: "",
+    pack_state: "packaged_unlabeled",
+    location_id: "",
+    additive_product_id: "",
+    organic_approved: true,
+    cleaning_product_id: "",
+    mass_text: "",
+    vintage_text: String(new Date().getFullYear()),
+    is_organic: true,
+    sample_code: "",
+    intake_state: "wine",
+    excise_product_key: "",
+    nc_code: "",
   };
 }
 
@@ -260,7 +307,7 @@ export function typeInto(current: string, key: string, mode: "decimal" | "intege
 }
 
 export function mlOf(op: OpType, role: LineRole, line: DraftLine): number {
-  if (op === "labeling") return 0;
+  if (op === "labeling") return parseQty(line.qty_text) * litresToMl(line.nominal_text || "0");
   if (op === "bottling" && role === "output") return parseQty(line.qty_text) * litresToMl(line.nominal_text || "0");
   return litresToMl(line.volume_text);
 }
@@ -273,7 +320,7 @@ export function qtyOf(op: OpType, role: LineRole, line: DraftLine): number {
 
 export function balanceFor(draft: Draft): Balance | null {
   const op = draft.op_type;
-  if (!op || op === "cleaning" || op === "addition" || op === "delestage" || op === "temperature_control") return null;
+  if (!op || op === "cleaning" || op === "addition" || op === "delestage" || op === "temperature_control" || op === "sampling" || op === "reception" || op === "bulk_reception") return null;
   if (op === "labeling") {
     const inn = draft.inputs.reduce((sum, line) => sum + qtyOf(op, "input", line), 0);
     const out = draft.outputs.reduce((sum, line) => sum + qtyOf(op, "output", line), 0);
@@ -303,6 +350,27 @@ export function needsApproval(draft: Draft): boolean {
 export function prefillLosses(draft: Draft): Draft {
   if (!lossApplies(draft.op_type)) return draft;
   const source = draft.inputs[0];
+  if (draft.op_type === "labeling" && source?.lot_id) {
+    const inn = parseQty(source.qty_text);
+    const out = draft.outputs.reduce((sum, line) => sum + parseQty(line.qty_text), 0);
+    const broken = Math.max(0, inn - out);
+    const current = draft.losses[0] ?? emptyLine();
+    if (current.qty_text) return draft;
+    return {
+      ...draft,
+      losses: [{
+        ...current,
+        lot_id: source.lot_id,
+        lot_code: source.lot_code,
+        location_id: source.location_id,
+        product_id: source.product_id,
+        owner_entity_id: source.owner_entity_id,
+        nominal_text: source.nominal_text,
+        qty_text: broken > 0 ? String(broken) : "",
+        product_state: "packaged_unlabeled",
+      }, ...draft.losses.slice(1)],
+    };
+  }
   if (!source?.vessel_code || draft.losses[0]?.vessel_code) return draft;
   const current = draft.losses[0] ?? emptyLine();
   const copyVolume = draft.op_type === "loss" || draft.op_type === "destruction";
@@ -329,14 +397,14 @@ function materialClass(vessel: Vessel | undefined): "wood" | "bulk" {
 }
 
 export function silicieNote(draft: Draft, vessels: Vessel[]): string | null {
-  if (draft.op_type !== "racking") return null;
+  if (draft.op_type !== "racking" && draft.op_type !== "filtration") return null;
   const source = vessels.find((item) => item.code === draft.inputs[0]?.vessel_code);
   const sourceClass = materialClass(source);
   let ml = 0;
   for (const line of draft.outputs) {
     const dest = vessels.find((item) => item.code === line.vessel_code);
     if (!dest || materialClass(dest) === sourceClass) continue;
-    ml += mlOf("racking", "output", line);
+    ml += mlOf(draft.op_type, "output", line);
   }
   if (ml <= 0) return null;
   const entra = sourceClass === "bulk" ? "depósito" : "barrica";
@@ -390,8 +458,14 @@ export function problems(draft: Draft, vessels: Vessel[], reveal: boolean): Issu
     push({ step: "revision", key: "performed_by", code: "", message: "Indica quién la hace" });
   }
 
-  const sourceNeedsAmount = op !== "cleaning" && op !== "addition" && op !== "delestage" && op !== "temperature_control";
+  const sourceNeedsAmount = op !== "cleaning" && op !== "addition" && op !== "delestage" && op !== "temperature_control" && op !== "sampling" && op !== "reception" && op !== "bulk_reception" && op !== "labeling";
   draft.inputs.forEach((line) => {
+    if (op === "labeling") {
+      if (reveal && !line.lot_id) push({ step: "origenes", key: line.key, code: "", message: "Elige el vino sin etiquetar" });
+      if (reveal && parseQty(line.qty_text) <= 0) push({ step: "origenes", key: line.key, code: "", message: "Indica las botellas" });
+      if (litresToMl(line.nominal_text) <= 0) push({ step: "origenes", key: line.key, code: "", message: "Indica el volumen de la botella" });
+      return;
+    }
     const vessel = vessels.find((item) => item.code === line.vessel_code);
     if (!line.vessel_code) {
       if (reveal) push({ step: "origenes", key: line.key, code: "", message: "Elige el depósito" });
@@ -400,15 +474,17 @@ export function problems(draft: Draft, vessels: Vessel[], reveal: boolean): Issu
     if (vessel && vessel.status !== "in_service") {
       push({ step: "origenes", key: line.key, code: "WC_VESSEL_NOT_IN_SERVICE", message: `${vessel.code} está fuera de servicio` });
     }
-    if (op === "delestage" || op === "temperature_control") {
+    if (op === "delestage" || op === "temperature_control" || op === "sampling") {
       if (!line.lot_id && reveal) push({ step: "origenes", key: line.key, code: "", message: "Ese depósito no tiene lote" });
       return;
     }
-    if (!sourceNeedsAmount) return;
-    if (op === "labeling") {
-      if (reveal && parseQty(line.qty_text) <= 0) push({ step: "origenes", key: line.key, code: "", message: "Indica las botellas" });
+    if (op === "reception" || op === "bulk_reception") {
+      if (vessel && vessel.volume_ml > 0) {
+        push({ step: "origenes", key: line.key, code: "WC026", message: `${vessel.code} tiene producto; elige uno vacío (WC026)` });
+      }
       return;
     }
+    if (!sourceNeedsAmount) return;
     const ml = litresToMl(line.volume_text);
     if (ml <= 0) {
       if (reveal) push({ step: "origenes", key: line.key, code: "", message: "Indica los litros" });
@@ -426,6 +502,36 @@ export function problems(draft: Draft, vessels: Vessel[], reveal: boolean): Issu
     }
   });
 
+  if (op === "reception") {
+    if (reveal && !/^[A-Z0-9][A-Z0-9./-]{1,29}$/.test(draft.new_lot_code.trim())) {
+      push({ step: "origenes", key: "new_lot_code", code: "", message: "Indica el código del lote" });
+    }
+    if (reveal && kgToG(draft.mass_text) <= 0) {
+      push({ step: "origenes", key: "mass_text", code: "", message: "Indica los kilos" });
+    }
+    if (reveal && !vintageOk(draft.vintage_text)) {
+      push({ step: "origenes", key: "vintage_text", code: "", message: "Indica la añada" });
+    }
+  }
+
+  if (op === "bulk_reception") {
+    if (reveal && !/^[A-Z0-9][A-Z0-9./-]{1,29}$/.test(draft.new_lot_code.trim())) {
+      push({ step: "origenes", key: "new_lot_code", code: "", message: "Indica el código del lote" });
+    }
+    if (reveal && litresToMl(draft.inputs[0]?.volume_text ?? "") <= 0) {
+      push({ step: "origenes", key: draft.inputs[0]?.key ?? "volume", code: "", message: "Indica los litros" });
+    }
+    if (reveal && !vintageOk(draft.vintage_text)) {
+      push({ step: "origenes", key: "vintage_text", code: "", message: "Indica la añada" });
+    }
+  }
+
+  if (op === "sampling" && reveal) {
+    if (!/^[A-Z0-9][A-Z0-9./-]{0,31}$/.test(draft.sample_code.trim().toUpperCase())) {
+      push({ step: "origenes", key: "sample_code", code: "", message: "Indica el código de la muestra" });
+    }
+  }
+
   if (op === "cleaning") {
     if (reveal && !draft.active_substance.trim()) {
       push({ step: "origenes", key: "active_substance", code: "", message: "Indica la sustancia activa" });
@@ -436,17 +542,20 @@ export function problems(draft: Draft, vessels: Vessel[], reveal: boolean): Issu
     if (reveal && draft.efficacy_check.trim().length < 3) {
       push({ step: "origenes", key: "efficacy_check", code: "", message: "Indica cómo comprobaste la limpieza" });
     }
+    if (reveal && !draft.cleaning_product_id) {
+      push({ step: "origenes", key: "cleaning_product_id", code: "", message: "Elige el producto del catálogo" });
+    }
   }
 
   if (op === "addition") {
-    if (reveal && !draft.additive_name.trim()) {
-      push({ step: "origenes", key: "additive_name", code: "", message: "Indica el producto" });
-    }
     if (reveal && parseDecimal(draft.quantity_text) <= 0) {
       push({ step: "origenes", key: "quantity_text", code: "", message: "Indica la cantidad" });
     }
     if (reveal && parseDecimal(draft.dose_text) <= 0) {
       push({ step: "origenes", key: "dose_text", code: "", message: "Indica la dosis" });
+    }
+    if (reveal && !draft.additive_product_id) {
+      push({ step: "origenes", key: "additive_product_id", code: "", message: "Elige el producto del catálogo" });
     }
   }
 
@@ -465,8 +574,20 @@ export function problems(draft: Draft, vessels: Vessel[], reveal: boolean): Issu
     }
   }
 
+  if ((op === "bottling") && reveal && !draft.product_id) {
+    push({ step: "destinos", key: "product_id", code: "", message: "Elige el producto envasado" });
+  }
+
   if (destApplies(op)) {
     draft.outputs.forEach((line) => {
+      if (op === "labeling") {
+        if (reveal && !line.location_id) push({ step: "destinos", key: line.key, code: "", message: "Elige el almacén" });
+        if (reveal && parseQty(line.qty_text) <= 0) push({ step: "destinos", key: line.key, code: "", message: "Indica las botellas" });
+        return;
+      }
+      if (op === "bottling" && reveal && !line.location_id) {
+        push({ step: "destinos", key: line.key, code: "", message: "Elige el almacén" });
+      }
       const vessel = vessels.find((item) => item.code === line.vessel_code);
       if (op !== "bottling" && !line.vessel_code) {
         if (reveal) push({ step: "destinos", key: line.key, code: "", message: "Elige el depósito" });
@@ -475,7 +596,7 @@ export function problems(draft: Draft, vessels: Vessel[], reveal: boolean): Issu
       if (vessel && vessel.status !== "in_service") {
         push({ step: "destinos", key: line.key, code: "WC_VESSEL_NOT_IN_SERVICE", message: `${vessel.code} está fuera de servicio` });
       }
-      if ((op === "racking" || op === "filtration" || op === "labeling" || op === "bleeding") && line.vessel_code && line.vessel_code === draft.inputs[0]?.vessel_code) {
+      if ((op === "racking" || op === "filtration" || op === "bleeding") && line.vessel_code && line.vessel_code === draft.inputs[0]?.vessel_code) {
         push({ step: "destinos", key: line.key, code: "", message: "El destino es el mismo depósito" });
       }
       const sourceLot = draft.inputs[0]?.lot_id;
@@ -498,7 +619,7 @@ export function problems(draft: Draft, vessels: Vessel[], reveal: boolean): Issu
       if (op === "pressing_off" && inside && inside.volume_ml > 0 && sourceLot && inside.lot_id !== sourceLot) {
         push({ step: "destinos", key: line.key, code: "WC026", message: "El depósito contiene otro lote (WC026)" });
       }
-      if (inside && sourceLot && inside.lot_id !== sourceLot && (op === "racking" || op === "filtration" || op === "labeling")) {
+      if (inside && sourceLot && inside.lot_id !== sourceLot && (op === "racking" || op === "filtration")) {
         push({
           step: "destinos",
           key: line.key,
@@ -509,15 +630,15 @@ export function problems(draft: Draft, vessels: Vessel[], reveal: boolean): Issu
       if (vessel && inside && inside.volume_ml > 0 && (op === "blend" || op === "bottling")) {
         push({ step: "destinos", key: line.key, code: "WC026", message: `${vessel.code} contiene otro lote (WC026)` });
       }
-      if (op === "labeling" || op === "bottling") {
+      if (op === "bottling") {
         if (reveal && parseQty(line.qty_text) <= 0) push({ step: "destinos", key: line.key, code: "", message: "Indica las botellas" });
-        if (op === "bottling" && litresToMl(line.nominal_text) <= 0) {
+        if (litresToMl(line.nominal_text) <= 0) {
           push({ step: "destinos", key: line.key, code: "", message: "Indica el volumen de la botella" });
         }
       } else if (reveal && litresToMl(line.volume_text) <= 0) {
         push({ step: "destinos", key: line.key, code: "", message: "Indica los litros" });
       }
-      if (vessel && op !== "labeling" && !((op === "bleeding" || op === "pressing_off") && draft.inputs.some((item) => item.vessel_code === line.vessel_code))) {
+      if (vessel && !((op === "bleeding" || op === "pressing_off") && draft.inputs.some((item) => item.vessel_code === line.vessel_code))) {
         const incoming = mlOf(op, "output", line);
         const sameLot = Boolean(inside && sourceLot && inside.lot_id === sourceLot);
         const base = !inside || sameLot ? (inside?.volume_ml ?? 0) : 0;
@@ -552,7 +673,7 @@ export function problems(draft: Draft, vessels: Vessel[], reveal: boolean): Issu
   }
 
   if (lossApplies(op)) {
-    const incident = op === "destruction" || draft.losses.some((line) => line.loss_kind === "incident");
+    const incident = op === "destruction" || op === "loss" || draft.losses.some((line) => line.loss_kind === "incident");
     if (incident && draft.reason.trim().length < 3 && reveal) {
       push({ step: "mermas", key: "reason", code: "", message: "Indica el motivo" });
     }
@@ -575,11 +696,27 @@ export function blocksStep(issues: Issue[], step: WizardStep): boolean {
   return issues.some((issue) => issue.step === step && issue.code !== "WC020");
 }
 
-function productState(op: OpType, role: LineRole): DraftLine["product_state"] {
-  if (op === "bottling" && role === "output") return "packaged_unlabeled";
+function productState(op: OpType, role: LineRole, pack: Draft["pack_state"]): DraftLine["product_state"] {
+  if (op === "bottling" && role === "output") return pack;
   if (op === "labeling" && role === "output") return "packaged_labeled";
   if (op === "labeling") return "packaged_unlabeled";
   return "wine";
+}
+
+function kgToG(text: string): number {
+  const kg = parseDecimal(text);
+  if (kg <= 0) return 0;
+  return Math.round(kg * 1000);
+}
+
+function vintageOk(text: string): boolean {
+  const year = Number(text.trim());
+  return Number.isInteger(year) && year >= 1990 && year <= 2100;
+}
+
+function decimalText(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "0";
+  return value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function toIso(local: string): string {
@@ -601,6 +738,10 @@ type PayloadLine = {
   nominal_volume_ml: number | null;
   notes: string | null;
   new_lot_code?: string | null;
+  product_id?: string | null;
+  excise_product_key?: string | null;
+  nc_code?: string | null;
+  owner_entity_id?: string | null;
 };
 
 export function buildPayload(draft: Draft, vessels: Vessel[], legalEntityId: string) {
@@ -617,18 +758,25 @@ export function buildPayload(draft: Draft, vessels: Vessel[], legalEntityId: str
     const place = vessels.find((item) => item.code === line.vessel_code);
     const carried = role === "input" || role === "loss" ? line.product_state : null;
     const sourceState = source?.product_state === "must" ? "must" : "wine";
+    const bottled = (op === "bottling" && role === "output") || op === "labeling";
     const payload: PayloadLine = {
       role,
       lot_id: lotId || null,
-      vessel_id: vesselId(line.vessel_code),
-      location_id: place?.location_id ?? null,
+      vessel_id: op === "labeling" || (op === "bottling" && role === "output") ? null : vesselId(line.vessel_code),
+      location_id: line.location_id || place?.location_id || null,
       volume_ml: mlOf(op, role, line),
       qty_units: qtyOf(op, role, line),
       mass_g: 0,
       loss_kind: role === "loss" ? (op === "destruction" ? "incident" : bulk ? "authorized" : line.loss_kind) : null,
-      product_state: bulk ? sourceState : (carried ?? productState(op, role)),
-      nominal_volume_ml: op === "bottling" && role === "output" ? litresToMl(line.nominal_text || "0") : null,
+      product_state: op === "labeling"
+        ? (role === "output" ? "packaged_labeled" : "packaged_unlabeled")
+        : bulk ? sourceState : (carried ?? productState(op, role, draft.pack_state)),
+      nominal_volume_ml: bottled ? litresToMl(line.nominal_text || "0") : null,
       notes: line.notes.trim() ? line.notes.trim() : null,
+      product_id: (op === "bottling" && role === "output" ? draft.product_id : line.product_id) || null,
+      excise_product_key: op === "bottling" && role === "output" && draft.excise_product_key.trim() ? draft.excise_product_key.trim() : null,
+      nc_code: op === "bottling" && role === "output" && draft.nc_code.trim() ? draft.nc_code.trim() : null,
+      owner_entity_id: line.owner_entity_id || null,
     };
     if (op === "pressing_off" && role === "output" && line.child_lot_code.trim()) payload.new_lot_code = line.child_lot_code.trim();
     return payload;
@@ -638,7 +786,7 @@ export function buildPayload(draft: Draft, vessels: Vessel[], legalEntityId: str
   let lines: PayloadLine[] = [];
   if (op === "loss" || op === "destruction") {
     lines = draft.losses.map((line) => mapLine("loss", line)).filter(meaningful);
-  } else if (op !== "cleaning" && op !== "addition" && op !== "delestage" && op !== "temperature_control") {
+  } else if (op !== "cleaning" && op !== "addition" && op !== "delestage" && op !== "temperature_control" && op !== "sampling" && op !== "reception" && op !== "bulk_reception") {
     lines = [
       ...draft.inputs.map((line) => mapLine("input", line)),
       ...draft.outputs.map((line) => mapLine("output", line)),
@@ -683,8 +831,9 @@ export function buildPayload(draft: Draft, vessels: Vessel[], legalEntityId: str
       ? {
           cleaning: {
             vessel_id: vesselId(source?.vessel_code ?? ""),
+            product_id: draft.cleaning_product_id,
             active_substance: draft.active_substance.trim(),
-            quantity: parseDecimal(draft.cleaning_qty),
+            quantity: decimalText(parseDecimal(draft.cleaning_qty)),
             quantity_unit: draft.cleaning_unit,
             efficacy_check: draft.efficacy_check.trim(),
           },
@@ -692,15 +841,47 @@ export function buildPayload(draft: Draft, vessels: Vessel[], legalEntityId: str
       : {}),
     ...(op === "addition"
       ? {
+          vessel_id: vesselId(source?.vessel_code ?? ""),
+          lot_id: source?.lot_id || null,
           addition: {
-            lot_id: source?.lot_id || null,
-            vessel_id: vesselId(source?.vessel_code ?? ""),
-            quantity: parseDecimal(draft.quantity_text),
+            additive_product_id: draft.additive_product_id,
+            quantity: decimalText(parseDecimal(draft.quantity_text)),
             quantity_unit: draft.quantity_unit,
-            dose: parseDecimal(draft.dose_text),
+            dose: decimalText(parseDecimal(draft.dose_text)),
             dose_unit: draft.dose_unit,
             purpose: draft.purpose,
+            organic_approved: draft.organic_approved,
           },
+        }
+      : {}),
+    ...(op === "reception"
+      ? {
+          vessel_id: vesselId(source?.vessel_code ?? ""),
+          mass_g: kgToG(draft.mass_text),
+          lot_code: draft.new_lot_code.trim(),
+          vintage: Number(draft.vintage_text),
+          is_organic: draft.is_organic,
+          notes: draft.reason.trim() ? draft.reason.trim() : null,
+        }
+      : {}),
+    ...(op === "bulk_reception"
+      ? {
+          vessel_id: vesselId(source?.vessel_code ?? ""),
+          volume_ml: litresToMl(source?.volume_text ?? ""),
+          product_state: draft.intake_state,
+          lot_code: draft.new_lot_code.trim(),
+          vintage: Number(draft.vintage_text),
+          is_organic: draft.is_organic,
+          notes: draft.reason.trim() ? draft.reason.trim() : null,
+        }
+      : {}),
+    ...(op === "sampling"
+      ? {
+          vessel_id: vesselId(source?.vessel_code ?? ""),
+          lot_id: source?.lot_id || null,
+          sampled_at: toIso(draft.occurred_at),
+          sample_code: draft.sample_code.trim().toUpperCase(),
+          destination: "internal" as const,
         }
       : {}),
   };

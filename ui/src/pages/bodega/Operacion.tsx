@@ -76,7 +76,7 @@ import {
   useMenuOpen,
   useToast,
 } from '@/ui'
-import { ArrowDown, ArrowLeft, ArrowRight, Box, Eraser, Filter, MergeCells, Minus, MoreVertical, Plus, RefreshCw, Sliders, SplitBranch, Tag, Trash2, type IconComponent } from '@/ui/icons'
+import { ArrowDown, ArrowLeft, ArrowRight, Box, DownloadSimple, Eraser, FileText, Filter, MergeCells, Minus, MoreVertical, Plus, RefreshCw, Sliders, SplitBranch, Tag, Trash2, type IconComponent } from '@/ui/icons'
 import { ReadingColumn, RecordBar, SectionTabs } from '@/pages/bodega/chrome'
 import { classLabel, fiscalLabel, moveLabel, opLabel, opStatusLabel, opStatusTone, roleLabel } from '@/pages/bodega/labels'
 import { ElaborationFields, ElaborationSummary } from '@/pages/elaboracion/OpFields'
@@ -95,9 +95,37 @@ const ICONS: Record<OpType, IconComponent> = {
   pressing_off: ArrowDown,
   delestage: RefreshCw,
   temperature_control: Sliders,
+  reception: DownloadSimple,
+  bulk_reception: ArrowDown,
+  sampling: FileText,
 }
 
 type List = { items: Vessel[]; next_cursor: string | null; total: number }
+
+type CatalogHit = {
+  id: string
+  sku: string
+  name: string
+  format_id: string | null
+  excise_product_key: string | null
+  nc_code: string | null
+}
+
+type FormatHit = { id: string; code: string; name: string; nominal_volume_ml: number }
+type PlaceHit = { id: string; code: string; name: string }
+type JaulonHit = {
+  location_id: string
+  location_code: string
+  location_name?: string
+  owner_entity_id: string
+  lot_id: string | null
+  lot_code: string | null
+  product_id: string | null
+  product_name: string | null
+  qty_units: number
+  volume_ml: number
+  nominal_volume_ml: number | null
+}
 
 type OperationDetail = CellarOperation & {
   lines?: {
@@ -116,18 +144,22 @@ function stepHint(op: OpType | '', step: WizardStep): string {
   if (step === 'origenes') {
     if (op === 'cleaning') return 'Qué depósito se limpia y con qué.'
     if (op === 'addition') return 'Dónde y qué producto echas.'
-    if (op === 'labeling') return 'Botellas que vas a etiquetar.'
+    if (op === 'labeling') return 'Vino sin etiquetar (jaulón).'
     if (op === 'loss' || op === 'destruction') return 'De dónde sale el vino que se pierde.'
     if (op === 'bleeding') return 'De dónde sale el sangrado.'
     if (op === 'pressing_off') return 'Depósito con hollejos.'
     if (op === 'delestage') return 'Depósito, inicio y fin.'
     if (op === 'temperature_control') return 'Consigna anterior, nueva y motivo.'
+    if (op === 'reception') return 'Depósito vacío, kilos y lote de uva.'
+    if (op === 'bulk_reception') return 'Depósito vacío y litros que entran.'
+    if (op === 'sampling') return 'Depósito y código de la muestra.'
     return 'De dónde sale el vino.'
   }
   if (step === 'destinos') {
     if (!destApplies(op)) return 'Este tipo no tiene destino.'
     if (op === 'blend') return 'Depósito vacío y código del lote nuevo.'
-    if (op === 'bottling') return 'Botellas y lote envasado.'
+    if (op === 'bottling') return 'Formato, botellas y almacén. Jaulón o ya etiquetado.'
+    if (op === 'labeling') return 'Botellas que pasan a stock etiquetado.'
     if (op === 'bleeding') return 'Depósito vacío y lote hijo.'
     if (op === 'pressing_off') return 'Yema y vino de prensa.'
     return 'A qué depósito va el vino.'
@@ -421,8 +453,9 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
   const [params] = useSearchParams()
   const { entities } = useEntity()
   const legalEntityId = entities.find((item) => item.code === 'PO')?.id ?? entities[0]?.id ?? ''
-  const [draft, setDraft] = useState(() => emptyDraft(readTipo(params.get('tipo')), me.display_name))
-  const [step, setStep] = useState<WizardStep>('tipo')
+  const initialType = readTipo(params.get('tipo'))
+  const [draft, setDraft] = useState(() => emptyDraft(initialType, me.display_name))
+  const [step, setStep] = useState<WizardStep>(initialType ? 'origenes' : 'tipo')
   const [tried, setTried] = useState(false)
   const [active, setActive] = useState<ActiveField | null>(null)
   const [server, setServer] = useState<Issue[]>([])
@@ -440,6 +473,14 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
   vesselsRef.current = vessels
   const vesselQuery = params.get('vessel') ?? ''
   const op = draft.op_type
+  const wineProducts = useApi<{ items: CatalogHit[] }>(op === 'bottling' || op === 'labeling' ? '/v1/products?kind=wine&limit=100' : null)
+  const additives = useApi<{ items: CatalogHit[] }>(op === 'addition' ? '/v1/products?kind=oenological_product&limit=100' : null)
+  const cleaners = useApi<{ items: CatalogHit[] }>(op === 'cleaning' ? '/v1/products?kind=oenological_product&limit=100' : null)
+  const goods = useApi<{ items: CatalogHit[] }>(op === 'cleaning' ? '/v1/products?kind=merchandise&limit=100' : null)
+  const formats = useApi<{ items: FormatHit[] }>(op === 'bottling' ? '/v1/formats?limit=100' : null)
+  const places = useApi<{ items: PlaceHit[] }>(op === 'bottling' || op === 'labeling' ? '/v1/locations?limit=100' : null)
+  const jaulones = useApi<{ items: JaulonHit[] }>(op === 'labeling' ? '/v1/stock/balances?state=packaged_unlabeled&limit=100' : null)
+  const cleaningProducts = [...(cleaners.data?.items ?? []), ...(goods.data?.items ?? [])]
 
   const ensureDraft = useCallback(async (): Promise<string | null> => {
     const run = queueRef.current.then(async () => {
@@ -469,7 +510,7 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
       if (base.vessel_code) return current
       const next = withVessel(base, vessel)
       const inside = holding(vessel)
-      if (inside && current.op_type !== 'cleaning' && current.op_type !== 'addition' && current.op_type !== 'labeling' && current.op_type !== 'delestage' && current.op_type !== 'temperature_control') {
+      if (inside && current.op_type !== 'cleaning' && current.op_type !== 'addition' && current.op_type !== 'labeling' && current.op_type !== 'delestage' && current.op_type !== 'temperature_control' && current.op_type !== 'reception' && current.op_type !== 'sampling') {
         next.volume_text = mlToEdit(inside.volume_ml)
       }
       return { ...current, inputs: [next, ...current.inputs.slice(1)] }
@@ -510,6 +551,18 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
   function change(recipe: (current: Draft) => Draft) {
     setServer([])
     setDraft(recipe)
+  }
+
+  function pick(id: OpType) {
+    setTried(false)
+    setActive(null)
+    setServer([])
+    setDraft((current) => {
+      if (current.op_type === id) return current
+      const fresh = emptyDraft(id, current.performed_by)
+      return { ...fresh, occurred_at: current.occurred_at }
+    })
+    setStep('origenes')
   }
 
   function jump(target: WizardStep) {
@@ -692,16 +745,7 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
                     key={item.id}
                     type="button"
                     aria-pressed={on}
-                    onClick={() =>
-                      change((current) => ({
-                        ...current,
-                        op_type: item.id,
-                        losses: current.losses.map((line) => ({
-                          ...line,
-                          loss_kind: item.id === 'destruction' ? 'incident' : item.id === 'bleeding' || item.id === 'pressing_off' ? 'authorized' : line.loss_kind,
-                        })),
-                      }))
-                    }
+                    onClick={() => pick(item.id)}
                     className={cn(
                       'flex items-center gap-3 rounded-2xl border bg-surface p-3 text-left',
                       on ? 'border-ink-900' : 'border-border-subtle',
@@ -733,7 +777,8 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
                   role="input"
                   vessels={vessels}
                   messages={lineMessages(issues, line.key, step)}
-                  hideAmount={op === 'cleaning' || op === 'addition' || op === 'delestage' || op === 'temperature_control'}
+                  hideAmount={op === 'cleaning' || op === 'addition' || op === 'delestage' || op === 'temperature_control' || op === 'sampling' || op === 'reception'}
+                  hideVessel={op === 'labeling'}
                   onVessel={(vessel) =>
                     change((current) => ({
                       ...current,
@@ -742,8 +787,12 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
                         const next = withVessel(item, vessel)
                         const inside = holding(vessel)
                         if (inside && op !== 'cleaning' && op !== 'addition' && op !== 'labeling') next.volume_text = mlToEdit(inside.volume_ml)
+                        if (op === 'bottling' && index === 0) next.location_id = vessel.location_id
                         return next
                       }),
+                      outputs: op === 'bottling' && index === 0
+                        ? current.outputs.map((item, itemIndex) => itemIndex === 0 && !item.location_id ? { ...item, location_id: vessel.location_id } : item)
+                        : current.outputs,
                     }))
                   }
                   onChange={(field, value) =>
@@ -760,13 +809,51 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
                   }
                 />
               ))}
-              {op !== 'cleaning' && op !== 'addition' && op !== 'delestage' && op !== 'temperature_control' ? (
+              {op !== 'cleaning' && op !== 'addition' && op !== 'delestage' && op !== 'temperature_control' && op !== 'sampling' && op !== 'reception' && op !== 'bulk_reception' && op !== 'labeling' ? (
                 <Button type="button" variant="secondary" size="sm" onClick={() => change((current) => ({ ...current, inputs: [...current.inputs, emptyLine()] }))}>
                   {copy.cellar.addOrigin}
                 </Button>
               ) : null}
-              {op === 'addition' ? <AdditionFields draft={draft} issues={issues} step={step} onChange={change} /> : null}
-              {op === 'cleaning' ? <CleaningFields draft={draft} issues={issues} step={step} onChange={change} /> : null}
+              {op === 'labeling' ? (
+                <JaulonField
+                  rows={(jaulones.data?.items ?? []).filter((row) => row.qty_units > 0 && row.lot_id && row.product_id)}
+                  value={draft.inputs[0]?.lot_id ?? ''}
+                  onSelect={(row) => {
+                    const nominal = row.nominal_volume_ml && row.nominal_volume_ml > 0
+                      ? mlToEdit(row.nominal_volume_ml)
+                      : row.qty_units > 0
+                        ? mlToEdit(Math.round(row.volume_ml / row.qty_units))
+                        : '0,750'
+                    change((current) => ({
+                      ...current,
+                      product_id: row.product_id ?? '',
+                      location_id: row.location_id,
+                      inputs: current.inputs.map((line, index) => index === 0 ? {
+                        ...line,
+                        lot_id: row.lot_id ?? '',
+                        lot_code: row.lot_code ?? '',
+                        location_id: row.location_id,
+                        product_id: row.product_id ?? '',
+                        owner_entity_id: row.owner_entity_id,
+                        qty_text: String(row.qty_units),
+                        nominal_text: nominal,
+                        product_state: 'packaged_unlabeled',
+                      } : line),
+                      outputs: current.outputs.map((line, index) => index === 0 ? {
+                        ...line,
+                        location_id: row.location_id,
+                        product_id: row.product_id ?? '',
+                        qty_text: String(row.qty_units),
+                        nominal_text: nominal,
+                      } : line),
+                    }))
+                  }}
+                />
+              ) : null}
+              {op === 'addition' ? <AdditionFields draft={draft} products={additives.data?.items ?? []} issues={issues} step={step} onChange={change} /> : null}
+              {op === 'cleaning' ? <CleaningFields draft={draft} products={cleaningProducts} issues={issues} step={step} onChange={change} /> : null}
+              {op === 'reception' || op === 'bulk_reception' ? <IntakeFields draft={draft} issues={issues} step={step} onChange={change} /> : null}
+              {op === 'sampling' ? <SampleFields draft={draft} issues={issues} step={step} onChange={change} /> : null}
               {op === 'delestage' || op === 'temperature_control' ? <ElaborationFields draft={draft} issues={issues} step={step} onChange={change} /> : null}
             </div>
           ) : null}
@@ -776,6 +863,29 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
               {!destApplies(op) ? <p className="rounded-2xl border border-border-subtle px-4 py-3 text-label">Esta operación no tiene destino.</p> : null}
               {destApplies(op) ? (
                 <>
+                  {op === 'bottling' ? (
+                    <BottlingTarget
+                      draft={draft}
+                      products={wineProducts.data?.items ?? []}
+                      formats={formats.data?.items ?? []}
+                      places={places.data?.items ?? []}
+                      issues={issues}
+                      step={step}
+                      onChange={change}
+                    />
+                  ) : null}
+                  {op === 'labeling' ? (
+                    <PlaceField
+                      id="destino-almacen"
+                      label="Almacén del etiquetado"
+                      places={places.data?.items ?? []}
+                      value={draft.outputs[0]?.location_id ?? ''}
+                      onSelect={(place) => change((current) => ({
+                        ...current,
+                        outputs: current.outputs.map((line, index) => index === 0 ? { ...line, location_id: place.id } : line),
+                      }))}
+                    />
+                  ) : null}
                   {op === 'blend' || op === 'bottling' || op === 'bleeding' ? (
                     <Field id="new_lot_code" label="Lote nuevo" error={lineMessages(issues, 'new_lot_code', step)[0]} hint="Mayúsculas, sin espacios.">
                       <Input
@@ -797,6 +907,7 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
                       role="output"
                       vessels={vessels}
                       messages={lineMessages(issues, line.key, step)}
+                      hideVessel={op === 'labeling' || op === 'bottling'}
                       onVessel={(vessel) =>
                         change((current) => ({
                           ...current,
@@ -833,9 +944,11 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
                     ) : null}
                     </div>
                   ))}
-                  <Button type="button" variant="secondary" size="sm" onClick={() => change((current) => ({ ...current, outputs: [...current.outputs, emptyLine()] }))}>
-                    {copy.cellar.addDest}
-                  </Button>
+                  {op !== 'bottling' && op !== 'labeling' ? (
+                    <Button type="button" variant="secondary" size="sm" onClick={() => change((current) => ({ ...current, outputs: [...current.outputs, emptyLine()] }))}>
+                      {copy.cellar.addDest}
+                    </Button>
+                  ) : null}
                 </>
               ) : null}
             </div>
@@ -913,7 +1026,7 @@ function Wizard({ me, vessels }: { me: Me; vessels: Vessel[] }) {
                     </section>
                   ))
                 : null}
-              {lossApplies(op) && (op === 'destruction' || draft.losses.some((line) => line.loss_kind === 'incident')) ? (
+              {lossApplies(op) && (op === 'loss' || op === 'destruction' || draft.losses.some((line) => line.loss_kind === 'incident')) ? (
                 <Field id="motivo" label={copy.cellar.reason} error={lineMessages(issues, 'reason', step)[0]}>
                   <Textarea id="motivo" value={draft.reason} invalid={lineMessages(issues, 'reason', step).length > 0} onChange={(event) => change((current) => ({ ...current, reason: event.target.value }))} />
                 </Field>
@@ -1178,6 +1291,7 @@ function LineCard({
   vessels,
   messages,
   hideAmount,
+  hideVessel,
   onVessel,
   onChange,
   onFocus,
@@ -1191,6 +1305,7 @@ function LineCard({
   vessels: Vessel[]
   messages: string[]
   hideAmount?: boolean
+  hideVessel?: boolean
   onVessel: (vessel: Vessel) => void
   onChange: (field: 'volume_text' | 'qty_text' | 'nominal_text', value: string) => void
   onFocus: (field: ActiveField['field']) => void
@@ -1207,8 +1322,8 @@ function LineCard({
           </Button>
         ) : null}
       </div>
-      <VesselChips vessels={vessels} selected={line.vessel_code} onSelect={onVessel} />
-      <p className="text-caption text-text-tertiary">{caption(vessel)}</p>
+      {hideVessel ? null : <VesselChips vessels={vessels} selected={line.vessel_code} onSelect={onVessel} />}
+      {hideVessel ? null : <p className="text-caption text-text-tertiary">{caption(vessel)}</p>}
       {hideAmount ? <Alerts messages={messages} /> : (
         <LineFields line={line} index={index} idPrefix={role} op={op} role={role} messages={messages} onChange={onChange} onFocus={onFocus} />
       )}
@@ -1283,7 +1398,53 @@ function LineFields({
   )
 }
 
-function AdditionFields({
+function PlaceField({
+  id,
+  label,
+  places,
+  value,
+  onSelect,
+}: {
+  id: string
+  label: string
+  places: PlaceHit[]
+  value: string
+  onSelect: (place: PlaceHit) => void
+}) {
+  return (
+    <Field id={id} label={label}>
+      <Select id={id} value={value} onChange={(event) => {
+        const place = places.find((item) => item.id === event.target.value)
+        if (place) onSelect(place)
+      }}>
+        <option value="">Elige un almacén</option>
+        {places.map((place) => (
+          <option key={place.id} value={place.id}>{place.code} · {place.name}</option>
+        ))}
+      </Select>
+    </Field>
+  )
+}
+
+function JaulonField({ rows, value, onSelect }: { rows: JaulonHit[]; value: string; onSelect: (row: JaulonHit) => void }) {
+  return (
+    <Field id="jaulon" label="Vino sin etiquetar" hint={rows.length === 0 ? 'No hay jaulones en el libro físico.' : 'El etiquetado pasa estas botellas a stock etiquetado.'}>
+      <Select id="jaulon" value={value} onChange={(event) => {
+        const row = rows.find((item) => item.lot_id === event.target.value)
+        if (row) onSelect(row)
+      }}>
+        <option value="">Elige un lote</option>
+        {rows.map((row) => (
+          <option key={`${row.location_id}-${row.lot_id}-${row.product_id}`} value={row.lot_id ?? ''}>
+            {row.lot_code ?? 'Sin lote'} · {row.product_name ?? 'Sin ficha'} · {row.qty_units} botellas · {row.location_code}
+          </option>
+        ))}
+      </Select>
+    </Field>
+  )
+}
+
+function IntakeFields({
   draft,
   issues,
   step,
@@ -1296,8 +1457,138 @@ function AdditionFields({
 }) {
   return (
     <div className="grid gap-3 rounded-2xl border border-border-subtle p-3">
-      <Field id="additive_name" label="Producto" error={lineMessages(issues, 'additive_name', step)[0]}>
-        <Input id="additive_name" value={draft.additive_name} onChange={(event) => onChange((current) => ({ ...current, additive_name: event.target.value }))} />
+      <Field id="new_lot_code" label="Lote nuevo" error={lineMessages(issues, 'new_lot_code', step)[0]} hint="Mayúsculas, sin espacios.">
+        <Input id="new_lot_code" value={draft.new_lot_code} autoCapitalize="characters" onChange={(event) => onChange((current) => ({ ...current, new_lot_code: event.target.value.toUpperCase() }))} />
+      </Field>
+      <Field id="vintage_text" label="Añada" error={lineMessages(issues, 'vintage_text', step)[0]}>
+        <Input id="vintage_text" inputMode="numeric" value={draft.vintage_text} onChange={(event) => onChange((current) => ({ ...current, vintage_text: event.target.value }))} />
+      </Field>
+      {draft.op_type === 'reception' ? (
+        <Field id="mass_text" label="Kilos" error={lineMessages(issues, 'mass_text', step)[0]}>
+          <Input id="mass_text" inputMode="decimal" value={draft.mass_text} onChange={(event) => onChange((current) => ({ ...current, mass_text: event.target.value }))} />
+        </Field>
+      ) : (
+        <Field id="intake_state" label="Qué entra">
+          <Select id="intake_state" value={draft.intake_state} onChange={(event) => onChange((current) => ({ ...current, intake_state: event.target.value === 'must' ? 'must' : 'wine' }))}>
+            <option value="wine">Vino</option>
+            <option value="must">Mosto</option>
+          </Select>
+        </Field>
+      )}
+      <Field id="is_organic" label="Ecológico">
+        <Select id="is_organic" value={draft.is_organic ? 'si' : 'no'} onChange={(event) => onChange((current) => ({ ...current, is_organic: event.target.value === 'si' }))}>
+          <option value="si">Ecológico</option>
+          <option value="no">Convencional</option>
+        </Select>
+      </Field>
+    </div>
+  )
+}
+
+function SampleFields({
+  draft,
+  issues,
+  step,
+  onChange,
+}: {
+  draft: Draft
+  issues: Issue[]
+  step: WizardStep
+  onChange: (recipe: (current: Draft) => Draft) => void
+}) {
+  return (
+    <Field id="sample_code" label="Código de muestra" error={lineMessages(issues, 'sample_code', step)[0]} hint="La analítica del laboratorio se enlaza después desde el lote.">
+      <Input id="sample_code" value={draft.sample_code} autoCapitalize="characters" onChange={(event) => onChange((current) => ({ ...current, sample_code: event.target.value.toUpperCase() }))} />
+    </Field>
+  )
+}
+
+function BottlingTarget({
+  draft,
+  products,
+  formats,
+  places,
+  issues,
+  step,
+  onChange,
+}: {
+  draft: Draft
+  products: CatalogHit[]
+  formats: FormatHit[]
+  places: PlaceHit[]
+  issues: Issue[]
+  step: WizardStep
+  onChange: (recipe: (current: Draft) => Draft) => void
+}) {
+  return (
+    <div className="grid gap-3">
+      <Field id="product_id" label="Producto" error={lineMessages(issues, 'product_id', step)[0]}>
+        <Select id="product_id" value={draft.product_id} onChange={(event) => {
+          const product = products.find((item) => item.id === event.target.value)
+          const format = formats.find((item) => item.id === product?.format_id)
+          onChange((current) => ({
+            ...current,
+            product_id: event.target.value,
+            excise_product_key: product?.excise_product_key ?? '',
+            nc_code: product?.nc_code ?? '',
+            outputs: current.outputs.map((line, index) => index === 0 && format ? { ...line, nominal_text: mlToEdit(format.nominal_volume_ml) } : line),
+          }))
+        }}>
+          <option value="">Elige un producto</option>
+          {products.map((item) => (
+            <option key={item.id} value={item.id}>{item.sku} · {item.name}</option>
+          ))}
+        </Select>
+      </Field>
+      <Field id="pack_state" label="Sale como">
+        <Select id="pack_state" value={draft.pack_state} onChange={(event) => onChange((current) => ({ ...current, pack_state: event.target.value === 'packaged_labeled' ? 'packaged_labeled' : 'packaged_unlabeled' }))}>
+          <option value="packaged_unlabeled">Jaulón, sin etiquetar</option>
+          <option value="packaged_labeled">Etiquetado</option>
+        </Select>
+      </Field>
+      <PlaceField
+        id="envasado-almacen"
+        label="Almacén"
+        places={places}
+        value={draft.outputs[0]?.location_id ?? ''}
+        onSelect={(place) => onChange((current) => ({
+          ...current,
+          location_id: place.id,
+          outputs: current.outputs.map((line, index) => index === 0 ? { ...line, location_id: place.id } : line),
+        }))}
+      />
+    </div>
+  )
+}
+
+function AdditionFields({
+  draft,
+  products,
+  issues,
+  step,
+  onChange,
+}: {
+  draft: Draft
+  products: CatalogHit[]
+  issues: Issue[]
+  step: WizardStep
+  onChange: (recipe: (current: Draft) => Draft) => void
+}) {
+  return (
+    <div className="grid gap-3 rounded-2xl border border-border-subtle p-3">
+      <Field id="additive_product_id" label="Producto" error={lineMessages(issues, 'additive_product_id', step)[0]}>
+        <Select id="additive_product_id" value={draft.additive_product_id} onChange={(event) => onChange((current) => ({ ...current, additive_product_id: event.target.value }))}>
+          <option value="">Elige un producto</option>
+          {products.map((item) => (
+            <option key={item.id} value={item.id}>{item.sku} · {item.name}</option>
+          ))}
+        </Select>
+      </Field>
+      <Field id="organic_approved" label="Ecológico">
+        <Select id="organic_approved" value={draft.organic_approved ? 'si' : 'no'} onChange={(event) => onChange((current) => ({ ...current, organic_approved: event.target.value === 'si' }))}>
+          <option value="si">Apto en ecológico</option>
+          <option value="no">No apto en ecológico</option>
+        </Select>
       </Field>
       <div className="grid grid-cols-[minmax(0,1fr)_7rem] gap-2">
         <Field id="quantity_text" label="Cantidad" error={lineMessages(issues, 'quantity_text', step)[0]}>
@@ -1330,19 +1621,26 @@ function AdditionFields({
 
 function CleaningFields({
   draft,
+  products,
   issues,
   step,
   onChange,
 }: {
   draft: Draft
+  products: CatalogHit[]
   issues: Issue[]
   step: WizardStep
   onChange: (recipe: (current: Draft) => Draft) => void
 }) {
   return (
     <div className="grid gap-3 rounded-2xl border border-border-subtle p-3">
-      <Field id="cleaning_product" label="Producto">
-        <Input id="cleaning_product" value={draft.cleaning_product} onChange={(event) => onChange((current) => ({ ...current, cleaning_product: event.target.value }))} />
+      <Field id="cleaning_product_id" label="Producto" error={lineMessages(issues, 'cleaning_product_id', step)[0]}>
+        <Select id="cleaning_product_id" value={draft.cleaning_product_id} onChange={(event) => onChange((current) => ({ ...current, cleaning_product_id: event.target.value }))}>
+          <option value="">Elige un producto</option>
+          {products.map((item) => (
+            <option key={item.id} value={item.id}>{item.sku} · {item.name}</option>
+          ))}
+        </Select>
       </Field>
       <Field id="active_substance" label="Sustancia activa" error={lineMessages(issues, 'active_substance', step)[0]}>
         <Input id="active_substance" value={draft.active_substance} placeholder="Ácido peracético" onChange={(event) => onChange((current) => ({ ...current, active_substance: event.target.value }))} />
