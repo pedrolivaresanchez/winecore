@@ -182,12 +182,14 @@ export type SalesOfferQuery = {
   customerId?: string
   channel?: string
   date?: string
+  priceListId?: string
 }
 
 export function useSalesOffer(query: SalesOfferQuery | null) {
   const customerId = query?.customerId?.trim() ?? ''
   const channel = query?.channel?.trim() ?? ''
   const date = query?.date?.trim() ?? ''
+  const priceListId = query?.priceListId?.trim() ?? ''
   const enabled = query != null
   const [products, setProducts] = useState<CatalogProduct[]>([])
   const [lots, setLots] = useState<CatalogLot[]>([])
@@ -206,6 +208,7 @@ export function useSalesOffer(query: SalesOfferQuery | null) {
     if (customerId) params.set('customer_id', customerId)
     if (channel) params.set('channel', channel)
     if (date) params.set('date', date)
+    if (priceListId) params.set('price_list_id', priceListId)
     setLoading(true)
     api<{ products: OfferProduct[]; lots: OfferLot[]; taxes?: OfferTax[] }>(`/v1/sales/catalog?${params}`, { signal: controller.signal })
       .then((body) => {
@@ -264,7 +267,7 @@ export function useSalesOffer(query: SalesOfferQuery | null) {
       active = false
       controller.abort()
     }
-  }, [channel, customerId, date, enabled])
+  }, [channel, customerId, date, enabled, priceListId])
 
   const priceOf = useCallback((productId: string) => prices.get(productId) ?? null, [prices])
   const taxOf = useCallback((productId: string) => taxes.get(productId) ?? null, [taxes])

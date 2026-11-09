@@ -1,4 +1,5 @@
 import { Decimal } from 'decimal.js';
+import { grossToBase } from '../catalog/vat-price';
 import { sql } from '../db/sql';
 import type { Tx } from '../db/writer';
 import { bodyId, decOf, fail, idOf, loadProduct, optionalText, parseDecimal, priceText, taxRateOf, throwIf } from './db';
@@ -57,8 +58,13 @@ export async function quotePrice(
   `);
   const row = rows[0];
   if (!row) fail('No hay precio de tarifa para el producto', { product_id: input.productId });
+  const flags = await tx.read<{ tax_included: unknown }>(sql`
+    SELECT tax_included FROM catalog.price_list WHERE id = CAST(${listId} AS UUID)
+  `);
+  const stored = decOf(row.unit_price);
+  const unitPrice = flags[0]?.tax_included === true ? grossToBase(stored) : stored;
   return {
-    unitPrice: decOf(row.unit_price),
+    unitPrice,
     priceListId: idOf(row.price_list_id),
     versionId: idOf(row.version_id),
     minQty: decOf(row.min_qty).toFixed(3),

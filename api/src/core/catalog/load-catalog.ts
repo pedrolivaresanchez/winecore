@@ -1,0 +1,169 @@
+import type { Writer } from '../db/writer';
+import { sql } from '../db/sql';
+import { newId } from '../ids';
+import { CATALOG_WINES, EXTRA_LOTS } from './catalog-snapshot';
+
+const ACTOR = { type: 'migration' as const, id: '019c0000-0000-7000-8000-0000000000ac', requestId: 'load-catalog' };
+
+const FORMATS: Record<number, { code: string; name: string }> = {
+  500: { code: 'B050', name: 'Botella 0,50 L' },
+  750: { code: 'B075', name: 'Botella 0,75 L' },
+  1500: { code: 'B150', name: 'Magnum 1,50 L' },
+};
+
+export type CatalogLoadReport = {
+  wines: number;
+  products: number;
+  lots: number;
+  holded_archived: number;
+  holded_removed: number;
+  unpriced: string[];
+};
+
+function idOf(value: unknown): string {
+  return String(value).toLowerCase();
+}
+
+/** Crea el catálogo real y aparta los productos de Holded. No borra filas citadas por facturas o albaranes. */
+export async function loadCatalog(writer: Writer): Promise<CatalogLoadReport> {
+  const entities = await writer.read<{ id: string; code: string }>(`SELECT id::VARCHAR AS id, code FROM core.legal_entity`);
+  const po = entities.find((row) => row.code === 'PO');
+  if (!po) throw new Error('Falta la entidad PO');
+  const poId = idOf(po.id);
+  const formats = await writer.read<{ id: string; code: string }>(`SELECT id::VARCHAR AS id, code FROM catalog.format`);
+  const wines = await writer.read<{ id: string; code: string }>(`SELECT id::VARCHAR AS id, code FROM catalog.wine`);
+  const products = await writer.read<{ id: string; sku: string }>(`SELECT id::VARCHAR AS id, sku FROM catalog.product`);
+  const lots = await writer.read<{ id: string; code: string }>(sql`
+    SELECT id::VARCHAR AS id, code FROM inventory.lot WHERE producer_entity_id = CAST(${poId} AS UUID)
+  `);
+  const formatId = new Map(formats.map((row) => [row.code, idOf(row.id)]));
+  const wineId = new Map(wines.map((row) => [row.code, idOf(row.id)]));
+  const productId = new Map(products.map((row) => [row.sku, idOf(row.id)]));
+  const lotId = new Map(lots.map((row) => [row.code, idOf(row.id)]));
+  const statements: string[] = [];
+  let createdProducts = 0;
+  let createdLots = 0;
+
+  for (const ml of Object.keys(FORMATS).map(Number)) {
+    const spec = FORMATS[ml];
+    if (!spec || formatId.has(spec.code)) continue;
+    const id = newId();
+    formatId.set(spec.code, id);
+    statements.push(sql`
+      INSERT INTO catalog.format (id, code, name, container, nominal_volume_ml)
+      VALUES (CAST(${id} AS UUID), ${spec.code}, ${spec.name}, 'bottle', ${ml})
+    `);
+  }
+
+  for (const row of CATALOG_WINES) {
+    if (!wineId.has(row.wineCode)) {
+      const id = newId();
+      wineId.set(row.wineCode, id);
+      statements.push(sql`
+        INSERT INTO catalog.wine (id, code, name, color, is_organic)
+        VALUES (CAST(${id} AS UUID), ${row.wineCode}, ${row.wine}, ${row.color}, ${row.organic})
+      `);
+    }
+    const format = FORMATS[row.formatMl];
+    const fid = format ? formatId.get(format.code) : null;
+    const wid = wineId.get(row.wineCode);
+    if (!productId.has(row.sku) && fid && wid) {
+      const id = newId();
+      productId.set(row.sku, id);
+      createdProducts += 1;
+      statements.push(sql`
+        INSERT INTO catalog.product (
+          id, sku, name, kind, wine_id, vintage, format_id, unit, alcohol_pct,
+          is_stock_tracked, requires_lot, for_sale, is_active, legacy_refs, default_tax_code
+        ) VALUES (
+          CAST(${id} AS UUID), ${row.sku}, ${row.name}, 'wine', CAST(${wid} AS UUID),
+          ${row.vintage}, CAST(${fid} AS UUID), 'ud',
+          CASE WHEN ${row.abv} IS NULL THEN NULL ELSE CAST(${row.abv} AS DECIMAL(4,2)) END,
+          TRUE, ${row.lot != null}, ${row.forSale}, TRUE,
+          ${sql.json({ source: 'pedro-2026', priced: row.priced })}, 'IVA21'
+        )
+      `);
+    } else if (productId.has(row.sku)) {
+      statements.push(sql`
+        UPDATE catalog.product SET for_sale = ${row.forSale}, is_active = TRUE
+        WHERE sku = ${row.sku}
+      `);
+    }
+    if (row.lot && !lotId.has(row.lot)) {
+      const id = newId();
+      lotId.set(row.lot, id);
+      createdLots += 1;
+      statements.push(sql`
+        INSERT INTO inventory.lot (id, producer_entity_id, code, kind, wine_id, vintage, is_organic, origin)
+        VALUES (
+          CAST(${id} AS UUID), CAST(${poId} AS UUID), ${row.lot}, 'bottled',
+          CASE WHEN ${wid ?? null} IS NULL THEN NULL ELSE CAST(${wid ?? null} AS UUID) END,
+          ${row.vintage}, ${row.organic}, 'opening_count'
+        )
+      `);
+    }
+  }
+  for (const code of EXTRA_LOTS) {
+    if (lotId.has(code)) continue;
+    const id = newId();
+    lotId.set(code, id);
+    createdLots += 1;
+    statements.push(sql`
+      INSERT INTO inventory.lot (id, producer_entity_id, code, kind, is_organic, origin, notes)
+      VALUES (CAST(${id} AS UUID), CAST(${poId} AS UUID), ${code}, 'bottled', TRUE, 'opening_count',
+              'Lote de hoja usado por varias referencias. Pedro debe confirmar el vino.')
+    `);
+  }
+
+  const holded = await writer.read<{ id: string }>(`
+    SELECT id::VARCHAR AS id FROM catalog.product
+    WHERE lower(legacy_refs::VARCHAR) LIKE '%holded%'
+  `);
+  let archived = 0;
+  let removed = 0;
+  for (const row of holded) {
+    const id = idOf(row.id);
+    const refs = await writer.read<{ n: string }>(sql`
+      SELECT (
+        (SELECT count(*) FROM billing.invoice_line WHERE product_id = CAST(${id} AS UUID))
+        + (SELECT count(*) FROM sales.quote_line WHERE product_id = CAST(${id} AS UUID))
+        + (SELECT count(*) FROM sales.sales_order_line WHERE product_id = CAST(${id} AS UUID))
+        + (SELECT count(*) FROM sales.delivery_note_line WHERE product_id = CAST(${id} AS UUID))
+        + (SELECT count(*) FROM inventory.stock_move WHERE product_id = CAST(${id} AS UUID))
+        + (SELECT count(*) FROM purchasing.supplier_invoice_line WHERE product_id = CAST(${id} AS UUID))
+        + (SELECT count(*) FROM cellar.operation_line WHERE product_id = CAST(${id} AS UUID))
+        + (SELECT count(*) FROM cellar.material_consumption WHERE product_id = CAST(${id} AS UUID))
+      )::VARCHAR AS n
+    `);
+    if (Number(refs[0]?.n ?? 0) > 0) {
+      archived += 1;
+      statements.push(sql`
+        UPDATE catalog.product SET is_active = FALSE, for_sale = FALSE
+        WHERE id = CAST(${id} AS UUID)
+      `);
+    } else {
+      removed += 1;
+      statements.push(sql`DELETE FROM catalog.price_list_item WHERE product_id = CAST(${id} AS UUID)`);
+      statements.push(sql`DELETE FROM catalog.gtin_current WHERE product_id = CAST(${id} AS UUID)`);
+      statements.push(sql`DELETE FROM catalog.customer_item_code WHERE product_id = CAST(${id} AS UUID)`);
+      statements.push(sql`DELETE FROM catalog.standard_cost WHERE product_id = CAST(${id} AS UUID)`);
+      statements.push(sql`DELETE FROM catalog.label_spec WHERE product_id = CAST(${id} AS UUID)`);
+      statements.push(sql`DELETE FROM catalog.format_material WHERE material_product_id = CAST(${id} AS UUID)`);
+      statements.push(sql`DELETE FROM catalog.product WHERE id = CAST(${id} AS UUID)`);
+    }
+  }
+
+  if (statements.length > 0) {
+    await writer.withWrite(ACTOR, async (tx) => {
+      for (const statement of statements) tx.write(statement);
+    });
+  }
+  return {
+    wines: wineId.size,
+    products: createdProducts,
+    lots: createdLots,
+    holded_archived: archived,
+    holded_removed: removed,
+    unpriced: CATALOG_WINES.filter((row) => !row.priced).map((row) => row.sku),
+  };
+}

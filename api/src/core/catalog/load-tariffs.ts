@@ -1,11 +1,20 @@
 import type { Writer } from '../db/writer';
 import { sql } from '../db/sql';
 import { newId } from '../ids';
-import { LIST_NAMES, TARIFF_LINES, type TariffLine } from './tariff-rules';
+import { CAVES_CURRENCY_UNSTATED, LIST_NAMES, TAX_INCLUDED_LISTS, TARIFF_LINES, type TariffLine } from './tariff-rules';
 import { fold } from '../inventory/bottled-snapshot';
 
 const ACTOR = { type: 'migration' as const, id: '019c0000-0000-7000-8000-0000000000ab', requestId: 'load-tariffs' };
 const NOTE = 'tarifa-pedro-2026';
+
+function versionNote(code: string): string {
+  if (code === 'custom-pyrene' && CAVES_CURRENCY_UNSTATED) {
+    return `${NOTE}. El fichero no indica moneda; se carga como EUR pendiente de confirmar.`;
+  }
+  if (code === 'final') return `${NOTE}. PVP con IVA incluido. El documento guarda la base.`;
+  if (code === 'custom-eci') return `${NOTE}. Coste neto de la plantilla 2025 (5 vinos). El PVP de ECI no se usa como precio.`;
+  return NOTE;
+}
 
 export type TariffLoadReport = {
   loaded: { list: string; prices: number }[];
@@ -20,7 +29,7 @@ function idOf(value: unknown): string {
 /** Crea las tarifas publicadas y pone precio solo donde ya hay un producto de esa añada. */
 export async function loadTariffs(writer: Writer): Promise<TariffLoadReport> {
   const products = await writer.read<Record<string, unknown>>(`
-    SELECT p.id::VARCHAR AS id, p.name, p.vintage::VARCHAR AS vintage, w.name AS wine_name
+    SELECT p.id::VARCHAR AS id, p.sku, p.name, p.vintage::VARCHAR AS vintage, w.name AS wine_name
     FROM catalog.product p
     LEFT JOIN catalog.wine w ON w.id = p.wine_id
     WHERE p.is_active AND p.kind = 'wine' AND p.for_sale
@@ -29,7 +38,7 @@ export async function loadTariffs(writer: Writer): Promise<TariffLoadReport> {
   const versions = await writer.read<{ code: string }>(sql`
     SELECT l.code FROM catalog.price_list_version v
     JOIN catalog.price_list l ON l.id = v.price_list_id
-    WHERE v.notes = ${NOTE}
+    WHERE v.notes LIKE ${`${NOTE}%`}
   `);
   const done = new Set(versions.map((row) => row.code));
   const byList = new Map<string, TariffLine[]>();
@@ -51,7 +60,10 @@ export async function loadTariffs(writer: Writer): Promise<TariffLoadReport> {
     if (!existing) {
       statements.push(sql`
         INSERT INTO catalog.price_list (id, code, name, currency, tax_included, is_active)
-        VALUES (CAST(${listId} AS UUID), ${code}, ${meta.name}, ${meta.currency}, FALSE, TRUE)
+        VALUES (
+          CAST(${listId} AS UUID), ${code}, ${meta.name}, ${meta.currency},
+          ${TAX_INCLUDED_LISTS.has(code as TariffLine['list'])}, TRUE
+        )
       `);
     }
     const versionId = newId();
@@ -60,7 +72,7 @@ export async function loadTariffs(writer: Writer): Promise<TariffLoadReport> {
         id, price_list_id, version, valid_from, status, notes, created_by, activated_at
       )
       SELECT CAST(${versionId} AS UUID), CAST(${listId} AS UUID),
-             coalesce(max(version), 0) + 1, DATE '2026-01-01', 'active', ${NOTE}, 'load-tariffs', now()
+             coalesce(max(version), 0) + 1, DATE '2026-01-01', 'active', ${versionNote(code)}, 'load-tariffs', now()
       FROM catalog.price_list_version WHERE price_list_id = CAST(${listId} AS UUID)
     `);
     // La SELECT de arriba no inserta si la tarifa es nueva y no tiene versiones.
@@ -68,12 +80,14 @@ export async function loadTariffs(writer: Writer): Promise<TariffLoadReport> {
       INSERT INTO catalog.price_list_version (
         id, price_list_id, version, valid_from, status, notes, created_by, activated_at
       )
-      SELECT CAST(${versionId} AS UUID), CAST(${listId} AS UUID), 1, DATE '2026-01-01', 'active', ${NOTE}, 'load-tariffs', now()
+      SELECT CAST(${versionId} AS UUID), CAST(${listId} AS UUID), 1, DATE '2026-01-01', 'active', ${versionNote(code)}, 'load-tariffs', now()
       WHERE NOT EXISTS (SELECT 1 FROM catalog.price_list_version WHERE id = CAST(${versionId} AS UUID))
     `);
     let prices = 0;
     for (const line of lines) {
-      const product = products.find((row) => sameWine(row, line));
+      const hits = products.filter((row) => sameWine(row, line));
+      const byLot = line.lot ? hits.filter((row) => fold(String(row.sku)) === fold(line.lot ?? '')) : [];
+      const product = hits.length === 1 ? hits[0] : byLot.length === 1 ? byLot[0] : undefined;
       if (!product) {
         report.unmatched.push({ list: code, wine: line.wine, vintage: line.vintageLabel });
         continue;

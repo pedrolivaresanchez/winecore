@@ -33,6 +33,7 @@ import { Button, DatePicker, MenuItem, SegmentedControl, Select, Switch, Textare
 import { DocLink, FactList, LineTable, MoreMenu, RecordFrame, SalesHistory, StatusBadge, TotalsBox } from '@/pages/ventas/chrome'
 import { ReasonDialog } from '@/pages/ventas/dialogs'
 import { LineEditor } from '@/pages/ventas/lines'
+import { TariffSelect } from '@/pages/ventas/tariff-select'
 import { ShippingFields } from '@/pages/ventas/shipping'
 import { shipToDraftOf, shipToPayload, referencesPayload, shippingRows, type ShipToDraft } from '@/lib/shipping'
 import { RecordSkeleton } from '@/components/RecordSkeleton'
@@ -70,6 +71,7 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
   const [lines, setLines] = useState<DraftLine[]>(() => draftsFrom(quote.lines))
   const [customerId, setCustomerId] = useState(quote.customer_id)
   const [channel, setChannel] = useState(quote.channel)
+  const [priceListId, setPriceListId] = useState('')
   const [language, setLanguage] = useState(quote.language === 'en' ? 'en' : 'es')
   const [proforma, setProforma] = useState(quote.is_proforma)
   const [incoterm, setIncoterm] = useState(quote.incoterm ?? '')
@@ -87,6 +89,7 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
     customerId: editing ? customerId : quote.customer_id,
     channel: editing ? channel : quote.channel,
     date: offerDate,
+    priceListId: priceListId || undefined,
   })
   const products = mergeProducts(offer.products, productAliases(quote.lines))
   const orders = useApi<SalesPage<SalesOrder>>(quote.status === 'converted' ? '/v1/sales-orders?limit=100' : null)
@@ -108,7 +111,7 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
     if (!customerId || !line.productId || !(Number(line.quantity) > 0)) return
     const stamp = crypto.randomUUID()
     stamps.current[line.key] = stamp
-    getPriceQuote({ customerId, productId: line.productId, qty: line.quantity, date: offerDate, channel })
+    getPriceQuote({ customerId, productId: line.productId, qty: line.quantity, date: offerDate, channel, priceListId: priceListId || undefined })
       .then((hit) => {
         if (stamps.current[line.key] !== stamp) return
         setLines((current) =>
@@ -312,6 +315,7 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
                   ))}
                 </Select>
               </Field>
+              <TariffSelect id="tarifa-presupuesto" value={priceListId} onChange={setPriceListId} />
               <div className="flex items-center justify-between gap-3">
                 <span className="text-label text-text-secondary">{copy.sales.language}</span>
                 <SegmentedControl

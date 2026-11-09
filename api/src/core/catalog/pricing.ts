@@ -6,6 +6,7 @@ import type { Actor, Tx, Writer } from '../db/writer';
 import { sql } from '../db/sql';
 import { domainError } from '../errors';
 import { newId } from '../ids';
+import { grossToBase } from './vat-price';
 import { priceListCodeForChannel, priceListCodesForChannel } from '../sales/pricing';
 import { businessDate } from '../time';
 import {
@@ -88,6 +89,9 @@ export interface PriceQuote {
   priceListId: string;
   priceListCode: string;
   currency: string;
+  /** PVP cuando la tarifa lleva el IVA dentro. unitPrice es la base del documento. */
+  grossUnitPrice: Decimal | null;
+  taxIncluded: boolean;
 }
 
 interface Reader {
@@ -102,7 +106,7 @@ export function rangesOverlap(left: DateRange, right: DateRange): boolean {
 
 export async function priceFor(
   db: Reader,
-  input: { customerId: string; productId: string; qty: Decimal; date: string; channel?: string | null },
+  input: { customerId: string; productId: string; qty: Decimal; date: string; channel?: string | null; priceListId?: string | null },
 ): Promise<PriceQuote> {
   if (!(input.qty instanceof Decimal) || !input.qty.isFinite()) {
     throw domainError('WC_VALIDATION', { qty: 'Cantidad no válida' });
@@ -127,7 +131,9 @@ export async function priceFor(
     SELECT id FROM catalog.product WHERE id = CAST(${input.productId} AS UUID)
   `);
   if (products.length === 0) throw domainError('WC_NOT_FOUND');
-  const list = await resolveList(db, contact, input.channel ?? null);
+  const list = input.priceListId
+    ? await requireActiveList(db, input.priceListId)
+    : await resolveList(db, contact, input.channel ?? null);
   const versions = await db.read<{ id: string }>(sql`
     SELECT id
     FROM catalog.price_list_version
@@ -153,14 +159,30 @@ export async function priceFor(
   `);
   const item = items[0];
   if (!item) throw domainError('WC_VALIDATION', { product_id: 'No hay un precio vigente para este producto' });
+  const stored = new PriceDecimal(item.unit_price_text);
+  const unitPrice = list.tax_included ? new PriceDecimal(grossToBase(stored).toFixed(6)) : stored;
   return {
-    unitPrice: new PriceDecimal(item.unit_price_text),
+    unitPrice,
     minQty: new PriceDecimal(item.min_qty_text),
     priceListVersionId: versionId,
     priceListId: list.id,
     priceListCode: list.code,
     currency: list.currency,
+    grossUnitPrice: list.tax_included ? stored : null,
+    taxIncluded: list.tax_included,
   };
+}
+
+async function requireActiveList(db: Reader, id: string): Promise<PriceList> {
+  if (!isUuid(id)) throw domainError('WC_VALIDATION', { price_list_id: 'Identificador no válido' });
+  const rows = await db.read<Record<string, unknown>>(sql`
+    SELECT id, code, name, currency, tax_included, is_active
+    FROM catalog.price_list
+    WHERE id = CAST(${id} AS UUID)
+  `);
+  const list = rows[0] ? toList(rows[0]) : null;
+  if (!list || !list.is_active) throw domainError('WC_VALIDATION', { price_list_id: 'La tarifa no está activa' });
+  return list;
 }
 
 export function tariffPayload(version: PriceVersion) {
@@ -581,6 +603,8 @@ export async function replaceItems(
 export async function quoteFromRequest(writer: Writer, request: Request): Promise<{
   product_id: string;
   unit_price: string;
+  gross_unit_price: string | null;
+  tax_included: boolean;
   min_qty: string;
   price_list_version_id: string;
   version_id: string;
@@ -595,6 +619,7 @@ export async function quoteFromRequest(writer: Writer, request: Request): Promis
   const qtyRaw = url.searchParams.get('qty');
   const dateRaw = url.searchParams.get('date');
   const channel = url.searchParams.get('channel')?.trim() || null;
+  const priceListId = url.searchParams.get('price_list_id')?.trim() || null;
   if (!customerId) errors.add('customer_id', 'Obligatorio');
   if (!productId) errors.add('product_id', 'Obligatorio');
   if (!qtyRaw) errors.add('qty', 'Obligatorio');
@@ -608,10 +633,13 @@ export async function quoteFromRequest(writer: Writer, request: Request): Promis
     qty: qty ?? new PriceDecimal(0),
     date: date ?? businessDate(new Date()),
     channel,
+    priceListId,
   });
   return {
     product_id: productId ?? '',
     unit_price: quote.unitPrice.toDecimalPlaces(6).toFixed(6),
+    gross_unit_price: quote.grossUnitPrice ? quote.grossUnitPrice.toDecimalPlaces(2).toFixed(2) : null,
+    tax_included: quote.taxIncluded,
     min_qty: quote.minQty.toDecimalPlaces(3).toFixed(3),
     price_list_version_id: quote.priceListVersionId,
     version_id: quote.priceListVersionId,

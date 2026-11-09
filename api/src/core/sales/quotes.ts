@@ -154,7 +154,10 @@ export async function createQuote(writer: Writer, request: Request): Promise<{ s
     if (!customer.is_customer) fail('El contacto no es cliente', { customer_id: customerId });
     if (explicitEntity) await assertActiveEntity(tx, explicitEntity);
     const { entityId, rule } = await draftEntity(tx, { customerId, channel, actorId: actor.id, entityId: explicitEntity });
-    const priced = await priceQuoteLines(tx, parsed, issueDate, customer.default_price_list_id, channel);
+    const requestedList = typeof raw.price_list_id === 'string' && raw.price_list_id.trim() !== ''
+      ? raw.price_list_id.trim().toLowerCase()
+      : null;
+    const priced = await priceQuoteLines(tx, parsed, issueDate, requestedList ?? customer.default_price_list_id, channel);
     const totals = priceTotals(priced.totals);
     tx.write(sql`
       INSERT INTO sales.quote (

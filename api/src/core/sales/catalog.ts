@@ -3,6 +3,7 @@ import type { Writer } from '../db/writer';
 import { domainError } from '../errors';
 import { money } from '../money';
 import { businessDate, isMadridCivilDate } from '../time';
+import { grossToBase } from '../catalog/vat-price';
 import { priceListCodesForChannel } from './pricing';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -88,6 +89,11 @@ export async function salesCatalog(writer: Writer, url: URL, now: Date): Promise
   }
   if (!customerId) listId = await defaultListId(writer, channel);
   else if (!listId) listId = channel ? await listIdForChannel(writer, channel) : await defaultListId(writer, customerChannel);
+  const chosenList = url.searchParams.get('price_list_id')?.trim().toLowerCase() ?? '';
+  if (chosenList) {
+    if (!UUID.test(chosenList)) throw domainError('WC_VALIDATION', { price_list_id: 'Identificador no válido' });
+    listId = chosenList;
+  }
 
   const [products, lots, taxes] = await Promise.all([
     loadProducts(writer, listId, day),
@@ -135,6 +141,10 @@ async function listIdByCode(writer: Writer, code: string): Promise<string | null
 }
 
 async function loadProducts(writer: Writer, listId: string | null, day: string): Promise<CatalogProduct[]> {
+  const taxRows = listId
+    ? await writer.read<{ tax_included: unknown }>(sql`SELECT tax_included FROM catalog.price_list WHERE id = CAST(${listId} AS UUID)`)
+    : [];
+  const taxIncluded = taxRows[0]?.tax_included === true;
   const priceJoin = listId
     ? `
       LEFT JOIN (
@@ -169,10 +179,12 @@ async function loadProducts(writer: Writer, listId: string | null, day: string):
   `);
   return rows.map((row) => {
     const formatId = idOf(row.format_id);
-    const price = listId && row.unit_price != null
+    const stored = row.unit_price == null ? null : money.fromString(String(row.unit_price));
+    const net = stored && taxIncluded ? grossToBase(stored) : stored;
+    const price = listId && net
       ? {
           currency: 'EUR' as const,
-          unit_price: money.fromString(String(row.unit_price)).toDecimalPlaces(6).toFixed(6),
+          unit_price: net.toDecimalPlaces(6).toFixed(6),
           price_list_id: idOf(row.price_list_id) ?? listId,
           version_id: idOf(row.version_id) ?? '',
           min_qty: money.fromString(String(row.min_qty ?? '1')).toDecimalPlaces(3).toFixed(3),

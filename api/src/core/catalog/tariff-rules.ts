@@ -36,7 +36,7 @@ const CHANNELS = [
 const SHARED: Omit<TariffLine, 'list' | 'price'>[] = [
   { wine: 'Jaén Tinta', vintage: 2024, vintageLabel: '2024', currency: 'EUR', lot: 'EJT2024', formatMl: 750, pdfVintage: 2024 },
   { wine: 'ECLO', vintage: 2022, vintageLabel: '2022', currency: 'EUR', lot: null, formatMl: 750, pdfVintage: 2022 },
-  { wine: 'enTreDicho', vintage: null, vintageLabel: '2021-22', currency: 'EUR', lot: 'E202122', formatMl: 750, pdfVintage: null },
+  { wine: 'enTreDicho', vintage: 2021, vintageLabel: '2021-22', currency: 'EUR', lot: 'E202122', formatMl: 750, pdfVintage: null },
   { wine: 'Nebbia', vintage: 2022, vintageLabel: '2022', currency: 'EUR', lot: 'ENB2022', formatMl: 750, pdfVintage: 2022 },
   { wine: 'Apañao', vintage: 2024, vintageLabel: '2024', currency: 'EUR', lot: null, formatMl: 750, pdfVintage: 2024 },
   { wine: 'Molinera', vintage: 2023, vintageLabel: '2023', currency: 'EUR', lot: 'EMOL2023', formatMl: 750, pdfVintage: 2023 },
@@ -96,29 +96,26 @@ export const PYRENE_LINES: TariffLine[] = [
 ];
 
 /**
- * TARIFA -CORTE INGLÉS.xlsx (31-08-2023, carpeta CÓDIGO de BARRAS).
- * No está en Docs/TIMBAL/TARIFAS. Se carga tal cual, con sus añadas, y no se
- * estira a los vinos actuales que Pedro deja sin tarifa.
+ * Plantilla ECI Gourmet 2025 (5 líneas). El precio de tarifa es el coste neto.
+ * El PVP de ECI no es el de cliente final 2026. Pedro ampliará la lista después.
  */
 export const ECI_LINES: TariffLine[] = [
-  { list: 'custom-eci', wine: 'enTreDicho Cum Laude', vintage: 2010, vintageLabel: '2010', price: '14.00', currency: 'EUR', lot: null, formatMl: null, pdfVintage: 2010 },
-  { list: 'custom-eci', wine: 'enTreDicho Smoked', vintage: 2011, vintageLabel: '2011', price: '14.00', currency: 'EUR', lot: null, formatMl: null, pdfVintage: 2011 },
-  { list: 'custom-eci', wine: 'enTreDicho Eclo', vintage: null, vintageLabel: '2012-2013', price: '14.00', currency: 'EUR', lot: null, formatMl: null, pdfVintage: null },
-  { list: 'custom-eci', wine: 'enTreDicho Ft', vintage: 2009, vintageLabel: '2009', price: '15.80', currency: 'EUR', lot: null, formatMl: null, pdfVintage: 2009 },
-  { list: 'custom-eci', wine: 'enTreDicho', vintage: null, vintageLabel: '2012-2013', price: '6.70', currency: 'EUR', lot: null, formatMl: null, pdfVintage: null },
-  { list: 'custom-eci', wine: 'Bobal serie Wild', vintage: 2014, vintageLabel: '2014', price: '6.20', currency: 'EUR', lot: null, formatMl: null, pdfVintage: 2014 },
-  { list: 'custom-eci', wine: 'Bobal Plus', vintage: null, vintageLabel: '2009-2012', price: '15.80', currency: 'EUR', lot: null, formatMl: null, pdfVintage: null },
-  { list: 'custom-eci', wine: 'Monastrell serie Wild', vintage: 2013, vintageLabel: '2013', price: '6.20', currency: 'EUR', lot: null, formatMl: null, pdfVintage: 2013 },
-  { list: 'custom-eci', wine: 'Bobastrell', vintage: 2013, vintageLabel: '2013', price: '6.90', currency: 'EUR', lot: null, formatMl: null, pdfVintage: 2013 },
-  { list: 'custom-eci', wine: 'Superbobastrell', vintage: 2012, vintageLabel: '2012', price: '15.80', currency: 'EUR', lot: null, formatMl: null, pdfVintage: 2012 },
+  { list: 'custom-eci', wine: 'enTreDicho', vintage: 2021, vintageLabel: '2021', price: '9.75', currency: 'EUR', lot: 'E202122', formatMl: 750, pdfVintage: 2021 },
+  { list: 'custom-eci', wine: 'Bobal serie Wild', vintage: 2021, vintageLabel: '2021', price: '9.10', currency: 'EUR', lot: null, formatMl: 750, pdfVintage: 2021 },
+  { list: 'custom-eci', wine: 'Arcal', vintage: 2023, vintageLabel: '2023', price: '10.50', currency: 'EUR', lot: '2023', formatMl: 750, pdfVintage: 2023 },
+  { list: 'custom-eci', wine: 'Jaén Tinta', vintage: 2022, vintageLabel: '2022', price: '22.00', currency: 'EUR', lot: null, formatMl: 750, pdfVintage: 2022 },
+  { list: 'custom-eci', wine: 'ECLO', vintage: 2020, vintageLabel: '2020', price: '18.25', currency: 'EUR', lot: null, formatMl: 750, pdfVintage: 2020 },
 ];
+
+/** El Excel de Les Caves no dice la moneda. Se guarda en EUR y queda marcado para que Pedro lo confirme. */
+export const CAVES_CURRENCY_UNSTATED = true;
 
 export const TARIFF_LINES: TariffLine[] = [...channelTariffLines(), ...PYRENE_LINES, ...ECI_LINES];
 
 export const MANUAL_PRICE = [
   { wine: 'Llueve Llueve', lot: 'ELL2025', vintage: 2025, reason: 'Está en la web y en el stock (2025). No está en las tarifas 2026.' },
-  { wine: 'enTreDicho Ft', lot: null, vintage: null, reason: 'El vino actual no tiene tarifa. El fichero ECI solo trae la añada 2009.' },
-  { wine: 'Bobal Plus', lot: null, vintage: null, reason: 'El vino actual no tiene tarifa. El fichero ECI solo trae 2009-2012.' },
+  { wine: 'enTreDicho Ft', lot: null, vintage: 2016, reason: 'En la web a 38,00 € (2016). No está en las tarifas 2026 ni en la plantilla ECI 2025.' },
+  { wine: 'Bobal Plus', lot: null, vintage: 2019, reason: 'En la web a 30,00 € (2019). No está en las tarifas 2026 ni en la plantilla ECI 2025.' },
   { wine: 'Aplatinao', lot: 'LAT2025', vintage: null, reason: 'No tiene tarifa. En el nicho 8 hay 54 botellas y 45 L, sin formato entero.' },
   { wine: 'Melós', lot: '2019', vintage: 2019, reason: 'Queda muy poco. Precio manual. Hay que asignarlo al lote 2019.' },
   { wine: 'Garnacha Pirotécnica', lot: 'EGP2023', vintage: 2023, reason: 'Queda muy poco. Precio manual. Hay que asignarlo al lote EGP2023.' },
@@ -137,6 +134,8 @@ export const LIST_NAMES: Record<TariffLine['list'], { name: string; currency: 'E
   'custom-eci': { name: 'El Corte Inglés', currency: 'EUR' },
   'custom-pyrene': { name: 'Les Caves de Pyrène 2027', currency: 'EUR' },
 };
+
+export const TAX_INCLUDED_LISTS = new Set<TariffLine['list']>(['final']);
 
 export function demoradoLines(): TariffLine[] {
   return TARIFF_LINES.filter((line) => line.wine === 'Demorado');

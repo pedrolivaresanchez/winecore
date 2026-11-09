@@ -124,6 +124,8 @@ export type PriceQuote = {
   product_id: string
   currency: string
   unit_price: string
+  gross_unit_price?: string | null
+  tax_included?: boolean
   price_list_id: string
   version_id: string
   min_qty: string
@@ -496,7 +498,7 @@ export function createIncident(id: string, body: Record<string, unknown>) {
 }
 
 export function getPriceQuote(
-  query: { customerId: string; productId: string; qty: string; date?: string; channel?: string },
+  query: { customerId: string; productId: string; qty: string; date?: string; channel?: string; priceListId?: string },
   signal?: AbortSignal,
 ) {
   const params = new URLSearchParams({
@@ -506,6 +508,7 @@ export function getPriceQuote(
   })
   if (query.date) params.set('date', query.date)
   if (query.channel) params.set('channel', query.channel)
+  if (query.priceListId) params.set('price_list_id', query.priceListId)
   return api<PriceQuote>(`/v1/price-quote?${params}`, { signal })
 }
 
