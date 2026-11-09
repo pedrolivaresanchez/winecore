@@ -109,11 +109,14 @@ export async function listSalesDocuments(writer: Writer, user: UserCtx, url: URL
   const query = parseQuery(url);
   if (query.entity) legacyScope(user, query.entity);
   const books = readableBooks(user, query.kind, query.direction, legacyScope(user, 'both'));
-  const origins = ORIGINS.filter((origin) => readable(books[origin]));
+  const readableOrigins = ORIGINS.filter((origin) => readable(books[origin]));
+  // Las facturas de Holded (legacy y origin = 'holded_import') no entran en la lista
+  // operativa: el libro registro las conserva, la lista solo muestra lo emitido aquí.
+  const origins = query.kind === 'invoice' ? readableOrigins.filter((origin) => origin === 'winecore') : readableOrigins;
   const visible: Codes = { po: books.holded.po || books.winecore.po, cvpo: books.holded.cvpo || books.winecore.cvpo };
   if (origins.length === 0) throw domainError('WC_FORBIDDEN');
   if (query.entity && !(query.entity === 'PO' ? visible.po : visible.cvpo)) throw domainError('WC_FORBIDDEN');
-  if (query.origins.length > 0 && !query.origins.some((origin) => origins.includes(origin))) throw domainError('WC_FORBIDDEN');
+  if (query.origins.length > 0 && !query.origins.some((origin) => readableOrigins.includes(origin))) throw domainError('WC_FORBIDDEN');
   const today = businessDate(now);
   const page: SalesDocumentPage = {
     kind: query.kind,
@@ -131,9 +134,10 @@ export async function listSalesDocuments(writer: Writer, user: UserCtx, url: URL
     facets: { status: [], entity: [], origin: [] },
   };
 
-  const rows = rowsCte(query, books, today);
+  const rows = rowsCte(query, books, today, 'list');
   const common = commonFilters(query);
-  const originOk = query.origins.length > 0 ? `origin IN (${query.origins.map((origin) => sql`${origin}`).join(', ')})` : 'TRUE';
+  const askedOrigin = query.origins.length > 0 ? `origin IN (${query.origins.map((origin) => sql`${origin}`).join(', ')})` : 'TRUE';
+  const originOk = query.kind === 'invoice' ? `(origin = 'winecore' AND ${askedOrigin})` : askedOrigin;
   const entityOk = query.entity ? sql`entity_code = ${query.entity}` : 'TRUE';
   const statusOk = query.statuses.length > 0 ? `status IN (${query.statuses.map((status) => sql`${status}`).join(', ')})` : 'TRUE';
   const excluded = NOT_COUNTED.filter((status) => !query.statuses.includes(status));
@@ -222,7 +226,7 @@ export async function holdedDocumentState(
   now: Date,
 ): Promise<HoldedDocumentState | null> {
   const rows = await writer.read<Record<string, unknown>>(`
-    ${rowsCte({ kind, direction }, HOLDED_BOOK, businessDate(now))}
+    ${rowsCte({ kind, direction }, HOLDED_BOOK, businessDate(now), 'state')}
     SELECT status, CAST(pending AS VARCHAR) AS pending FROM rows WHERE id = ${sql`${id}`}
   `);
   const row = rows[0];
@@ -270,14 +274,19 @@ function readable(codes: Codes): boolean {
   return codes.po || codes.cvpo;
 }
 
-function rowsCte(query: Pick<Query, 'kind' | 'direction'>, books: Record<Origin, Codes>, today: string): string {
+function rowsCte(
+  query: Pick<Query, 'kind' | 'direction'>,
+  books: Record<Origin, Codes>,
+  today: string,
+  mode: 'list' | 'state',
+): string {
   const branches: string[] = [];
   const holded = readable(books.holded) ? entityPredicate(scopeOf(books.holded)) : null;
   const native = readable(books.winecore) ? entityPredicate(scopeOf(books.winecore)) : null;
   const ctes = [contactLinkCtes([query.kind === 'invoice' ? query.direction : query.kind])];
   let status: string;
   if (query.kind === 'invoice') {
-    if (holded) branches.push(holdedInvoices(query.direction, holded));
+    if (holded && mode === 'state') branches.push(holdedInvoices(query.direction, holded));
     if (native && query.direction === 'purchase') branches.push(nativeSupplierInvoices(native));
     if (native && query.direction === 'sale') {
       ctes.push(INVOICE_TRACKING);
@@ -398,7 +407,8 @@ function nativeInvoices(entity: string): string {
         ) d ON d.invoice_id = i.id
         LEFT JOIN verifactu_latest v ON v.invoice_id = i.id
         LEFT JOIN delivery_latest dl ON dl.invoice_id = i.id
-       WHERE ${entity}`;
+       WHERE ${entity}
+         AND COALESCE(i.origin, 'native') <> 'holded_import'`;
 }
 
 function nativeSupplierInvoices(entity: string): string {
@@ -419,7 +429,8 @@ function nativeSupplierInvoices(entity: string): string {
         FROM purchasing.supplier_invoice s
         JOIN core.legal_entity e ON e.id = s.legal_entity_id
         LEFT JOIN party.contact c ON c.id = s.supplier_id
-       WHERE ${entity}`;
+       WHERE ${entity}
+         AND COALESCE(s.origin, 'native') <> 'holded_import'`;
 }
 
 function holdedQuotes(entity: string): string {

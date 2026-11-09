@@ -22,7 +22,7 @@ export async function listInvoices(writer: Writer, request: Request) {
   const query = parseListQuery(new URL(request.url));
   const scope = entityScope(user, 'billing.read');
   if (query.entity && !scope.all && !scope.ids.includes(query.entity)) throw domainError('WC_FORBIDDEN');
-  const filters = ['TRUE'];
+  const filters = ["COALESCE(i.origin, 'native') <> 'holded_import'"];
   if (!scope.all) {
     if (scope.ids.length === 0) return { items: [], next_cursor: null, total: 0 };
     filters.push(`i.legal_entity_id IN (${scope.ids.map((id) => sql`CAST(${id} AS UUID)`).join(', ')})`);

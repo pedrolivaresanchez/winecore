@@ -128,6 +128,16 @@ describe('lista única de documentos de venta', () => {
       native.draft = nativeInvoice(tx, { entity: po, series: ids.seriesPo, number: null, status: 'draft', date: null, due: null, customer: ids.avila, total: null, paid: '0.00', payment: 'unpaid', created: '2026-10-30T09:00:00Z' });
       native.void = nativeInvoice(tx, { entity: po, series: ids.seriesPo, number: 'W-003', status: 'voided', date: '2026-07-01', due: null, customer: ids.norte, total: '30.00', paid: '0.00', payment: 'unpaid' });
       native.paid = nativeInvoice(tx, { entity: cvpo, series: ids.seriesCvpo, number: 'W-004', status: 'issued', date: '2026-02-02', due: '2026-03-02', customer: ids.avila, total: '90.00', paid: '90.00', payment: 'paid' });
+      tx.write(sql`
+        INSERT INTO billing.invoice (
+          id, legal_entity_id, number, status, invoice_type, issue_date, customer_id, customer_snapshot,
+          subtotal, tax_total, total, amount_paid, payment_status, issued_at, created_by, origin
+        ) VALUES (
+          CAST(${newId()} AS UUID), CAST(${po} AS UUID), 'H-IMP', 'issued', 'F1',
+          CAST('2026-10-28' AS DATE), CAST(${ids.norte} AS UUID), ${sql.json({ name: 'Cliente Norte SL' })},
+          '999.00', '0.00', '999.00', '0.00', 'unpaid', ${NOW}, 'test', 'holded_import'
+        )
+      `);
 
       tx.write(sql`
         INSERT INTO regulatory.verifactu_installation (
@@ -182,31 +192,14 @@ describe('lista única de documentos de venta', () => {
     await ctx.close();
   });
 
-  it('une Holded y WineCore con un estado común, enlaces de cliente y totales', async () => {
+  it('lista solo facturas emitidas en WineCore, sin el histórico ni la proyección de Holded', async () => {
     const page = await list('kind=invoice');
     expect(page.as_of).toBe('2026-10-31');
     expect(page.entity).toBe('both');
-    expect(page.origins).toEqual(['holded', 'winecore']);
-    expect(page.total).toBe(11);
-    expect(page.items.map((item) => item.number)).toEqual([
-      null, 'H-005', 'H-003', 'W-001', 'H-002', 'W-002', 'W-003', 'H-006', 'H-004', 'W-004', 'H-001',
-    ]);
-
-    expect(byNumber(page, 'H-001')).toMatchObject({
-      origin: 'holded', status: 'paid', status_label: 'Cobrada', pending: '0.00', entity_code: 'PO',
-      customer: { id: ids.norte, name: 'Cliente Norte SL', match: 'contact' },
-    });
-    expect(byNumber(page, 'H-002')).toMatchObject({
-      status: 'overdue', status_label: 'Vencida', due_date: '2026-10-01',
-      customer: { id: ids.avila, name: 'BODEGA  AVILA sl', match: 'name' },
-    });
-    expect(byNumber(page, 'H-003')).toMatchObject({
-      status: 'partial', pending: '30.00', entity_code: 'CVPO',
-      customer: { id: ids.tax, name: 'Distrib. Tax', match: 'tax_id' },
-    });
-    expect(byNumber(page, 'H-004')).toMatchObject({ status: 'void', pending: '0.00', customer: { id: null, match: null } });
-    expect(byNumber(page, 'H-005')).toMatchObject({ status: 'paid', pending: '0.00' });
-    expect(byNumber(page, 'H-006')).toMatchObject({ status: 'overdue', due_date: null, customer: { id: null, name: 'Duplicado SL' } });
+    expect(page.origins).toEqual(['winecore']);
+    expect(page.total).toBe(5);
+    expect(page.items.map((item) => item.number)).toEqual([null, 'W-001', 'W-002', 'W-003', 'W-004']);
+    expect(page.items.some((item) => item.number === 'H-001' || item.number === 'H-IMP')).toBe(false);
 
     const w001 = byNumber(page, 'W-001');
     expect(w001).toMatchObject({
@@ -220,53 +213,50 @@ describe('lista única de documentos de venta', () => {
     expect(byNumber(page, 'W-004')).toMatchObject({ status: 'paid', pending: '0.00' });
     const draft = page.items[0];
     expect(draft).toMatchObject({ id: native.draft, status: 'draft', issue_date: null, total: null, pending: null, customer: { name: 'Bodega Ávila SL' } });
-    expect(byNumber(page, 'H-001').api_path).toMatch(/^\/v1\/legacy\/invoices\//);
 
-    expect(page.totals).toEqual({ amount: '566.00', pending: '266.00' });
-    expect(counts(page.facets.status)).toEqual({ draft: 1, partial: 1, overdue: 3, paid: 3, void: 2, pending: 1 });
+    expect(page.totals).toEqual({ amount: '271.00', pending: '161.00' });
+    expect(counts(page.facets.status)).toEqual({ draft: 1, overdue: 1, paid: 1, void: 1, pending: 1 });
     expect(page.facets.status.map((facet) => facet.value)).toContain('discarded');
     expect(page.facets.status.find((facet) => facet.value === 'partial')?.label).toBe('Cobro parcial');
     expect(page.facets.entity).toEqual([
-      { value: 'PO', label: 'P.O', count: 7 },
-      { value: 'CVPO', label: 'CVPO', count: 4 },
+      { value: 'PO', label: 'P.O', count: 3 },
+      { value: 'CVPO', label: 'CVPO', count: 2 },
     ]);
     expect(page.facets.origin).toEqual([
-      { value: 'holded', label: 'Holded', count: 6 },
       { value: 'winecore', label: 'WineCore', count: 5 },
     ]);
   });
 
   it('filtra por libro, sociedad, estado, fechas y cliente; las facetas ignoran su propio filtro', async () => {
     const holded = await list('kind=invoice&origin=holded');
-    expect(holded.total).toBe(6);
-    expect(holded.items.every((item) => item.origin === 'holded')).toBe(true);
-    expect(counts(holded.facets.origin)).toEqual({ holded: 6, winecore: 5 });
-    expect(counts(holded.facets.entity)).toEqual({ PO: 4, CVPO: 2 });
+    expect(holded.total).toBe(0);
+    expect(counts(holded.facets.origin)).toEqual({ winecore: 5 });
 
     const cvpo = await list('kind=invoice&entity=CVPO');
     expect(cvpo.entity).toBe('CVPO');
-    expect(cvpo.items.map((item) => item.number)).toEqual(['H-003', 'W-002', 'H-006', 'W-004']);
-    expect(counts(cvpo.facets.entity)).toEqual({ PO: 7, CVPO: 4 });
-    expect(counts(cvpo.facets.origin)).toEqual({ holded: 2, winecore: 2 });
+    expect(cvpo.items.map((item) => item.number)).toEqual(['W-002', 'W-004']);
+    expect(cvpo.items.every((item) => item.entity_code === 'CVPO')).toBe(true);
+    expect(counts(cvpo.facets.entity)).toEqual({ PO: 3, CVPO: 2 });
+    expect(counts(cvpo.facets.origin)).toEqual({ winecore: 2 });
 
     const open = await list('kind=invoice&status=overdue,partial&status=pending');
-    expect(open.items.map((item) => item.number)).toEqual(['H-003', 'W-001', 'H-002', 'W-002', 'H-006']);
-    expect(open.totals).toEqual({ amount: '336.00', pending: '266.00' });
-    expect(counts(open.facets.status)).toEqual({ draft: 1, partial: 1, overdue: 3, paid: 3, void: 2, pending: 1 });
-    expect(counts(open.facets.origin)).toEqual({ holded: 3, winecore: 2 });
+    expect(open.items.map((item) => item.number)).toEqual(['W-001', 'W-002']);
+    expect(open.totals).toEqual({ amount: '181.00', pending: '161.00' });
+    expect(counts(open.facets.status)).toEqual({ draft: 1, overdue: 1, paid: 1, void: 1, pending: 1 });
+    expect(counts(open.facets.origin)).toEqual({ winecore: 2 });
 
     const voided = await list('kind=invoice&status=void');
-    expect(voided.totals.amount).toBe('40.00');
+    expect(voided.totals.amount).toBe('30.00');
 
     const october = await list('kind=invoice&from=2026-10-01&to=2026-10-31');
-    expect(october.items.map((item) => item.number)).toEqual([null, 'H-005', 'H-003', 'W-001']);
+    expect(october.items.map((item) => item.number)).toEqual([null, 'W-001']);
 
     const norte = await list(`kind=invoice&customer_id=${ids.norte.toUpperCase()}`);
-    expect(norte.items.map((item) => item.number)).toEqual(['H-005', 'W-001', 'W-002', 'W-003', 'H-001']);
+    expect(norte.items.map((item) => item.number)).toEqual(['W-001', 'W-002', 'W-003']);
     const byTax = await list(`kind=invoice&customer_id=${ids.tax}`);
-    expect(byTax.items.map((item) => item.number)).toEqual(['H-003']);
+    expect(byTax.total).toBe(0);
     const byName = await list(`kind=invoice&customer_id=${ids.avila}`);
-    expect(byName.items.map((item) => item.number)).toEqual([null, 'H-002', 'W-004']);
+    expect(byName.items.map((item) => item.number)).toEqual([null, 'W-004']);
   });
 
   it('muestra y filtra el estado Verifactu y el envío de las facturas emitidas en WineCore', async () => {
@@ -276,7 +266,7 @@ describe('lista única de documentos de venta', () => {
     expect(byNumber(page, 'W-003')).toMatchObject({ verifactu: 'pending', delivery: 'none' });
     expect(byNumber(page, 'W-004')).toMatchObject({ verifactu: 'rejected', delivery: 'no_recipient' });
     expect(page.items[0]).toMatchObject({ status: 'draft', verifactu: null, delivery: null });
-    expect(byNumber(page, 'H-001')).toMatchObject({ verifactu: null, delivery: null });
+    expect(page.items.some((item) => item.number === 'H-IMP' || item.number === 'H-001')).toBe(false);
 
     const pending = await list('kind=invoice&verifactu=pendiente');
     expect(pending.items.map((item) => item.number)).toEqual(['W-002', 'W-003']);
@@ -295,7 +285,7 @@ describe('lista única de documentos de venta', () => {
 
   it('busca por número o cliente sin distinguir mayúsculas ni tildes', async () => {
     const accent = await list('kind=invoice&q=%C3%A1vila');
-    expect(accent.items.map((item) => item.number)).toEqual([null, 'H-002', 'W-004']);
+    expect(accent.items.map((item) => item.number)).toEqual([null, 'W-004']);
     const number = await list('kind=invoice&q=w-00');
     expect(number.total).toBe(4);
     const literal = await list('kind=invoice&q=100%25');
@@ -304,31 +294,30 @@ describe('lista única de documentos de venta', () => {
 
   it('ordena por cada columna y pagina con el total completo', async () => {
     const byTotal = await list('kind=invoice&sort=total&dir=asc');
-    expect(byTotal.items.map((item) => item.total)).toEqual([
-      '10.00', '25.00', '30.00', '40.00', '50.00', '60.00', '80.00', '90.00', '100.00', '121.00', null,
-    ]);
+    expect(byTotal.items.map((item) => item.total)).toEqual(['30.00', '60.00', '90.00', '121.00', null]);
     const byPending = await list('kind=invoice&sort=pending&dir=desc&limit=3');
-    expect(byPending.items.map((item) => item.number)).toEqual(['W-001', 'H-002', 'W-002']);
+    expect(byPending.items.map((item) => item.number)).toEqual(['W-001', 'W-002', 'W-003']);
     const byCustomer = await list('kind=invoice&sort=customer&dir=asc&limit=3');
-    expect(byCustomer.items.map((item) => item.customer.name)).toEqual(['BODEGA  AVILA sl', 'Bodega Ávila SL', 'Bodega Ávila SL']);
+    expect(byCustomer.items.map((item) => item.customer.name)).toEqual(['Bodega Ávila SL', 'Bodega Ávila SL', 'Cliente Norte SL']);
     const byNumberDesc = await list('kind=invoice&sort=number&dir=desc&limit=2');
     expect(byNumberDesc.items.map((item) => item.number)).toEqual(['W-004', 'W-003']);
 
     const first = await list('kind=invoice&limit=4&offset=0');
     const second = await list('kind=invoice&limit=4&offset=4');
     const third = await list('kind=invoice&limit=4&offset=8');
-    expect([first.total, second.total, third.total]).toEqual([11, 11, 11]);
-    expect(third.items).toHaveLength(3);
-    const all = [...first.items, ...second.items, ...third.items].map((item) => item.id);
-    expect(new Set(all).size).toBe(11);
+    expect([first.total, second.total, third.total]).toEqual([5, 5, 5]);
+    expect(first.items).toHaveLength(4);
+    expect(second.items).toHaveLength(1);
+    expect(third.items).toHaveLength(0);
+    const all = [...first.items, ...second.items].map((item) => item.id);
+    expect(new Set(all).size).toBe(5);
     expect(second.totals).toEqual(first.totals);
   });
 
   it('lista compras, presupuestos y albaranes de los dos libros', async () => {
     const purchases = await list('kind=invoice&direction=purchase');
-    expect(purchases.items.map((item) => [item.number, item.status, item.status_label])).toEqual([
-      ['C-001', 'pending', 'Pendiente de pago'],
-    ]);
+    expect(purchases.total).toBe(0);
+    expect(purchases.items.map((item) => item.number)).not.toContain('C-001');
 
     const quotes = await list('kind=quote');
     expect(quotes.items.map((item) => [item.number, item.origin, item.status])).toEqual([
@@ -343,6 +332,9 @@ describe('lista única de documentos de venta', () => {
     expect(byNumber(quotes, 'HQ-2').api_path).toMatch(/^\/v1\/legacy\/documents\//);
     expect(byNumber(quotes, 'WQ-1').api_path).toMatch(/^\/v1\/quotes\//);
     expect(quotes.totals.amount).toBe('142.10');
+    const poQuotes = await list('kind=quote&entity=PO');
+    expect(poQuotes.items.every((item) => item.entity_code === 'PO')).toBe(true);
+    expect(poQuotes.items.map((item) => item.number)).toEqual([null, 'WQ-1', 'HQ-1', 'HQ-3']);
     expect(counts(quotes.facets.status)).toEqual({ draft: 1, accepted: 1, expired: 2, converted: 1 });
 
     const notes = await list('kind=delivery_note');
@@ -359,6 +351,9 @@ describe('lista única de documentos de venta', () => {
     expect(byNumber(notes, 'WD-3').customer).toEqual({ id: null, name: 'Almacén sintético', match: null });
     expect(byNumber(notes, 'WD-1').api_path).toMatch(/^\/v1\/delivery-notes\//);
     expect(notes.totals.amount).toBe('63.08');
+    const cvpoNotes = await list('kind=delivery_note&entity=CVPO');
+    expect(cvpoNotes.items.every((item) => item.entity_code === 'CVPO')).toBe(true);
+    expect(cvpoNotes.items.map((item) => item.number)).toEqual(['WD-2', 'HD-2']);
     expect(byNumber(notes, 'WD-3').status_label).toBe('Anulado');
     const pendingNotes = await list('kind=albaran&status=issued,partially_invoiced');
     expect(pendingNotes.items.map((item) => item.number)).toEqual(['HD-1', 'HD-3']);
@@ -368,12 +363,13 @@ describe('lista única de documentos de venta', () => {
     const mixed = await list('kind=invoice', 'mixto@winecore.test');
     expect(mixed.entity).toBe('CVPO');
     expect(mixed.items.every((item) => item.entity_code === 'CVPO')).toBe(true);
-    expect(mixed.total).toBe(4);
-    expect(mixed.facets.entity).toEqual([{ value: 'CVPO', label: 'CVPO', count: 4 }]);
+    expect(mixed.total).toBe(2);
+    expect(mixed.facets.entity).toEqual([{ value: 'CVPO', label: 'CVPO', count: 2 }]);
     expect(await status('kind=invoice&entity=PO', 'mixto@winecore.test')).toBe(403);
 
     const advisor = await list('kind=invoice&entity=PO', 'asesor@winecore.test');
-    expect(advisor.total).toBe(7);
+    expect(advisor.total).toBe(3);
+    expect(advisor.items.every((item) => item.entity_code === 'PO')).toBe(true);
     expect(await status('kind=invoice', 'bodega@winecore.test')).toBe(403);
   });
 

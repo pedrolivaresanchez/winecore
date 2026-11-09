@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useEntity } from '@/app/entity-context'
+import { useListedEntity } from '@/lib/listed-entity'
 import { useChromeTitle } from '@/app/shell/shell-context'
 import { ErrorState } from '@/components/ErrorState'
 import { NoPermission } from '@/components/NoPermission'
@@ -17,7 +18,7 @@ import { allows } from '@/lib/permissions'
 import { docPath } from '@/lib/sales'
 import { entityTone, originTone, statusTone, type StatusTone } from '@/lib/status-tones'
 import { readStorage, writeStorage } from '@/lib/storage'
-import type { EntityChoice, Me } from '@/lib/types'
+import type { Me } from '@/lib/types'
 import { DocumentModal } from '@/pages/documents/DocumentModal'
 import { docKey, parseDocKey, type RecordDoc } from '@/pages/documents/doc-key'
 import {
@@ -118,14 +119,6 @@ function readHidden(book: Book): Set<ColumnId> {
   }
 }
 
-/** The rail picks the entity; `?entity=all` overrides it for this list only. */
-function entityOf(params: URLSearchParams, rail: EntityChoice): string {
-  const raw = params.get('entity')
-  if (raw === 'all') return ''
-  if (raw === 'PO' || raw === 'CVPO') return raw
-  return rail === 'all' ? '' : rail
-}
-
 function listOf(raw: string | null): string[] {
   return (raw ?? '').split(',').map((value) => value.trim()).filter(Boolean)
 }
@@ -193,13 +186,13 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
   const gridFilters = useGridFilterLink()
   const opened = useDocParam()
   const { filter: rail } = useEntity()
+  const entity = useListedEntity()
   const [params, setParams] = useSearchParams()
   const tracked = book === 'invoice'
   const salesDoc = kind === 'quote' ? 'quote' : 'delivery'
 
   const statusParam = params.get('status') ?? ''
   const statuses = useMemo(() => listOf(statusParam), [statusParam])
-  const entity = entityOf(params, rail)
   const origin = params.get('origin') === 'holded' || params.get('origin') === 'winecore' ? params.get('origin') ?? '' : ''
   const from = params.get('from') ?? ''
   const to = params.get('to') ?? ''
@@ -334,15 +327,16 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
       }
       const raw = Array.isArray(value) ? value.join(',') : typeof value === 'string' ? value : ''
       if (raw) next.set(id, raw)
-      else if (id === 'entity' && rail !== 'all') next.set('entity', 'all')
       else next.delete(id)
     })
   }
 
   function clearFilters() {
     update((next) => {
-      for (const key of LIST_KEYS) next.delete(key)
-      if (rail !== 'all') next.set('entity', 'all')
+      for (const key of LIST_KEYS) {
+        if (key === 'entity' && (rail === 'PO' || rail === 'CVPO')) continue
+        next.delete(key)
+      }
     })
     setQ('')
     setDebounced('')
@@ -388,17 +382,19 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
           .filter((facet) => facet.count > 0 || statuses.includes(facet.value))
           .map((facet) => ({ value: facet.value, label: facet.label, count: facet.count, tone: statusTone(facet.value) })),
       },
-      {
-        id: 'entity',
-        label: copy.salesDocs.entity,
-        kind: 'single',
-        options: (facets?.entity ?? [{ value: 'PO', label: copy.entity.po, count: 0 }, { value: 'CVPO', label: copy.entity.cvpo, count: 0 }]).map((facet) => ({
-          value: facet.value,
-          label: facet.label,
-          count: facets ? facet.count : undefined,
-          tone: entityTone(facet.value),
-        })),
-      },
+      ...(rail === 'all'
+        ? [{
+            id: 'entity',
+            label: copy.salesDocs.entity,
+            kind: 'single' as const,
+            options: (facets?.entity ?? [{ value: 'PO', label: copy.entity.po, count: 0 }, { value: 'CVPO', label: copy.entity.cvpo, count: 0 }]).map((facet) => ({
+              value: facet.value,
+              label: facet.label,
+              count: facets ? facet.count : undefined,
+              tone: entityTone(facet.value),
+            })),
+          }]
+        : []),
       { id: 'date', label: copy.salesDocs.date, kind: 'date' },
     ]
     if ((data?.origins.length ?? 2) > 1) {
@@ -443,7 +439,7 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
       )
     }
     return defs
-  }, [book, canContacts, contacts, data?.origins.length, facets, pickedContact.data, statuses, tracked])
+  }, [book, canContacts, contacts, data?.origins.length, facets, pickedContact.data, rail, statuses, tracked])
 
   const values = {
     status: statuses,

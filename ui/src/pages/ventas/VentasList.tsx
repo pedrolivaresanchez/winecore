@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useChromeTitle } from '@/app/shell/shell-context'
 import { useEntity } from '@/app/entity-context'
+import { useListedEntity } from '@/lib/listed-entity'
 import { ErrorState } from '@/components/ErrorState'
 import { NoPermission } from '@/components/NoPermission'
 import { useMinWidth } from '@/hooks/use-media'
@@ -25,7 +26,7 @@ import {
   type SalesOrder,
 } from '@/lib/sales'
 import { entityTone, statusTone } from '@/lib/status-tones'
-import type { EntityChoice, Me } from '@/lib/types'
+import type { Me } from '@/lib/types'
 import { CreateDocument } from '@/pages/ventas/dialogs'
 import { SalesHeader, SalesSwitch } from '@/pages/ventas/SalesTabs'
 import { DownloadSimple } from '@/ui/icons'
@@ -80,13 +81,6 @@ function readHidden(): Set<ColumnId> {
   }
 }
 
-/** The rail picks the entity; `?entity=all` overrides it for this list only. */
-function entityOf(raw: string | null, rail: EntityChoice): string {
-  if (raw === 'all') return ''
-  if (raw === 'PO' || raw === 'CVPO') return raw
-  return rail === 'all' ? '' : rail
-}
-
 function entityName(code: string | null): string {
   if (code === 'PO') return copy.entity.po
   if (code === 'CVPO') return copy.entity.cvpo
@@ -107,9 +101,9 @@ export function VentasList({ me, creating = false }: { me: Me; creating?: boolea
   const gridFilters = useGridFilterLink()
   const [params, setParams] = useSearchParams()
   const { filter: rail, entities } = useEntity()
+  const entity = useListedEntity()
   const status = ORDER_STATUSES.includes(params.get('status') as SalesOrder['status']) ? params.get('status') ?? '' : ''
   const channel = params.get('channel') ?? ''
-  const entity = entityOf(params.get('entity'), rail)
   const entityId = entity ? entities.find((item) => item.code === entity)?.id ?? '' : ''
   const [q, setQ] = useState('')
   const [picked, setPicked] = useState<Set<string>>(new Set())
@@ -170,15 +164,16 @@ export function VentasList({ me, creating = false }: { me: Me; creating?: boolea
     const next = new URLSearchParams(params)
     const raw = typeof value === 'string' ? value : ''
     if (raw) next.set(id, raw)
-    else if (id === 'entity' && rail !== 'all') next.set('entity', 'all')
     else next.delete(id)
     setParams(next)
   }
 
   function clearFilters() {
     const next = new URLSearchParams(params)
-    for (const key of ['status', 'channel', 'entity']) next.delete(key)
-    if (rail !== 'all') next.set('entity', 'all')
+    for (const key of ['status', 'channel', 'entity']) {
+      if (key === 'entity' && (rail === 'PO' || rail === 'CVPO')) continue
+      next.delete(key)
+    }
     setParams(next)
     setQ('')
   }
@@ -200,12 +195,14 @@ export function VentasList({ me, creating = false }: { me: Me; creating?: boolea
       kind: 'single',
       options: ORDER_STATUSES.map((value) => ({ value, label: orderStatusLabel(value), tone: statusTone(value) })),
     },
-    {
-      id: 'entity',
-      label: copy.salesDocs.entity,
-      kind: 'single',
-      options: entities.map((item) => ({ value: item.code, label: entityName(item.code), tone: entityTone(item.code) })),
-    },
+    ...(rail === 'all'
+      ? [{
+          id: 'entity',
+          label: copy.salesDocs.entity,
+          kind: 'single' as const,
+          options: entities.map((item) => ({ value: item.code, label: entityName(item.code), tone: entityTone(item.code) })),
+        }]
+      : []),
     {
       id: 'channel',
       label: copy.sales.channel,

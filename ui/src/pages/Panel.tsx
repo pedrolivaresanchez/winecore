@@ -2,15 +2,14 @@ import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { Calendar, Check, FileText, Users, type IconComponent } from '@/ui/icons'
 import { ObjectGlyph, type GlyphTint } from '@/ui/object-glyph'
-import { CHART_INK, ChartEmpty, ColumnChart, StatTile, chartModel } from '@/ui/charts'
+import { CHART_INK, ChartEmpty, ColumnChart, StatTile, chartModel, seriesColor } from '@/ui/charts'
 import { useChromeTitle } from '@/app/shell/shell-context'
 import { useEntity } from '@/app/entity-context'
 import { ErrorState } from '@/components/ErrorState'
 import { FitAmount, Skeleton } from '@/ui'
 import { copy, fill } from '@/i18n'
 import { cn } from '@/lib/cn'
-import { formatInteger, formatMoney } from '@/lib/format'
-import { entityName } from '@/lib/labels'
+import { formatCompact, formatInteger, formatMoney } from '@/lib/format'
 import { useLegacyOverview, type LegacyOverview } from '@/lib/legacy'
 import { iconStroke } from '@/lib/motion'
 import { allows } from '@/lib/permissions'
@@ -29,15 +28,6 @@ const dateLabel = new Intl.DateTimeFormat('es-ES', {
 const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 const LIST_LIMIT = 5
 
-/** Two tiles over three on a tablet, five in a row on a desktop; the year's sales lead on a phone. */
-const TILE_SPANS = [
-  'col-span-2 sm:col-span-3 lg:col-span-1',
-  'sm:col-span-3 lg:col-span-1',
-  'sm:col-span-2 lg:col-span-1',
-  'sm:col-span-2 lg:col-span-1',
-  'sm:col-span-2 lg:col-span-1',
-]
-
 const ROW = 'flex items-center justify-between gap-3 px-4 py-2.5'
 const ROW_LINK = cn(ROW, 'outline-none transition-colors duration-(--duration-quick) ease-(--ease-smooth-out) hover:bg-fill-hover focus-visible:shadow-(--shadow-focus)')
 
@@ -46,11 +36,10 @@ export function Panel({ me }: { me: Me }) {
   const { filter } = useEntity()
   const entity = entityFilter(filter)
   const canLegacy = allows(me, 'reports.read') || allows(me, 'finance.read') || allows(me, 'sales.read') || allows(me, 'billing.read')
-  const legacy = useLegacyOverview(entity, canLegacy)
+  const legacy = useLegacyOverview('both', canLegacy)
   const dashboard = useDashboard(entity)
   const pending = legacy.initial
-  const company = filter === 'all' ? copy.panel.bothCompanies : entityName(filter)
-  const context = legacy.data ? fill(copy.panel.period, { year: String(legacy.data.year), company }) : company
+  const context = legacy.data ? fill(copy.panel.exercise, { year: String(legacy.data.year) }) : copy.panel.title
 
   return (
     <div data-screen={pending ? 'panel-cargando' : 'panel'} className="min-h-0 flex-1 overflow-y-auto">
@@ -86,66 +75,98 @@ export function Panel({ me }: { me: Me }) {
   )
 }
 
+type CompanyCode = 'PO' | 'CVPO'
+
+function companiesOf(entity: LegacyOverview['entity']): CompanyCode[] {
+  if (entity === 'PO') return ['PO']
+  if (entity === 'CVPO') return ['CVPO']
+  return ['PO', 'CVPO']
+}
+
+function companyLabel(code: CompanyCode): string {
+  return code === 'PO' ? copy.panel.companyPo : copy.panel.companyCvpo
+}
+
 function HoldedHome({ data, attention }: { data: LegacyOverview; attention: ReactNode }) {
-  const chartEmpty = data.months.every((point) => Number(point.total) === 0)
-  const monthly = data.months.map((point) => Number(point.total) || 0)
+  const companies = companiesOf(data.entity)
+  const lastYear = data.year - 1
+  const chartEmpty = data.months.every((point) => companies.every((code) => Number(point[code]) === 0))
   const invoices = data.recent_invoices.slice(0, LIST_LIMIT)
   const customers = data.top_customers.slice(0, LIST_LIMIT)
+  const series = companies.map((code, index) => ({
+    key: code,
+    label: companyLabel(code),
+    color: index === 0 ? CHART_INK : seriesColor(1),
+    type: 'currency' as const,
+  }))
   const model = chartModel({
     categoryLabel: copy.panel.chart,
     measureType: 'currency',
     temporal: true,
     format: (value) => formatMoney(value),
-    series: [{ key: 'sales', label: String(data.year), color: CHART_INK, type: 'currency' }],
-    categories: data.months.map((point) => ({
-      key: String(point.month),
-      label: MONTHS[point.month - 1] ?? String(point.month),
-      values: [Number(point.total) || 0],
-      total: Number(point.total) || 0,
-    })),
+    series,
+    categories: data.months.map((point) => {
+      const values = companies.map((code) => Number(point[code]) || 0)
+      return {
+        key: String(point.month),
+        label: MONTHS[point.month - 1] ?? String(point.month),
+        values,
+        total: values.reduce((sum, value) => sum + value, 0),
+      }
+    }),
   })
   return (
     <>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-6 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {companies.map((code) => (
+          <MoneyTile
+            key={`year-${code}`}
+            label={fill(copy.panel.salesCompany, { year: String(data.year), company: companyLabel(code) })}
+            value={data.kpis.sales_this_year[code]}
+            href={`/facturas?entity=${code}`}
+            empty={copy.panel.noneYear}
+            spark={data.months.map((point) => Number(point[code]) || 0)}
+          />
+        ))}
+        {companies.map((code) => (
+          <MoneyTile
+            key={`last-${code}`}
+            label={fill(copy.panel.salesCompany, { year: String(lastYear), company: companyLabel(code) })}
+            value={data.kpis.sales_last_year[code]}
+            href={`/facturas?entity=${code}`}
+            empty={copy.panel.noneYear}
+          />
+        ))}
+        {companies.map((code) => (
+          <MoneyTile
+            key={`due-${code}`}
+            label={fill(copy.panel.receivablesCompany, { year: String(data.year), company: companyLabel(code) })}
+            value={data.kpis.pending_receivables[code]}
+            href={`/cobros?entity=${code}`}
+            count={data.kpis.pending_receivables_count[code]}
+            empty={copy.panel.noneReceivables}
+          />
+        ))}
         <MoneyTile
-          className={TILE_SPANS[0]}
-          label={copy.panel.salesYear}
-          value={data.kpis.sales_this_year}
-          href="/facturas"
-          empty={copy.panel.noneYear}
-          spark={monthly}
-        />
-        <MoneyTile className={TILE_SPANS[1]} label={copy.panel.salesLast} value={data.kpis.sales_last_year} href="/facturas" empty={copy.panel.noneYear} />
-        <MoneyTile
-          className={TILE_SPANS[2]}
-          label={copy.panel.receivables}
-          value={data.kpis.pending_receivables}
-          href="/cobros"
-          count={data.kpis.pending_receivables_count}
-          empty={copy.panel.noneReceivables}
+          label={fill(copy.panel.payablesYear, { year: String(data.year) })}
+          value={data.kpis.open_payables}
+          href="/gastos"
+          count={data.kpis.open_payables_count}
+          empty={copy.panel.nonePayables}
         />
         <StatTile
-          className={TILE_SPANS[3]}
           label={copy.panel.contacts}
           value={data.kpis.contacts}
           formatted={formatInteger(data.kpis.contacts)}
           href="/contactos"
           hint={data.kpis.contacts === 0 ? copy.panel.noneContacts : undefined}
         />
-        <MoneyTile
-          className={TILE_SPANS[4]}
-          label={copy.panel.payables}
-          value={data.kpis.open_payables}
-          href="/gastos"
-          count={data.kpis.open_payables_count}
-          empty={copy.panel.nonePayables}
-        />
       </div>
 
       <PanelCard title={copy.panel.chart} href="/informes?tab=ventas" more={copy.panel.seeReport}>
         <div className="px-4 pb-4">
           {chartEmpty ? (
-            <ChartEmpty height={220} message={data.has_imported ? copy.panel.noneYear : copy.panel.noneImported} />
+            <ChartEmpty height={220} message={copy.panel.noneYear} />
           ) : (
             <ColumnChart model={model} height={220} subtitle={String(data.year)} />
           )}
@@ -167,7 +188,7 @@ function HoldedHome({ data, attention }: { data: LegacyOverview; attention: Reac
                 <Link to={`/facturas?q=${encodeURIComponent(invoice.number)}`} className={ROW_LINK}>
                   <RowBody
                     title={invoice.counterparty_name}
-                    detail={`${invoice.number} · ${formatDate(invoice.issue_date)} · ${invoice.status_holded}`}
+                    detail={`${companyLabel(invoice.entity_code === 'CVPO' ? 'CVPO' : 'PO')} · ${invoice.number} · ${formatDate(invoice.issue_date)} · ${invoice.status_holded}`}
                     value={formatMoney(Number(invoice.total))}
                   />
                 </Link>
@@ -371,7 +392,7 @@ function MoneyTile({
       label={label}
       value={safe}
       type="currency"
-      formatted={<FitAmount full={formatMoney(safe)} short={formatMoney(safe)} className="w-full" />}
+      formatted={<FitAmount full={formatMoney(safe)} short={formatCompact(safe, '€')} className="w-full" />}
       href={href}
       spark={quiet ? undefined : spark}
       hint={quiet ? empty : count != null && count > 0 ? dueLabel(count) : undefined}
@@ -396,9 +417,9 @@ function formatDate(value: string): string {
 function PanelSkeleton() {
   return (
     <div className="flex flex-col gap-4" aria-busy="true">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-6 lg:grid-cols-5">
-        {TILE_SPANS.map((span, index) => (
-          <Skeleton key={index} className={cn('h-20 rounded-[10px]', span)} />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {Array.from({ length: 8 }, (_, index) => (
+          <Skeleton key={index} className="h-20 rounded-[10px]" />
         ))}
       </div>
       <Skeleton className="h-[280px] rounded-[10px]" />

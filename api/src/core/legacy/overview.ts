@@ -3,7 +3,6 @@ import type { UserCtx } from '../auth/permissions';
 import type { Writer } from '../db/writer';
 import { businessDate } from '../time';
 import {
-  HOLDED_NOT_CANCELLED,
   contactVisibility,
   entityPredicate,
   legacyScope,
@@ -23,23 +22,63 @@ export interface LegacyInvoiceRow {
   entity_code: string;
 }
 
+export interface CompanyFigures {
+  PO: string;
+  CVPO: string;
+}
+
+export interface CompanyCounts {
+  PO: number;
+  CVPO: number;
+}
+
 export interface LegacyOverview {
   entity: LegacyScope['entity'];
   year: number;
   kpis: {
-    sales_this_year: string;
-    sales_last_year: string;
-    pending_receivables: string;
-    pending_receivables_count: number;
+    sales_this_year: CompanyFigures;
+    sales_last_year: CompanyFigures;
+    pending_receivables: CompanyFigures;
+    pending_receivables_count: CompanyCounts;
     contacts: number;
     open_payables: string;
     open_payables_count: number;
   };
   recent_invoices: LegacyInvoiceRow[];
   top_customers: { name: string; total: string; invoices: number }[];
-  months: { month: number; total: string }[];
+  months: { month: number; PO: string; CVPO: string }[];
   has_imported: boolean;
 }
+
+/**
+ * Ventas del panel: facturas emitidas en WineCore, por sociedad y año civil.
+ * El histórico proyectado (`origin = 'holded_import'`) no suma: es la misma
+ * factura que `legacy.holded_invoice` y sigue viviendo en los libros registro.
+ * Una sustitución emitida quita el original.
+ * Cobros y pagos del panel son el saldo abierto con fecha de factura o de
+ * documento dentro del año civil en curso. Lo anterior no entra. Cada partida
+ * de Holded cuenta una vez; la copia origin = 'holded_import' no.
+ */
+const NATIVE_SALE = `
+  i.status = 'issued'
+  AND COALESCE(i.origin, 'native') <> 'holded_import'
+  AND NOT EXISTS (
+    SELECT 1
+    FROM billing.invoice_rectification r
+    JOIN billing.invoice rect ON rect.id = r.rectifying_invoice_id
+    WHERE r.relation = 'substituted'
+      AND rect.status = 'issued'
+      AND (
+        r.rectified_invoice_id = i.id
+        OR (
+          r.rectified_number = i.number
+          AND r.rectified_issue_date = i.issue_date
+          AND rect.legal_entity_id = i.legal_entity_id
+        )
+      )
+  )`;
+
+const CUSTOMER_NAME = `COALESCE(NULLIF(trim(json_extract_string(i.customer_snapshot, '$.name')), ''), c.legal_name, '')`;
 
 export async function loadLegacyOverview(writer: Writer, user: UserCtx, url: URL, now: Date): Promise<LegacyOverview> {
   const scope = legacyScope(user, parseEntityParam(url.searchParams.get('entity')));
@@ -52,125 +91,211 @@ export async function loadLegacyOverview(writer: Writer, user: UserCtx, url: URL
   const lastFrom = `${year - 1}-01-01`;
   const lastTo = `${year - 1}-12-31`;
 
-  const [kpis, recent, customers, months, presence] = await Promise.all([
+  const [sales, receivables, payables, contactRows, recent, customers, months, presence] = await Promise.all([
     writer.read<Record<string, unknown>>(`
-      SELECT
-        (SELECT COALESCE(SUM(h.total), 0)
-           FROM legacy.holded_invoice h
-           JOIN core.legal_entity e ON e.id = h.entity_id
-          WHERE h.kind = 'sale' AND ${HOLDED_NOT_CANCELLED}
-            AND h.issue_date BETWEEN DATE '${thisFrom}' AND DATE '${thisTo}'
-            AND ${entity}) AS sales_this_year,
-        (SELECT COALESCE(SUM(h.total), 0)
-           FROM legacy.holded_invoice h
-           JOIN core.legal_entity e ON e.id = h.entity_id
-          WHERE h.kind = 'sale' AND ${HOLDED_NOT_CANCELLED}
-            AND h.issue_date BETWEEN DATE '${lastFrom}' AND DATE '${lastTo}'
-            AND ${entity}) AS sales_last_year,
-        (SELECT COALESCE(SUM(o.amount - o.amount_paid), 0)
-           FROM legacy.open_item o
-           JOIN core.legal_entity e ON e.id = o.entity_id
-          WHERE o.direction = 'receivable' AND o.status IN ('open', 'partially_paid')
-            AND ${entity}) AS pending_receivables,
-        (SELECT COUNT(*)
-           FROM legacy.open_item o
-           JOIN core.legal_entity e ON e.id = o.entity_id
-          WHERE o.direction = 'receivable' AND o.status IN ('open', 'partially_paid')
-            AND ${entity}) AS pending_receivables_count,
-        (SELECT COUNT(*)
-           FROM party.contact c
-          WHERE c.archived_at IS NULL AND c.merged_into_id IS NULL
-            AND ${contacts}) AS contacts,
-        (SELECT COALESCE(SUM(o.amount - o.amount_paid), 0)
-           FROM legacy.open_item o
-           JOIN core.legal_entity e ON e.id = o.entity_id
-          WHERE o.direction = 'payable' AND o.status IN ('open', 'partially_paid')
-            AND ${entity}) AS open_payables,
-        (SELECT COUNT(*)
-           FROM legacy.open_item o
-           JOIN core.legal_entity e ON e.id = o.entity_id
-          WHERE o.direction = 'payable' AND o.status IN ('open', 'partially_paid')
-            AND ${entity}) AS open_payables_count
+      SELECT e.code AS code,
+             COALESCE(SUM(CASE WHEN i.issue_date BETWEEN DATE '${thisFrom}' AND DATE '${thisTo}' THEN i.total END), 0) AS this_year,
+             COALESCE(SUM(CASE WHEN i.issue_date BETWEEN DATE '${lastFrom}' AND DATE '${lastTo}' THEN i.total END), 0) AS last_year
+        FROM billing.invoice i
+        JOIN core.legal_entity e ON e.id = i.legal_entity_id
+       WHERE ${NATIVE_SALE}
+         AND i.issue_date BETWEEN DATE '${lastFrom}' AND DATE '${thisTo}'
+         AND ${entity}
+       GROUP BY e.code
     `),
     writer.read<Record<string, unknown>>(`
-      SELECT h.id, h.number, CAST(h.issue_date AS VARCHAR) AS issue_date, h.counterparty_name,
-             CAST(h.total AS VARCHAR) AS total, CAST(h.pending AS VARCHAR) AS pending,
-             h.status_holded, h.kind, e.code AS entity_code
-        FROM legacy.holded_invoice h
-        JOIN core.legal_entity e ON e.id = h.entity_id
-       WHERE h.kind = 'sale' AND ${entity}
-       ORDER BY h.issue_date DESC, h.number DESC, h.id DESC
+      SELECT code, COALESCE(SUM(outstanding), 0) AS amount, COUNT(*) AS n
+        FROM (
+          SELECT e.code AS code, (i.total - i.amount_paid) AS outstanding
+            FROM billing.invoice i
+            JOIN core.legal_entity e ON e.id = i.legal_entity_id
+           WHERE ${NATIVE_SALE}
+             AND i.payment_status IN ('unpaid', 'partially_paid')
+             AND i.total > i.amount_paid
+             AND i.issue_date BETWEEN DATE '${thisFrom}' AND DATE '${thisTo}'
+             AND ${entity}
+          UNION ALL
+          SELECT e.code, (o.amount - o.amount_paid)
+            FROM legacy.open_item o
+            JOIN core.legal_entity e ON e.id = o.entity_id
+           WHERE o.direction = 'receivable'
+             AND o.status IN ('open', 'partially_paid')
+             AND o.amount > o.amount_paid
+             AND o.document_date BETWEEN DATE '${thisFrom}' AND DATE '${thisTo}'
+             AND ${entity}
+        ) dues
+       GROUP BY code
+    `),
+    writer.read<Record<string, unknown>>(`
+      SELECT COALESCE(SUM(outstanding), 0) AS amount, COUNT(*) AS n
+        FROM (
+          SELECT (s.total - s.amount_paid) AS outstanding
+            FROM purchasing.supplier_invoice s
+            JOIN core.legal_entity e ON e.id = s.legal_entity_id
+           WHERE s.status = 'approved'
+             AND COALESCE(s.origin, 'native') <> 'holded_import'
+             AND s.payment_status IN ('unpaid', 'partially_paid')
+             AND s.total > s.amount_paid
+             AND s.issue_date BETWEEN DATE '${thisFrom}' AND DATE '${thisTo}'
+             AND ${entity}
+          UNION ALL
+          SELECT (o.amount - o.amount_paid)
+            FROM legacy.open_item o
+            JOIN core.legal_entity e ON e.id = o.entity_id
+           WHERE o.direction = 'payable'
+             AND o.status IN ('open', 'partially_paid')
+             AND o.amount > o.amount_paid
+             AND o.document_date BETWEEN DATE '${thisFrom}' AND DATE '${thisTo}'
+             AND ${entity}
+        ) dues
+    `),
+    writer.read<Record<string, unknown>>(`
+      SELECT COUNT(*) AS contacts
+        FROM party.contact c
+       WHERE c.archived_at IS NULL AND c.merged_into_id IS NULL
+         AND ${contacts}
+    `),
+    writer.read<Record<string, unknown>>(`
+      SELECT i.id, i.number, CAST(i.issue_date AS VARCHAR) AS issue_date,
+             ${CUSTOMER_NAME} AS counterparty_name,
+             CAST(i.total AS VARCHAR) AS total,
+             CAST(i.total - i.amount_paid AS VARCHAR) AS pending,
+             i.status, i.payment_status, e.code AS entity_code
+        FROM billing.invoice i
+        JOIN core.legal_entity e ON e.id = i.legal_entity_id
+        LEFT JOIN party.contact c ON c.id = i.customer_id
+       WHERE i.status IN ('issued', 'voided')
+         AND COALESCE(i.origin, 'native') <> 'holded_import'
+         AND ${entity}
+       ORDER BY i.issue_date DESC, i.number DESC, i.id DESC
        LIMIT 8
     `),
     writer.read<Record<string, unknown>>(`
-      SELECT h.counterparty_name AS name,
-             CAST(COALESCE(SUM(h.total), 0) AS VARCHAR) AS total,
+      SELECT ${CUSTOMER_NAME} AS name,
+             CAST(COALESCE(SUM(i.total), 0) AS VARCHAR) AS total,
              COUNT(*) AS invoices
-        FROM legacy.holded_invoice h
-        JOIN core.legal_entity e ON e.id = h.entity_id
-       WHERE h.kind = 'sale' AND ${HOLDED_NOT_CANCELLED}
-         AND h.issue_date BETWEEN DATE '${thisFrom}' AND DATE '${thisTo}'
+        FROM billing.invoice i
+        JOIN core.legal_entity e ON e.id = i.legal_entity_id
+        LEFT JOIN party.contact c ON c.id = i.customer_id
+       WHERE ${NATIVE_SALE}
+         AND i.issue_date BETWEEN DATE '${thisFrom}' AND DATE '${thisTo}'
          AND ${entity}
-       GROUP BY h.counterparty_name
-       ORDER BY SUM(h.total) DESC, h.counterparty_name
+       GROUP BY 1
+       ORDER BY SUM(i.total) DESC, 1
        LIMIT 5
     `),
     writer.read<Record<string, unknown>>(`
-      SELECT CAST(month(h.issue_date) AS INTEGER) AS month,
-             CAST(COALESCE(SUM(h.total), 0) AS VARCHAR) AS total
-        FROM legacy.holded_invoice h
-        JOIN core.legal_entity e ON e.id = h.entity_id
-       WHERE h.kind = 'sale' AND ${HOLDED_NOT_CANCELLED}
-         AND h.issue_date BETWEEN DATE '${thisFrom}' AND DATE '${thisTo}'
+      SELECT e.code AS code,
+             CAST(month(i.issue_date) AS INTEGER) AS month,
+             CAST(COALESCE(SUM(i.total), 0) AS VARCHAR) AS total
+        FROM billing.invoice i
+        JOIN core.legal_entity e ON e.id = i.legal_entity_id
+       WHERE ${NATIVE_SALE}
+         AND i.issue_date BETWEEN DATE '${thisFrom}' AND DATE '${thisTo}'
          AND ${entity}
-       GROUP BY 1
+       GROUP BY 1, 2
     `),
     writer.read<Record<string, unknown>>(`
-      SELECT
-        (SELECT COUNT(*) FROM legacy.holded_invoice h
-           JOIN core.legal_entity e ON e.id = h.entity_id
-          WHERE ${entity}) AS invoices,
-        (SELECT COUNT(*) FROM legacy.holded_product p
-           JOIN core.legal_entity e ON e.id = p.entity_id
-          WHERE ${entity}) AS products,
-        (SELECT COUNT(*) FROM party.contact c
-          WHERE c.archived_at IS NULL AND c.merged_into_id IS NULL AND ${contacts}) AS contacts
+      SELECT COUNT(*) AS invoices
+        FROM billing.invoice i
+        JOIN core.legal_entity e ON e.id = i.legal_entity_id
+       WHERE COALESCE(i.origin, 'native') <> 'holded_import'
+         AND ${entity}
     `),
   ]);
 
-  const kpi = kpis[0] ?? {};
-  const byMonth = new Map<number, string>();
+  const byMonth = new Map<string, string>();
   for (const row of months) {
+    const code = codeOf(row.code);
     const month = intOf(row.month);
-    if (month >= 1 && month <= 12) byMonth.set(month, money2(row.total));
+    if (code && month >= 1 && month <= 12) byMonth.set(`${code}:${month}`, money2(row.total));
   }
-  const presenceRow = presence[0] ?? {};
-  const hasImported = intOf(presenceRow.invoices) > 0 || intOf(presenceRow.products) > 0 || intOf(presenceRow.contacts) > 0;
+  const payable = payables[0] ?? {};
+  const contactCount = intOf(contactRows[0]?.contacts);
+  const nativeInvoices = intOf(presence[0]?.invoices);
 
   return {
     entity: scope.entity,
     year,
     kpis: {
-      sales_this_year: money2(kpi.sales_this_year),
-      sales_last_year: money2(kpi.sales_last_year),
-      pending_receivables: money2(kpi.pending_receivables),
-      pending_receivables_count: intOf(kpi.pending_receivables_count),
-      contacts: intOf(kpi.contacts),
-      open_payables: money2(kpi.open_payables),
-      open_payables_count: intOf(kpi.open_payables_count),
+      sales_this_year: figuresOf(sales, scope, 'this_year'),
+      sales_last_year: figuresOf(sales, scope, 'last_year'),
+      pending_receivables: figuresOf(receivables, scope, 'amount'),
+      pending_receivables_count: countsOf(receivables, scope),
+      contacts: contactCount,
+      open_payables: money2(payable.amount),
+      open_payables_count: intOf(payable.n),
     },
-    recent_invoices: recent.map(invoiceOf),
+    recent_invoices: recent.map(nativeInvoiceOf),
     top_customers: customers.map((row) => ({
       name: String(row.name ?? ''),
       total: money2(row.total),
       invoices: intOf(row.invoices),
     })),
-    months: Array.from({ length: 12 }, (_, index) => ({
-      month: index + 1,
-      total: byMonth.get(index + 1) ?? '0.00',
-    })),
-    has_imported: hasImported,
+    months: Array.from({ length: 12 }, (_, index) => {
+      const month = index + 1;
+      return {
+        month,
+        PO: scope.po ? byMonth.get(`PO:${month}`) ?? '0.00' : '0.00',
+        CVPO: scope.cvpo ? byMonth.get(`CVPO:${month}`) ?? '0.00' : '0.00',
+      };
+    }),
+    has_imported: nativeInvoices > 0 || contactCount > 0,
   };
+}
+
+function figuresOf(rows: Record<string, unknown>[], scope: LegacyScope, field: string): CompanyFigures {
+  const figures: CompanyFigures = { PO: '0.00', CVPO: '0.00' };
+  for (const row of rows) {
+    const code = codeOf(row.code);
+    if (!code || !visible(scope, code)) continue;
+    figures[code] = money2(row[field]);
+  }
+  return figures;
+}
+
+function countsOf(rows: Record<string, unknown>[], scope: LegacyScope): CompanyCounts {
+  const counts: CompanyCounts = { PO: 0, CVPO: 0 };
+  for (const row of rows) {
+    const code = codeOf(row.code);
+    if (!code || !visible(scope, code)) continue;
+    counts[code] = intOf(row.n);
+  }
+  return counts;
+}
+
+function visible(scope: LegacyScope, code: 'PO' | 'CVPO'): boolean {
+  return code === 'PO' ? scope.po : scope.cvpo;
+}
+
+function codeOf(value: unknown): 'PO' | 'CVPO' | null {
+  const code = String(value ?? '');
+  return code === 'PO' || code === 'CVPO' ? code : null;
+}
+
+function nativeInvoiceOf(row: Record<string, unknown>): LegacyInvoiceRow {
+  const pending = row.pending == null || row.pending === '' ? null : money2(row.pending);
+  return {
+    id: String(row.id),
+    number: String(row.number ?? ''),
+    issue_date: dateOf(row.issue_date),
+    counterparty_name: String(row.counterparty_name ?? ''),
+    total: money2(row.total),
+    pending,
+    status_holded: saleStatus(row.status, row.payment_status),
+    kind: 'sale',
+    entity_code: String(row.entity_code ?? ''),
+  };
+}
+
+function saleStatus(status: unknown, payment: unknown): string {
+  if (status === 'voided') return 'Anulada';
+  if (status === 'draft') return 'Borrador';
+  if (payment === 'paid') return 'Cobrada';
+  if (payment === 'partially_paid') return 'Cobro parcial';
+  if (payment === 'uncollectible') return 'Incobrable';
+  if (payment === 'unpaid') return 'Pendiente';
+  return String(payment ?? status ?? '');
 }
 
 export function invoiceOf(row: Record<string, unknown>): LegacyInvoiceRow {
