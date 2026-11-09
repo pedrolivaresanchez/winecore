@@ -176,6 +176,8 @@ describe('fichas, vino en stock y tarifa vigente', () => {
     const xpo = newId();
     const interaction = newId();
     const oxidacion = newId();
+    const ecloWine = newId();
+    const nebbiaWine = newId();
     const o1 = newId();
     const lem = newId();
     const leo = newId();
@@ -187,6 +189,11 @@ describe('fichas, vino en stock y tarifa vigente', () => {
     const lotLeo = newId();
     const list = newId();
     const version = newId();
+    const draftVersion = newId();
+    const otherLocation = newId();
+    const series = newId();
+    const note = newId();
+    const invoice = newId();
     await ctx.writer.withWrite({ type: 'system', id: 'fichas-seed', requestId: newId() }, async (tx) => {
       tx.write(sql`
         INSERT INTO inventory.location (id, code, name, kind, controlling_entity_id)
@@ -201,6 +208,8 @@ describe('fichas, vino en stock y tarifa vigente', () => {
       wine(xpo, 'XPO', 'XPO');
       wine(interaction, 'XPO-INTERACTION', 'XPO Interaction');
       wine(oxidacion, 'OXIDACION', 'Oxidación');
+      wine(ecloWine, 'ECLO', 'Eclo');
+      wine(nebbiaWine, 'NEBBIA', 'Nebbia');
       wine(o1, 'LA-GRAN-OXIDACION-O1', 'La Gran Oxidación O1');
       const product = (id: string, sku: string, name: string, wineId: string) => {
         tx.write(sql`
@@ -211,10 +220,22 @@ describe('fichas, vino en stock y tarifa vigente', () => {
       product(lem, 'LEM2023', 'O1 LEM', oxidacion);
       product(leo, 'LEO22023', 'O2 LEO', oxidacion);
       product(duplicate, 'LA-GRAN-OXIDACION-O1-2023-B050', 'O1 botella', o1);
-      product(formatless[0]!, 'ECLO-2022', 'Eclo suelto', oxidacion);
+      tx.write(sql`
+        INSERT INTO catalog.product (id, sku, name, kind, wine_id, vintage, unit, is_active, for_sale)
+        VALUES (
+          CAST(${formatless[0]!} AS UUID), 'ECLO-2022', 'Eclo 2026', 'wine', CAST(${ecloWine} AS UUID),
+          2026, 'ud', TRUE, TRUE
+        )
+      `);
       product(formatless[1]!, 'ENTREDICHO-2122', 'enTreDicho suelto', oxidacion);
       product(withStock, 'MOLINERA-2023', 'Molinera suelta', oxidacion);
-      product(formatless[2]!, 'NEBBIA-2022', 'Nebbia suelta', oxidacion);
+      tx.write(sql`
+        INSERT INTO catalog.product (id, sku, name, kind, wine_id, vintage, unit, is_active, for_sale)
+        VALUES (
+          CAST(${formatless[2]!} AS UUID), 'NEBBIA-2022', 'Nebbia suelta', 'wine', CAST(${nebbiaWine} AS UUID),
+          2022, 'ud', TRUE, TRUE
+        )
+      `);
       tx.write(sql`
         INSERT INTO inventory.lot (id, producer_entity_id, code, kind, wine_id, vintage, origin)
         VALUES
@@ -231,8 +252,45 @@ describe('fichas, vino en stock y tarifa vigente', () => {
         VALUES (CAST(${version} AS UUID), CAST(${list} AS UUID), 1, DATE '2026-01-01', 'active', 'test')
       `);
       tx.write(sql`
+        INSERT INTO catalog.price_list_version (id, price_list_id, version, valid_from, status, created_by)
+        VALUES (CAST(${draftVersion} AS UUID), CAST(${list} AS UUID), 2, DATE '2026-02-01', 'draft', 'test')
+      `);
+      tx.write(sql`
         INSERT INTO catalog.price_list_item (id, version_id, product_id, min_qty, unit_price)
-        VALUES (CAST(${newId()} AS UUID), CAST(${version} AS UUID), CAST(${lem} AS UUID), 1, 8)
+        VALUES
+          (CAST(${newId()} AS UUID), CAST(${version} AS UUID), CAST(${lem} AS UUID), 1, 8),
+          (CAST(${newId()} AS UUID), CAST(${version} AS UUID), CAST(${formatless[0]!} AS UUID), 1, 14),
+          (CAST(${newId()} AS UUID), CAST(${draftVersion} AS UUID), CAST(${formatless[2]!} AS UUID), 1, 9)
+      `);
+      tx.write(sql`
+        INSERT INTO inventory.location (id, code, name, kind, controlling_entity_id)
+        VALUES (CAST(${otherLocation} AS UUID), 'BOD-FIC2', 'Otra bodega', 'cellar', CAST(${po} AS UUID))
+      `);
+      tx.write(sql`
+        INSERT INTO sales.delivery_note (id, legal_entity_id, kind, from_location_id, to_location_id, created_by)
+        VALUES (
+          CAST(${note} AS UUID), CAST(${po} AS UUID), 'transfer',
+          CAST(${location} AS UUID), CAST(${otherLocation} AS UUID), 'test'
+        )
+      `);
+      tx.write(sql`
+        INSERT INTO sales.delivery_note_line (id, delivery_note_id, line_no, product_id, description, quantity)
+        VALUES (CAST(${newId()} AS UUID), CAST(${note} AS UUID), 1, CAST(${formatless[1]!} AS UUID), 'enTreDicho', 1)
+      `);
+      tx.write(sql`
+        INSERT INTO core.number_series (id, legal_entity_id, doc_type, code, year, prefix)
+        VALUES (CAST(${series} AS UUID), CAST(${po} AS UUID), 'invoice', 'T', 2026, 'TFIC')
+      `);
+      tx.write(sql`
+        INSERT INTO billing.invoice (id, legal_entity_id, series_id, invoice_type, created_by)
+        VALUES (CAST(${invoice} AS UUID), CAST(${po} AS UUID), CAST(${series} AS UUID), 'F2', 'test')
+      `);
+      tx.write(sql`
+        INSERT INTO billing.invoice_line (id, invoice_id, line_no, product_id, description, quantity, unit_price, line_base, tax_code)
+        VALUES (
+          CAST(${newId()} AS UUID), CAST(${invoice} AS UUID), 1, CAST(${formatless[1]!} AS UUID),
+          'enTreDicho', 1, 10, 10, 'IVA21'
+        )
       `);
       tx.write(sql`
         INSERT INTO inventory.stock_move (
@@ -259,8 +317,13 @@ describe('fichas, vino en stock y tarifa vigente', () => {
     expect(dry.mode).toBe('dry-run');
     expect(dry.xpo.some((line) => line.includes('XPO-INTERACTION'))).toBe(true);
     expect(dry.o1.some((line) => line.includes('LEM2023'))).toBe(true);
-    expect(dry.kept.some((line) => line.includes('MOLINERA-2023'))).toBe(true);
-    expect(dry.hidden.some((line) => line.includes('ECLO-2022'))).toBe(true);
+    expect(dry.kept.some((line) => line.includes('MOLINERA-2023') && line.includes('stock'))).toBe(true);
+    expect(dry.kept.some((line) => line.includes('ECLO-2022') && line.includes('tarifa activa'))).toBe(true);
+    expect(dry.hidden.some((line) => line.includes('ECLO-2022'))).toBe(false);
+    expect(dry.hidden.some((line) => line.includes('ENTREDICHO-2122'))).toBe(true);
+    expect(dry.hidden.some((line) => line.includes('NEBBIA-2022'))).toBe(true);
+    expect(dry.kept.some((line) => line.includes('ENTREDICHO-2122') || line.includes('NEBBIA-2022'))).toBe(false);
+    expect(dry.hidden.some((line) => line.includes('LA-GRAN-OXIDACION-O1-2023-B050'))).toBe(true);
     expect(dry.notes.some((line) => line.includes('O2'))).toBe(true);
 
     const applied = await reconcileFichas(ctx.writer, 'apply');
@@ -286,7 +349,8 @@ describe('fichas, vino en stock y tarifa vigente', () => {
     expect(bySku.get('LEM2023')?.hidden).toBe(false);
     expect(bySku.get('LEO22023')?.wine).toBe('OXIDACION');
     expect(bySku.get('LA-GRAN-OXIDACION-O1-2023-B050')?.hidden).toBe(true);
-    expect(bySku.get('ECLO-2022')?.hidden).toBe(true);
+    expect(bySku.get('ECLO-2022')?.hidden).toBe(false);
+    expect(bySku.get('ECLO-2022')?.wine).toBe('ECLO');
     expect(bySku.get('ENTREDICHO-2122')?.hidden).toBe(true);
     expect(bySku.get('NEBBIA-2022')?.hidden).toBe(true);
     expect(bySku.get('MOLINERA-2023')?.hidden).toBe(false);
