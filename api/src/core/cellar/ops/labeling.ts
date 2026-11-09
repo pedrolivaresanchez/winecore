@@ -18,8 +18,10 @@ import type {
 
 /**
  * Etiquetado: las botellas cambian de sitio en el mapa (jaulón o nicho sin
- * etiquetar → etiquetado). El libro físico no distingue la etiqueta: los litros
- * de vino envasado no se mueven. La rotura sí resta litros, sin asiento SILICIE.
+ * etiquetar → etiquetado). La ficha de destino puede ser otra etiqueta hermana
+ * (p. ej. Bobastrell sobre enTreDicho); el lote no cambia. El libro físico no
+ * distingue la etiqueta: los litros de vino envasado no se mueven. La rotura
+ * sí resta litros, sin asiento SILICIE.
  */
 export function planLabeling(req: LabelingRequest, _state: CellarState, ids: IdSource): PlanResult {
   const header = assertHeader(req);
@@ -104,6 +106,15 @@ export function planLabeling(req: LabelingRequest, _state: CellarState, ids: IdS
   const lotIds = new Set([source.lot.id, ...losses.map((line) => line.lot.id)]);
   if (lotIds.size !== 1) {
     return fail("WC_VALIDATION", "WC_VALIDATION: el etiquetado no cambia de lote.", { lot_ids: [...lotIds] });
+  }
+  if (dest.product_id !== source.product_id) {
+    const allowed = new Set((req.allowed_label_product_ids ?? []).map((id) => id.toLowerCase()));
+    if (!allowed.has(dest.product_id.toLowerCase())) {
+      return fail("WC_VALIDATION", "WC_VALIDATION: esa etiqueta no corresponde a este lote.", { field: "product_id" });
+    }
+    if (dest.nominal_volume_ml !== source.nominal_volume_ml) {
+      return fail("WC_VALIDATION", "WC_VALIDATION: la etiqueta tiene que ser el mismo formato.", { field: "nominal_volume_ml" });
+    }
   }
   for (const line of losses) {
     if (line.location_id !== source.location_id || line.product_id !== source.product_id) {

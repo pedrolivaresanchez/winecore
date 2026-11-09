@@ -13,6 +13,8 @@ export type CatalogWine = {
   lot: string | null;
   forSale: boolean;
   priced: boolean;
+  /** El lote de venta es el del vino de origen, no uno propio. */
+  requiresLot?: boolean;
 };
 
 export const CATALOG_WINES: CatalogWine[] = [
@@ -38,6 +40,7 @@ export const CATALOG_WINES: CatalogWine[] = [
   { sku: 'XPO-2016', wine: 'Interaction', wineCode: 'XPO', name: 'XPO Interaction 2016', vintage: 2016, formatMl: 750, color: 'white', organic: true, abv: '15.50', lot: 'L2021/E1001', forSale: true, priced: true },
   { sku: 'LEO22023', wine: 'La Gran Oxidación', wineCode: 'OXIDACION', name: 'La Gran Oxidación O2 2023', vintage: 2023, formatMl: 500, color: 'white', organic: false, abv: '15.00', lot: 'LEO22023', forSale: true, priced: true },
   { sku: 'BOBASTRELL-2022', wine: 'Bobastrell', wineCode: 'BOBASTRELL', name: 'Bobastrell 2022', vintage: 2022, formatMl: 750, color: 'red', organic: true, abv: '14.50', lot: null, forSale: true, priced: true },
+  { sku: 'BOBASTRELL', wine: 'Bobastrell', wineCode: 'BOBASTRELL', name: 'Bobastrell', vintage: null, formatMl: 750, color: 'red', organic: true, abv: '14.50', lot: null, forSale: true, priced: false, requiresLot: true },
   { sku: 'ELL2025', wine: 'Llueve Llueve', wineCode: 'LLUEVE', name: 'Llueve Llueve 2025', vintage: 2025, formatMl: 750, color: 'white', organic: true, abv: '13.50', lot: 'ELL2025', forSale: true, priced: false },
   { sku: 'EGP2023', wine: 'Garnacha Pirotécnica', wineCode: 'GARNACHA-P', name: 'Garnacha Pirotécnica 2023', vintage: 2023, formatMl: 750, color: 'red', organic: true, abv: '13.00', lot: 'EGP2023', forSale: true, priced: false },
   { sku: 'MELOS-2019', wine: 'Melós', wineCode: 'MELOS', name: 'Melós 2019', vintage: 2019, formatMl: 750, color: 'red', organic: true, abv: '15.00', lot: '2019', forSale: true, priced: false },
@@ -80,3 +83,12 @@ export const EXTRA_NAMED_LOTS = [
 ] as const;
 
 export const EXTRA_LOTS = SHARED_LOTS;
+
+/**
+ * Etiqueta distinta del vino que hay en el jaulón. El lote no cambia.
+ * Bobastrell ya no se elabora: los clientes ingleses reciben enTreDicho
+ * (antes E202122, ahora 202324) con la etiqueta Bobastrell.
+ */
+export const LABEL_SIBLINGS = [
+  { sourceWineCode: 'ENTREDICHO', labelSku: 'BOBASTRELL' },
+] as const;

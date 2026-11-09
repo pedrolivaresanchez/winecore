@@ -84,7 +84,7 @@ export async function loadCatalog(writer: Writer): Promise<CatalogLoadReport> {
           CAST(${id} AS UUID), ${row.sku}, ${row.name}, 'wine', CAST(${wid} AS UUID),
           ${row.vintage}, CAST(${fid} AS UUID), 'ud',
           CASE WHEN ${row.abv} IS NULL THEN NULL ELSE CAST(${row.abv} AS DECIMAL(4,2)) END,
-          TRUE, ${row.lot != null}, ${row.forSale}, TRUE,
+          TRUE, ${row.requiresLot ?? row.lot != null}, ${row.forSale}, TRUE,
           ${sql.json({ source: 'pedro-2026', priced: row.priced })}, 'IVA21'
         )
       `);

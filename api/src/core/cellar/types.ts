@@ -270,6 +270,11 @@ export interface LabelingRequest extends OperationHeader {
   /** Warehouse of the breakage, when the source location is inside the CAE. */
   tax_warehouse_id: string | null;
   lines: readonly LabelingLine[];
+  /**
+   * Fichas distintas de la del jaulón con las que se puede etiquetar.
+   * El lote sigue siendo el de origen. Vacío: solo la misma ficha.
+   */
+  allowed_label_product_ids?: readonly string[];
 }
 
 /**

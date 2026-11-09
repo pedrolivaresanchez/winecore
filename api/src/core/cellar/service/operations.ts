@@ -1,4 +1,5 @@
 import { noteBarrelFills } from '../../cellar-assets/barrel-fills';
+import { allowedLabelProductIds } from '../../catalog/label-siblings';
 import { applyOperationBottled } from '../../inventory/bottled-ledger';
 import { assertBottlingChecklist } from '../../hygiene/checklist';
 import { postPlannedConsumptions } from '../../hygiene/stock';
@@ -1151,7 +1152,25 @@ async function buildLabeling(
       nominal_volume_ml: line.nominal_volume_ml,
     });
   }
-  return { ...common, op_type: 'labeling', tax_warehouse_id: warehouse, lines: engine } as OperationRequest;
+  const sourceLine = engine.find((line) => line.role === 'input');
+  const outputLine = engine.find((line) => line.role === 'output');
+  let allowed: string[] = [];
+  if (sourceLine && outputLine && outputLine.product_id !== sourceLine.product_id) {
+    if (outputLine.nominal_volume_ml !== sourceLine.nominal_volume_ml) {
+      invalid({ 'lines.product_id': 'La etiqueta tiene que ser el mismo formato' });
+    }
+    allowed = await allowedLabelProductIds(tx, sourceLine.product_id);
+    if (!allowed.some((id) => id.toLowerCase() === outputLine.product_id.toLowerCase())) {
+      invalid({ 'lines.product_id': 'Esa etiqueta no corresponde a este vino' });
+    }
+  }
+  return {
+    ...common,
+    op_type: 'labeling',
+    tax_warehouse_id: warehouse,
+    lines: engine,
+    allowed_label_product_ids: allowed,
+  } as OperationRequest;
 }
 
 function buildGrapeReception(common: OperationCommon, intake: IntakeInput | null): OperationRequest {
