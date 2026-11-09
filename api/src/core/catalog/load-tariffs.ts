@@ -29,10 +29,14 @@ function idOf(value: unknown): string {
 /** Crea las tarifas publicadas y pone precio solo donde ya hay un producto de esa añada. */
 export async function loadTariffs(writer: Writer): Promise<TariffLoadReport> {
   const products = await writer.read<Record<string, unknown>>(`
-    SELECT p.id::VARCHAR AS id, p.sku, p.name, p.vintage::VARCHAR AS vintage, w.name AS wine_name
+    SELECT p.id::VARCHAR AS id, p.sku, p.name, p.vintage::VARCHAR AS vintage,
+           COALESCE(wo.name, w.name) AS wine_name
     FROM catalog.product p
-    LEFT JOIN catalog.wine w ON w.id = p.wine_id
-    WHERE p.is_active AND p.kind = 'wine' AND p.for_sale
+    LEFT JOIN catalog.product_overlay po ON po.product_id = p.id
+    LEFT JOIN catalog.wine w ON w.id = COALESCE(po.wine_id, p.wine_id)
+    LEFT JOIN catalog.wine_overlay wo ON wo.wine_id = w.id
+    WHERE p.is_active AND NOT COALESCE(po.hidden, FALSE) AND p.kind = 'wine'
+      AND COALESCE(po.for_sale, p.for_sale, TRUE)
   `);
   const lists = await writer.read<{ id: string; code: string }>(`SELECT id::VARCHAR AS id, code FROM catalog.price_list`);
   const versions = await writer.read<{ code: string }>(sql`

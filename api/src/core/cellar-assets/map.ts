@@ -117,9 +117,12 @@ export async function getCellarMap(writer: Writer, request: Request): Promise<Ce
   const url = new URL(request.url);
   const location = await resolveLocation(writer, url);
   const zones = await writer.read<Record<string, unknown>>(sql`
-    SELECT id::VARCHAR AS id, code, name, kind, plan_attachment_id::VARCHAR AS plan_attachment_id
-    FROM cellar.zone
-    WHERE location_id = CAST(${location.id} AS UUID) AND is_active
+    SELECT z.id::VARCHAR AS id, z.code, COALESCE(o.name, z.name) AS name, z.kind,
+           z.plan_attachment_id::VARCHAR AS plan_attachment_id
+    FROM cellar.zone z
+    LEFT JOIN cellar.zone_overlay o ON o.zone_id = z.id
+    WHERE z.location_id = CAST(${location.id} AS UUID)
+      AND z.is_active AND NOT COALESCE(o.hidden, FALSE)
     ORDER BY code
   `);
   const zoneIds = zones.map((row) => idOf(row.id));
@@ -133,10 +136,12 @@ export async function getCellarMap(writer: Writer, request: Request): Promise<Ce
       WHERE zone_id IN (${uuidList(zoneIds)})
     `);
   const vessels = await writer.read<Record<string, unknown>>(sql`
-    SELECT id::VARCHAR AS id, code, name, kind, material, status, has_cooling_jacket,
-           capacity_ml::VARCHAR AS capacity_ml
-    FROM cellar.vessel
-    WHERE location_id = CAST(${location.id} AS UUID)
+    SELECT v.id::VARCHAR AS id, v.code, v.name, v.kind, v.material,
+           COALESCE(o.status, v.status) AS status, v.has_cooling_jacket,
+           v.capacity_ml::VARCHAR AS capacity_ml
+    FROM cellar.vessel v
+    LEFT JOIN cellar.vessel_overlay o ON o.vessel_id = v.id
+    WHERE v.location_id = CAST(${location.id} AS UUID)
     ORDER BY code
   `);
   const vesselCores = vessels.map(vesselOf);

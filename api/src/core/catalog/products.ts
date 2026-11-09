@@ -42,10 +42,11 @@ const FIELDS = [
 ] as const;
 
 const PRODUCT_SELECT = `
-  p.id, p.sku, p.name, p.name_en, p.kind, p.wine_id, p.vintage, p.format_id, p.unit,
+  p.id, p.sku, p.name, p.name_en, p.kind, COALESCE(po.wine_id, p.wine_id) AS wine_id, p.vintage, p.format_id, p.unit,
   p.gtin, p.gtin_case, p.nc_code, p.excise_product_key,
   CAST(p.alcohol_pct AS VARCHAR) AS alcohol_pct,
-  p.default_tax_code, p.sales_account, p.is_stock_tracked, p.requires_lot, p.is_active,
+  p.default_tax_code, p.sales_account, p.is_stock_tracked, p.requires_lot,
+  CASE WHEN COALESCE(po.hidden, FALSE) THEN FALSE ELSE p.is_active END AS is_active,
   p.legacy_refs, p.created_at, p.updated_at,
   CASE WHEN c.product_id = p.id THEN TRUE ELSE FALSE END AS is_gtin_current
 `;
@@ -105,7 +106,10 @@ export async function listProducts(writer: Writer, request: Request) {
   const filters = productFilters(url);
   const where = filters.join(' AND ');
   const totalRows = await writer.read<{ total: unknown }>(`
-    SELECT count(*) AS total FROM catalog.product p WHERE ${where}
+    SELECT count(*) AS total
+    FROM catalog.product p
+    LEFT JOIN catalog.product_overlay po ON po.product_id = p.id
+    WHERE ${where}
   `);
   const listed = [...filters];
   if (cursor) {
@@ -114,6 +118,7 @@ export async function listProducts(writer: Writer, request: Request) {
   const rows = await writer.read(`
     SELECT ${PRODUCT_SELECT}
     FROM catalog.product p
+    LEFT JOIN catalog.product_overlay po ON po.product_id = p.id
     LEFT JOIN catalog.gtin_current c ON c.gtin = p.gtin
     WHERE ${listed.join(' AND ')}
     ORDER BY p.sku, p.id
@@ -149,8 +154,9 @@ export async function exportProducts(writer: Writer, request: Request): Promise<
     SELECT ${PRODUCT_SELECT},
            w.name AS wine_name, f.code AS format_code
     FROM catalog.product p
+    LEFT JOIN catalog.product_overlay po ON po.product_id = p.id
     LEFT JOIN catalog.gtin_current c ON c.gtin = p.gtin
-    LEFT JOIN catalog.wine w ON w.id = p.wine_id
+    LEFT JOIN catalog.wine_visible w ON w.id = COALESCE(po.wine_id, p.wine_id)
     LEFT JOIN catalog.format f ON f.id = p.format_id
     WHERE ${where}
     ORDER BY p.sku, p.id
@@ -199,6 +205,7 @@ export async function getProduct(writer: Writer, id: string): Promise<Product> {
   const rows = await writer.read(`
     SELECT ${PRODUCT_SELECT}
     FROM catalog.product p
+    LEFT JOIN catalog.product_overlay po ON po.product_id = p.id
     LEFT JOIN catalog.gtin_current c ON c.gtin = p.gtin
     WHERE ${sql`p.id = CAST(${id} AS UUID)`}
   `);
@@ -380,7 +387,7 @@ function productFilters(url: URL): string[] {
   const wineId = url.searchParams.get('wine_id');
   if (wineId) {
     if (!isUuid(wineId)) throw domainError('WC_VALIDATION', { wine_id: 'Identificador no válido' });
-    filters.push(sql`p.wine_id = CAST(${wineId} AS UUID)`);
+    filters.push(sql`COALESCE(po.wine_id, p.wine_id) = CAST(${wineId} AS UUID)`);
   }
   const formatId = url.searchParams.get('format_id');
   if (formatId) {
@@ -395,7 +402,7 @@ function productFilters(url: URL): string[] {
     filters.push(sql`p.vintage = ${year}`);
   }
   const active = activeParam(url);
-  if (active !== null) filters.push(sql`p.is_active = ${active}`);
+  if (active !== null) filters.push(sql`(CASE WHEN COALESCE(po.hidden, FALSE) THEN FALSE ELSE p.is_active END) = ${active}`);
   const organic = flagParam(url, 'organic');
   if (organic !== null) {
     filters.push(sql`

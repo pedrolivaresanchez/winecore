@@ -63,12 +63,12 @@ export async function listWines(writer: Writer, request: Request) {
   }
   const where = filters.join(' AND ');
   const totalRows = await writer.read<{ total: unknown }>(`
-    SELECT count(*) AS total FROM catalog.wine WHERE ${active === null ? 'TRUE' : sql`is_active = ${active}`}
+    SELECT count(*) AS total FROM catalog.wine_visible WHERE ${active === null ? 'TRUE' : sql`is_active = ${active}`}
   `);
   const rows = await writer.read(`
     SELECT id, code, name, color, category, pdo_pgi_name, is_single_plot, is_organic,
            no_added_sulfites, description, is_active, created_at
-    FROM catalog.wine
+    FROM catalog.wine_visible
     WHERE ${where}
     ORDER BY code, id
     LIMIT ${limit + 1}
@@ -161,7 +161,7 @@ export async function requireWine(writer: Writer, id: string): Promise<Wine> {
   const rows = await writer.read(sql`
     SELECT id, code, name, color, category, pdo_pgi_name, is_single_plot, is_organic,
            no_added_sulfites, description, is_active, created_at
-    FROM catalog.wine
+    FROM catalog.wine_visible
     WHERE id = CAST(${id} AS UUID)
   `);
   const row = rows[0];
