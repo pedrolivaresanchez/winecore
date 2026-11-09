@@ -18,7 +18,10 @@ export type OpType =
   | "bleeding"
   | "pressing_off"
   | "delestage"
-  | "temperature_control";
+  | "temperature_control"
+  | "reception"
+  | "bulk_reception"
+  | "sampling";
 
 export type Vessel = {
   id: string;
@@ -157,6 +160,9 @@ export const OP_TYPES: { id: OpType; label: string; hint: string }[] = [
   { id: "pressing_off", label: "Descube", hint: "Yema y vino de prensa" },
   { id: "delestage", label: "Délestage", hint: "Sin mover volumen" },
   { id: "temperature_control", label: "Temperatura", hint: "Cambia la consigna" },
+  { id: "reception", label: "Entrada de uva", hint: "Kilos a un depósito vacío" },
+  { id: "bulk_reception", label: "Entrada de granel", hint: "Mosto o vino comprado" },
+  { id: "sampling", label: "Revisión", hint: "Toma de muestras del depósito" },
 ];
 
 const KIND_LABEL: Record<VesselKind, string> = {

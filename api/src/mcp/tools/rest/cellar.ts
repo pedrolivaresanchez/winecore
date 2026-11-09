@@ -29,13 +29,12 @@ const BARREL_STATUSES = ["in_use", "resting", "to_retire", "retired"] as const;
 const PRODUCT_STATES = ["grape", "must", "wine", "packaged_unlabeled", "packaged_labeled"] as const;
 const OPERATION_STATUSES = ["draft", "confirmed", "rectified", "discarded"] as const;
 const ENGINE_TYPES = [
-  "racking", "blend", "addition", "bottling", "loss", "destruction", "cleaning",
+  "racking", "blend", "filtration", "addition", "bottling", "labeling", "loss", "destruction", "cleaning",
+  "reception", "bulk_reception",
   "crushing_pressing", "fermentation_end", "fermentation_start", "malolactic_start", "malolactic_end",
   "bleeding", "pressing_off", "delestage", "temperature_control", "sampling",
 ] as const;
-const LISTED_TYPES = [
-  "reception", "bulk_reception", "filtration", "stabilization", "labeling", ...ENGINE_TYPES,
-] as const;
+const LISTED_TYPES = ["stabilization", ...ENGINE_TYPES] as const;
 
 const OP_LABELS: Record<string, string> = {
   reception: "recepción de uva",
@@ -172,7 +171,7 @@ const operationLine = z.object({
 const quantityUnit = z.enum(["g", "kg", "ml", "l"]);
 
 const operationShape = {
-  op_type: z.enum(ENGINE_TYPES).describe("racking trasiego, blend coupage, addition adición, bottling embotellado, loss merma, destruction destrucción, cleaning limpieza, crushing_pressing estrujado, fermentation_start/fermentation_end fermentación, malolactic_start/malolactic_end maloláctica, bleeding sangrado, pressing_off descube, delestage, temperature_control control de temperatura, sampling toma de muestras"),
+  op_type: z.enum(ENGINE_TYPES).describe("racking trasiego, blend coupage, filtration filtración, addition adición, bottling embotellado, labeling etiquetado, loss merma, destruction destrucción, cleaning limpieza, reception entrada de uva, bulk_reception entrada de mosto o vino, crushing_pressing estrujado, fermentation_start/fermentation_end fermentación, malolactic_start/malolactic_end maloláctica, bleeding sangrado, pressing_off descube, delestage, temperature_control control de temperatura, sampling toma de muestras"),
   legal_entity_id: id.describe("Sociedad que hace la operación"),
   occurred_at: instant.describe("Cuándo se hizo, ISO-8601 con zona, p. ej. 2026-10-30T09:00:00+01:00; no puede ser futura"),
   fiscal_date: date.optional().describe("Fecha fiscal YYYY-MM-DD; por defecto el día de occurred_at"),

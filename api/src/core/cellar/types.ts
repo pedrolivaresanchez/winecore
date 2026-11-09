@@ -128,9 +128,13 @@ export interface TransferLineLoss {
 
 export type TransferLine = TransferLineInput | TransferLineOutput | TransferLineLoss;
 
-/** Trasiego (`cellar.operation.op_type = racking`). Same lot, one or more destinations. */
+/**
+ * Trasiego (`racking`) o filtración (`filtration`). Same lot, one or more
+ * destinations. Filtration reuses the trasiego ledger: depósito ↔ barrica
+ * still posts the SILICIE ledger change.
+ */
 export interface TransferRequest extends OperationHeader {
-  op_type: "racking";
+  op_type: "racking" | "filtration";
   lines: readonly TransferLine[];
 }
 
@@ -223,6 +227,67 @@ export interface BottlingLineLoss {
 }
 
 export type BottlingLine = BottlingLineInput | BottlingLineOutput | BottlingLineLoss;
+
+export interface LabelingLineInput {
+  role: "input";
+  lot: LotRef;
+  location_id: string;
+  owner_entity_id: string;
+  product_id: string;
+  qty_units: number;
+  volume_ml: number;
+  nominal_volume_ml: number;
+}
+
+export interface LabelingLineOutput {
+  role: "output";
+  location_id: string;
+  product_id: string;
+  qty_units: number;
+  volume_ml: number;
+  nominal_volume_ml: number;
+}
+
+export interface LabelingLineLoss {
+  role: "loss";
+  lot: LotRef;
+  location_id: string;
+  product_id: string;
+  qty_units: number;
+  volume_ml: number;
+  nominal_volume_ml: number;
+  loss_kind: LossKind;
+}
+
+export type LabelingLine = LabelingLineInput | LabelingLineOutput | LabelingLineLoss;
+
+/**
+ * Etiquetado (`labeling`). Jaulón sin etiquetar → stock etiquetado.
+ * Packaged rows stay at the location (`vessel_id` null). No new lot.
+ */
+export interface LabelingRequest extends OperationHeader {
+  op_type: "labeling";
+  /** Warehouse of the breakage, when the source location is inside the CAE. */
+  tax_warehouse_id: string | null;
+  lines: readonly LabelingLine[];
+}
+
+/**
+ * Entrada de mosto o vino a granel (`bulk_reception`). A new lot fills an
+ * empty vessel. Wine inside a tax warehouse posts `bulk_receipt`. Must does not.
+ */
+export interface BulkReceptionRequest extends OperationHeader {
+  op_type: "bulk_reception";
+  vessel_id: string;
+  volume_ml: number;
+  product_state: BulkProductState;
+  lot_code: string;
+  vintage: number;
+  is_organic: boolean;
+  notes: string | null;
+  excise_product_key: string | null;
+  abv_pct: string | null;
+}
 
 /** Envasado (`op_type = bottling`). */
 export interface BottlingRequest extends OperationHeader {
@@ -418,7 +483,9 @@ export type OperationRequest =
   | BlendRequest
   | AdditionRequest
   | BottlingRequest
+  | LabelingRequest
   | LossRequest
+  | BulkReceptionRequest
   | CleaningRequest
   | ReceptionRequest
   | PressingRequest
@@ -501,6 +568,7 @@ export interface FiscalMoveDraft {
   physical_date: string | null;
   move_type:
     | "production"
+    | "bulk_receipt"
     | "packaging_out_bulk"
     | "packaging_in_packaged"
     | "loss"
