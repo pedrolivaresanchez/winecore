@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, it } from 'bun:test';
 import { sql } from '../../src/core/db/sql';
+import { loadTariffs } from '../../src/core/catalog/load-tariffs';
 import { reconcileCatalog } from '../../src/core/catalog/reconcile';
 import { newId } from '../../src/core/ids';
 import { createTestApp } from '../helpers';
@@ -27,6 +28,9 @@ describe('reparación de catálogo y bodega', () => {
     const lotLate = newId();
     const b10 = newId();
     const bar10 = newId();
+    const loose = newId();
+    const list = newId();
+    const version = newId();
 
     await ctx.writer.withWrite({ type: 'system', id: 'reconcile-test', requestId: newId() }, async (tx) => {
       tx.write(sql`
@@ -61,9 +65,21 @@ describe('reparación de catálogo y bodega', () => {
       tx.write(sql`
         INSERT INTO catalog.product (id, sku, name, kind, wine_id, vintage, unit, is_active, for_sale)
         VALUES (
-          CAST(${newId()} AS UUID), 'ARCAL-2023-SUELTO', 'Arcal sin formato', 'wine', CAST(${arcalYear} AS UUID),
+          CAST(${loose} AS UUID), 'ARCAL-2023-SUELTO', 'Arcal sin formato', 'wine', CAST(${arcalYear} AS UUID),
           2023, 'ud', TRUE, TRUE
         )
+      `);
+      tx.write(sql`
+        INSERT INTO catalog.price_list (id, code, name, currency, tax_included, is_active)
+        VALUES (CAST(${list} AS UUID), 'shop', 'Tienda prueba', 'EUR', FALSE, TRUE)
+      `);
+      tx.write(sql`
+        INSERT INTO catalog.price_list_version (id, price_list_id, version, valid_from, status, created_by)
+        VALUES (CAST(${version} AS UUID), CAST(${list} AS UUID), 1, DATE '2026-01-01', 'active', 'test')
+      `);
+      tx.write(sql`
+        INSERT INTO catalog.price_list_item (id, version_id, product_id, min_qty, unit_price)
+        VALUES (CAST(${newId()} AS UUID), CAST(${version} AS UUID), CAST(${loose} AS UUID), 1, 9.90)
       `);
       tx.write(sql`
         INSERT INTO inventory.lot (id, producer_entity_id, code, kind, wine_id, vintage, origin)
@@ -89,6 +105,16 @@ describe('reparación de catálogo y bodega', () => {
       `);
     });
 
+    const blocked = await ctx.writer.withWrite({ type: 'system', id: 'fk', requestId: newId() }, async (tx) => {
+      try {
+        tx.write(sql`UPDATE catalog.product SET wine_id = CAST(${arcal} AS UUID) WHERE id = CAST(${loose} AS UUID)`);
+        return false;
+      } catch (error) {
+        return error instanceof Error && /referenced|foreign key/i.test(error.message);
+      }
+    }).catch((error: unknown) => error instanceof Error && /referenced|foreign key/i.test(error.message));
+    expect(blocked).toBe(true);
+
     const dry = await reconcileCatalog(ctx.writer, 'dry-run');
     expect(dry.mode).toBe('dry-run');
     expect(dry.merges.map((row) => row.drop).sort()).toEqual(['ARCAL-2023', 'ENTREDICHO-2122']);
@@ -96,26 +122,39 @@ describe('reparación de catálogo y bodega', () => {
 
     const applied = await reconcileCatalog(ctx.writer, 'apply');
     expect(applied.merges.length).toBeGreaterThan(0);
-    const wines = await ctx.writer.read<{ code: string; active: boolean; name: string }>(`
-      SELECT code, is_active AS active, name FROM catalog.wine
-      WHERE code IN ('ARCAL', 'ARCAL-2023', 'ENTREDICHO', 'ENTREDICHO-2122', 'ENTREDICHO-2324')
+    const base = await ctx.writer.read<{ code: string; active: boolean; name: string }>(sql`
+      SELECT code, is_active AS active, name FROM catalog.wine WHERE code = 'ARCAL-2023'
     `);
-    const byCode = new Map(wines.map((row) => [row.code, row]));
+    expect(base[0]?.active).toBe(true);
+    expect(base[0]?.name).toBe('Arcal 2023');
+    const visible = await ctx.writer.read<{ code: string; active: boolean; name: string }>(`
+      SELECT code, is_active AS active, name FROM catalog.wine_visible
+      WHERE code IN ('ARCAL-2023', 'ENTREDICHO-2122', 'ENTREDICHO', 'ENTREDICHO-2324')
+    `);
+    const byCode = new Map(visible.map((row) => [row.code, row]));
     expect(byCode.get('ARCAL-2023')?.active).toBe(false);
     expect(byCode.get('ENTREDICHO-2122')?.active).toBe(false);
     expect(byCode.get('ENTREDICHO')?.name).toBe('enTreDicho 2020-2022');
     expect(byCode.get('ENTREDICHO-2324')?.name).toBe('enTreDicho 2023-2024');
     const lots = await ctx.writer.read<{ code: string; wine: string }>(`
       SELECT l.code, w.code AS wine
-      FROM inventory.lot l JOIN catalog.wine w ON w.id = l.wine_id
+      FROM inventory.lot l
+      LEFT JOIN inventory.lot_overlay o ON o.lot_id = l.id
+      JOIN catalog.wine w ON w.id = COALESCE(o.wine_id, l.wine_id)
       WHERE l.code IN ('2023', 'E202122', '202324')
     `);
     const lotWine = new Map(lots.map((row) => [row.code, row.wine]));
     expect(lotWine.get('2023')).toBe('ARCAL');
     expect(lotWine.get('E202122')).toBe('ENTREDICHO');
     expect(lotWine.get('202324')).toBe('ENTREDICHO-2324');
-    const b10row = await ctx.writer.read<{ status: string }>(sql`SELECT status FROM cellar.vessel WHERE code = 'B10'`);
-    expect(b10row[0]?.status).toBe('retired');
+    const b10row = await ctx.writer.read<{ stored: string; shown: string }>(`
+      SELECT v.status AS stored, COALESCE(o.status, v.status) AS shown
+      FROM cellar.vessel v
+      LEFT JOIN cellar.vessel_overlay o ON o.vessel_id = v.id
+      WHERE v.code = 'B10'
+    `);
+    expect(b10row[0]?.stored).toBe('in_service');
+    expect(b10row[0]?.shown).toBe('retired');
     const reversal = await ctx.writer.read<{ volume: string }>(`
       SELECT volume_ml::VARCHAR AS volume FROM inventory.stock_move
       WHERE move_type = 'reversal' AND created_by = 'reconcile-catalog'
@@ -127,6 +166,9 @@ describe('reparación de catálogo y bodega', () => {
       WHERE v.code = 'BAR-10'
     `);
     expect(placed[0]?.n).toBe(1);
+    const tariffs = await loadTariffs(ctx.writer);
+    expect(tariffs.unmatched.length).toBeGreaterThan(0);
+    expect(tariffs.loaded.map((row) => row.list)).toEqual(expect.arrayContaining(['distributor', 'custom-horeca']));
 
     const again = await reconcileCatalog(ctx.writer, 'apply');
     expect(again.skipped.some((line) => line.includes('Ya está aplicada'))).toBe(true);

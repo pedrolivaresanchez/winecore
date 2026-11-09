@@ -5,11 +5,22 @@ import { newId } from '../ids';
 const ACTOR = { type: 'migration' as const, id: '019c0000-0000-7000-8000-0000000000ac', requestId: 'reconcile-catalog' };
 const REPAIR = 'catalog-bodega-2026-11';
 
-/** Pares que Pedro ya ha visto. La ficha corta, sin formato o de añada suelta, se apaga. */
+/**
+ * Pares de vinos, por código de ficha. XPO-2016 entra en XPO-INTERACTION.
+ * O1 se une por código de vino. LEM2023 es el lote y el SKU, no la ficha que se apaga.
+ */
 const WINE_PAIRS: { keep: string; drop: string; why: string }[] = [
   { keep: 'ARCAL', drop: 'ARCAL-2023', why: 'ARCAL-2023 no tiene formato. Se queda ARCAL.' },
-  { keep: 'XPO-INTERACTION', drop: 'XPO-2016', why: 'XPO-2016 es la misma ficha que XPO Interaction.' },
-  { keep: 'LA-GRAN-OXIDACION-O1-2023-B050', drop: 'LEM2023', why: 'LEM2023 es el lote de O1, no otra ficha.' },
+  { keep: 'XPO-INTERACTION', drop: 'XPO-2016', why: 'Una sola XPO: XPO-2016 entra en XPO-INTERACTION.' },
+  { keep: 'O1', drop: 'LA-GRAN-OXIDACION-O1-2023-B050', why: 'O1 se une por código de vino, no por el lote LEM2023.' },
+];
+
+/** SKU concreto de cada línea que no casó. No se elige el primer producto parecido. */
+const STOCK_LINES = [
+  { sku: 'ARCAL-2023', lot: '2023', where: 'TFRP', bottles: 1254, ml: 750 },
+  { sku: 'ARCAL-2023', lot: '2023', where: 'BOD', bottles: 912, ml: 750 },
+  { sku: 'XPO-2016', lot: 'L2021/E1001', where: 'BOD', bottles: 27, ml: 750 },
+  { sku: 'LEM2023', lot: 'LEM2023', where: 'BOD', bottles: 70, ml: 500 },
 ];
 
 const NOTE_B12 = 'La copia tenía 150 L en B12 y B13. La hoja dice 300 L. Se usa la hoja: la reversa anula lo que se abrió en B12 y B13, y BAR-12 y BAR-13 conservan el aforo de la hoja.';
@@ -51,14 +62,20 @@ export async function reconcileCatalog(writer: Writer, mode: ReconcileReport['mo
     report.skipped.push('Ya está aplicada. Para deshacerla: bun run db/reconcile-catalog.ts --revert');
     return report;
   }
+  // Cada withWrite es una transacción. DuckDB mira las FK contra el estado
+  // anterior, así que un UPDATE y el repunte de sus hijas no pueden ir juntos.
+  // Aquí no hay UPDATE de filas referenciadas: solo inserciones en tablas laterales
+  // y movimientos nuevos.
+  const journal: unknown[] = [];
   await writer.withWrite(ACTOR, async (tx) => {
-    const journal: unknown[] = [];
-    for (const pair of report.merges) {
-      journal.push(await mergeWine(tx, pair.keep, pair.drop));
-    }
+    for (const pair of report.merges) journal.push(await mergeWine(tx, pair.keep, pair.drop));
     journal.push(await splitEntredicho(tx, report));
     journal.push(await repairLocations(tx, report));
+  });
+  await writer.withWrite(ACTOR, async (tx) => {
     journal.push(await topUpStock(tx, report));
+  });
+  await writer.withWrite(ACTOR, async (tx) => {
     tx.write(sql`
       INSERT INTO ops.data_repair (id, code, payload)
       VALUES (CAST(${newId()} AS UUID), ${REPAIR}, ${sql.json({ steps: journal, notes: report.notes })})
@@ -118,8 +135,10 @@ async function plan(writer: Writer): Promise<ReconcileReport> {
 
 async function loadWines(writer: Writer): Promise<WineRow[]> {
   const rows = await writer.read<Record<string, unknown>>(`
-    SELECT id::VARCHAR AS id, code, name, is_active
-    FROM catalog.wine
+    SELECT w.id::VARCHAR AS id, w.code, COALESCE(o.name, w.name) AS name,
+           (w.is_active AND NOT COALESCE(o.hidden, FALSE)) AS is_active
+    FROM catalog.wine w
+    LEFT JOIN catalog.wine_overlay o ON o.wine_id = w.id
   `);
   return rows.map((row) => ({
     id: idOf(row.id),
@@ -136,122 +155,117 @@ async function refCount(writer: Writer, wineId: string): Promise<number> {
   return Number(rows[0]?.n ?? 0);
 }
 
+
 type Tx = Parameters<Parameters<Writer['withWrite']>[1]>[0];
 
 async function mergeWine(tx: Tx, keepCode: string, dropCode: string): Promise<unknown> {
   const rows = await tx.read<Record<string, unknown>>(sql`
-    SELECT id::VARCHAR AS id, code, is_active FROM catalog.wine WHERE code IN (${keepCode}, ${dropCode})
+    SELECT id::VARCHAR AS id, code FROM catalog.wine WHERE code IN (${keepCode}, ${dropCode})
   `);
   const keep = rows.find((row) => row.code === keepCode);
   const drop = rows.find((row) => row.code === dropCode);
   if (!keep || !drop) return { keep: keepCode, drop: dropCode, skipped: true };
   const keepId = idOf(keep.id);
   const dropId = idOf(drop.id);
+  tx.write(sql`
+    INSERT INTO catalog.wine_overlay (wine_id, merged_into_id, hidden)
+    SELECT CAST(${dropId} AS UUID), CAST(${keepId} AS UUID), TRUE
+    WHERE NOT EXISTS (SELECT 1 FROM catalog.wine_overlay WHERE wine_id = CAST(${dropId} AS UUID))
+  `);
   const products = await tx.read<Record<string, unknown>>(sql`
     SELECT id::VARCHAR AS id, sku, format_id::VARCHAR AS format_id, vintage::VARCHAR AS vintage
     FROM catalog.product WHERE wine_id = CAST(${dropId} AS UUID)
   `);
-  const keptProducts = await tx.read<Record<string, unknown>>(sql`
+  const kept = await tx.read<Record<string, unknown>>(sql`
     SELECT id::VARCHAR AS id, format_id::VARCHAR AS format_id, vintage::VARCHAR AS vintage
-    FROM catalog.product WHERE wine_id = CAST(${keepId} AS UUID) AND is_active
+    FROM catalog.product WHERE wine_id = CAST(${keepId} AS UUID)
   `);
-  const retired: string[] = [];
-  const moves: Move[] = [];
+  const hidden: string[] = [];
   for (const product of products) {
-    const twin = keptProducts.find((row) => row.format_id && row.format_id === product.format_id && row.vintage === product.vintage);
+    const twin = kept.find((row) => row.format_id && row.format_id === product.format_id && row.vintage === product.vintage);
+    const productId = idOf(product.id);
     if (twin) {
-      await retarget(tx, 'product_id', idOf(product.id), idOf(twin.id));
       tx.write(sql`
-        UPDATE catalog.product
-        SET is_active = FALSE, for_sale = FALSE, merged_into_id = CAST(${idOf(twin.id)} AS UUID)
-        WHERE id = CAST(${idOf(product.id)} AS UUID)
+        INSERT INTO catalog.product_overlay (product_id, merged_into_id, wine_id, hidden, for_sale)
+        SELECT CAST(${productId} AS UUID), CAST(${idOf(twin.id)} AS UUID), CAST(${keepId} AS UUID), TRUE, FALSE
+        WHERE NOT EXISTS (SELECT 1 FROM catalog.product_overlay WHERE product_id = CAST(${productId} AS UUID))
       `);
-      retired.push(String(product.sku));
+      hidden.push(String(product.sku));
     } else {
       tx.write(sql`
-        UPDATE catalog.product SET wine_id = CAST(${keepId} AS UUID) WHERE id = CAST(${idOf(product.id)} AS UUID)
+        INSERT INTO catalog.product_overlay (product_id, wine_id, hidden)
+        SELECT CAST(${productId} AS UUID), CAST(${keepId} AS UUID), FALSE
+        WHERE NOT EXISTS (SELECT 1 FROM catalog.product_overlay WHERE product_id = CAST(${productId} AS UUID))
       `);
-      moves.push({ rel: 'catalog.product', column: 'wine_id', ids: [idOf(product.id)], from: dropId, to: keepId });
     }
   }
-  moves.push(...await retarget(tx, 'wine_id', dropId, keepId));
-  tx.write(sql`
-    UPDATE catalog.wine
-    SET is_active = FALSE, merged_into_id = CAST(${keepId} AS UUID)
-    WHERE id = CAST(${dropId} AS UUID)
+  const lots = await tx.read<{ id: string }>(sql`
+    SELECT id::VARCHAR AS id FROM inventory.lot WHERE wine_id = CAST(${dropId} AS UUID)
   `);
-  return { keep: keepCode, drop: dropCode, moves, retired };
-}
-
-type Move = { rel: string; column: string; ids: string[]; from: string; to: string };
-
-async function retarget(tx: Tx, column: 'wine_id' | 'product_id', from: string, to: string): Promise<Move[]> {
-  const moves: Move[] = [];
-  const columns = await tx.read<{ rel: string }>(`
-    SELECT table_schema || '.' || table_name AS rel
-    FROM information_schema.columns
-    WHERE column_name = '${column}'
-      AND table_schema NOT IN ('information_schema')
-  `);
-  for (const row of columns) {
-    const rel = String(row.rel);
-    if (!/^[a-z_]+\.[a-z_]+$/.test(rel)) continue;
-    if (rel === 'catalog.wine') continue;
-    if (rel === 'catalog.product' && column === 'wine_id') continue;
-    const hasId = await tx.read<{ n: unknown }>(`
-      SELECT count(*) AS n FROM information_schema.columns
-      WHERE table_schema || '.' || table_name = '${rel}' AND column_name = 'id'
+  for (const lot of lots) {
+    const lotId = idOf(lot.id);
+    tx.write(sql`
+      INSERT INTO inventory.lot_overlay (lot_id, wine_id)
+      SELECT CAST(${lotId} AS UUID), CAST(${keepId} AS UUID)
+      WHERE NOT EXISTS (SELECT 1 FROM inventory.lot_overlay WHERE lot_id = CAST(${lotId} AS UUID))
     `);
-    if (Number(hasId[0]?.n ?? 0) === 0) continue;
-    const ids = await tx.read<{ id: string }>(`
-      SELECT id::VARCHAR AS id FROM ${rel} WHERE ${column} = CAST('${from}' AS UUID)
-    `);
-    if (ids.length === 0) continue;
-    tx.write(`UPDATE ${rel} SET ${column} = CAST('${to}' AS UUID) WHERE ${column} = CAST('${from}' AS UUID)`);
-    moves.push({ rel, column, ids: ids.map((item) => idOf(item.id)), from, to });
   }
-  return moves;
+  return { keep: keepCode, drop: dropCode, hidden };
 }
 
 async function splitEntredicho(tx: Tx, report: ReconcileReport): Promise<unknown> {
   const rows = await tx.read<Record<string, unknown>>(`
-    SELECT id::VARCHAR AS id, code, name FROM catalog.wine
-    WHERE is_active AND lower(name) LIKE '%entredicho%' AND lower(name) NOT LIKE '%bobastrell%'
+    SELECT w.id::VARCHAR AS id, w.code, COALESCE(o.name, w.name) AS name, w.color
+    FROM catalog.wine w
+    LEFT JOIN catalog.wine_overlay o ON o.wine_id = w.id
+    WHERE w.is_active AND NOT COALESCE(o.hidden, FALSE)
+      AND lower(w.name) LIKE '%entredicho%' AND lower(w.name) NOT LIKE '%bobastrell%'
   `);
-  const early = rows.find((row) => fold(String(row.name)).includes('20202022') || fold(String(row.name)).includes('2022'));
-  const late = rows.find((row) => fold(String(row.name)).includes('20232024'));
-  const canonical = early ?? rows.find((row) => String(row.code) === 'ENTREDICHO') ?? rows[0];
+  const canonical = rows.find((row) => String(row.code) === 'ENTREDICHO') ?? rows[0];
   if (!canonical) return { skipped: true };
   const earlyId = idOf(canonical.id);
-  if (!early) {
-    tx.write(sql`
-      UPDATE catalog.wine SET name = ${'enTreDicho 2020-2022'} WHERE id = CAST(${earlyId} AS UUID)
-    `);
-  }
-  let lateId = late ? idOf(late.id) : '';
-  if (!late) {
+  tx.write(sql`
+    INSERT INTO catalog.wine_overlay (wine_id, name, hidden)
+    SELECT CAST(${earlyId} AS UUID), 'enTreDicho 2020-2022', FALSE
+    WHERE NOT EXISTS (SELECT 1 FROM catalog.wine_overlay WHERE wine_id = CAST(${earlyId} AS UUID))
+  `);
+  const existing = await tx.read<{ id: string }>(sql`SELECT id::VARCHAR AS id FROM catalog.wine WHERE code = 'ENTREDICHO-2324'`);
+  let lateId = existing[0] ? idOf(existing[0].id) : '';
+  if (!lateId) {
     lateId = newId();
-    const color = await tx.read<{ color: string }>(sql`SELECT color FROM catalog.wine WHERE id = CAST(${earlyId} AS UUID)`);
     tx.write(sql`
       INSERT INTO catalog.wine (id, code, name, color, category, is_organic, is_active)
       VALUES (
         CAST(${lateId} AS UUID), 'ENTREDICHO-2324', 'enTreDicho 2023-2024',
-        ${color[0]?.color ?? 'red'}, 'wine', TRUE, TRUE
+        ${String(canonical.color ?? 'red')}, 'wine', TRUE, TRUE
       )
     `);
   }
-  tx.write(sql`
-    UPDATE inventory.lot SET wine_id = CAST(${lateId} AS UUID)
-    WHERE wine_id = CAST(${earlyId} AS UUID)
-      AND (code = '202324' OR code LIKE '%202324%')
-  `);
-  tx.write(sql`
-    UPDATE catalog.product SET wine_id = CAST(${lateId} AS UUID)
+  const lateProducts = await tx.read<{ id: string }>(sql`
+    SELECT id::VARCHAR AS id FROM catalog.product
     WHERE wine_id = CAST(${earlyId} AS UUID)
       AND (vintage IN (2023, 2024) OR lower(name) LIKE '%2023-2024%' OR lower(name) LIKE '%23-24%')
   `);
-  report.entredicho.push(`Lote E202122 sigue en ${String(canonical.code)}. Lote 202324 pasa a ENTREDICHO-2324.`);
-  return { earlyId, lateId };
+  for (const product of lateProducts) {
+    tx.write(sql`
+      INSERT INTO catalog.product_overlay (product_id, wine_id, hidden)
+      SELECT CAST(${idOf(product.id)} AS UUID), CAST(${lateId} AS UUID), FALSE
+      WHERE NOT EXISTS (SELECT 1 FROM catalog.product_overlay WHERE product_id = CAST(${idOf(product.id)} AS UUID))
+    `);
+  }
+  const lateLots = await tx.read<{ id: string }>(sql`
+    SELECT id::VARCHAR AS id FROM inventory.lot
+    WHERE code = '202324' OR code LIKE '%202324%'
+  `);
+  for (const lot of lateLots) {
+    tx.write(sql`
+      INSERT INTO inventory.lot_overlay (lot_id, wine_id)
+      SELECT CAST(${idOf(lot.id)} AS UUID), CAST(${lateId} AS UUID)
+      WHERE NOT EXISTS (SELECT 1 FROM inventory.lot_overlay WHERE lot_id = CAST(${idOf(lot.id)} AS UUID))
+    `);
+  }
+  report.entredicho.push('El nombre nuevo vive en catalog.wine_overlay. El lote 202324 apunta al vino nuevo desde inventory.lot_overlay. Bobastrell no cambia de lote.');
+  return { earlyId, lateId, created: !existing[0] };
 }
 
 const BARREL_CODES = ['BAR-01', 'BAR-02', 'BAR-03', 'BAR-04', 'BAR-05', 'BAR-06', 'BAR-07', 'BAR-08', 'BAR-10', 'BAR-11', 'BAR-12', 'BAR-13', 'BAR-15', 'BAR-17', 'BAR-18', 'BAR-19'];
@@ -264,23 +278,31 @@ function barrelSlot(index: number): { x: number; y: number; width: number; heigh
 }
 
 async function repairLocations(tx: Tx, report: ReconcileReport): Promise<unknown> {
-  tx.write(sql`
-    UPDATE cellar.zone SET name = 'Barricas' WHERE code = 'BARR'
-  `);
-  tx.write(sql`
-    UPDATE cellar.zone SET name = 'Damajuanas (exterior)' WHERE code = 'DAMA'
-  `);
-  tx.write(`
-    UPDATE cellar.zone SET is_active = FALSE
-    WHERE code IN ('SALA', 'EXT', 'ELAB', 'BOT')
-  `);
-  report.locations.push('BARR pasa a llamarse Barricas. DAMA pasa a llamarse Damajuanas (exterior).');
-  report.locations.push('Zonas SALA, EXT, ELAB y BOT desactivadas, sin borrarlas.');
+  const zones = await tx.read<Record<string, unknown>>(`SELECT id::VARCHAR AS id, code FROM cellar.zone`);
+  const zoneByCode = new Map(zones.map((row) => [String(row.code), idOf(row.id)]));
+  const rename: [string, string][] = [['BARR', 'Barricas'], ['DAMA', 'Damajuanas (exterior)']];
+  for (const [code, name] of rename) {
+    const id = zoneByCode.get(code);
+    if (!id) continue;
+    tx.write(sql`
+      INSERT INTO cellar.zone_overlay (zone_id, name, hidden)
+      SELECT CAST(${id} AS UUID), ${name}, FALSE
+      WHERE NOT EXISTS (SELECT 1 FROM cellar.zone_overlay WHERE zone_id = CAST(${id} AS UUID))
+    `);
+  }
+  for (const code of ['SALA', 'EXT', 'ELAB', 'BOT']) {
+    const id = zoneByCode.get(code);
+    if (!id) continue;
+    tx.write(sql`
+      INSERT INTO cellar.zone_overlay (zone_id, hidden)
+      SELECT CAST(${id} AS UUID), TRUE
+      WHERE NOT EXISTS (SELECT 1 FROM cellar.zone_overlay WHERE zone_id = CAST(${id} AS UUID))
+    `);
+  }
+  report.locations.push('BARR se lee como Barricas y DAMA como Damajuanas (exterior). SALA, EXT, ELAB y BOT quedan ocultas. La fila original no se actualiza.');
   report.notes.push(NOTE_B12);
 
-  const vessels = await tx.read<Record<string, unknown>>(`
-    SELECT id::VARCHAR AS id, code, status FROM cellar.vessel
-  `);
+  const vessels = await tx.read<Record<string, unknown>>(`SELECT id::VARCHAR AS id, code FROM cellar.vessel`);
   const byCode = new Map(vessels.map((row) => [String(row.code), row]));
   for (const code of REVERSE_CODES) {
     const vessel = byCode.get(code);
@@ -288,17 +310,20 @@ async function repairLocations(tx: Tx, report: ReconcileReport): Promise<unknown
       report.skipped.push(`No está el recipiente ${code}`);
       continue;
     }
+    const vesselId = idOf(vessel.id);
+    tx.write(sql`
+      INSERT INTO cellar.vessel_overlay (vessel_id, status)
+      SELECT CAST(${vesselId} AS UUID), 'retired'
+      WHERE NOT EXISTS (SELECT 1 FROM cellar.vessel_overlay WHERE vessel_id = CAST(${vesselId} AS UUID))
+    `);
     const moves = await tx.read<Record<string, unknown>>(sql`
       SELECT id::VARCHAR AS id, volume_ml::VARCHAR AS volume_ml, qty_units::VARCHAR AS qty_units,
              location_id::VARCHAR AS location_id, owner_entity_id::VARCHAR AS owner_entity_id,
              lot_id::VARCHAR AS lot_id, product_id::VARCHAR AS product_id, product_state
       FROM inventory.stock_move
-      WHERE vessel_id = CAST(${idOf(vessel.id)} AS UUID)
-        AND move_type = 'opening'
-        AND volume_ml > 0
-        AND NOT EXISTS (
-          SELECT 1 FROM inventory.stock_move rev WHERE rev.reverses_move_id = inventory.stock_move.id
-        )
+      WHERE vessel_id = CAST(${vesselId} AS UUID)
+        AND move_type = 'opening' AND volume_ml > 0
+        AND NOT EXISTS (SELECT 1 FROM inventory.stock_move rev WHERE rev.reverses_move_id = inventory.stock_move.id)
     `);
     for (const move of moves) {
       const volume = -Number(move.volume_ml ?? 0);
@@ -309,8 +334,7 @@ async function repairLocations(tx: Tx, report: ReconcileReport): Promise<unknown
           product_state, qty_units, volume_ml, mass_g, source_table, source_id, reverses_move_id, created_by
         ) VALUES (
           CAST(${newId()} AS UUID), now(), 'reversal',
-          CAST(${idOf(move.location_id)} AS UUID),
-          CAST(${idOf(vessel.id)} AS UUID),
+          CAST(${idOf(move.location_id)} AS UUID), CAST(${vesselId} AS UUID),
           CAST(${idOf(move.owner_entity_id)} AS UUID),
           CASE WHEN ${move.lot_id == null ? null : idOf(move.lot_id)} IS NULL THEN NULL ELSE CAST(${move.lot_id == null ? null : idOf(move.lot_id)} AS UUID) END,
           CASE WHEN ${move.product_id == null ? null : idOf(move.product_id)} IS NULL THEN NULL ELSE CAST(${move.product_id == null ? null : idOf(move.product_id)} AS UUID) END,
@@ -318,75 +342,41 @@ async function repairLocations(tx: Tx, report: ReconcileReport): Promise<unknown
           'ops.data_repair', CAST(${newId()} AS UUID), CAST(${idOf(move.id)} AS UUID), 'reconcile-catalog'
         )
       `);
-      report.locations.push(`Reversa de la apertura de ${code}: ${volume / 1000} L. No se envía a SILICIE.`);
+      report.locations.push(`Reversa de la apertura de ${code}: ${(volume / 1000).toFixed(2)} L. No se envía a SILICIE.`);
     }
-    tx.write(sql`UPDATE cellar.vessel SET status = 'retired' WHERE id = CAST(${idOf(vessel.id)} AS UUID)`);
   }
   const legacy = vessels.filter((row) => /^B\d+$/.test(String(row.code)) || /^DAMAJUANA-\d+$/.test(String(row.code)));
   for (const row of legacy) {
-    tx.write(sql`UPDATE cellar.vessel SET status = 'retired' WHERE id = CAST(${idOf(row.id)} AS UUID) AND status <> 'retired'`);
+    const id = idOf(row.id);
+    tx.write(sql`
+      INSERT INTO cellar.vessel_overlay (vessel_id, status)
+      SELECT CAST(${id} AS UUID), 'retired'
+      WHERE NOT EXISTS (SELECT 1 FROM cellar.vessel_overlay WHERE vessel_id = CAST(${id} AS UUID))
+    `);
   }
-  if (legacy.length > 0) report.locations.push(`${legacy.length} recipientes B o DAMAJUANA-n quedan en baja, sin borrarlos.`);
+  if (legacy.length > 0) report.locations.push(`${legacy.length} recipientes B o DAMAJUANA-n se leen como baja, sin actualizar la fila.`);
 
-  const zone = await tx.read<{ id: string }>(`SELECT id::VARCHAR AS id FROM cellar.zone WHERE code = 'BARR'`);
-  const zoneId = zone[0] ? idOf(zone[0].id) : '';
+  const zoneId = zoneByCode.get('BARR') ?? '';
   if (!zoneId) {
     report.skipped.push('No hay zona BARR para colocar las barricas');
     return { placements: 0 };
   }
   let placed = 0;
-  BARREL_CODES.forEach((code, index) => {
+  for (const [index, code] of BARREL_CODES.entries()) {
     const vessel = byCode.get(code);
-    if (!vessel) return;
+    if (!vessel) continue;
     const slot = barrelSlot(index);
     tx.write(sql`
       INSERT INTO cellar.plan_position (id, zone_id, vessel_id, x, y, width, height, rotation)
       SELECT CAST(${newId()} AS UUID), CAST(${zoneId} AS UUID), CAST(${idOf(vessel.id)} AS UUID),
              ${slot.x}, ${slot.y}, ${slot.width}, ${slot.height}, 0
-      WHERE NOT EXISTS (
-        SELECT 1 FROM cellar.plan_position WHERE vessel_id = CAST(${idOf(vessel.id)} AS UUID)
-      )
+      WHERE NOT EXISTS (SELECT 1 FROM cellar.plan_position WHERE vessel_id = CAST(${idOf(vessel.id)} AS UUID))
     `);
     placed += 1;
-  });
-  report.locations.push(`${placed} barricas BAR quedan apuntadas al plano de Barricas.`);
-  await copyLegacyPositions(tx, byCode, report);
+  }
+  report.locations.push(`${placed} barricas BAR quedan en el plano de Barricas si aún no tenían posición.`);
   return { placed };
 }
-
-async function copyLegacyPositions(tx: Tx, byCode: Map<string, Record<string, unknown>>, report: ReconcileReport): Promise<void> {
-  const positions = await tx.read<Record<string, unknown>>(`
-    SELECT p.id::VARCHAR AS id, v.code AS code, p.zone_id::VARCHAR AS zone_id,
-           p.x, p.y, p.width, p.height, p.rotation
-    FROM cellar.plan_position p
-    JOIN cellar.vessel v ON v.id = p.vessel_id
-    WHERE v.code ~ '^B[0-9]+$' OR v.code ~ '^DAMAJUANA-[0-9]+$'
-  `);
-  for (const position of positions) {
-    const code = String(position.code);
-    const target = code.startsWith('DAMAJUANA-')
-      ? `DAM-${code.slice('DAMAJUANA-'.length).padStart(2, '0')}`
-      : `BAR-${code.slice(1).padStart(2, '0')}`;
-    const vessel = byCode.get(target);
-    if (!vessel) continue;
-    tx.write(sql`
-      UPDATE cellar.plan_position
-      SET zone_id = CAST(${idOf(position.zone_id)} AS UUID),
-          x = ${Number(position.x)}, y = ${Number(position.y)},
-          width = ${Number(position.width)}, height = ${Number(position.height)},
-          rotation = ${Number(position.rotation)}
-      WHERE vessel_id = CAST(${idOf(vessel.id)} AS UUID)
-    `);
-  }
-  if (positions.length > 0) report.locations.push('Las posiciones de B y de DAMAJUANA-n se copian a BAR-xx y DAM-xx.');
-}
-
-const STOCK_TOP_UP = [
-  { wine: 'arcal', vintage: 2023, ml: 750, where: 'TFRP', bottles: 1254, state: 'packaged_labeled' },
-  { wine: 'arcal', vintage: 2023, ml: 750, where: 'BOD', bottles: 912, state: 'packaged_labeled' },
-  { wine: 'interaction', vintage: 2016, ml: 750, lot: 'L2021/E1001', where: 'BOD', bottles: 27, state: 'packaged_labeled' },
-  { wine: 'oxidacion', vintage: 2023, ml: 500, lot: 'LEM2023', where: 'BOD', bottles: 70, state: 'packaged_labeled' },
-];
 
 async function topUpStock(tx: Tx, report: ReconcileReport): Promise<unknown> {
   const already = await tx.read<{ n: unknown }>(`
@@ -400,31 +390,20 @@ async function topUpStock(tx: Tx, report: ReconcileReport): Promise<unknown> {
   const po = entities.find((row) => row.code === 'PO');
   const cvpo = entities.find((row) => row.code === 'CVPO');
   const locations = await tx.read<{ id: string; code: string }>(`SELECT id::VARCHAR AS id, code FROM inventory.location`);
-  const products = await tx.read<Record<string, unknown>>(`
-    SELECT p.id::VARCHAR AS id, p.vintage::VARCHAR AS vintage, w.name AS wine_name, f.nominal_volume_ml::VARCHAR AS nominal
-    FROM catalog.product p
-    LEFT JOIN catalog.wine w ON w.id = p.wine_id
-    LEFT JOIN catalog.format f ON f.id = p.format_id
-    WHERE p.is_active AND p.kind = 'wine'
-  `);
   let loaded = 0;
-  for (const line of STOCK_TOP_UP) {
-    const product = products.find((row) => {
-      const name = fold(String(row.wine_name ?? ''));
-      const vintage = row.vintage == null || row.vintage === '' ? null : Number(row.vintage);
-      const nominal = row.nominal == null || row.nominal === '' ? null : Number(row.nominal);
-      return name.includes(line.wine) && vintage === line.vintage && (nominal == null || nominal === line.ml);
-    });
+  for (const line of STOCK_LINES) {
+    const product = await tx.read<{ id: string }>(sql`
+      SELECT id::VARCHAR AS id FROM catalog.product WHERE sku = ${line.sku} LIMIT 1
+    `);
     const place = locations.find((row) => row.code === line.where);
     const owner = line.where === 'TFRP' ? cvpo : po;
-    if (!product || !place || !owner) {
-      report.stock.push(`Sin producto o ubicación para ${line.wine} ${line.vintage} en ${line.where}.`);
+    const lot = await tx.read<{ id: string }>(sql`
+      SELECT id::VARCHAR AS id FROM inventory.lot WHERE code = ${line.lot} LIMIT 1
+    `);
+    if (!product[0] || !place || !owner || !lot[0]) {
+      report.stock.push(`Sin SKU ${line.sku}, lote ${line.lot} o ubicación ${line.where}. No se inventa la línea.`);
       continue;
     }
-    const lot = line.lot
-      ? await tx.read<{ id: string }>(sql`SELECT id::VARCHAR AS id FROM inventory.lot WHERE code = ${line.lot} LIMIT 1`)
-      : [];
-    const volume = line.bottles * line.ml;
     tx.write(sql`
       INSERT INTO inventory.stock_move (
         id, occurred_at, move_type, location_id, owner_entity_id, lot_id, product_id,
@@ -432,14 +411,13 @@ async function topUpStock(tx: Tx, report: ReconcileReport): Promise<unknown> {
       ) VALUES (
         CAST(${newId()} AS UUID), now(), 'opening',
         CAST(${idOf(place.id)} AS UUID), CAST(${idOf(owner.id)} AS UUID),
-        CASE WHEN ${lot[0] ? idOf(lot[0].id) : null} IS NULL THEN NULL ELSE CAST(${lot[0] ? idOf(lot[0].id) : null} AS UUID) END,
-        CAST(${idOf(product.id)} AS UUID),
-        ${line.state}, ${line.bottles}, ${volume}, 0,
+        CAST(${idOf(lot[0].id)} AS UUID), CAST(${idOf(product[0].id)} AS UUID),
+        'packaged_labeled', ${line.bottles}, ${line.bottles * line.ml}, 0,
         'ops.data_repair', CAST(${newId()} AS UUID), 'reconcile-catalog-stock'
       )
     `);
     loaded += 1;
-    report.stock.push(`${line.wine} ${line.vintage}: ${line.bottles} bot. en ${line.where}.`);
+    report.stock.push(`${line.sku} lote ${line.lot}: ${line.bottles} bot. en ${line.where}.`);
   }
   report.stock.push('Objetivo de la hoja: bodega 14.094 bot. / 10.652,00 L; TFRP 8.394 bot. / 6.295,50 L.');
   return { loaded };
@@ -447,7 +425,7 @@ async function topUpStock(tx: Tx, report: ReconcileReport): Promise<unknown> {
 
 async function revert(writer: Writer): Promise<ReconcileReport> {
   const rows = await writer.read<Record<string, unknown>>(sql`
-    SELECT id::VARCHAR AS id, payload FROM ops.data_repair
+    SELECT id::VARCHAR AS id FROM ops.data_repair
     WHERE code = ${REPAIR} AND reverted_at IS NULL
     ORDER BY applied_at DESC LIMIT 1
   `);
@@ -456,9 +434,9 @@ async function revert(writer: Writer): Promise<ReconcileReport> {
     merges: [],
     detected: [],
     entredicho: [],
-    locations: ['La reversa de stock no se borra: queda el movimiento de reversa. Reactivar a mano si hiciera falta.'],
+    locations: [],
     stock: [],
-    notes: [],
+    notes: ['Se borran las anotaciones laterales. Las filas originales no se habían modificado.'],
     skipped: [],
   };
   const row = rows[0];
@@ -466,29 +444,21 @@ async function revert(writer: Writer): Promise<ReconcileReport> {
     report.skipped.push('No hay una reparación aplicada.');
     return report;
   }
-  const payload = typeof row.payload === 'string' ? JSON.parse(row.payload) as { steps?: { moves?: Move[] }[] } : row.payload as { steps?: { moves?: Move[] }[] };
   await writer.withWrite(ACTOR, async (tx) => {
-    for (const step of [...(payload.steps ?? [])].reverse()) {
-      for (const move of [...(step.moves ?? [])].reverse()) {
-        if (!/^[a-z_]+\.[a-z_]+$/.test(move.rel) || (move.column !== 'wine_id' && move.column !== 'product_id')) continue;
-        for (const id of move.ids) {
-          tx.write(`UPDATE ${move.rel} SET ${move.column} = CAST('${move.from}' AS UUID) WHERE id = CAST('${id}' AS UUID)`);
-        }
-      }
-    }
-    tx.write(sql`
-      UPDATE catalog.wine SET is_active = TRUE, merged_into_id = NULL
-      WHERE merged_into_id IS NOT NULL
+    tx.write(`
+      DELETE FROM inventory.stock_move
+      WHERE created_by IN ('reconcile-catalog', 'reconcile-catalog-stock')
     `);
-    tx.write(sql`
-      UPDATE catalog.product SET is_active = TRUE, for_sale = TRUE, merged_into_id = NULL
-      WHERE merged_into_id IS NOT NULL
-    `);
-    tx.write(sql`
-      UPDATE cellar.zone SET is_active = TRUE WHERE code IN ('SALA', 'EXT', 'ELAB', 'BOT')
-    `);
+  });
+  await writer.withWrite(ACTOR, async (tx) => {
+    tx.write(`DELETE FROM catalog.wine_overlay`);
+    tx.write(`DELETE FROM catalog.product_overlay`);
+    tx.write(`DELETE FROM inventory.lot_overlay`);
+    tx.write(`DELETE FROM cellar.zone_overlay`);
+    tx.write(`DELETE FROM cellar.vessel_overlay`);
+    tx.write(sql`DELETE FROM catalog.wine WHERE code = 'ENTREDICHO-2324'`);
     tx.write(sql`UPDATE ops.data_repair SET reverted_at = now() WHERE id = CAST(${idOf(row.id)} AS UUID)`);
   });
-  report.merges.push({ keep: '', drop: '', why: 'Fichas reactivadas. Las referencias no vuelven solas: el diario guarda el detalle.', refs: 0 });
+  report.merges.push({ keep: '', drop: '', why: 'Quitadas las uniones, los nombres y las bajas anotados.', refs: 0 });
   return report;
 }

@@ -126,6 +126,7 @@ export async function listVessels(writer: Writer, request: Request): Promise<Lis
     SELECT ${VESSEL_COLUMNS}
     FROM cellar.vessel v
     JOIN inventory.location loc ON loc.id = v.location_id
+    LEFT JOIN cellar.vessel_overlay ov ON ov.vessel_id = v.id
     WHERE ${page.join(' AND ')}
     ORDER BY v.code
     LIMIT ${limit + 1}
@@ -376,7 +377,7 @@ const VESSEL_COLUMNS = `
   v.id::VARCHAR AS id, v.code, v.name, v.kind, v.material,
   v.capacity_ml::VARCHAR AS capacity_ml, v.has_cooling_jacket,
   v.location_id::VARCHAR AS location_id, loc.code AS location_code, loc.name AS location_name,
-  v.zone, v.sisv_code, v.status, v.notes, v.created_at, v.qr_token
+  v.zone, v.sisv_code, COALESCE(ov.status, v.status) AS status, v.notes, v.created_at, v.qr_token
 `;
 
 function parseCreate(body: Record<string, unknown>): {
@@ -466,9 +467,10 @@ async function vesselByCode(source: Writer | Tx, code: string): Promise<VesselRo
       v.id::VARCHAR AS id, v.code, v.name, v.kind, v.material,
       v.capacity_ml::VARCHAR AS capacity_ml, v.has_cooling_jacket,
       v.location_id::VARCHAR AS location_id, loc.code AS location_code, loc.name AS location_name,
-      v.zone, v.sisv_code, v.status, v.notes, v.created_at, v.qr_token
+      v.zone, v.sisv_code, COALESCE(ov.status, v.status) AS status, v.notes, v.created_at, v.qr_token
     FROM cellar.vessel v
     JOIN inventory.location loc ON loc.id = v.location_id
+    LEFT JOIN cellar.vessel_overlay ov ON ov.vessel_id = v.id
     WHERE v.code = ${code}
   `);
   const row = rows[0];

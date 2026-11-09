@@ -127,8 +127,8 @@ type Reader = Pick<Writer, 'read'>;
 
 const ZONE_COLUMNS = `
   z.id::VARCHAR AS id, z.location_id::VARCHAR AS location_id, loc.code AS location_code,
-  z.code, z.name, z.kind, z.plan_attachment_id::VARCHAR AS plan_attachment_id,
-  z.notes, z.is_active
+  z.code, COALESCE(o.name, z.name) AS name, z.kind, z.plan_attachment_id::VARCHAR AS plan_attachment_id,
+  z.notes, (z.is_active AND NOT COALESCE(o.hidden, FALSE)) AS is_active
 `;
 
 export async function listZones(writer: Writer, request: Request): Promise<ListBody<ZoneView> & { metadata: PlanMetadata }> {
@@ -145,6 +145,7 @@ export async function listZones(writer: Writer, request: Request): Promise<ListB
     SELECT ${ZONE_COLUMNS}
     FROM cellar.zone z
     JOIN inventory.location loc ON loc.id = z.location_id
+    LEFT JOIN cellar.zone_overlay o ON o.zone_id = z.id
     WHERE ${where}
     ORDER BY z.code
     LIMIT ${limit + 1}
@@ -323,9 +324,11 @@ async function zoneByCode(source: Reader, code: string): Promise<ZoneRow> {
   if (!/^[A-Z0-9-]{2,20}$/.test(code)) throw domainError('WC_NOT_FOUND');
   const rows = await source.read<Record<string, unknown>>(sql`
     SELECT z.id::VARCHAR AS id, z.location_id::VARCHAR AS location_id, loc.code AS location_code,
-           z.code, z.name, z.kind, z.plan_attachment_id::VARCHAR AS plan_attachment_id, z.notes, z.is_active
+           z.code, COALESCE(o.name, z.name) AS name, z.kind, z.plan_attachment_id::VARCHAR AS plan_attachment_id,
+           z.notes, (z.is_active AND NOT COALESCE(o.hidden, FALSE)) AS is_active
     FROM cellar.zone z
     JOIN inventory.location loc ON loc.id = z.location_id
+    LEFT JOIN cellar.zone_overlay o ON o.zone_id = z.id
     WHERE z.code = ${code}
   `);
   const row = rows[0];
