@@ -55,6 +55,9 @@ export interface LegacyOverview {
  * El histórico proyectado (`origin = 'holded_import'`) no suma: es la misma
  * factura que `legacy.holded_invoice` y sigue viviendo en los libros registro.
  * Una sustitución emitida quita el original.
+ * Cobros y pagos del panel son el saldo abierto con fecha de factura o de
+ * documento dentro del año civil en curso. Lo anterior no entra. Cada partida
+ * de Holded cuenta una vez; la copia origin = 'holded_import' no.
  */
 const NATIVE_SALE = `
   i.status = 'issued'
@@ -109,6 +112,7 @@ export async function loadLegacyOverview(writer: Writer, user: UserCtx, url: URL
            WHERE ${NATIVE_SALE}
              AND i.payment_status IN ('unpaid', 'partially_paid')
              AND i.total > i.amount_paid
+             AND i.issue_date BETWEEN DATE '${thisFrom}' AND DATE '${thisTo}'
              AND ${entity}
           UNION ALL
           SELECT e.code, (o.amount - o.amount_paid)
@@ -117,6 +121,7 @@ export async function loadLegacyOverview(writer: Writer, user: UserCtx, url: URL
            WHERE o.direction = 'receivable'
              AND o.status IN ('open', 'partially_paid')
              AND o.amount > o.amount_paid
+             AND o.document_date BETWEEN DATE '${thisFrom}' AND DATE '${thisTo}'
              AND ${entity}
         ) dues
        GROUP BY code
@@ -131,6 +136,7 @@ export async function loadLegacyOverview(writer: Writer, user: UserCtx, url: URL
              AND COALESCE(s.origin, 'native') <> 'holded_import'
              AND s.payment_status IN ('unpaid', 'partially_paid')
              AND s.total > s.amount_paid
+             AND s.issue_date BETWEEN DATE '${thisFrom}' AND DATE '${thisTo}'
              AND ${entity}
           UNION ALL
           SELECT (o.amount - o.amount_paid)
@@ -139,6 +145,7 @@ export async function loadLegacyOverview(writer: Writer, user: UserCtx, url: URL
            WHERE o.direction = 'payable'
              AND o.status IN ('open', 'partially_paid')
              AND o.amount > o.amount_paid
+             AND o.document_date BETWEEN DATE '${thisFrom}' AND DATE '${thisTo}'
              AND ${entity}
         ) dues
     `),

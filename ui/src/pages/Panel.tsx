@@ -140,7 +140,7 @@ function HoldedHome({ data, attention }: { data: LegacyOverview; attention: Reac
         {companies.map((code) => (
           <MoneyTile
             key={`due-${code}`}
-            label={fill(copy.panel.receivablesCompany, { company: companyLabel(code) })}
+            label={fill(copy.panel.receivablesCompany, { year: String(data.year), company: companyLabel(code) })}
             value={data.kpis.pending_receivables[code]}
             href={`/cobros?entity=${code}`}
             count={data.kpis.pending_receivables_count[code]}
@@ -148,7 +148,7 @@ function HoldedHome({ data, attention }: { data: LegacyOverview; attention: Reac
           />
         ))}
         <MoneyTile
-          label={copy.panel.payables}
+          label={fill(copy.panel.payablesYear, { year: String(data.year) })}
           value={data.kpis.open_payables}
           href="/gastos"
           count={data.kpis.open_payables_count}

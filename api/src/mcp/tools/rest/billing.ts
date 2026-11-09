@@ -395,7 +395,7 @@ export const billingRestTools: readonly AnyTool[] = [
     scope: "reports.read",
     extraScopes: ["finance.read", "sales.read", "billing.read"],
     title: "Resumen del panel",
-    description: "Cifras del panel por sociedad: ventas de este año y del anterior emitidas en WineCore (sin el histórico Holded), cobros pendientes de P.O y de CVPO, pagos pendientes sin duplicar y últimas facturas propias.",
+    description: "Cifras del panel por sociedad: ventas de este año y del anterior emitidas en WineCore (sin el histórico Holded), cobros pendientes de P.O y de CVPO solo del año civil en curso, pagos pendientes del mismo año sin duplicar y últimas facturas propias.",
     input: z.object({ entity: legacyEntity }).strict(),
     route: "GET /v1/legacy/overview",
   }),
