@@ -385,5 +385,6 @@ function issuedPayload(
     importeTotal: totals.importe_total,
     total: totals.total,
     lines,
+    stockAlreadyDeducted: view.header.stockAlreadyDeducted,
   };
 }

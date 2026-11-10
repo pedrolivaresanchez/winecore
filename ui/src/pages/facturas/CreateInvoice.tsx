@@ -36,6 +36,7 @@ import {
   useToast,
 } from '@/ui'
 import { createInvoice } from '@/pages/facturas/api'
+import { StockAlreadyFields } from '@/pages/facturas/chrome'
 import { DATE_LABELS, money } from '@/pages/facturas/format'
 import type { CreateInvoiceBody, SourceKind } from '@/pages/facturas/types'
 import { useIssuer } from '@/pages/ventas/issuer'
@@ -73,6 +74,8 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
   const [operationDate, setOperationDate] = useState<string | null>(null)
   const [shipTo, setShipTo] = useState<ShipToDraft>(emptyShipTo)
   const [references, setReferences] = useState('')
+  const [stockDeducted, setStockDeducted] = useState(false)
+  const [stockReason, setStockReason] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [badLine, setBadLine] = useState<string | null>(null)
   const [customerBad, setCustomerBad] = useState(false)
@@ -208,6 +211,15 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
     const referencePayload = referencesPayload(references)
     if (shipPayload) body.ship_to = shipPayload
     if (referencePayload) body.customer_references = referencePayload
+    if (stockDeducted) {
+      const reason = stockReason.trim()
+      if (reason.length < 3) {
+        refuse(copy.facturas.stockAlreadyMissing)
+        return
+      }
+      body.stock_already_deducted = true
+      body.stock_already_reason = reason
+    }
     if (source === 'lines') {
       const problem = lineProblem(lines)
       if (problem) {
@@ -306,6 +318,12 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
               <InfoTip label={copy.facturas.stockLabel}>{copy.facturas.stockTip}</InfoTip>
             </div>
             <p className="text-caption text-text-tertiary">{SOURCE_HINTS[source]}</p>
+            <StockAlreadyFields
+              checked={stockDeducted}
+              reason={stockReason}
+              onChecked={setStockDeducted}
+              onReason={setStockReason}
+            />
           </div>
 
           {source === 'lines' ? (

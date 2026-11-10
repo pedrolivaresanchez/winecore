@@ -104,6 +104,9 @@ export type Invoice = {
   language: string
   description: string | null
   notes: string | null
+  stock_already_deducted?: boolean
+  stock_already_reason?: string | null
+  moves_stock?: boolean
   subtotal: string | null
   tax_total: string | null
   surcharge_total: string | null
@@ -207,6 +210,8 @@ export type CreateInvoiceBody = {
   language?: 'es' | 'en'
   operation_date?: string | null
   notes?: string | null
+  stock_already_deducted?: boolean
+  stock_already_reason?: string
   from_delivery_notes?: string[]
   from_order?: string
   ship_to?: Record<string, string> | null

@@ -146,6 +146,7 @@ function voidedPayload(view: InvoiceView, voidReason: string, voidedAt: string):
     withholdingTotal: view.header.withholdingTotal ?? '0.00',
     importeTotal: importeOf(view.header.subtotal, view.header.taxTotal, view.header.surchargeTotal) ?? view.header.total ?? '0.00',
     total: view.header.total ?? '0.00',
+    stockAlreadyDeducted: view.header.stockAlreadyDeducted,
     lines: view.lines.map((line) => {
       const product = line.productId ? view.products.get(line.productId) : undefined;
       return {

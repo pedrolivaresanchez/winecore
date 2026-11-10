@@ -47,6 +47,7 @@ import {
 import { parseCustomerReferences, parseShipTo, shipToRecord } from '../pdf/ship-to';
 import { raiseIssue } from './issues';
 import type { TaxCode } from './taxCodes';
+import { type StockAlready, writeStockAlready } from './stock-already';
 import { assertEditable } from './wc080';
 
 const PAYMENTS = new Set(['transfer', 'direct_debit', 'card', 'cash', 'stripe', 'other']);
@@ -90,6 +91,7 @@ interface CreateInput {
   reason: string | null;
   noPhysicalReturn: boolean | null;
   returnDeliveryNote: string | null;
+  stockAlready: StockAlready;
 }
 
 interface BuiltLine {
@@ -157,6 +159,7 @@ export async function createDraft(
   insertInvoice(tx, built, actor, now);
   insertLines(tx, built);
   insertRects(tx, built.id, built.rectRows);
+  writeStockAlready(tx, built.id, input.stockAlready, { deducted: false, reason: null }, now);
   return built.id;
 }
 
@@ -173,7 +176,10 @@ export async function updateDraft(
   assertEditable(current.status);
   if (!ifMatch || !sameVersion(current.updatedAt, ifMatch)) throw domainError('WC_STALE_VERSION');
   if (!can(user, 'billing.write', current.legalEntityId)) throw domainError('WC_FORBIDDEN');
-  const patch = parsePatch(raw);
+  const patch = parsePatch(raw, {
+    stockAlreadyDeducted: current.stockAlreadyDeducted,
+    stockAlreadyReason: current.stockAlreadyReason,
+  });
   const built = await buildUpdate(tx, current, patch, now);
   if (!can(user, 'billing.write', built.entity.id)) throw domainError('WC_FORBIDDEN');
   updateHeader(tx, current, built, now);
@@ -190,6 +196,12 @@ export async function updateDraft(
     }
     tx.write(sql`DELETE FROM billing.invoice_line WHERE invoice_id = CAST(${id} AS UUID)`);
     insertLines(tx, built);
+  }
+  if (patch.stockAlready) {
+    writeStockAlready(tx, id, patch.stockAlready, {
+      deducted: current.stockAlreadyDeducted,
+      reason: current.stockAlreadyReason,
+    }, now);
   }
 }
 
@@ -1024,6 +1036,7 @@ interface Patch {
   lines?: ManualLine[];
   noPhysicalReturn?: boolean | null;
   returnDeliveryNote?: string | null;
+  stockAlready?: StockAlready;
 }
 
 function parseCreate(raw: unknown): CreateInput {
@@ -1073,10 +1086,11 @@ function parseCreate(raw: unknown): CreateInput {
     reason: optionalShort(pick(body, 'reason'), 'reason'),
     noPhysicalReturn: physical.noPhysicalReturn,
     returnDeliveryNote: physical.returnDeliveryNote,
+    stockAlready: stockAlreadyInput(body, null),
   };
 }
 
-function parsePatch(raw: unknown): Patch {
+function parsePatch(raw: unknown, current: { stockAlreadyDeducted: boolean; stockAlreadyReason: string | null }): Patch {
   const body = objectBody(raw);
   const patch: Patch = {};
   if (pick(body, 'legal_entity_id', 'legalEntityId') !== undefined) {
@@ -1133,7 +1147,45 @@ function parsePatch(raw: unknown): Patch {
   if (pick(body, 'return_delivery_note', 'returnDeliveryNote') !== undefined) {
     patch.returnDeliveryNote = optionalReturnNote(pick(body, 'return_delivery_note', 'returnDeliveryNote'));
   }
+  const stock = stockAlreadyPatch(body, {
+    deducted: current.stockAlreadyDeducted,
+    reason: current.stockAlreadyReason,
+  });
+  if (stock) patch.stockAlready = stock;
   return patch;
+}
+
+function stockAlreadyInput(body: Record<string, unknown>, current: StockAlready | null): StockAlready {
+  const flagValue = pick(body, 'stock_already_deducted', 'stockAlreadyDeducted');
+  const reasonValue = pick(body, 'stock_already_reason', 'stockAlreadyReason');
+  const deducted = flagValue === undefined
+    ? current?.deducted ?? false
+    : optionalBool(flagValue, 'stock_already_deducted') === true;
+  if (!deducted) {
+    if (reasonValue != null && reasonValue !== '') {
+      throw domainError('WC_VALIDATION', { stock_already_reason: 'El motivo solo se guarda con la marca de stock ya descontado' });
+    }
+    return { deducted: false, reason: null };
+  }
+  const reason = reasonValue === undefined ? current?.reason ?? null : stockReason(reasonValue);
+  if (!reason) throw domainError('WC_VALIDATION', { stock_already_reason: 'El motivo es obligatorio' });
+  return { deducted: true, reason };
+}
+
+function stockAlreadyPatch(body: Record<string, unknown>, current: StockAlready): StockAlready | undefined {
+  const flagValue = pick(body, 'stock_already_deducted', 'stockAlreadyDeducted');
+  const reasonValue = pick(body, 'stock_already_reason', 'stockAlreadyReason');
+  if (flagValue === undefined && reasonValue === undefined) return undefined;
+  return stockAlreadyInput(body, current);
+}
+
+function stockReason(value: unknown): string {
+  if (typeof value !== 'string') throw domainError('WC_VALIDATION', { stock_already_reason: 'El motivo es obligatorio' });
+  const trimmed = value.trim();
+  if (trimmed.length < 3 || trimmed.length > 500) {
+    throw domainError('WC_VALIDATION', { stock_already_reason: 'El motivo tiene que tener entre 3 y 500 caracteres' });
+  }
+  return trimmed;
 }
 
 function physicalReturnOf(

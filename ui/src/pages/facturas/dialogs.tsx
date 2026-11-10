@@ -9,6 +9,7 @@ export function IssueDialog({
   open,
   entity,
   total,
+  stockFrozen = false,
   busy,
   onClose,
   onConfirm,
@@ -16,6 +17,7 @@ export function IssueDialog({
   open: boolean
   entity: string
   total: string
+  stockFrozen?: boolean
   busy: boolean
   onClose: () => void
   onConfirm: () => void
@@ -26,7 +28,7 @@ export function IssueDialog({
         <DialogHeader titleId="emitir-factura" title={copy.facturas.issueTitle} onClose={onClose} />
         <DialogBody>
           <p className="text-label text-text-secondary">{fill(copy.facturas.issueBody, { entity, total })}</p>
-          <p className="mt-2 text-label text-text-tertiary">{copy.facturas.stockTip}</p>
+          <p className="mt-2 text-label text-text-tertiary">{stockFrozen ? copy.facturas.stockAlreadyHint : copy.facturas.stockTip}</p>
         </DialogBody>
         <DialogFooter>
           <Button type="button" variant="ghost" size="sm" onClick={onClose} disabled={busy}>
