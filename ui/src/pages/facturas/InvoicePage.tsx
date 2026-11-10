@@ -20,6 +20,7 @@ import {
   LineTable,
   MoreMenu,
   RecordFrame,
+  StockAlreadyFields,
   TaxBreakdown,
   Totals,
 } from '@/pages/facturas/chrome'
@@ -81,6 +82,8 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
   const [operationDate, setOperationDate] = useState<string | null>(invoice.operation_date)
   const [shipTo, setShipTo] = useState<ShipToDraft>(() => shipToDraftOf(invoice.ship_to))
   const [references, setReferences] = useState(invoice.customer_references ?? '')
+  const [stockDeducted, setStockDeducted] = useState(invoice.stock_already_deducted === true)
+  const [stockReason, setStockReason] = useState(invoice.stock_already_reason ?? '')
   const [issues, setIssues] = useState<ValidationResult | null>(null)
   const [busy, setBusy] = useState(false)
   const [issueOpen, setIssueOpen] = useState(false)
@@ -101,10 +104,17 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
     setOperationDate(invoice.operation_date)
     setShipTo(shipToDraftOf(invoice.ship_to))
     setReferences(invoice.customer_references ?? '')
+    setStockDeducted(invoice.stock_already_deducted === true)
+    setStockReason(invoice.stock_already_reason ?? '')
     setEditing(false)
   }, [invoice])
 
   async function save() {
+    const reason = stockReason.trim()
+    if (stockDeducted && reason.length < 3) {
+      toast(copy.facturas.stockAlreadyMissing)
+      return
+    }
     setBusy(true)
     try {
       await patchInvoice(invoice.id, invoice.updated_at, {
@@ -115,6 +125,8 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
         ship_to: shipToPayload(shipTo),
         customer_references: referencesPayload(references),
         lines: linePayload(lines),
+        stock_already_deducted: stockDeducted,
+        stock_already_reason: stockDeducted ? reason : null,
       })
       toast(copy.facturas.saved)
       setEditing(false)
@@ -228,6 +240,12 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
   }
   for (const row of invoice.rectifications) {
     facts.push({ label: copy.facturas.rectifies, value: `${row.number} · ${day(row.issue_date)}` })
+  }
+  if (invoice.moves_stock === false) {
+    facts.push({
+      label: copy.facturas.stockLabel,
+      value: invoice.stock_already_deducted ? invoice.stock_already_reason || copy.facturas.stockAlready : copy.facturas.stockStill,
+    })
   }
   if (invoice.void_reason) facts.push({ label: copy.facturas.voidReason, value: invoice.void_reason })
   if (invoice.notes) facts.push({ label: copy.facturas.notes, value: invoice.notes })
@@ -353,6 +371,12 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
                   references={references}
                   onReferences={setReferences}
                 />
+                <StockAlreadyFields
+                  checked={stockDeducted}
+                  reason={stockReason}
+                  onChecked={setStockDeducted}
+                  onReason={setStockReason}
+                />
                 <LineEditor lines={lines} onChange={setLines} />
               </div>
             ) : (
@@ -379,6 +403,7 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
         open={issueOpen}
         entity={entityLabel(invoice.entity_code)}
         total={money(invoice.total)}
+        stockFrozen={invoice.moves_stock === false}
         busy={busy}
         onClose={() => setIssueOpen(false)}
         onConfirm={() => void confirmIssue()}

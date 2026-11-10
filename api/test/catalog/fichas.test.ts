@@ -90,7 +90,7 @@ describe('fichas, vino en stock y tarifa vigente', () => {
             id, occurred_at, move_type, location_id, owner_entity_id, lot_id, product_id,
             product_state, qty_units, volume_ml, mass_g, source_table, source_id, created_by
           ) VALUES (
-            CAST(${newId()} AS UUID), now(), 'opening', CAST(${location} AS UUID), CAST(${po} AS UUID),
+            CAST(${newId()} AS UUID), TIMESTAMPTZ '2026-06-01 12:00:00+02', 'opening', CAST(${location} AS UUID), CAST(${po} AS UUID),
             CAST(${lotId} AS UUID), CAST(${productId} AS UUID),
             'packaged_labeled', ${units}, ${units * 750}, 0, 'ops.data_repair', CAST(${newId()} AS UUID), 'overlay-test'
           )

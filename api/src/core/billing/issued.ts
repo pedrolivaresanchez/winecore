@@ -55,6 +55,8 @@ export interface IssuedInvoice {
   importeTotal: string;
   total: string;
   lines: IssuedInvoiceLine[];
+  /** El borrador se marcó «stock ya descontado» antes de emitir. */
+  stockAlreadyDeducted: boolean;
 }
 
 export interface VoidedInvoice extends IssuedInvoice {

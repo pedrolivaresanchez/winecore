@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, MoreVertical } from '@/ui/icons'
-import { Badge, Button, GlassMenu, InfoTip, useMenuOpen, type BadgeTone } from '@/ui'
+import { Field } from '@/components/Field'
+import { Badge, Button, GlassMenu, InfoTip, Switch, Textarea, useMenuOpen, type BadgeTone } from '@/ui'
 import { copy } from '@/i18n'
 import { iconStroke } from '@/lib/motion'
 import { cn } from '@/lib/cn'
@@ -94,11 +95,46 @@ export function InvoiceBadges({ invoice, delivery }: { invoice: Invoice; deliver
       <StatusBadge status={invoice.status} />
       <Badge tone="neutral">{entityLabel(invoice.entity_code)}</Badge>
       {invoice.invoice_type.startsWith('R') ? <Badge tone="info">{invoice.invoice_type}</Badge> : null}
+      {invoice.stock_already_deducted ? <Badge tone="warning">{copy.facturas.stockAlready}</Badge> : null}
       <DeliveryBadge status={delivery} />
       {invoice.status === 'issued' || invoice.status === 'voided' ? (
         <Badge tone={invoice.origin === 'holded_import' || !invoice.verifactu_record_id ? 'neutral' : 'success'}>{verifactuLabel(invoice.verifactu_record_id, invoice.origin)}</Badge>
       ) : null}
     </>
+  )
+}
+
+export function StockAlreadyFields({
+  checked,
+  reason,
+  onChecked,
+  onReason,
+}: {
+  checked: boolean
+  reason: string
+  onChecked: (value: boolean) => void
+  onReason: (value: string) => void
+}) {
+  return (
+    <div className="grid gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="inline-flex items-center gap-1.5 text-label text-ink-900">
+          {copy.facturas.stockAlready}
+          <InfoTip label={copy.facturas.stockAlready}>{copy.facturas.stockAlreadyHint}</InfoTip>
+        </span>
+        <Switch aria-label={copy.facturas.stockAlready} checked={checked} onChange={onChecked} />
+      </div>
+      {checked ? (
+        <Field id="motivo-stock-descontado" label={copy.facturas.stockAlreadyReason}>
+          <Textarea
+            id="motivo-stock-descontado"
+            rows={2}
+            value={reason}
+            onChange={(event) => onReason(event.target.value)}
+          />
+        </Field>
+      ) : null}
+    </div>
   )
 }
 

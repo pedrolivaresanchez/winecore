@@ -8,6 +8,7 @@ import {
 } from '../billing/approval';
 import { postInvoiceFiscalExits } from '../billing/fiscal-exit';
 import { onInvoiceIssued, onInvoiceVoided } from '../billing/issued';
+import { skipsStock } from '../billing/stock-already';
 import { deductInvoicedBottles, reverseInvoiceStock } from '../inventory/bottled-ledger';
 import { sql } from '../db/sql';
 import type { Tx } from '../db/writer';
@@ -24,6 +25,10 @@ export function installIntegrations(): void {
   setBillingApprovalHook({ review: reviewWithApprovals });
   setRemittanceApproval(remittanceApproval);
   onInvoiceIssued(async (tx, invoice) => {
+    // Una factura marcada no mueve nada: ni la salida física o fiscal de P.O,
+    // ni una entrada en CVPO (ownership_in, transfer_in, purchase_in, TFRP).
+    // Los dos escritores de stock de la emisión viven aquí.
+    if (await skipsStock(tx, invoice.id, invoice.stockAlreadyDeducted)) return;
     await postInvoiceFiscalExits(tx, invoice);
     await deductInvoicedBottles(tx, {
       invoiceId: invoice.id,
@@ -41,6 +46,8 @@ export function installIntegrations(): void {
     });
   });
   onInvoiceVoided(async (tx, invoice) => {
+    // Anular o rectificar una factura marcada no devuelve stock: no hubo salida.
+    if (await skipsStock(tx, invoice.id, invoice.stockAlreadyDeducted)) return;
     await reverseInvoiceStock(tx, invoice.id, invoice.voidedAt, 'invoice-void');
   });
 }

@@ -153,7 +153,9 @@ export async function validateView(
   let needsVat = false;
   for (const line of view.lines) {
     const product = line.productId ? view.products.get(line.productId) : undefined;
-    if ((product?.requiresLot || product?.kind === 'wine') && !line.lotId && !line.lotCode) {
+    // El lote solo alimenta la salida de stock y el apunte fiscal. Con la marca
+    // no hay ninguno de los dos, y el PDF lo imprime solo si viene informado.
+    if (!header.skipsStock && (product?.requiresLot || product?.kind === 'wine') && !line.lotId && !line.lotCode) {
       errors.push(issue(
         'WC_INV_LOT_REQUIRED',
         `Indica el lote de la línea ${line.lineNo}`,

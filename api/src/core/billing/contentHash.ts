@@ -35,5 +35,7 @@ export function invoiceContentHash(view: InvoiceView, issueDate: string): string
     surcharge_total: view.header.surchargeTotal,
     withholding_total: view.header.withholdingTotal,
     total: view.header.total,
+    stock_already_deducted: view.header.stockAlreadyDeducted,
+    stock_already_reason: view.header.stockAlreadyReason,
   }));
 }

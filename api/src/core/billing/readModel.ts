@@ -16,6 +16,7 @@ import {
   stamp,
   text,
 } from './format';
+import { readStockAlready, skipsStock } from './stock-already';
 
 type Read = Pick<Tx, 'read'>;
 
@@ -58,6 +59,14 @@ export interface HeaderView {
   legacyRefs: Record<string, unknown>;
   noPhysicalReturn: boolean | null;
   returnDeliveryNote: string | null;
+  /** Marca explícita del borrador. El motivo es obligatorio cuando es true. */
+  stockAlreadyDeducted: boolean;
+  stockAlreadyReason: string | null;
+  /**
+   * No crear movimientos al emitir: la propia marca, o la de una factura
+   * de WineCore que esta rectifica.
+   */
+  skipsStock: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -235,6 +244,9 @@ export function headerOf(row: Record<string, unknown>): HeaderView {
     legacyRefs,
     noPhysicalReturn: physical.noPhysicalReturn,
     returnDeliveryNote: physical.returnDeliveryNote,
+    stockAlreadyDeducted: false,
+    stockAlreadyReason: null,
+    skipsStock: false,
     createdAt: stamp(row.created_at) ?? '',
     updatedAt: stamp(row.updated_at) ?? '',
   };
@@ -266,7 +278,14 @@ export async function loadHeader(tx: Read, id: string): Promise<HeaderView> {
   const rows = await tx.read(sql`SELECT * FROM billing.invoice WHERE id = CAST(${id} AS UUID)`);
   const row = rows[0];
   if (!row) throw domainError('WC_NOT_FOUND');
-  return headerOf(row);
+  const header = headerOf(row);
+  const stock = await readStockAlready(tx, header.id);
+  return {
+    ...header,
+    stockAlreadyDeducted: stock.deducted,
+    stockAlreadyReason: stock.reason,
+    skipsStock: stock.deducted,
+  };
 }
 
 export async function loadLines(tx: Read, invoiceId: string): Promise<LineView[]> {
@@ -515,6 +534,8 @@ export async function loadInvoice(tx: Read, id: string): Promise<InvoiceView> {
     header.seriesId ? loadSeries(tx, header.seriesId) : Promise.resolve(null),
   ]);
   if (!entity) throw domainError('WC_VALIDATION', { legal_entity_id: 'La entidad no existe' });
+  const frozen = await skipsStock(tx, header.id, header.stockAlreadyDeducted);
+  header.skipsStock = frozen;
   const products = new Map<string, ProductView>();
   for (const line of lines) {
     if (!line.productId || products.has(line.productId)) continue;
@@ -556,6 +577,9 @@ export function presentInvoice(
     notes: header.notes,
     no_physical_return: header.noPhysicalReturn,
     return_delivery_note: header.returnDeliveryNote,
+    stock_already_deducted: header.stockAlreadyDeducted,
+    stock_already_reason: header.stockAlreadyReason,
+    moves_stock: !header.skipsStock,
     incoterm: header.incoterm,
     subtotal: header.subtotal,
     tax_total: header.taxTotal,
