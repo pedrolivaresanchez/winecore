@@ -392,6 +392,18 @@ export const billingRestTools: readonly AnyTool[] = [
     summary: (_input, current) => `Descartar ${invoiceLabel(current)}. No se puede recuperar. ¿Confirmas?`,
     web: invoiceLink,
   }),
+  defineRestWrite({
+    name: "billing_invoice_draft_delete",
+    module: "billing",
+    scope: "billing.write",
+    title: "Eliminar borrador de factura",
+    description: "Elimina una factura en borrador que no tiene número, cobros, movimientos de stock o fiscales ni registro Verifactu. Una factura emitida o numerada no se borra: se anula o se rectifica.",
+    input: z.object({ id }).strict(),
+    route: "DELETE /v1/invoices/:id",
+    current: { route: "GET /v1/invoices/:id" },
+    summary: (_input, current) => `Eliminar ${invoiceLabel(current)}. Solo si sigue en borrador, sin número ni movimientos. No se puede deshacer. ¿Confirmas?`,
+    web: () => "/facturas",
+  }),
 
   defineRestRead({
     name: "billing_legacy_overview_get",

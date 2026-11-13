@@ -171,4 +171,16 @@ export const purchasingRestTools: readonly AnyTool[] = [
     summary: (input, current) => `Rechazar ${expenseLabel(current)} con el motivo «${input.reason}». ¿Confirmas?`,
     web: expenseLink,
   }),
+  defineRestWrite({
+    name: "purchasing_expense_delete",
+    module: "purchasing",
+    scope: "purchasing.write",
+    title: "Eliminar gasto capturado",
+    description: "Elimina un gasto que sigue capturado (el borrador, antes de validarlo) y no tiene pagos ni movimientos. Uno validado o aprobado no se borra: se rechaza o se queda en el libro.",
+    input: z.object({ id }).strict(),
+    route: "DELETE /v1/supplier-invoices/:id",
+    current: { route: "GET /v1/supplier-invoices/:id" },
+    summary: (_input, current) => `Eliminar ${expenseLabel(current)}. Solo si sigue capturado, sin pagos ni movimientos. No se puede deshacer. ¿Confirmas?`,
+    web: () => "/gastos",
+  }),
 ];

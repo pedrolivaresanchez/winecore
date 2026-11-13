@@ -1,4 +1,5 @@
 import { sessionOf } from '../auth/guard';
+import { deleteDraft } from '../core/documents/delete-draft';
 import type { Writer } from '../core/db/writer';
 import { actorOf, asRecord, pathId, readJson } from '../core/sales/db';
 import {
@@ -81,6 +82,11 @@ export async function postDispatch(writer: Writer, request: Request, id: string)
 export async function postDeliver(writer: Writer, request: Request, id: string) {
   const user = sessionOf(request);
   return writer.withWrite(actorOf(user, request), (tx) => markDelivered(tx, pathId(id)));
+}
+
+export async function deleteNote(writer: Writer, request: Request, id: string) {
+  const user = sessionOf(request);
+  return deleteDraft(writer, actorOf(user, request), user, 'delivery_note', pathId(id));
 }
 
 export async function postVoid(writer: Writer, request: Request, id: string) {

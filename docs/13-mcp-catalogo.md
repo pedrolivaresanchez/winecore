@@ -1,6 +1,6 @@
 # 13 · Catálogo de herramientas MCP
 
-> Generado con `bun run scripts/mcp-catalog.ts` (en `api/`). 440 herramientas, 212 de escritura en dos pasos (`_prepare` y `_commit`). Reglas y exclusiones: `13-mcp.md`.
+> Generado con `bun run scripts/mcp-catalog.ts` (en `api/`). 445 herramientas, 217 de escritura en dos pasos (`_prepare` y `_commit`). Reglas y exclusiones: `13-mcp.md`.
 
 ## Sistema y búsqueda (15)
 
@@ -107,7 +107,7 @@
 | `catalog_wine_update_prepare` / `_commit` | escritura | Editar vino |
 | `catalog_wines_list` | lectura | Vinos |
 
-## Ventas: presupuestos, pedidos y albaranes (50)
+## Ventas: presupuestos, pedidos y albaranes (53)
 
 | Herramienta | Tipo | Qué hace |
 |---|---|---|
@@ -121,6 +121,7 @@
 | `sales_billing_rules_state_get` | lectura | Estado de las reglas de facturación |
 | `sales_catalog_get` | lectura | Catálogo de venta |
 | `sales_delivery_note_create_prepare` / `_commit` | escritura | Crear albarán |
+| `sales_delivery_note_delete_prepare` / `_commit` | escritura | Eliminar borrador de albarán |
 | `sales_delivery_note_dispatch_prepare` / `_commit` | escritura | Marcar albarán como expedido |
 | `sales_delivery_note_get` | lectura | Ver albarán |
 | `sales_delivery_note_incident_create_prepare` / `_commit` | escritura | Registrar incidencia de transporte |
@@ -145,6 +146,7 @@
 | `sales_order_close_prepare` / `_commit` | escritura | Cerrar resto del pedido |
 | `sales_order_confirm_prepare` / `_commit` | escritura | Confirmar pedido |
 | `sales_order_create_prepare` / `_commit` | escritura | Crear pedido |
+| `sales_order_delete_prepare` / `_commit` | escritura | Eliminar borrador de pedido |
 | `sales_order_delivery_note_create_prepare` / `_commit` | escritura | Crear albarán del pedido |
 | `sales_order_entity_exception_set_prepare` / `_commit` | escritura | Cambiar sociedad que factura |
 | `sales_order_get` | lectura | Ver pedido |
@@ -154,6 +156,7 @@
 | `sales_quote_accept_prepare` / `_commit` | escritura | Aceptar presupuesto |
 | `sales_quote_convert_prepare` / `_commit` | escritura | Convertir presupuesto en pedido |
 | `sales_quote_create_prepare` / `_commit` | escritura | Crear presupuesto |
+| `sales_quote_delete_prepare` / `_commit` | escritura | Eliminar borrador de presupuesto |
 | `sales_quote_get` | lectura | Ver presupuesto |
 | `sales_quote_mark_sent_prepare` / `_commit` | escritura | Marcar presupuesto como enviado |
 | `sales_quote_pdf_get` | lectura | PDF del presupuesto |
@@ -162,7 +165,7 @@
 | `sales_quotes_conversion_report` | lectura | Conversión de presupuestos |
 | `sales_quotes_list` | lectura | Lista de presupuestos |
 
-## Facturación, series y sociedades (44)
+## Facturación, series y sociedades (45)
 
 | Herramienta | Tipo | Qué hace |
 |---|---|---|
@@ -176,6 +179,7 @@
 | `billing_invoice_delivery_record_sent_prepare` / `_commit` | escritura | Registrar factura enviada |
 | `billing_invoice_delivery_resend_prepare` / `_commit` | escritura | Volver a enviar factura |
 | `billing_invoice_discard_prepare` / `_commit` | escritura | Descartar borrador |
+| `billing_invoice_draft_delete_prepare` / `_commit` | escritura | Eliminar borrador de factura |
 | `billing_invoice_get` | lectura | Ficha de la factura |
 | `billing_invoice_issue_prepare` / `_commit` | escritura | Emitir factura |
 | `billing_invoice_pdf_download` | lectura | Descargar PDF de la factura |
@@ -246,13 +250,14 @@
 | `finance_remittance_request_approval_prepare` / `_commit` | escritura | Pedir aprobación de la remesa |
 | `finance_remittances_list` | lectura | Remesas SEPA |
 
-## Gastos (10)
+## Gastos (11)
 
 | Herramienta | Tipo | Qué hace |
 |---|---|---|
 | `purchasing_expense_approval_request_prepare` / `_commit` | escritura | Pedir aprobación del gasto |
 | `purchasing_expense_approve_prepare` / `_commit` | escritura | Aprobar gasto |
 | `purchasing_expense_categories_list` | lectura | Categorías de gasto |
+| `purchasing_expense_delete_prepare` / `_commit` | escritura | Eliminar gasto capturado |
 | `purchasing_expense_get` | lectura | Ficha del gasto |
 | `purchasing_expense_reject_prepare` / `_commit` | escritura | Rechazar gasto |
 | `purchasing_expense_update_prepare` / `_commit` | escritura | Corregir gasto |

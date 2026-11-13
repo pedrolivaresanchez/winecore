@@ -79,6 +79,7 @@ import {
   captureExpense,
   requestExpenseApproval,
   exportExpenses,
+  deleteExpense,
   getExpense,
   listCategories,
   listExpenses,
@@ -131,6 +132,7 @@ import {
   batchIssueExecute,
   batchIssueRequest,
   createInvoice,
+  deleteInvoiceRoute,
   discardInvoice,
   exportInvoices,
   getInvoice,
@@ -491,6 +493,9 @@ export function createApp(deps: AppDeps) {
     .post('/v1/invoices/:id/discard', ({ request, params }) => discardInvoice(deps.writer, request, params.id), {
       beforeHandle: requirePermission(guardDeps, 'billing.write'),
     })
+    .delete('/v1/invoices/:id', ({ request, params }) => deleteInvoiceRoute(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'billing.write'),
+    })
     // Series de numeración (TASK-CORE-004). Sin borrado.
     // Sociedades y numeración (Ajustes): dirección o administración.
     .get('/v1/number-series', ({ request }) => listNumberSeries(deps.writer, request), {
@@ -804,6 +809,9 @@ export function createApp(deps: AppDeps) {
       beforeHandle: requirePermission(guardDeps, 'purchasing.read'),
     })
     .patch('/v1/supplier-invoices/:id', ({ request, params }) => patchExpense(deps.writer, request, params.id), {
+      beforeHandle: requirePermission(guardDeps, 'purchasing.write'),
+    })
+    .delete('/v1/supplier-invoices/:id', ({ request, params }) => deleteExpense(deps.writer, request, params.id), {
       beforeHandle: requirePermission(guardDeps, 'purchasing.write'),
     })
     .post('/v1/supplier-invoices/:id/validate', ({ request, params }) => validateExpense(deps.writer, request, params.id), {

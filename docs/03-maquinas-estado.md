@@ -69,7 +69,7 @@ stateDiagram-v2
 stateDiagram-v2
   [*] --> draft
   draft --> confirmed: confirmar (D3 resuelve la entidad)
-  draft --> cancelled
+  draft --> [*]: eliminar (sin número)
   confirmed --> partially_delivered: albarán parcial
   confirmed --> delivered: albarán completo
   partially_delivered --> delivered
@@ -82,7 +82,8 @@ stateDiagram-v2
 |---|---|---|---|---|---|
 | — | `create` (manual, EDI, web, MCP) | draft | Cliente existente; `external_ref` único por fuente | — | `sales.write` |
 | draft | `confirm` | confirmed | Al menos una línea; precios ≥ 0; regla D3 resuelta | `legal_entity_id`, `billing_rule_*` y traza; número de la serie de pedidos; evento `sales.order.confirmed` | `sales.write` |
-| draft, confirmed | `cancel` | cancelled | Sin albaranes emitidos | Motivo | `sales.write` |
+| draft | `delete` | (eliminado) | Sin número y sin albaranes | Borra el pedido y sus líneas. Auditoría. No consume número | `sales.write` |
+| confirmed | `cancel` | cancelled | Sin albaranes emitidos | Motivo. Conserva el número | `sales.write` |
 | confirmed, partially_delivered | `delivery_issued` (automático) | partially_delivered / delivered | Σ cantidad en albaranes emitidos por línea | — | sistema |
 | delivered | `fully_invoiced` (automático) | closed | `invoicing_status = invoiced` | — | sistema |
 | partially_delivered | `close_remaining` | closed | Motivo | Líneas pendientes canceladas | `sales.manage` |
@@ -95,7 +96,7 @@ stateDiagram-v2
 stateDiagram-v2
   [*] --> draft
   draft --> issued: emitir (mueve stock físico)
-  draft --> cancelled
+  draft --> [*]: eliminar (sin número)
   issued --> shipped: recogido por el transportista
   issued --> cancelled: anulado antes de salir (revierte stock)
   shipped --> delivered: entregado (prueba de entrega)
@@ -106,8 +107,8 @@ stateDiagram-v2
 |---|---|---|---|---|---|
 | — | `create` | draft | Ubicación de origen activa | — | `sales.write` |
 | draft | `issue` | issued | Líneas con producto y **lote** (vino); saldo físico suficiente en origen y fecha; si vende CVPO stock de P.O → intercompañía (§12.6 del modelo) | `take_number('delivery_note')`; movimientos físicos (`delivery_out`, `transfer_in`, `ownership_*`); líneas de liquidación intercompañía; si destino requiere e-DA → e-DA en borrador; evento `sales.delivery_note.issued` | `sales.write` |
-| draft | `cancel` | cancelled | Motivo | — | `sales.write` |
-| issued | `cancel` | cancelled | No `shipped`; sin factura que lo use; e-DA (si existe) en borrador o anulado | Movimientos `reversal`; anula líneas de liquidación del periodo abierto | `sales.manage` |
+| draft | `delete` | (eliminado) | Sin número y sin movimientos de stock, fiscales ni Verifactu | Borra el albarán y sus líneas. Auditoría. No consume número. Anular un borrador está prohibido: le asignaría número | `sales.write` |
+| issued | `cancel` | cancelled | No `shipped`; sin factura que lo use; e-DA (si existe) en borrador o anulado | Movimientos `reversal`; anula líneas de liquidación del periodo abierto. Conserva el número | `sales.manage` |
 | issued | `mark_shipped` | shipped | — | `shipped_at`, transportista, seguimiento | `sales.write` |
 | shipped | `mark_delivered` | delivered | — | `delivered_at`, prueba de entrega opcional | `sales.write` |
 | issued/shipped/delivered | `invoice_lines` (automático) | (igual) | — | `invoicing_status` | sistema |
@@ -139,7 +140,8 @@ Estado de cobro independiente (`payment_status`): `unpaid` → `partially_paid` 
 | draft | `request_issue` (lote o intercompañía) | pending_approval | Ídem validaciones | Solicitud de aprobación con hash del contenido (cliente, líneas, totales) | `billing.write` |
 | pending_approval | `approval_granted` | issued | Hash de la factura = hash aprobado | Igual que `issue` + consume la aprobación | sistema (tras aprobación) |
 | pending_approval | `approval_rejected` / `approval_expired` | draft | — | Motivo | sistema |
-| draft | `discard` | discarded | — | Motivo | `billing.write` |
+| draft | `delete` | (eliminado) | Sin número, sin cobros, sin movimientos ni Verifactu | Borra la factura y sus líneas. Auditoría. No consume número | `billing.write` |
+| draft | `discard` | discarded | — | Motivo. No consume número | `billing.write` |
 | issued | `void` | voided | Solo si **no debió expedirse** (motivo de una lista: duplicada, entidad equivocada, cliente equivocado sin entrega); aprobación `invoice_batch_issue` de un aprobador | Registro Verifactu de anulación; si había efectos de stock/fiscales → `reversal` | `billing.void` |
 | issued | `register_payment` (por imputación) | issued | Ver §6 | `amount_paid`, `payment_status` | `finance.write` |
 | issued | `mark_sent` | issued | — | `sent_at`, `sent_by`, `sent_channel` | `billing.write` |
@@ -180,6 +182,7 @@ stateDiagram-v2
 | Desde | Evento | Hacia | Guarda | Efectos | Permiso |
 |---|---|---|---|---|---|
 | — | `capture` | captured | Adjunto | OCR (`ocr-gastos`), sugerencia de proveedor y categoría; evento `purchasing.supplier_invoice.captured` | `purchasing.write` o agente `ocr-gastos` |
+| captured | `delete` | (eliminado) | Sin pagos ni movimientos | Borra el gasto capturado y sus líneas. Auditoría | `purchasing.write` |
 | captured | `validate` | validated | Proveedor, número, fechas, totales cuadran (Σ líneas + IVA − retención = total ± 0,01) | — | `purchasing.write` |
 | captured | `mark_duplicate` | duplicate | Existe otra con mismo proveedor + número | Enlace al original | `purchasing.write` |
 | captured, validated | `reject` | rejected | Motivo | — | `purchasing.write` |

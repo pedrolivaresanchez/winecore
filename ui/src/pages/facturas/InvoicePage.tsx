@@ -13,7 +13,7 @@ import { formatDateTime } from '@/lib/format'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
 import { Alert, Button, DatePicker, Input, MenuItem, Select, Skeleton, Textarea, useToast } from '@/ui'
-import { discardInvoice, issueInvoice, patchInvoice, validateInvoice, voidInvoice } from '@/pages/facturas/api'
+import { deleteInvoiceDraft, discardInvoice, issueInvoice, patchInvoice, validateInvoice, voidInvoice } from '@/pages/facturas/api'
 import {
   FactList,
   InvoiceBadges,
@@ -89,6 +89,7 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
   const [issueOpen, setIssueOpen] = useState(false)
   const [voidOpen, setVoidOpen] = useState(false)
   const [discardOpen, setDiscardOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const issueKey = useRef('')
   const open = isOpen(invoice.status)
   const issued = invoice.status === 'issued' || invoice.status === 'voided'
@@ -201,6 +202,20 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
     }
   }
 
+  async function confirmDelete() {
+    setBusy(true)
+    try {
+      await deleteInvoiceDraft(invoice.id)
+      toast(copy.facturas.deletedToast)
+      setDeleteOpen(false)
+      navigate('/facturas')
+    } catch (error: unknown) {
+      toast(error instanceof ApiError ? error.message : copy.api.generic)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function confirmDiscard() {
     setBusy(true)
     try {
@@ -283,6 +298,11 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
                     {copy.facturas.validate}
                   </Button>
                 ) : null}
+                {invoice.status === 'draft' && canWrite && !invoice.number ? (
+                  <Button type="button" variant="secondary" size="sm" onClick={() => setDeleteOpen(true)}>
+                    {copy.facturas.deleteDraft}
+                  </Button>
+                ) : null}
                 {open && canIssue ? (
                   <Button type="button" variant="primary" size="sm" loading={busy && !issueOpen} onClick={() => void preflight()}>
                     {copy.facturas.issue}
@@ -309,6 +329,9 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
                     ) : null}
                     {open && canWrite && !desktop ? (
                       <MenuItem onClick={() => { close(); void validateOnly() }}>{copy.facturas.validate}</MenuItem>
+                    ) : null}
+                    {invoice.status === 'draft' && canWrite && !invoice.number ? (
+                      <MenuItem tone="danger" onClick={() => { close(); setDeleteOpen(true) }}>{copy.facturas.deleteDraft}</MenuItem>
                     ) : null}
                     {open && canWrite ? (
                       <MenuItem tone="danger" onClick={() => { close(); setDiscardOpen(true) }}>{copy.facturas.discard}</MenuItem>
@@ -409,6 +432,16 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
         onConfirm={() => void confirmIssue()}
       />
       <VoidDialog open={voidOpen} busy={busy} onClose={() => setVoidOpen(false)} onConfirm={(reason, detail) => void confirmVoid(reason, detail)} />
+      <ConfirmDialog
+        open={deleteOpen}
+        title={copy.facturas.deleteDraftTitle}
+        body={copy.facturas.deleteDraftBody}
+        confirmLabel={copy.facturas.deleteDraft}
+        danger
+        busy={busy}
+        onClose={() => { if (!busy) setDeleteOpen(false) }}
+        onConfirm={() => void confirmDelete()}
+      />
       <ConfirmDialog
         open={discardOpen}
         title={copy.facturas.discard}

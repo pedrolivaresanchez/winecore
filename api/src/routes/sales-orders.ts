@@ -1,4 +1,5 @@
 import { sessionOf } from '../auth/guard';
+import { deleteDraft } from '../core/documents/delete-draft';
 import type { Writer } from '../core/db/writer';
 import { actorOf, asRecord, optionalText, pathId, readJson } from '../core/sales/db';
 import { createDeliveryNote } from '../core/sales/delivery';
@@ -17,6 +18,11 @@ import {
 export function getOrders(writer: Writer, request: Request) {
   sessionOf(request);
   return listSalesOrders(writer, request);
+}
+
+export async function deleteOrder(writer: Writer, request: Request, id: string) {
+  const user = sessionOf(request);
+  return deleteDraft(writer, actorOf(user, request), user, 'sales_order', pathId(id));
 }
 
 export function getOrder(writer: Writer, request: Request, id: string) {

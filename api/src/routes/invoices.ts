@@ -9,6 +9,7 @@ import { newId } from '../core/ids';
 import { executeBatchIssue, requestBatchIssue } from '../core/billing/batch';
 import { exportIssuedBook, periodBounds } from '../core/billing/books';
 import { createDraft, discardDraft, updateDraft } from '../core/billing/drafts';
+import { deleteDraft } from '../core/documents/delete-draft';
 import { day, idOf, isUuid, jsonObject, moneyText, stamp, text } from '../core/billing/format';
 import { issueInvoice } from '../core/billing/issue';
 import { loadEntity, loadEntityByCode, loadInvoice, presentInvoice } from '../core/billing/readModel';
@@ -191,6 +192,12 @@ export async function voidInvoiceRoute(writer: Writer, request: Request, id: str
     now: new Date(),
   }));
   return { status: outcome.status === 'pending' ? 202 : 200, body: outcome };
+}
+
+export async function deleteInvoiceRoute(writer: Writer, request: Request, id: string) {
+  const user = sessionOf(request);
+  if (!isUuid(id)) throw domainError('WC_NOT_FOUND');
+  return deleteDraft(writer, actor(user, request), user, 'invoice', id.toLowerCase());
 }
 
 export async function discardInvoice(writer: Writer, request: Request, id: string) {

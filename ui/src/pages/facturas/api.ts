@@ -64,6 +64,10 @@ export function voidInvoice(id: string, reasonCode: string, reasonText: string) 
   })
 }
 
+export function deleteInvoiceDraft(id: string) {
+  return api<{ deleted: true }>(`/v1/invoices/${id}`, { method: 'DELETE' })
+}
+
 export function discardInvoice(id: string, reason: string) {
   return api<Invoice>(`/v1/invoices/${id}/discard`, {
     method: 'POST',

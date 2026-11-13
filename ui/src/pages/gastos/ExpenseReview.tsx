@@ -18,6 +18,7 @@ import {
   useMenuOpen,
   useToast,
 } from '@/ui'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { Field } from '@/components/Field'
 import { ErrorState } from '@/components/ErrorState'
 import { NoPermission } from '@/components/NoPermission'
@@ -31,7 +32,7 @@ import { cn } from '@/lib/cn'
 import { allows } from '@/lib/permissions'
 import { formatDate } from '@/lib/format'
 import type { Me } from '@/lib/types'
-import { approveExpense, patchExpense, rejectExpense, validateExpense } from '@/pages/gastos/api'
+import { approveExpense, deleteExpenseDraft, patchExpense, rejectExpense, validateExpense } from '@/pages/gastos/api'
 import { categoryLabel, statusLabel, statusTone } from '@/pages/gastos/catalog'
 import { DocumentView } from '@/pages/gastos/DocumentView'
 import { ExpenseForm } from '@/pages/gastos/ExpenseForm'
@@ -75,8 +76,9 @@ function Loaded({ me, expense, onReload }: { me: Me; expense: Expense; onReload:
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [stale, setStale] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [acting, setActing] = useState<'validate' | 'approve' | 'reject' | null>(null)
+  const [acting, setActing] = useState<'validate' | 'approve' | 'reject' | 'delete' | null>(null)
   const [rejectOpen, setRejectOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
   const [reason, setReason] = useState('')
   const [supplierOpen, setSupplierOpen] = useState(false)
   const [supplierName, setSupplierName] = useState(expense.supplier_name ?? '')
@@ -249,6 +251,11 @@ function Loaded({ me, expense, onReload }: { me: Me; expense: Expense; onReload:
               {copy.gastos.save}
             </Button>
           ) : null}
+          {canWrite && expense.status === 'captured' ? (
+            <Button type="button" variant="secondary" size="sm" onClick={() => setDeleteOpen(true)}>
+              {copy.gastos.deleteDraft}
+            </Button>
+          ) : null}
           {showValidate ? (
             <Button type="button" variant="primary" size="sm" loading={acting === 'validate'} onClick={() => void validate()}>
               {copy.gastos.validate}
@@ -379,6 +386,28 @@ function Loaded({ me, expense, onReload }: { me: Me; expense: Expense; onReload:
         </div>
       </div>
 
+      <ConfirmDialog
+        open={deleteOpen}
+        title={copy.gastos.deleteDraftTitle}
+        body={copy.gastos.deleteDraftBody}
+        confirmLabel={copy.gastos.deleteDraft}
+        danger
+        busy={acting === 'delete'}
+        onClose={() => { if (acting !== 'delete') setDeleteOpen(false) }}
+        onConfirm={() => {
+          setActing('delete')
+          void deleteExpenseDraft(expense.id)
+            .then(() => {
+              toast(copy.gastos.deleted)
+              setDeleteOpen(false)
+              navigate('/gastos')
+            })
+            .catch((error: unknown) => {
+              toast(error instanceof ApiError ? error.message : copy.api.generic)
+            })
+            .finally(() => setActing(null))
+        }}
+      />
       <Dialog open={rejectOpen} onClose={() => setRejectOpen(false)} labelledBy="rechazar-gasto" size="sm">
         <DialogHeader titleId="rechazar-gasto" title={copy.gastos.rejectTitle} onClose={() => setRejectOpen(false)} />
         <DialogBody>

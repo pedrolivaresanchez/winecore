@@ -17,5 +17,5 @@
     "noEmit": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["src/**/*.ts", "db/**/*.ts", "test/**/*.ts"]
+  "include": ["src/**/*.ts", "db/**/*.ts", "test/**/*.ts", "scripts/**/*.ts"]
 }

@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useChromeTitle } from '@/app/shell/shell-context'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { ErrorState } from '@/components/ErrorState'
 import { Field } from '@/components/Field'
 import { NoPermission } from '@/components/NoPermission'
@@ -14,6 +15,7 @@ import {
   INCOTERMS,
   acceptQuote,
   channelLabel,
+  deleteQuoteDraft,
   docPath,
   errorText,
   formatIsoDate,
@@ -69,6 +71,7 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
   const [busy, setBusy] = useState(false)
   const [editing, setEditing] = useState(false)
   const [rejecting, setRejecting] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [lines, setLines] = useState<DraftLine[]>(() => draftsFrom(quote.lines))
   const [customerId, setCustomerId] = useState(quote.customer_id)
   const [channel, setChannel] = useState(quote.channel)
@@ -255,6 +258,9 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
                   <>
                     <MenuItem onClick={() => { close(); showPdf() }}>{copy.sales.pdf}</MenuItem>
                     {draft ? <MenuItem onClick={() => { close(); beginEdit() }}>{copy.sales.edit}</MenuItem> : null}
+                    {draft && !quote.number ? (
+                      <MenuItem tone="danger" onClick={() => { close(); setDeleting(true) }}>{copy.sales.deleteDraft}</MenuItem>
+                    ) : null}
                     {canOrder && open ? (
                       <MenuItem
                         onClick={() => {
@@ -378,6 +384,23 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
         </div>
       ) : null}
       {tab === 'history' ? <SalesHistory table="sales.quote" id={quote.id} /> : null}
+      <ConfirmDialog
+        open={deleting}
+        title={copy.sales.deleteDraftTitle}
+        body={copy.sales.deleteDraftBody}
+        confirmLabel={copy.sales.deleteDraft}
+        danger
+        busy={busy}
+        onClose={() => { if (!busy) setDeleting(false) }}
+        onConfirm={() => {
+          void run(async () => {
+            await deleteQuoteDraft(quote.id)
+            toast(copy.sales.toast.deleted)
+            setDeleting(false)
+            navigate(docPath('quote'))
+          })
+        }}
+      />
       {rejecting ? (
         <ReasonDialog
           title={copy.sales.rejectTitle}

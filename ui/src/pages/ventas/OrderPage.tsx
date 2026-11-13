@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useChromeTitle } from '@/app/shell/shell-context'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { ErrorState } from '@/components/ErrorState'
 import { Field } from '@/components/Field'
 import { NoPermission } from '@/components/NoPermission'
@@ -15,6 +16,7 @@ import {
   INCOTERMS,
   cancelOrder,
   channelLabel,
+  deleteOrderDraft,
   closeOrder,
   confirmOrder,
   docPath,
@@ -95,7 +97,7 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
   const [ship, setShip] = useState(shipCountry(order.ship_to))
   const [shipTo, setShipTo] = useState<ShipToDraft>(() => shipToDraftOf(order.ship_to))
   const [references, setReferences] = useState(order.customer_references ?? '')
-  const [dialog, setDialog] = useState<null | 'cancel' | 'close' | 'exception' | 'delivery'>(null)
+  const [dialog, setDialog] = useState<null | 'cancel' | 'close' | 'exception' | 'delivery' | 'delete'>(null)
   const [entityId, setEntityId] = useState(me.entities[0]?.id ?? '')
   const stamps = useRef<Record<string, string>>({})
   const canWrite = allows(me, 'sales.write')
@@ -224,6 +226,11 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
                     {copy.sales.confirm}
                   </Button>
                 ) : null}
+                {draft && canWrite && !order.number ? (
+                  <Button type="button" variant="secondary" size="sm" onClick={() => setDialog('delete')}>
+                    {copy.sales.deleteDraft}
+                  </Button>
+                ) : null}
                 {servable ? (
                   <Button type="button" variant="primary" size="sm" onClick={() => setDialog('delivery')}>
                     {copy.sales.createDelivery}
@@ -231,14 +238,14 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
                 ) : null}
               </>
             )}
-            {(draft && canManage) || ((draft || order.status === 'confirmed') && canWrite) || (order.status === 'partially_delivered' && canManage) ? (
+            {(draft && canManage) || (((draft && Boolean(order.number)) || order.status === 'confirmed') && canWrite) || (order.status === 'partially_delivered' && canManage) ? (
               <MoreMenu>
                 {(close) => (
                   <>
                     {draft && canManage ? (
                       <MenuItem onClick={() => { close(); setDialog('exception') }}>{copy.sales.exception}</MenuItem>
                     ) : null}
-                    {(draft || order.status === 'confirmed') && canWrite ? (
+                    {((draft && Boolean(order.number)) || order.status === 'confirmed') && canWrite ? (
                       <MenuItem tone="danger" onClick={() => { close(); setDialog('cancel') }}>{copy.sales.voidDoc}</MenuItem>
                     ) : null}
                     {order.status === 'partially_delivered' && canManage ? (
@@ -374,6 +381,23 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
         </div>
       ) : null}
       {tab === 'history' ? <SalesHistory table="sales.sales_order" id={order.id} /> : null}
+      <ConfirmDialog
+        open={dialog === 'delete'}
+        title={copy.sales.deleteDraftTitle}
+        body={copy.sales.deleteDraftBody}
+        confirmLabel={copy.sales.deleteDraft}
+        danger
+        busy={busy}
+        onClose={() => { if (!busy) setDialog(null) }}
+        onConfirm={() => {
+          void run(async () => {
+            await deleteOrderDraft(order.id)
+            toast(copy.sales.toast.deleted)
+            setDialog(null)
+            navigate(docPath('order'))
+          })
+        }}
+      />
       {dialog === 'delivery' ? (
         <DeliveryFromOrder
           order={order}
