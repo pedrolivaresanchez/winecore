@@ -11,7 +11,7 @@ test("Valoración de existencias: tarifa, total y detalle", async ({ page }) => 
   await expect(page.getByText("Total").first()).toBeVisible();
   await tariff.selectOption("final");
   await expect(page).toHaveURL(/tarifa=final/);
-  await expect(page.getByText("PVP").first()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "PVP" })).toBeVisible();
 });
 
 test.describe("móvil", () => {
@@ -21,7 +21,7 @@ test.describe("móvil", () => {
     await page.goto("/stock/valoracion");
     await pantalla(page, "stock-valoracion");
     await expect(page.getByRole("combobox", { name: "Tarifa" })).toBeVisible();
-    await page.getByRole("button", { name: "Valoración" }).click();
+    await page.locator("button").filter({ hasText: /^Valoración$/ }).click();
     await page.getByRole("menuitemcheckbox", { name: "Existencias" }).click();
     await pantalla(page, "stock");
   });

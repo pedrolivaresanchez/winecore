@@ -146,7 +146,7 @@ export function ValuationPage({ me }: { me: Me }) {
         <div className={cn('flex flex-col gap-4 py-4', FRAME_GUTTER)}>
           <div className="flex items-center gap-2">
             <h2 className="text-label font-medium text-ink-900">{body?.list.label ?? copy.stock.valuation}</h2>
-            <InfoTip label={copy.stock.valuation}>{copy.stock.valuationHelp}</InfoTip>
+            <InfoTip label={copy.stock.valuationTitle}>{copy.stock.valuationHelp}</InfoTip>
             {body?.list.tax_included ? <span className="text-caption text-text-tertiary">Sin IVA</span> : null}
             {body?.list.version != null ? (
               <span className="text-caption text-text-tertiary">v{body.list.version} · {civil(body.list.valid_from)}</span>
