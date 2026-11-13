@@ -1339,6 +1339,8 @@
     "perCase": "Por caja",
     "perPallet": "Por palé",
     "requestActivation": "Pedir activación",
+    "activate": "Activar",
+    "activateTitle": "Activar versión",
     "importCsv": "Importar CSV",
     "addPrice": "Añadir precio",
     "savePrices": "Guardar precios",

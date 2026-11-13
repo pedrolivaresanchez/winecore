@@ -29,8 +29,11 @@ import { asBool, asNullableInt, asNullableString, asString } from './rows';
 /**
  * `POST .../request-activation` abre una aprobación `tariff_activation` ligada
  * al hash de la tabla de precios. La versión sigue en borrador hasta que esa
- * aprobación se consume (`executeTariffActivation`).
+ * aprobación se consume (`POST .../activate` → `executeTariffActivation`).
  */
+
+/** Estado de la aprobación ligada, si la hay. No es una columna de la versión. */
+const APPROVAL_STATUS_SQL = `(SELECT status FROM ops.approval_request WHERE id = catalog.price_list_version.approval_request_id) AS approval_status`;
 
 const LIST_CODE = /^(?:final|distributor|shop|custom-[a-z0-9-]{2,30})$/;
 const LIST_FIELDS = ['code', 'name', 'currency', 'tax_included', 'is_active'] as const;
@@ -71,6 +74,8 @@ export interface PriceVersion {
   status: string;
   notes: string | null;
   approval_request_id: string | null;
+  /** Estado de `ops.approval_request` (pending, approved, consumed…). Null si no hay solicitud. */
+  approval_status: string | null;
   activated_at: string | null;
   created_by: string;
   created_at: string;
@@ -441,7 +446,8 @@ export async function listVersions(writer: Writer, request: Request, priceListId
   const rows = await writer.read(`
     SELECT id, price_list_id, version, CAST(valid_from AS VARCHAR) AS valid_from,
            CAST(valid_to AS VARCHAR) AS valid_to, status, notes, approval_request_id,
-           activated_at, created_by, created_at
+           activated_at, created_by, created_at,
+           ${APPROVAL_STATUS_SQL}
     FROM catalog.price_list_version
     WHERE ${listed.join(' AND ')}
     ORDER BY version DESC, id DESC
@@ -805,12 +811,13 @@ async function requireList(writer: Writer, id: string): Promise<PriceList> {
 }
 
 async function requireVersion(writer: Writer, priceListId: string, version: number): Promise<PriceVersion> {
-  const rows = await writer.read(sql`
+  const rows = await writer.read(`
     SELECT id, price_list_id, version, CAST(valid_from AS VARCHAR) AS valid_from,
            CAST(valid_to AS VARCHAR) AS valid_to, status, notes, approval_request_id,
-           activated_at, created_by, created_at
+           activated_at, created_by, created_at,
+           ${APPROVAL_STATUS_SQL}
     FROM catalog.price_list_version
-    WHERE price_list_id = CAST(${priceListId} AS UUID) AND version = ${version}
+    WHERE ${sql`price_list_id = CAST(${priceListId} AS UUID) AND version = ${version}`}
   `);
   const row = rows[0];
   if (!row) throw domainError('WC_NOT_FOUND');
@@ -864,7 +871,7 @@ async function loadItems(reader: Reader, versionIds: string[]): Promise<Map<stri
 }
 
 function auditVersion(version: PriceVersion): Record<string, unknown> {
-  const { items: _items, ...rest } = version;
+  const { items: _items, approval_status: _approvalStatus, ...rest } = version;
   return rest;
 }
 
@@ -891,6 +898,7 @@ function toVersion(row: Record<string, unknown>, items: PriceItem[]): PriceVersi
     status: asString(row.status),
     notes: asNullableString(row.notes),
     approval_request_id: asNullableString(row.approval_request_id),
+    approval_status: 'approval_status' in row ? asNullableString(row.approval_status) : null,
     activated_at: asNullableString(row.activated_at),
     created_by: asString(row.created_by),
     created_at: asString(row.created_at),

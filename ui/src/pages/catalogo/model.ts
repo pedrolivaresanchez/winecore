@@ -16,7 +16,7 @@ export type WineColor = "red" | "white" | "rose" | "orange" | "sweet" | "sparkli
 export type WineCategory = "wine" | "pgi_wine" | "pdo_wine" | "fortified" | "other";
 export type Container = "bottle" | "bag_in_box" | "keg" | "other";
 export type MissingData = "" | "gtin" | "nc_code" | "silicie";
-export type VersionStatus = "draft" | "pending" | "active" | "retired";
+export type VersionStatus = "draft" | "pending" | "approved" | "active" | "retired";
 
 export type ListPage<T> = {
   items: T[];
@@ -192,6 +192,7 @@ export type PriceListVersion = {
   status: VersionStatus;
   notes: string | null;
   approval_request_id: string | null;
+  approval_status?: string | null;
   activated_at: string | null;
   created_by: string;
   created_at: string;
@@ -300,6 +301,7 @@ export const TAX_OPTIONS = [
 export const VERSION_LABELS: Record<VersionStatus, string> = {
   draft: "Borrador",
   pending: "Pendiente",
+  approved: "Aprobada",
   active: "Activa",
   retired: "Retirada",
 };
@@ -347,8 +349,9 @@ export function stateLabel(state: string | null | undefined): string {
 }
 
 export function versionStatus(version: PriceListVersion): VersionStatus {
-  if (version.status === "pending") return "pending";
-  if (version.status === "draft" && version.approval_request_id) return "pending";
+  if (version.status === "active" || version.status === "retired") return version.status;
+  if (version.approval_status === "approved") return "approved";
+  if (version.status === "pending" || (version.status === "draft" && version.approval_request_id)) return "pending";
   return version.status;
 }
 
@@ -604,6 +607,8 @@ function decimalText(value: string | null | undefined): string | null {
 export function pickVersion(versions: PriceListVersion[]): PriceListVersion | null {
   const editable = versions.find((version) => versionEditable(version));
   if (editable) return editable;
+  const approved = versions.find((version) => versionStatus(version) === "approved");
+  if (approved) return approved;
   const pending = versions.find((version) => versionStatus(version) === "pending");
   if (pending) return pending;
   const active = versions.find((version) => version.status === "active");

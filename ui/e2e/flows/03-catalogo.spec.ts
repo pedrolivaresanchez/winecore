@@ -1,7 +1,7 @@
 import { expect, test } from "playwright/test";
-import { armarPasskey, omitir, pantalla, registrarPasskey } from "./support";
+import { armarPasskey, pantalla, registrarPasskey } from "./support";
 
-test("Catálogo: pedir activación de una tarifa y aprobarla", async ({ page }) => {
+test("Catálogo: pedir activación de una tarifa, aprobarla y activarla", async ({ page }) => {
   await armarPasskey(page);
 
   await test.step("Abrir el borrador de una tarifa y pedir activación", async () => {
@@ -30,16 +30,14 @@ test("Catálogo: pedir activación de una tarifa y aprobarla", async ({ page }) 
     await expect(approved).toBeVisible();
   });
 
-  await test.step("La versión queda activa", async () => {
+  await test.step("Activar la versión aprobada", async () => {
     await page.goto("/catalogo/tarifas");
     await page.getByRole("link", { name: "Tarifa distribuidor" }).click();
     await pantalla(page, "tarifa");
     await page.getByRole("tab", { name: "v3" }).click();
-    const version = await page.locator('[data-screen="tarifa"]').getAttribute("data-version");
-    if (version !== "active") {
-      omitir(
-        "Tras aprobar, la versión sigue en borrador. executeTariffActivation no está expuesto por HTTP, así que la UI no puede consumir la aprobación ni dejar la versión activa.",
-      );
-    }
+    await expect(page.locator('[data-screen="tarifa"]')).toHaveAttribute("data-version", "approved");
+    await page.getByRole("button", { name: "Activar" }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Activar" }).click();
+    await expect(page.locator('[data-screen="tarifa"]')).toHaveAttribute("data-version", "active");
   });
 });

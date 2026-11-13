@@ -188,6 +188,13 @@ export function requestActivation(priceListId: string, version: number) {
   );
 }
 
+export function activateVersion(priceListId: string, version: number) {
+  return api<{ approval_request_id?: string; status?: string }>(
+    `/v1/price-lists/${priceListId}/versions/${version}/activate`,
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
 export async function exportProducts(query: ProductQuery) {
   const path = productQuery(query).replace("/v1/products?", "/v1/products/export.csv?");
   const csv = await apiText(path);
