@@ -34,7 +34,7 @@ import {
   useToast,
   type BadgeTone,
 } from '@/ui'
-import { createVersion, requestActivation, saveVersionItems } from '@/pages/catalogo/api'
+import { activateVersion, createVersion, requestActivation, saveVersionItems } from '@/pages/catalogo/api'
 import { RecordBar, RecordTabs } from '@/pages/catalogo/frame'
 import { cmpDecimal, formatPrice, normalizeDecimal, showDecimal } from '@/pages/catalogo/money'
 import { RecordSkeleton } from '@/components/RecordSkeleton'
@@ -57,6 +57,7 @@ type Row = { key: string; product_id: string; min_qty: string; unit_price: strin
 const TONE: Record<VersionStatus, BadgeTone> = {
   draft: 'neutral',
   pending: 'warning',
+  approved: 'info',
   active: 'success',
   retired: 'neutral',
 }
@@ -127,7 +128,7 @@ function Editor({
   const [rowErrors, setRowErrors] = useState<Record<string, string>>({})
   const [banner, setBanner] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const [confirm, setConfirm] = useState(false)
+  const [confirm, setConfirm] = useState<'request' | 'activate' | null>(null)
   const [creating, setCreating] = useState(false)
   const [importNotes, setImportNotes] = useState<string[]>([])
   const [find, setFind] = useState('')
@@ -150,6 +151,7 @@ function Editor({
 
   const editable = Boolean(chosen && versionEditable(chosen) && canWrite)
   const status = chosen ? versionStatus(chosen) : null
+  const canActivate = allows(me, 'catalog.write') && status === 'approved'
   const dirty = JSON.stringify(rows) !== baseline
   const previous = chosen ? ordered.find((version) => version.version < chosen.version) : undefined
   const missing = missingPrices(rows, products)
@@ -203,19 +205,36 @@ function Editor({
     }
   }
 
-  async function activate() {
+  async function request() {
     if (!chosen) return
     setSaving(true)
     setBanner(null)
     try {
       await requestActivation(list.id, chosen.version)
-      setConfirm(false)
+      setConfirm(null)
       toast('Activación solicitada')
       onReload()
     } catch (error: unknown) {
-      setConfirm(false)
+      setConfirm(null)
       const message = error instanceof ApiError ? error.message : 'No se ha podido solicitar la activación.'
       setBanner(error instanceof ApiError && error.code === 'WC050' ? `${message} Crea una versión nueva.` : message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function commitActivation() {
+    if (!chosen) return
+    setSaving(true)
+    setBanner(null)
+    try {
+      await activateVersion(list.id, chosen.version)
+      setConfirm(null)
+      toast('Versión activada')
+      onReload()
+    } catch (error: unknown) {
+      setConfirm(null)
+      setBanner(error instanceof ApiError ? error.message : 'No se ha podido activar la versión.')
     } finally {
       setSaving(false)
     }
@@ -283,6 +302,7 @@ function Editor({
                 <p className="text-label text-text-tertiary">Versión cerrada. Crea una versión nueva para cambiar precios.</p>
               ) : null}
               {status === 'pending' ? <p className="text-label text-text-tertiary">Sigue en borrador hasta que se apruebe.</p> : null}
+              {status === 'approved' ? <p className="text-label text-text-tertiary">Aprobada. Actívala para que entre en vigor.</p> : null}
               {banner ? <Alert tone="danger">{banner}</Alert> : null}
               {editable && missing.length > 0 ? (
                 <Alert tone="warning">
@@ -334,11 +354,16 @@ function Editor({
                       variant={dirty ? 'secondary' : 'primary'}
                       size="sm"
                       disabled={saving || dirty || rows.length === 0}
-                      onClick={() => setConfirm(true)}
+                      onClick={() => setConfirm('request')}
                     >
                       {copy.catalog.requestActivation}
                     </Button>
                   </>
+                ) : null}
+                {canActivate ? (
+                  <Button type="button" variant="primary" size="sm" loading={saving} onClick={() => setConfirm('activate')}>
+                    {copy.catalog.activate}
+                  </Button>
                 ) : null}
               </div>
               {importNotes.length > 0 ? (
@@ -460,17 +485,19 @@ function Editor({
         }}
       />
       <ConfirmDialog
-        open={confirm}
-        title="Pedir activación"
+        open={confirm !== null}
+        title={confirm === 'activate' ? copy.catalog.activateTitle : 'Pedir activación'}
         body={
-          chosen
-            ? `Se pedirá aprobación para activar la versión ${chosen.version} desde el ${formatDate(chosen.valid_from)}. La versión sigue en borrador hasta que se apruebe.`
-            : ''
+          chosen && confirm === 'activate'
+            ? `La versión ${chosen.version} pasa a vigente desde el ${formatDate(chosen.valid_from)} y sustituye a la anterior en ese tramo.`
+            : chosen
+              ? `Se pedirá aprobación para activar la versión ${chosen.version} desde el ${formatDate(chosen.valid_from)}. Sigue en borrador hasta que se apruebe y se active.`
+              : ''
         }
-        confirmLabel={copy.catalog.requestActivation}
+        confirmLabel={confirm === 'activate' ? copy.catalog.activate : copy.catalog.requestActivation}
         busy={saving}
-        onClose={() => setConfirm(false)}
-        onConfirm={() => void activate()}
+        onClose={() => setConfirm(null)}
+        onConfirm={() => void (confirm === 'activate' ? commitActivation() : request())}
       />
     </div>
   )

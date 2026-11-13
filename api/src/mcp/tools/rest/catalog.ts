@@ -563,14 +563,30 @@ export const catalogRestTools: readonly AnyTool[] = [
     module: "catalog",
     scope: "catalog.write",
     title: "Pedir la activación de una tarifa",
-    description: "Pide la aprobación para activar una versión en borrador. Los precios no cambian hasta que se aprueba; el enlace de la aprobación sale en approvals_list_pending.",
+    description: "Pide la aprobación para activar una versión en borrador. La aprobación se decide aparte, en Aprobaciones; después se activa con catalog_price_list_version_activate. Los precios no cambian hasta entonces.",
     input: z.object({ id, version: z.number().int().min(1).max(100_000) }).strict(),
     route: "POST /v1/price-lists/:id/versions/:version/request-activation",
     current: { route: "GET /v1/price-lists/:id/versions" },
     summary: (input, current) => {
       const version = versionOf(current, input.version);
       const from = version && typeof version.valid_from === "string" ? ` desde el ${version.valid_from}` : "";
-      return `Pedir la aprobación para activar la versión ${input.version} de la tarifa${from}. Al aprobarse, sus precios pasan a aplicarse. ¿Confirmas?`;
+      return `Pedir la aprobación para activar la versión ${input.version} de la tarifa${from}. Después de aprobarla hay que activarla para que los precios pasen a aplicarse. ¿Confirmas?`;
+    },
+    web: priceListLink,
+  }),
+  defineRestWrite({
+    name: "catalog_price_list_version_activate",
+    module: "catalog",
+    scope: "catalog.write",
+    title: "Activar tarifa",
+    description: "Activa una versión ya aprobada y sin cambios desde la aprobación. Pasa a vigente, cierra la vigencia de la versión anterior que solape y sus precios pasan a aplicarse. Un borrador sin aprobar no se puede activar.",
+    input: z.object({ id, version: z.number().int().min(1).max(100_000) }).strict(),
+    route: "POST /v1/price-lists/:id/versions/:version/activate",
+    current: { route: "GET /v1/price-lists/:id/versions" },
+    summary: (input, current) => {
+      const version = versionOf(current, input.version);
+      const from = version && typeof version.valid_from === "string" ? ` desde el ${version.valid_from}` : "";
+      return `Activar la versión ${input.version} de la tarifa${from}. Sustituye a la vigente en ese tramo y sus precios pasan a aplicarse. ¿Confirmas?`;
     },
     web: priceListLink,
   }),

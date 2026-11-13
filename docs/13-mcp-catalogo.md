@@ -1,6 +1,6 @@
 # 13 · Catálogo de herramientas MCP
 
-> Generado con `bun run scripts/mcp-catalog.ts` (en `api/`). 436 herramientas, 210 de escritura en dos pasos (`_prepare` y `_commit`). Reglas y exclusiones: `13-mcp.md`.
+> Generado con `bun run scripts/mcp-catalog.ts` (en `api/`). 439 herramientas, 212 de escritura en dos pasos (`_prepare` y `_commit`). Reglas y exclusiones: `13-mcp.md`.
 
 ## Sistema y búsqueda (15)
 
@@ -73,7 +73,7 @@
 | `contacts_unarchive_prepare` / `_commit` | escritura | Recuperar contacto archivado |
 | `contacts_update_prepare` / `_commit` | escritura | Editar contacto |
 
-## Catálogo, formatos y tarifas (28)
+## Catálogo, formatos y tarifas (29)
 
 | Herramienta | Tipo | Qué hace |
 |---|---|---|
@@ -88,6 +88,7 @@
 | `catalog_price_list_create_prepare` / `_commit` | escritura | Crear tarifa |
 | `catalog_price_list_items_set_prepare` / `_commit` | escritura | Precios de un borrador de tarifa |
 | `catalog_price_list_update_prepare` / `_commit` | escritura | Editar tarifa |
+| `catalog_price_list_version_activate_prepare` / `_commit` | escritura | Activar tarifa |
 | `catalog_price_list_version_activation_request_prepare` / `_commit` | escritura | Pedir la activación de una tarifa |
 | `catalog_price_list_version_create_prepare` / `_commit` | escritura | Nueva versión de tarifa |
 | `catalog_price_list_versions_list` | lectura | Versiones de una tarifa |
@@ -192,7 +193,7 @@
 | `billing_legacy_invoice_get` | lectura | Factura histórica de Holded |
 | `billing_legacy_invoice_pdf_download` | lectura | PDF de factura histórica |
 | `billing_legacy_invoices_list` | lectura | Facturas históricas de Holded |
-| `billing_legacy_overview_get` | lectura | Resumen del histórico de Holded |
+| `billing_legacy_overview_get` | lectura | Resumen del panel |
 | `billing_legacy_products_list` | lectura | Productos históricos de Holded |
 | `billing_legal_entities_document_logo_get` | lectura | Logotipo de la sociedad |
 | `billing_legal_entities_document_logo_remove_prepare` / `_commit` | escritura | Quitar el logotipo de la sociedad |
@@ -259,10 +260,11 @@
 | `purchasing_expenses_export_csv` | lectura | Libro de facturas recibidas (CSV) |
 | `purchasing_expenses_list` | lectura | Gastos |
 
-## Stock, aforos y ubicaciones (23)
+## Stock, aforos y ubicaciones (25)
 
 | Herramienta | Tipo | Qué hace |
 |---|---|---|
+| `inventory_bottled_dispose_prepare` / `_commit` | escritura | Dar de baja botellas |
 | `inventory_count_close_prepare` / `_commit` | escritura | Cerrar el recuento del aforo |
 | `inventory_count_create_prepare` / `_commit` | escritura | Abrir aforo |
 | `inventory_count_get` | lectura | Ficha del aforo |
@@ -286,6 +288,7 @@
 | `inventory_stock_balances_list` | lectura | Existencias físicas |
 | `inventory_stock_moves_list` | lectura | Movimientos de stock |
 | `inventory_tax_warehouses_list` | lectura | Depósitos fiscales |
+| `inventory_warehouses_get` | lectura | Almacenes de envasado |
 
 ## Bodega: depósitos, operaciones, lotes y enología (86)
 
