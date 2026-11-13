@@ -1,6 +1,6 @@
 # 13 · Catálogo de herramientas MCP
 
-> Generado con `bun run scripts/mcp-catalog.ts` (en `api/`). 439 herramientas, 212 de escritura en dos pasos (`_prepare` y `_commit`). Reglas y exclusiones: `13-mcp.md`.
+> Generado con `bun run scripts/mcp-catalog.ts` (en `api/`). 440 herramientas, 212 de escritura en dos pasos (`_prepare` y `_commit`). Reglas y exclusiones: `13-mcp.md`.
 
 ## Sistema y búsqueda (15)
 
@@ -107,7 +107,7 @@
 | `catalog_wine_update_prepare` / `_commit` | escritura | Editar vino |
 | `catalog_wines_list` | lectura | Vinos |
 
-## Ventas: presupuestos, pedidos y albaranes (49)
+## Ventas: presupuestos, pedidos y albaranes (50)
 
 | Herramienta | Tipo | Qué hace |
 |---|---|---|
@@ -159,6 +159,7 @@
 | `sales_quote_pdf_get` | lectura | PDF del presupuesto |
 | `sales_quote_reject_prepare` / `_commit` | escritura | Rechazar presupuesto |
 | `sales_quote_update_prepare` / `_commit` | escritura | Editar presupuesto |
+| `sales_quotes_conversion_report` | lectura | Conversión de presupuestos |
 | `sales_quotes_list` | lectura | Lista de presupuestos |
 
 ## Facturación, series y sociedades (44)

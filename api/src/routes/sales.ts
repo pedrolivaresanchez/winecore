@@ -14,6 +14,7 @@ import {
 import { salesCatalog } from '../core/sales/catalog';
 import {
   getQuoteById,
+  getQuoteConversion,
   getQuotePdf,
   getQuotes,
   patchQuoteById,
@@ -76,6 +77,7 @@ export function salesRoutes(writer: Writer, guardDeps: GuardDeps) {
       return salesCatalog(writer, new URL(request.url), new Date());
     }, { beforeHandle: read })
     .get('/v1/quotes', ({ request }) => getQuotes(writer, request), { beforeHandle: read })
+    .get('/v1/quotes/conversion', ({ request }) => getQuoteConversion(writer, request), { beforeHandle: read })
     .post('/v1/quotes', async ({ request, set }) => {
       const result = await postQuote(writer, request);
       set.status = result.status;
