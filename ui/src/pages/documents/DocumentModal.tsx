@@ -86,7 +86,9 @@ function DocumentBody({
   const labels = useUiLabels()
   const rootRef = useRef<HTMLDivElement>(null)
   const frameRef = useRef<HTMLIFrameElement>(null)
-  const [pane, setPane] = useState<Pane>('pdf')
+  const [pane, setPane] = useState<Pane>(() =>
+    source === 'quote' && typeof window !== 'undefined' && !window.matchMedia('(min-width: 1024px)').matches ? 'details' : 'pdf',
+  )
   const [bump, setBump] = useState(0)
   const doc = useDocument(source, id)
   const reload = doc.reload

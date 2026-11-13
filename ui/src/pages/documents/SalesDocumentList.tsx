@@ -205,7 +205,7 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
   const to = params.get('to') ?? ''
   const yearParam = params.get('year')
   const explicitRange = Boolean(from || to)
-  const noteYear = kind === 'delivery_note' && !explicitRange
+  const periodYear = (kind === 'quote' || kind === 'delivery_note') && !explicitRange
     ? yearParam === 'all'
       ? ''
       : yearParam && /^\d{4}$/.test(yearParam)
@@ -265,9 +265,9 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
     if (statuses.length > 0) next.set('status', statuses.join(','))
     if (entity) next.set('entity', entity)
     if (origin) next.set('origin', origin)
-    if (noteYear) {
-      next.set('from', `${noteYear}-01-01`)
-      next.set('to', `${noteYear}-12-31`)
+    if (periodYear) {
+      next.set('from', `${periodYear}-01-01`)
+      next.set('to', `${periodYear}-12-31`)
     } else {
       if (from) next.set('from', from)
       if (to) next.set('to', to)
@@ -280,7 +280,7 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
       next.set('dir', dir)
     }
     return next.toString()
-  }, [customer, debounced, delivery, dir, direction, entity, from, kind, noteYear, origin, page, pageSize, sort, statuses, to, verifactu])
+  }, [customer, debounced, delivery, dir, direction, entity, from, kind, periodYear, origin, page, pageSize, sort, statuses, to, verifactu])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -678,7 +678,7 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
 
   if (!canRead(me, book)) return <NoPermission />
 
-  const filtersActive = Boolean(debounced || statuses.length || entity || origin || from || to || customer || verifactu || delivery)
+  const filtersActive = Boolean(debounced || statuses.length || entity || origin || from || to || yearParam || customer || verifactu || delivery)
   const loadingFirst = loading && !data
   const screen = screenOf(book, loadingFirst ? 'loading' : items.length === 0 && !filtersActive ? 'empty' : 'list')
 
@@ -725,36 +725,17 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
         </header>
       )}
 
-      {book === 'quote' ? (
-        <QuoteConversion
-          entity={entity}
-          from={from}
-          to={to}
-          origin={origin}
-          customer={customer}
-          statuses={statuses}
-          onStatus={(bucket) => {
-            update((next) => {
-              if (bucket === 'all') next.delete('status')
-              else if (bucket === 'abierto') next.set('status', 'draft,sent')
-              else if (bucket === 'aceptado') next.set('status', 'accepted')
-              else if (bucket === 'rechazado') next.set('status', 'rejected')
-              else next.set('status', 'converted')
-            })
-          }}
-        />
-      ) : null}
-
       <FilterBar
         leading={
           book === 'quote' || book === 'delivery_note' ? (
             <span className="flex items-center gap-1.5">
               <SalesSwitch current={salesDoc} />
-              {book === 'delivery_note' ? (
+              {book === 'quote' || book === 'delivery_note' ? (
                 <Select
                   size="sm"
+                  className="w-[4.75rem] shrink-0"
                   aria-label={copy.salesDocs.year}
-                  value={explicitRange ? 'range' : noteYear || 'all'}
+                  value={explicitRange ? 'range' : periodYear || 'all'}
                   onChange={(event) => {
                     const value = event.target.value
                     update((next) => {
@@ -913,6 +894,26 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
         }}
         loading={loading}
       />
+
+      {book === 'quote' ? (
+        <QuoteConversion
+          entity={entity}
+          from={periodYear ? `${periodYear}-01-01` : from}
+          to={periodYear ? `${periodYear}-12-31` : to}
+          origin={origin}
+          customer={customer}
+          statuses={statuses}
+          onStatus={(bucket) => {
+            update((next) => {
+              if (bucket === 'all') next.delete('status')
+              else if (bucket === 'abierto') next.set('status', 'draft,sent')
+              else if (bucket === 'aceptado') next.set('status', 'accepted')
+              else if (bucket === 'rechazado') next.set('status', 'rejected')
+              else next.set('status', 'converted')
+            })
+          }}
+        />
+      ) : null}
 
       {shown ? (
         <DocumentModal

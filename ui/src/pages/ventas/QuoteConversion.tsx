@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useApi } from '@/hooks/use-api'
 import { copy } from '@/i18n'
 import { formatInteger, formatMoney } from '@/lib/format'
@@ -114,9 +114,15 @@ export function QuoteConversion({
   const bucket = conversionBucket(statuses)
   const summary = report.data?.summary
   const rows = report.data?.by_reference ?? []
+  const [open, setOpen] = useState(false)
+  const folded = summary
+    ? `${formatInteger(summary.quotes)} · ${rate(summary.conversion_bottles_pct, summary.conversion_amount_pct)}`
+    : '—'
 
   return (
-    <section aria-label={text.title} data-conversion="summary" className="shrink-0 border-b border-border-subtle px-3 py-3 sm:px-4">
+    <section aria-label={text.title} data-conversion="summary" className="shrink-0 border-t border-border-subtle bg-surface">
+      {open ? (
+        <div className="max-h-[50vh] min-w-0 overflow-auto px-3 py-3 sm:px-4">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-label font-medium text-ink-900">{text.title}</h2>
         <div className="max-w-full overflow-x-auto">
@@ -141,16 +147,16 @@ export function QuoteConversion({
         <p className="mt-2 text-caption text-text-secondary">{text.loadError}</p>
       ) : (
         <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4 lg:grid-cols-7">
-          <Figure label={text.quotes} value={summary ? formatInteger(summary.quotes) : '—'} raw={summary ? String(summary.quotes) : ''} attr="quotes" />
-          <Figure label={text.bottles} value={bottles(summary?.bottles_budgeted)} raw={summary?.bottles_budgeted ?? ''} attr="bottles" />
+          <Figure label={text.quotes} value={summary ? formatInteger(summary.quotes) : '—'} />
+          <Figure label={text.bottles} value={bottles(summary?.bottles_budgeted)} />
           <Figure label={text.base} value={money(summary?.base_possible)} />
           <Figure label={text.total} value={money(summary?.total_possible)} />
-          <Figure label={text.invoicedBottles} value={bottles(summary?.bottles_invoiced)} raw={summary?.bottles_invoiced ?? ''} attr="invoiced" />
+          <Figure label={text.invoicedBottles} value={bottles(summary?.bottles_invoiced)} />
           <Figure label={text.invoicedAmount} value={money(summary?.total_invoiced)} />
-          <Figure label={text.rate} value={rate(summary?.conversion_bottles_pct, summary?.conversion_amount_pct)} raw={summary?.conversion_bottles_pct ?? ''} attr="rate" />
+          <Figure label={text.rate} value={rate(summary?.conversion_bottles_pct, summary?.conversion_amount_pct)} />
         </dl>
       )}
-      <div className="mt-3 max-h-80 overflow-auto" data-conversion="breakdown">
+      <div className="mt-3 min-w-0 overflow-x-auto" data-conversion="breakdown">
         {rows.length === 0 ? (
           <p className="text-caption text-text-tertiary">{report.loading ? '—' : text.empty}</p>
         ) : (
@@ -180,6 +186,21 @@ export function QuoteConversion({
           </table>
         )}
       </div>
+        </div>
+      ) : null}
+      <button
+        type="button"
+        aria-expanded={open}
+        data-conversion-quotes={summary ? String(summary.quotes) : ''}
+        data-conversion-bottles={summary?.bottles_budgeted ?? ''}
+        data-conversion-invoiced={summary?.bottles_invoiced ?? ''}
+        data-conversion-rate={summary?.conversion_bottles_pct ?? ''}
+        onClick={() => setOpen((current) => !current)}
+        className="flex h-8 w-full min-w-0 items-center gap-2 px-3 text-left outline-none focus-visible:shadow-(--shadow-focus) max-sm:h-11 sm:px-4"
+      >
+        <span className="shrink-0 text-label font-medium text-ink-900">{text.title}</span>
+        <span className="truncate text-caption text-text-tertiary">{folded}</span>
+      </button>
     </section>
   )
 }
@@ -244,10 +265,9 @@ function DocList({ title, docs, href }: { title: string; docs: ConversionDoc[]; 
   )
 }
 
-function Figure({ label, value, raw = '', attr }: { label: string; value: string; raw?: string; attr?: string }) {
-  const data = attr ? { [`data-conversion-${attr}`]: raw } : {}
+function Figure({ label, value }: { label: string; value: string }) {
   return (
-    <div className="min-w-0" {...data}>
+    <div className="min-w-0">
       <dt className="text-caption text-text-tertiary">{label}</dt>
       <dd className="truncate text-label font-medium tabular-nums text-ink-900">{value}</dd>
     </div>
