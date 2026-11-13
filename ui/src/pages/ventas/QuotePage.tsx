@@ -236,11 +236,6 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
                   {copy.sales.reject}
                 </Button>
               ) : null}
-              {draft && canWrite && !quote.number ? (
-                <Button type="button" variant="secondary" size="sm" onClick={() => setDeleting(true)}>
-                  {copy.sales.deleteDraft}
-                </Button>
-              ) : null}
               {canOrder && !open ? (
                 <Button
                   type="button"
@@ -263,6 +258,9 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
                   <>
                     <MenuItem onClick={() => { close(); showPdf() }}>{copy.sales.pdf}</MenuItem>
                     {draft ? <MenuItem onClick={() => { close(); beginEdit() }}>{copy.sales.edit}</MenuItem> : null}
+                    {draft && !quote.number ? (
+                      <MenuItem tone="danger" onClick={() => { close(); setDeleting(true) }}>{copy.sales.deleteDraft}</MenuItem>
+                    ) : null}
                     {canOrder && open ? (
                       <MenuItem
                         onClick={() => {
