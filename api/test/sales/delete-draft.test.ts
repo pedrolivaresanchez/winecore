@@ -113,6 +113,29 @@ describe('eliminar borradores', () => {
     expect(denied.body?.code).toBe('WC_DRAFT_DELETE');
   });
 
+  it('al borrar el pedido en borrador quita el enlace con la línea del presupuesto', async () => {
+    const quote = await json(ctx, 'POST', '/v1/quotes', {
+      customer_id: fx.customer,
+      channel: 'horeca',
+      lines: [{ product_id: fx.product, quantity: '2' }],
+    });
+    const order = await json(ctx, 'POST', `/v1/quotes/${String(quote.id)}/to-order`);
+    const links = await ctx.writer.read(sql`
+      SELECT quote_line_id FROM sales.quote_line_link WHERE order_id = CAST(${String(order.id)} AS UUID)
+    `);
+    expect(links.length).toBeGreaterThan(0);
+    const removed = await call(ctx, 'DELETE', `/v1/sales-orders/${String(order.id)}`);
+    expect(removed.status).toBe(200);
+    const left = await ctx.writer.read(sql`
+      SELECT quote_line_id FROM sales.quote_line_link WHERE order_id = CAST(${String(order.id)} AS UUID)
+    `);
+    expect(left).toHaveLength(0);
+    const kept = await json(ctx, 'GET', `/v1/quotes/${String(quote.id)}`);
+    expect(kept.status).toBe('converted');
+    const denied = await call(ctx, 'DELETE', `/v1/quotes/${String(quote.id)}`);
+    expect(denied.status).toBe(409);
+  });
+
   it('elimina un pedido en borrador y no lo cancela asignándole número', async () => {
     const before = await nextOf(fx.po, 'sales_order');
     const draft = await json(ctx, 'POST', '/v1/sales-orders', {

@@ -118,6 +118,30 @@ async function assertNoTraces(
   `)) blocked('Tiene registro Verifactu. No se elimina.');
 }
 
+async function dropQuoteLineLinks(tx: Tx, column: 'quote_id' | 'order_id', id: string): Promise<void> {
+  const links = await rowsOf(tx, sql`
+    SELECT quote_line_id, quote_id, order_id, order_line_id
+    FROM sales.quote_line_link
+    WHERE ${sql.raw(column)} = CAST(${id} AS UUID)
+  `);
+  for (const link of links) {
+    tx.audit({
+      table: 'sales.quote_line_link',
+      rowId: idOf(link.quote_line_id),
+      action: 'DELETE',
+      before: {
+        quote_id: idOf(link.quote_id),
+        order_id: idOf(link.order_id),
+        order_line_id: idOf(link.order_line_id),
+      },
+      after: null,
+    });
+  }
+  if (links.length > 0) {
+    tx.write(sql`DELETE FROM sales.quote_line_link WHERE ${sql.raw(column)} = CAST(${id} AS UUID)`);
+  }
+}
+
 async function dropLinks(tx: Tx, table: string, ids: readonly string[]): Promise<void> {
   const links: Row[] = [];
   for (const id of ids) {
@@ -323,6 +347,7 @@ export async function deleteDraft(
   if (kind === 'quote') {
     await writer.withWrite(actor, async (tx) => {
       await dropLinks(tx, 'sales.quote', [id]);
+      await dropQuoteLineLinks(tx, 'quote_id', id);
       const lines = await rowsOf(tx, sql`
         SELECT id, line_no, product_id, quantity FROM sales.quote_line WHERE quote_id = CAST(${id} AS UUID)
       `);
@@ -346,6 +371,7 @@ export async function deleteDraft(
   if (kind === 'sales_order') {
     await writer.withWrite(actor, async (tx) => {
       await dropLinks(tx, 'sales.sales_order', [id]);
+      await dropQuoteLineLinks(tx, 'order_id', id);
       const lines = await rowsOf(tx, sql`
         SELECT id, line_no, product_id, quantity FROM sales.sales_order_line WHERE order_id = CAST(${id} AS UUID)
       `);

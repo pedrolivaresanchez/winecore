@@ -12,6 +12,7 @@ import {
   createVersion,
   listPriceLists,
   listVersions,
+  executeTariffActivation,
   quoteFromRequest,
   replaceItems,
   requestVersionActivation,
@@ -149,6 +150,9 @@ export function catalogRoutes(deps: GuardDeps) {
     ), { beforeHandle: write })
     .post('/v1/price-lists/:id/versions/:version/request-activation', ({ request, params }) => (
       requestVersionActivation(writer, actor(request, 'pedir activación de tarifa'), params.id, params.version)
+    ), { beforeHandle: write })
+    .post('/v1/price-lists/:id/versions/:version/activate', ({ request, params }) => (
+      executeTariffActivation(writer, actor(request, 'activar tarifa'), params.id, params.version)
     ), { beforeHandle: write })
     .get('/v1/price-quote', ({ request }) => quoteFromRequest(writer, request), { beforeHandle: read });
 }

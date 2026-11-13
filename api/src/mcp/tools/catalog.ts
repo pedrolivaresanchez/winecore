@@ -3,10 +3,12 @@ import { z } from "zod";
 
 import { getProduct, listProductPrices, listProducts } from "../../core/catalog/products";
 import { listFormats } from "../../core/catalog/formats";
+import { grossToBase } from "../../core/catalog/vat-price";
 import { listPriceLists, priceFor } from "../../core/catalog/pricing";
 import { sql } from "../../core/db/sql";
 import { domainError } from "../../core/errors";
 import { money } from "../../core/money";
+import { priceListCodesForChannel } from "../../core/sales/pricing";
 import { businessDate } from "../../core/time";
 import { defineReadTool } from "../registry";
 import { requireWriter, text, webLink } from "../runtime";
@@ -14,19 +16,6 @@ import { requireWriter, text, webLink } from "../runtime";
 const page = {
   cursor: z.string().min(1).max(300).optional(),
   limit: z.number().int().min(1).max(100).optional(),
-};
-
-const CHANNEL_LIST: Record<string, string> = {
-  direct: "final",
-  distributor: "distributor",
-  horeca: "final",
-  eci_edi: "custom-eci",
-  web: "shop",
-  fair: "final",
-  cellar_shop: "shop",
-  export: "final",
-  institutional: "final",
-  intercompany: "distributor",
 };
 
 function localRequest(path: string): Request {
@@ -222,7 +211,7 @@ export const catalogPriceQuote = defineReadTool({
   module: "catalog",
   scope: "catalog.read",
   title: "Cotizar",
-  description: "Precio de tarifa para unas líneas. No crea un pedido ni una factura.",
+  description: "Precio de tarifa para unas líneas, con la misma tarifa que un presupuesto: la del cliente o, si no tiene, la del canal (hostelería usa Restaurante y, si no está cargada, Distribución; nunca la de PVP). No crea un pedido ni una factura.",
   input: z.object({
     customer_id: z.uuid().optional(),
     channel: z.string().trim().regex(/^[a-z0-9_]{2,40}$/),
@@ -231,8 +220,8 @@ export const catalogPriceQuote = defineReadTool({
   }),
   handler: async (ctx, input) => {
     const writer = requireWriter(ctx);
-    const listCode = CHANNEL_LIST[input.channel];
-    if (!listCode && !input.customer_id) {
+    const codes = priceListCodesForChannel(input.channel);
+    if (codes.length === 0) {
       throw domainError("WC_VALIDATION", { channel: "Canal sin tarifa" });
     }
     const date = input.date ?? businessDate(ctx.now());
@@ -250,11 +239,17 @@ export const catalogPriceQuote = defineReadTool({
       if (!product) throw domainError("WC_VALIDATION", { sku: `No existe ${line.sku}` });
       const qty = new Decimal(line.quantity);
       const priced = input.customer_id
-        ? await priceFor(writer, { customerId: input.customer_id, productId: product.id, qty, date })
+        ? await priceFor(writer, {
+          customerId: input.customer_id,
+          productId: product.id,
+          qty,
+          date,
+          channel: input.channel,
+        })
         : null;
       const fallback = priced
         ? { unit: priced.unitPrice.toFixed(), list: priced.priceListCode }
-        : await priceByList(writer, listCode ?? "final", product.id, line.quantity, date);
+        : await priceByChannel(writer, codes, product.id, line.quantity, date);
       const unit = money.fromString(fallback.unit);
       const base = money.round2(money.mul(unit, qty));
       const taxCode = product.tax ?? "";
@@ -289,31 +284,44 @@ export const catalogPriceQuote = defineReadTool({
   },
 });
 
-async function priceByList(
+/**
+ * Sin cliente, la tarifa es la del canal (`sales/pricing.ts`): la primera lista que exista.
+ * Si el precio lleva el IVA dentro, se devuelve la base, igual que `priceFor`.
+ */
+async function priceByChannel(
   writer: ReturnType<typeof requireWriter>,
-  code: string,
+  codes: readonly string[],
   productId: string,
   qty: string,
   date: string,
 ): Promise<{ unit: string; list: string }> {
-  const rows = await writer.read<{ unit_price: string; code: string }>(sql`
-    SELECT CAST(i.unit_price AS VARCHAR) AS unit_price, l.code
-    FROM catalog.price_list_item i
-    JOIN catalog.price_list_version v ON v.id = i.version_id
-    JOIN catalog.price_list l ON l.id = v.price_list_id
-    WHERE l.code = ${code}
-      AND l.is_active
-      AND v.status = 'active'
-      AND v.valid_from <= CAST(${date} AS DATE)
-      AND (v.valid_to IS NULL OR v.valid_to > CAST(${date} AS DATE))
-      AND i.product_id = CAST(${productId} AS UUID)
-      AND i.min_qty <= CAST(${qty} AS DECIMAL(14,3))
-    ORDER BY i.min_qty DESC
-    LIMIT 1
-  `);
-  const row = rows[0];
-  if (!row) throw domainError("WC_VALIDATION", { sku: "No hay un precio vigente" });
-  return { unit: row.unit_price, list: row.code };
+  for (const code of codes) {
+    const lists = await writer.read<{ id: string; code: string; tax_included: boolean }>(sql`
+      SELECT id::VARCHAR AS id, code, tax_included
+      FROM catalog.price_list
+      WHERE code = ${code} AND is_active
+    `);
+    const list = lists[0];
+    if (!list) continue;
+    const rows = await writer.read<{ unit_price: string }>(sql`
+      SELECT CAST(i.unit_price AS VARCHAR) AS unit_price
+      FROM catalog.price_list_item i
+      JOIN catalog.price_list_version v ON v.id = i.version_id
+      WHERE v.price_list_id = CAST(${list.id} AS UUID)
+        AND v.status = 'active'
+        AND v.valid_from <= CAST(${date} AS DATE)
+        AND (v.valid_to IS NULL OR v.valid_to > CAST(${date} AS DATE))
+        AND i.product_id = CAST(${productId} AS UUID)
+        AND i.min_qty <= CAST(${qty} AS DECIMAL(14,3))
+      ORDER BY v.valid_from DESC, v.version DESC, i.min_qty DESC
+      LIMIT 1
+    `);
+    const row = rows[0];
+    if (!row) throw domainError("WC_VALIDATION", { sku: "No hay un precio vigente" });
+    const unit = list.tax_included === true ? grossToBase(row.unit_price).toFixed(2) : row.unit_price;
+    return { unit, list: list.code };
+  }
+  throw domainError("WC_VALIDATION", { channel: "No hay tarifa para este canal" });
 }
 
 async function taxRate(writer: ReturnType<typeof requireWriter>, code: string): Promise<string | null> {

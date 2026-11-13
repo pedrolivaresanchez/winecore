@@ -8,6 +8,7 @@ import { iconStroke } from '@/lib/motion'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
 import { InvoiceActions, QuoteActions } from '@/pages/documents/DocumentActions'
+import { QuoteTrace } from '@/pages/ventas/QuoteConversion'
 import { PdfActions, PdfPreview } from '@/pages/documents/PdfPreview'
 import { usePdf, type PdfHandle } from '@/pages/documents/pdf'
 import { earlyPdfPath, partyIdOf, useDocument, viewOf, type DocRecord, type DocSource, type DocView } from '@/pages/documents/sources'
@@ -270,6 +271,9 @@ function Details({
 
       {record.source === 'invoice' ? <InvoiceActions key={record.data.id} me={me} invoice={record.data} onChanged={onChanged} /> : null}
       {record.source === 'quote' ? <QuoteActions key={record.data.id} me={me} quote={record.data} onChanged={onChanged} /> : null}
+      {record.source === 'quote' || (record.source === 'holded-document' && record.data.kind === 'quote') ? (
+        <QuoteTrace id={record.data.id} />
+      ) : null}
 
       <div className="grid gap-1.5">
         <PdfActions pdf={pdf} frameRef={frameRef} />

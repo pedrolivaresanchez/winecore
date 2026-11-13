@@ -15,6 +15,7 @@
 - `GET /api/v1/price-lists`, `GET /api/v1/price-lists/{id}/versions`.
 - `POST /api/v1/price-lists/{id}/versions` (borrador), `PUT .../versions/{v}/items`.
 - `POST /api/v1/price-lists/{id}/versions/{v}/request-activation` → aprobación con el hash de la tabla de precios.
+- `POST /api/v1/price-lists/{id}/versions/{v}/activate` consume esa aprobación y deja la versión vigente. Un borrador sin aprobar no se activa.
 - Intercompañía: `GET/POST /api/v1/intercompany/tariffs` (tarifa base + descuento + vigencia + referencia a la validación del asesor).
 
 ## Campos y validaciones
@@ -30,10 +31,11 @@
 |---|---|---|---|
 | Nueva versión | `catalog.write` | Copia la vigente como borrador | — |
 | Pedir activación | `catalog.write` | Solicitud de aprobación | Aprobación (`tariff_activation`) |
+| Activar | `catalog.write` | Consume la aprobación y pasa la versión a vigente | Confirmación |
 | Importar CSV | `catalog.write` | Carga precios en el borrador con informe de errores | — |
 
 ## Estados
-Versión aprobada: solo lectura. Productos sin precio en la versión: aviso.
+Borrador: editable. Con la aprobación pendiente, o ya aprobada y sin activar: solo lectura. Activa: solo lectura. Productos sin precio en la versión: aviso.
 
 ## Móvil
 Consulta de precios por producto (lectura).

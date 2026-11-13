@@ -1,6 +1,6 @@
 # 13 · Catálogo de herramientas MCP
 
-> Generado con `bun run scripts/mcp-catalog.ts` (en `api/`). 443 herramientas, 216 de escritura en dos pasos (`_prepare` y `_commit`). Reglas y exclusiones: `13-mcp.md`.
+> Generado con `bun run scripts/mcp-catalog.ts` (en `api/`). 445 herramientas, 217 de escritura en dos pasos (`_prepare` y `_commit`). Reglas y exclusiones: `13-mcp.md`.
 
 ## Sistema y búsqueda (15)
 
@@ -73,7 +73,7 @@
 | `contacts_unarchive_prepare` / `_commit` | escritura | Recuperar contacto archivado |
 | `contacts_update_prepare` / `_commit` | escritura | Editar contacto |
 
-## Catálogo, formatos y tarifas (28)
+## Catálogo, formatos y tarifas (29)
 
 | Herramienta | Tipo | Qué hace |
 |---|---|---|
@@ -88,6 +88,7 @@
 | `catalog_price_list_create_prepare` / `_commit` | escritura | Crear tarifa |
 | `catalog_price_list_items_set_prepare` / `_commit` | escritura | Precios de un borrador de tarifa |
 | `catalog_price_list_update_prepare` / `_commit` | escritura | Editar tarifa |
+| `catalog_price_list_version_activate_prepare` / `_commit` | escritura | Activar tarifa |
 | `catalog_price_list_version_activation_request_prepare` / `_commit` | escritura | Pedir la activación de una tarifa |
 | `catalog_price_list_version_create_prepare` / `_commit` | escritura | Nueva versión de tarifa |
 | `catalog_price_list_versions_list` | lectura | Versiones de una tarifa |
@@ -106,7 +107,7 @@
 | `catalog_wine_update_prepare` / `_commit` | escritura | Editar vino |
 | `catalog_wines_list` | lectura | Vinos |
 
-## Ventas: presupuestos, pedidos y albaranes (52)
+## Ventas: presupuestos, pedidos y albaranes (53)
 
 | Herramienta | Tipo | Qué hace |
 |---|---|---|
@@ -161,6 +162,7 @@
 | `sales_quote_pdf_get` | lectura | PDF del presupuesto |
 | `sales_quote_reject_prepare` / `_commit` | escritura | Rechazar presupuesto |
 | `sales_quote_update_prepare` / `_commit` | escritura | Editar presupuesto |
+| `sales_quotes_conversion_report` | lectura | Conversión de presupuestos |
 | `sales_quotes_list` | lectura | Lista de presupuestos |
 
 ## Facturación, series y sociedades (45)

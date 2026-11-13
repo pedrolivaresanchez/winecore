@@ -39,6 +39,7 @@ import { useDocParam } from '@/pages/documents/use-doc-param'
 import { exportBook, requestBatch } from '@/pages/facturas/api'
 import { downloadBook } from '@/pages/gastos/api'
 import { currentQuarter, quarterOf } from '@/pages/gastos/catalog'
+import { QuoteConversion } from '@/pages/ventas/QuoteConversion'
 import { SalesHeader, SalesSwitch } from '@/pages/ventas/SalesTabs'
 import { FRAME_GUTTER } from '@/ui/frame'
 import { DownloadSimple, FileText, Receipt, Send } from '@/ui/icons'
@@ -723,6 +724,26 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
           </div>
         </header>
       )}
+
+      {book === 'quote' ? (
+        <QuoteConversion
+          entity={entity}
+          from={from}
+          to={to}
+          origin={origin}
+          customer={customer}
+          statuses={statuses}
+          onStatus={(bucket) => {
+            update((next) => {
+              if (bucket === 'all') next.delete('status')
+              else if (bucket === 'abierto') next.set('status', 'draft,sent')
+              else if (bucket === 'aceptado') next.set('status', 'accepted')
+              else if (bucket === 'rechazado') next.set('status', 'rejected')
+              else next.set('status', 'converted')
+            })
+          }}
+        />
+      ) : null}
 
       <FilterBar
         leading={
