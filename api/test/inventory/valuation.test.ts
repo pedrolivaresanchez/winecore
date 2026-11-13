@@ -9,6 +9,7 @@ import {
   parseEur,
   previousPriceNote,
   unitsValue,
+  wineTypeOf,
   type TariffPrice,
   type TariffVersion,
 } from '../../src/core/inventory/valuation';
@@ -40,6 +41,9 @@ describe('precio de valoración', () => {
     expect(chooseStoredPrice(rows, 'future', current, today)).toBeNull();
     expect(chooseStoredPrice(rows, 'nadie', current, today)).toBeNull();
     expect(previousPriceNote(2, '2025-06-01')).toBe('Precio de tarifa anterior · v2 · 01/06/2025');
+    expect(wineTypeOf('red')).toEqual({ code: 'red', label: 'Tinto' });
+    expect(wineTypeOf('blanco')).toEqual({ code: 'white', label: 'Blanco' });
+    expect(wineTypeOf(null)).toEqual({ code: 'unknown', label: 'Sin tipo' });
   });
 
   it('deja la base sin IVA y los importes a 2 decimales', () => {
@@ -133,14 +137,19 @@ describe('valoración de existencias', () => {
       });
       expect(bare).toMatchObject({ missing_price: true, value: null, price_note: 'Sin precio' });
       expect(lees).toMatchObject({ litres: '936.00', unit_price: '0.00', value: '0.00', price_origin: 'worthless', price_note: 'Sin valor' });
-      expect(lines.some((line) => line.vessel_code === 'BAR-001')).toBe(false);
+      const barrel = lines.find((line) => line.vessel_code === 'BAR-001');
+      expect(barrel).toMatchObject({ kind: 'bulk', litres: '300.00', unit_price: '3.00', value: '900.00', price_note: 'Precio por litro' });
       expect(page.packaged).toMatchObject({ bottles: 22, value: '318.00', partial: true, missing: 1, previous: 1 });
       expect(page.demijohns.value).toBe('800.00');
-      expect(page.bulk.value).toBe('3000.00');
-      expect(page.total).toEqual({ value: '4118.00', partial: true });
+      expect(page.bulk.value).toBe('3900.00');
+      expect(page.total).toEqual({ value: '5018.00', partial: true });
       const wine = page.groups.find((group) => group.wine_name === 'Tinto Ejemplo');
       expect(wine?.lines.length).toBeGreaterThan(1);
-      expect(wine?.value).toBe('4118.00');
+      expect(wine?.value).toBe('5018.00');
+      const tinto = page.types.find((type) => type.label === 'Tinto');
+      expect(tinto?.value).toBe('5018.00');
+      expect(tinto?.groups.some((group) => group.wine_name === 'Tinto Ejemplo')).toBe(true);
+      expect(page.types.find((type) => type.label === 'Sin tipo')?.value).toBe('0.00');
 
       const fixed = await jsonOf<Valuation>(await ctx.app.handle(call('PUT', '/v1/stock/valuation-settings?list=distributor', {
         price: { product_id: cellar.product, list: 'distributor', unit_price: '9,00' },
@@ -221,6 +230,7 @@ describe('valoración de existencias', () => {
 });
 
 type Line = {
+  kind: string;
   location_code: string;
   product_id: string | null;
   lot_id: string | null;
@@ -236,6 +246,7 @@ type Line = {
 
 type Valuation = {
   groups: { wine_name: string; value: string | null; lines: Line[] }[];
+  types: { label: string; value: string | null; groups: { wine_name: string }[] }[];
   packaged: { bottles: number; value: string | null; partial: boolean; missing: number; previous: number };
   demijohns: { value: string | null };
   bulk: { value: string | null };

@@ -56,10 +56,21 @@ type Group = {
   lines: Line[]
 }
 
+type WineType = {
+  code: string
+  label: string
+  bottles: number
+  litres: string
+  value: string | null
+  partial: boolean
+  groups: Group[]
+}
+
 type Body = {
   list: { code: ListCode; label: string; name: string | null; tax_included: boolean; available: boolean; version: number | null; valid_from: string | null }
   rates: { demijohn_eur_per_litre: string; bulk_eur_per_litre: string; bulk_wines: { wine_id: string; wine_name: string | null; eur_per_litre: string }[] }
   groups: Group[]
+  types: WineType[]
   packaged: { bottles: number; litres: string; value: string | null; partial: boolean; missing: number; previous: number }
   demijohns: { litres: string; value: string | null; vessels: number }
   bulk: { litres: string; value: string | null; vessels: number }
@@ -154,9 +165,19 @@ export function ValuationPage({ me }: { me: Me }) {
                 <Tile label={copy.stock.valuationBulk} value={body.bulk.value} detail={litres(body.bulk.litres)} />
                 <Tile label={copy.stock.valuationTotal} value={body.total.value} partial={body.total.partial} emphasis />
               </div>
-              {body.groups.length === 0 ? (
+              {body.types.length === 0 ? (
                 <p className="text-label text-text-tertiary">{copy.stock.valuationEmpty}</p>
-              ) : body.groups.map((group) => (
+              ) : body.types.map((type) => (
+                <section key={type.code} className="flex flex-col gap-2">
+                  <header className="flex flex-wrap items-baseline justify-between gap-2 px-1">
+                    <h2 className="text-body font-medium text-ink-900">{type.label}</h2>
+                    <p className="text-caption text-text-secondary">
+                      {type.bottles > 0 ? `${formatInteger(type.bottles)} bot · ` : ''}
+                      {litres(type.litres)} · {money(type.value)}
+                      {type.partial ? ` · ${copy.stock.valuationPartial}` : ''}
+                    </p>
+                  </header>
+                  {type.groups.map((group) => (
                 <section key={group.wine_id ?? group.wine_name} className="overflow-hidden rounded-xl border border-border bg-surface">
                   <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border-subtle px-3 py-2">
                     <h3 className="text-label font-medium text-ink-900">{group.wine_name}</h3>
@@ -210,6 +231,8 @@ export function ValuationPage({ me }: { me: Me }) {
                       </tbody>
                     </table>
                   </div>
+                </section>
+                  ))}
                 </section>
               ))}
               {canEdit ? (

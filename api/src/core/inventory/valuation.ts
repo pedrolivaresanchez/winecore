@@ -57,6 +57,48 @@ const WAREHOUSE_ORDER = new Map<string, number>([
   ['TFRP', 1],
 ]);
 
+/** Color de la ficha del vino → etiqueta de la valoración. */
+const WINE_TYPES: Record<string, string> = {
+  red: 'Tinto',
+  white: 'Blanco',
+  rose: 'Rosado',
+  orange: 'Naranja',
+  sweet: 'Dulce',
+  sparkling: 'Espumoso',
+  other: 'Otro',
+  tinto: 'Tinto',
+  blanco: 'Blanco',
+  rosado: 'Rosado',
+  naranja: 'Naranja',
+  otro: 'Otro',
+};
+
+const WINE_TYPE_CODE: Record<string, string> = {
+  tinto: 'red',
+  blanco: 'white',
+  rosado: 'rose',
+  naranja: 'orange',
+  otro: 'other',
+};
+
+const WINE_TYPE_ORDER = ['red', 'white', 'rose', 'orange', 'sweet', 'sparkling', 'other', 'unknown'];
+
+/** Tipo según el color de la ficha (o el del hueco, si el vino no está ligado). */
+export function wineTypeOf(color: string | null): { code: string; label: string } {
+  if (!color) return { code: 'unknown', label: 'Sin tipo' };
+  const key = color.trim().toLowerCase();
+  const code = WINE_TYPE_CODE[key] ?? key;
+  return { code, label: WINE_TYPES[key] ?? WINE_TYPES[code] ?? 'Sin tipo' };
+}
+
+export function compareWineTypes(left: string, right: string): number {
+  const rank = (code: string) => {
+    const index = WINE_TYPE_ORDER.indexOf(code);
+    return index < 0 ? WINE_TYPE_ORDER.length : index;
+  };
+  return rank(left) - rank(right);
+}
+
 /** Bodega y TFRP primero; el resto por código. */
 export function compareWarehouses(left: string, right: string): number {
   const rank = (code: string) => WAREHOUSE_ORDER.get(code) ?? 2;

@@ -5,6 +5,7 @@ import { businessDate } from '../../time';
 import {
   chooseStoredPrice,
   compareWarehouses,
+  compareWineTypes,
   currentVersion,
   exVatUnit,
   isValuationList,
@@ -13,6 +14,7 @@ import {
   sumMoney,
   unitsValue,
   valuationListLabel,
+  wineTypeOf,
   type TariffPrice,
   type TariffVersion,
   type ValuationListCode,
@@ -24,6 +26,8 @@ export type ValuationLine = {
   kind: 'packaged' | 'demijohn' | 'bulk';
   wine_id: string | null;
   wine_name: string;
+  wine_type: string;
+  wine_type_label: string;
   location_code: string;
   location_name: string;
   reference: string;
@@ -48,11 +52,23 @@ export type ValuationLine = {
 export type ValuationGroup = {
   wine_id: string | null;
   wine_name: string;
+  wine_type: string;
+  wine_type_label: string;
   bottles: number;
   litres: string;
   value: string | null;
   partial: boolean;
   lines: ValuationLine[];
+};
+
+export type ValuationType = {
+  code: string;
+  label: string;
+  bottles: number;
+  litres: string;
+  value: string | null;
+  partial: boolean;
+  groups: ValuationGroup[];
 };
 
 export type ValuationBody = {
@@ -75,6 +91,7 @@ export type ValuationBody = {
   };
   worthless: { subject: 'vessel' | 'lot'; subject_key: string }[];
   groups: ValuationGroup[];
+  types: ValuationType[];
   packaged: SectionTotal & { bottles: number; missing: number; previous: number; overrides: number };
   demijohns: SectionTotal & { vessels: number };
   bulk: SectionTotal & { vessels: number };
@@ -94,6 +111,7 @@ type RawPack = {
   lot_code: string | null;
   wine_id: string | null;
   wine_name: string | null;
+  wine_color: string | null;
   bottles: number;
   volume_ml: number;
   bottle_ml: number | null;
@@ -109,6 +127,7 @@ type RawVessel = {
   lot_code: string | null;
   wine_id: string | null;
   wine_name: string | null;
+  wine_color: string | null;
   volume_ml: number;
 };
 
@@ -137,6 +156,7 @@ export async function buildValuation(writer: Writer, listCode: ValuationListCode
     else lines.push(vesselLine(row, 'bulk', rates.bulk, rates.wines, worthless));
   }
   const groups = groupLines(lines);
+  const types = typeGroups(groups);
   const packagedLines = lines.filter((line) => line.kind === 'packaged');
   const demijohnLines = lines.filter((line) => line.kind === 'demijohn');
   const bulkLines = lines.filter((line) => line.kind === 'bulk');
@@ -165,6 +185,7 @@ export async function buildValuation(writer: Writer, listCode: ValuationListCode
     },
     worthless: worthless.rows,
     groups,
+    types,
     packaged: {
       ...sectionOf(packagedLines),
       bottles: packagedLines.reduce((sum, line) => sum + (line.bottles ?? 0), 0),
@@ -455,6 +476,7 @@ async function readPack(writer: Writer, source: 'map' | 'book'): Promise<RawPack
            lower(p.lot_id::VARCHAR) AS lot_id, any_value(coalesce(l.code, p.lot_code_raw)) AS lot_code,
            lower(any_value(coalesce(po.wine_id, lo.wine_id, pr.wine_id, l.wine_id, p.wine_id)::VARCHAR)) AS wine_id,
            any_value(w.name) AS wine_name,
+           any_value(coalesce(w.color, p.color)) AS wine_color,
            CAST(any_value(p.bottle_ml) AS VARCHAR) AS bottle_ml,
            CAST(coalesce(sum(m.qty_units), 0) AS VARCHAR) AS bottles,
            CAST(coalesce(sum(m.volume_ml), 0) AS VARCHAR) AS volume_ml
@@ -477,6 +499,7 @@ async function readPack(writer: Writer, source: 'map' | 'book'): Promise<RawPack
            lower(m.lot_id::VARCHAR) AS lot_id, any_value(l.code) AS lot_code,
            lower(any_value(coalesce(po.wine_id, lo.wine_id, pr.wine_id, l.wine_id)::VARCHAR)) AS wine_id,
            any_value(w.name) AS wine_name,
+           any_value(w.color) AS wine_color,
            CAST(any_value(f.nominal_volume_ml) AS VARCHAR) AS bottle_ml,
            CAST(coalesce(sum(m.qty_units), 0) AS VARCHAR) AS bottles,
            CAST(coalesce(sum(m.volume_ml), 0) AS VARCHAR) AS volume_ml
@@ -509,6 +532,7 @@ async function readPack(writer: Writer, source: 'map' | 'book'): Promise<RawPack
       lot_code: row.lot_code == null ? null : String(row.lot_code),
       wine_id: idOf(row.wine_id),
       wine_name: row.wine_name == null ? null : String(row.wine_name),
+      wine_color: row.wine_color == null ? null : String(row.wine_color),
       bottles,
       volume_ml: volume > 0 ? volume : bottle && bottles > 0 ? bottles * bottle : 0,
       bottle_ml: bottle,
@@ -520,7 +544,7 @@ async function loadVessels(writer: Writer): Promise<RawVessel[]> {
   const rows = await writer.read<Record<string, unknown>>(`
     SELECT v.code, v.name, v.kind, loc.code AS location_code, loc.name AS location_name,
            lower(m.lot_id::VARCHAR) AS lot_id, l.code AS lot_code,
-           lower(coalesce(lo.wine_id, l.wine_id)::VARCHAR) AS wine_id, w.name AS wine_name,
+           lower(coalesce(lo.wine_id, l.wine_id)::VARCHAR) AS wine_id, w.name AS wine_name, w.color AS wine_color,
            CAST(sum(m.volume_ml) AS VARCHAR) AS volume_ml
     FROM cellar.vessel v
     JOIN inventory.location loc ON loc.id = v.location_id
@@ -531,10 +555,10 @@ async function loadVessels(writer: Writer): Promise<RawVessel[]> {
     WHERE v.status <> 'retired'
       AND (m.product_state IS NULL OR m.product_state NOT IN ('grape', 'goods'))
       AND (
-        v.kind IN ('demijohn', 'tank_storage', 'tank_fermenter')
+        v.kind IN ('demijohn', 'tank_storage', 'tank_fermenter', 'barrel')
         OR v.code IN (SELECT subject_key FROM inventory.valuation_worthless WHERE subject = 'vessel')
       )
-    GROUP BY v.code, v.name, v.kind, loc.code, loc.name, m.lot_id, l.code, lo.wine_id, l.wine_id, w.name
+    GROUP BY v.code, v.name, v.kind, loc.code, loc.name, m.lot_id, l.code, lo.wine_id, l.wine_id, w.name, w.color
     HAVING sum(m.volume_ml) > 0
     ORDER BY v.code
   `);
@@ -548,6 +572,7 @@ async function loadVessels(writer: Writer): Promise<RawVessel[]> {
     lot_code: row.lot_code == null ? null : String(row.lot_code),
     wine_id: idOf(row.wine_id),
     wine_name: row.wine_name == null ? null : String(row.wine_name),
+    wine_color: row.wine_color == null ? null : String(row.wine_color),
     volume_ml: intOf(row.volume_ml),
   }));
 }
@@ -562,10 +587,13 @@ function packagedLine(
   today: string,
 ): ValuationLine {
   const litres = litresValue(row.volume_ml, '0.00').litres;
+  const type = wineTypeOf(row.wine_color);
   const base = {
     kind: 'packaged' as const,
     wine_id: row.wine_id,
     wine_name: row.wine_name ?? row.reference,
+    wine_type: type.code,
+    wine_type_label: type.label,
     location_code: row.location_code,
     location_name: row.location_name,
     reference: row.reference,
@@ -603,10 +631,13 @@ function vesselLine(
 ): ValuationLine {
   const rate = (row.wine_id && wineRates?.get(row.wine_id)) || defaultRate;
   const valued = litresValue(row.volume_ml, rate);
+  const type = wineTypeOf(row.wine_color);
   const base = {
     kind,
     wine_id: row.wine_id,
     wine_name: row.wine_name ?? (kind === 'demijohn' ? 'Damajuana' : row.name),
+    wine_type: type.code,
+    wine_type_label: type.label,
     location_code: row.location_code,
     location_name: row.location_name,
     reference: row.name,
@@ -694,6 +725,7 @@ function groupLines(lines: readonly ValuationLine[]): ValuationGroup[] {
   const built = [...groups.values()].map((groupLines) => {
     const first = groupLines[0];
     const wineName = first?.wine_id ? (first.wine_name || UNASSIGNED) : (first?.wine_name || UNASSIGNED);
+    const type = wineTypeOf(first?.wine_type === 'unknown' ? null : first?.wine_type ?? null);
     const sorted = [...groupLines].sort((left, right) =>
       kindOrder(left.kind) - kindOrder(right.kind)
       || compareWarehouses(left.location_code, right.location_code)
@@ -705,6 +737,8 @@ function groupLines(lines: readonly ValuationLine[]): ValuationGroup[] {
     return {
       wine_id: first?.wine_id ?? null,
       wine_name: wineName,
+      wine_type: type.code,
+      wine_type_label: type.label,
       bottles: sorted.reduce((sum, line) => sum + (line.bottles ?? 0), 0),
       litres: section.litres,
       value: section.value,
@@ -718,6 +752,28 @@ function groupLines(lines: readonly ValuationLine[]): ValuationGroup[] {
     return left.wine_name.localeCompare(right.wine_name, 'es');
   });
   return built;
+}
+
+function typeGroups(groups: readonly ValuationGroup[]): ValuationType[] {
+  const byType = new Map<string, ValuationGroup[]>();
+  for (const group of groups) {
+    const list = byType.get(group.wine_type) ?? [];
+    list.push(group);
+    byType.set(group.wine_type, list);
+  }
+  return [...byType.entries()].map(([code, list]) => {
+    const lines = list.flatMap((group) => group.lines);
+    const section = sectionOf(lines);
+    return {
+      code,
+      label: list[0]?.wine_type_label ?? 'Sin tipo',
+      bottles: lines.reduce((sum, line) => sum + (line.bottles ?? 0), 0),
+      litres: section.litres,
+      value: section.value,
+      partial: section.partial,
+      groups: list,
+    };
+  }).sort((left, right) => compareWineTypes(left.code, right.code) || left.label.localeCompare(right.label, 'es'));
 }
 
 function sectionOf(lines: readonly ValuationLine[]): SectionTotal {

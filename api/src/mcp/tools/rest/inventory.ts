@@ -389,7 +389,7 @@ export const inventoryRestTools: readonly AnyTool[] = [
     module: "inventory",
     scope: "inventory.read",
     title: "Valoración de existencias",
-    description: "Valor del vino inmovilizado, sin IVA: envasado por almacén, referencia y lote (tarifa vigente; si no hay precio, la versión anterior más reciente; un precio fijado manda; sin ninguno queda sin precio), damajuanas y granel en depósito a euro por litro. Las lías y lo marcado sin valor valen 0. Agrupado por vino, con subtotales. No incluye barricas.",
+    description: "Valor del vino inmovilizado, sin IVA: envasado por almacén, referencia y lote (tarifa vigente; si no hay precio, la versión anterior más reciente; un precio fijado manda; sin ninguno queda sin precio), damajuanas y granel —depósitos y barricas— a euro por litro. Las lías y lo marcado sin valor valen 0. Agrupado por vino y por tipo de la ficha (tinto, blanco, naranja…), con subtotales.",
     input: z.object({
       list: z.enum(["distributor", "shop", "custom-horeca", "final"]).optional()
         .describe("distributor distribución, shop tienda, custom-horeca restaurante, final PVP. Por defecto, distribución."),
