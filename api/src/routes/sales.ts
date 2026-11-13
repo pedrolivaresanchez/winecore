@@ -13,6 +13,7 @@ import {
 } from './sales-rules';
 import { salesCatalog } from '../core/sales/catalog';
 import {
+  deleteQuoteById,
   getQuoteById,
   getQuotePdf,
   getQuotes,
@@ -24,6 +25,7 @@ import {
   postQuoteToOrder,
 } from './sales-quotes';
 import {
+  deleteOrder,
   getOrder,
   getOrderPdf,
   getOrders,
@@ -41,6 +43,7 @@ import {
   getNotePdf,
   getNotes,
   getUninvoiced,
+  deleteNote,
   patchNote,
   postConfirmLoss,
   postDeliver,
@@ -91,6 +94,7 @@ export function salesRoutes(writer: Writer, guardDeps: GuardDeps) {
     .post('/v1/quotes/:id/accept', ({ request, params }) => postQuoteAccept(writer, request, params.id), { beforeHandle: write })
     .post('/v1/quotes/:id/reject', ({ request, params }) => postQuoteReject(writer, request, params.id), { beforeHandle: write })
     .patch('/v1/quotes/:id', ({ request, params }) => patchQuoteById(writer, request, params.id), { beforeHandle: write })
+    .delete('/v1/quotes/:id', ({ request, params }) => deleteQuoteById(writer, request, params.id), { beforeHandle: write })
     .get('/v1/quotes/:id', ({ request, params }) => getQuoteById(writer, request, params.id), { beforeHandle: read })
     .get('/v1/sales-orders', ({ request }) => getOrders(writer, request), { beforeHandle: read })
     .post('/v1/sales-orders', async ({ request, set }) => {
@@ -101,6 +105,7 @@ export function salesRoutes(writer: Writer, guardDeps: GuardDeps) {
     .get('/v1/sales-orders/:id/pdf', ({ request, params }) => getOrderPdf(writer, request, params.id), { beforeHandle: read })
     .get('/v1/sales-orders/:id', ({ request, params }) => getOrder(writer, request, params.id), { beforeHandle: read })
     .patch('/v1/sales-orders/:id', ({ request, params }) => patchOrder(writer, request, params.id), { beforeHandle: write })
+    .delete('/v1/sales-orders/:id', ({ request, params }) => deleteOrder(writer, request, params.id), { beforeHandle: write })
     .post('/v1/sales-orders/:id/confirm', ({ request, params }) => postConfirm(writer, request, params.id), { beforeHandle: write })
     .post('/v1/sales-orders/:id/cancel', ({ request, params }) => postCancel(writer, request, params.id), { beforeHandle: write })
     .post('/v1/sales-orders/:id/close', ({ request, params }) => postClose(writer, request, params.id), { beforeHandle: manage })
@@ -121,6 +126,7 @@ export function salesRoutes(writer: Writer, guardDeps: GuardDeps) {
     .get('/v1/delivery-notes/:id/incidents', ({ request, params }) => getIncidents(writer, request, params.id), { beforeHandle: read })
     .get('/v1/delivery-notes/:id', ({ request, params }) => getNote(writer, request, params.id), { beforeHandle: read })
     .patch('/v1/delivery-notes/:id', ({ request, params }) => patchNote(writer, request, params.id), { beforeHandle: write })
+    .delete('/v1/delivery-notes/:id', ({ request, params }) => deleteNote(writer, request, params.id), { beforeHandle: write })
     .post('/v1/delivery-notes/:id/issue', ({ request, params }) => postIssue(writer, request, params.id), { beforeHandle: write })
     .post('/v1/delivery-notes/:id/dispatch', ({ request, params }) => postDispatch(writer, request, params.id), { beforeHandle: write })
     .post('/v1/delivery-notes/:id/deliver', ({ request, params }) => postDeliver(writer, request, params.id), { beforeHandle: write })

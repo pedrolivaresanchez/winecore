@@ -21,6 +21,8 @@ import {
   type CaptureCommand,
 } from '../core/purchasing/invoice';
 import { can } from '../core/auth/permissions';
+import { deleteDraft } from '../core/documents/delete-draft';
+import { pathId } from '../core/sales/db';
 
 export type ExpenseDeps = {
   ocr: OcrWorkforce;
@@ -50,6 +52,11 @@ export async function captureExpense(writer: Writer, request: Request, deps: Exp
     deps.ocr,
   );
   return result;
+}
+
+export async function deleteExpense(writer: Writer, request: Request, id: string) {
+  const user = sessionOf(request);
+  return deleteDraft(writer, actor(user.id, request), user, 'supplier_invoice', pathId(id));
 }
 
 export async function patchExpense(writer: Writer, request: Request, id: string) {

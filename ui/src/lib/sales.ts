@@ -373,6 +373,10 @@ export function acceptQuote(id: string) {
   return api<Quote>(`/v1/quotes/${id}/accept`, { method: 'POST', body: '{}' })
 }
 
+export function deleteQuoteDraft(id: string) {
+  return api<{ deleted: true }>(`/v1/quotes/${id}`, { method: 'DELETE' })
+}
+
 export function rejectQuote(id: string, reason?: string) {
   const trimmed = reason?.trim() ?? ''
   return api<Quote>(`/v1/quotes/${id}/reject`, {
@@ -416,6 +420,10 @@ export function patchOrder(id: string, body: Record<string, unknown>) {
 
 export function confirmOrder(id: string) {
   return api<SalesOrder>(`/v1/sales-orders/${id}/confirm`, { method: 'POST', body: '{}' })
+}
+
+export function deleteOrderDraft(id: string) {
+  return api<{ deleted: true }>(`/v1/sales-orders/${id}`, { method: 'DELETE' })
 }
 
 export function cancelOrder(id: string, reason: string) {
@@ -485,6 +493,10 @@ export function deliverDelivery(id: string) {
 
 export function voidDelivery(id: string, reason: string) {
   return api<DeliveryNote>(`/v1/delivery-notes/${id}/void`, { method: 'POST', body: JSON.stringify({ reason }) })
+}
+
+export function deleteDeliveryDraft(id: string) {
+  return api<{ deleted: true }>(`/v1/delivery-notes/${id}`, { method: 'DELETE' })
 }
 
 export function returnDelivery(id: string, body: Record<string, unknown>) {

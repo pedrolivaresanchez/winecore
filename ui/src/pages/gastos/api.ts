@@ -29,6 +29,10 @@ export function listExpenses(query: ExpenseQuery, signal?: AbortSignal) {
   return api<ExpensePage>(expenseQuery(query), { signal })
 }
 
+export function deleteExpenseDraft(id: string) {
+  return api<{ deleted: true }>(`/v1/supplier-invoices/${id}`, { method: 'DELETE' })
+}
+
 export function getExpense(id: string, signal?: AbortSignal) {
   return api<Expense>(`/v1/supplier-invoices/${id}`, { signal })
 }

@@ -326,6 +326,18 @@ const quoteTools: readonly AnyTool[] = [
     web: quoteLink,
   }),
   defineRestWrite({
+    name: "sales_quote_delete",
+    module: "sales",
+    scope: "sales.write",
+    title: "Eliminar borrador de presupuesto",
+    description: "Elimina un presupuesto en borrador que no tiene número ni movimientos. Un presupuesto enviado, aceptado o numerado no se borra: se rechaza o se deja como está.",
+    input: z.object({ id }).strict(),
+    route: "DELETE /v1/quotes/:id",
+    current: quoteCurrent,
+    summary: (_, current) => `Eliminar el presupuesto ${numberOf(current, "en borrador")}. Solo si sigue en borrador, sin número ni movimientos. No se puede deshacer. ¿Confirmas?`,
+    web: () => "/ventas/presupuestos",
+  }),
+  defineRestWrite({
     name: "sales_quote_convert",
     module: "sales",
     scope: "sales.write",
@@ -437,12 +449,31 @@ const orderTools: readonly AnyTool[] = [
     module: "sales",
     scope: "sales.write",
     title: "Cancelar pedido",
-    description: "Cancela un pedido en borrador o confirmado, con motivo. No se puede si ya tiene albaranes emitidos. Es irreversible.",
+    description: "Cancela un pedido confirmado, con motivo, y conserva su número. No se puede si ya tiene albaranes emitidos. Un pedido en borrador sin número no se cancela (eso le asignaría número): se elimina con sales_order_delete.",
     input: z.object({ id, reason }).strict(),
     route: "POST /v1/sales-orders/:id/cancel",
     current: orderCurrent,
-    summary: (input, current) => `Cancelar el pedido ${numberOf(current, "en borrador")} («${input.reason}»). Es irreversible: si era un borrador, recibe número igualmente para que conste. ¿Confirmas?`,
+    summary: (input, current) => {
+      const status = fieldsOf(current).status;
+      const number = fieldsOf(current).number;
+      if (status === "draft" && (typeof number !== "string" || number === "")) {
+        return "El pedido sigue en borrador y no tiene número. No se cancela: cancelarlo le asignaría número. Es irreversible. Elimínalo.";
+      }
+      return `Cancelar el pedido ${numberOf(current, "")} («${input.reason}»). Conserva su número. Es irreversible. ¿Confirmas?`;
+    },
     web: orderLink,
+  }),
+  defineRestWrite({
+    name: "sales_order_delete",
+    module: "sales",
+    scope: "sales.write",
+    title: "Eliminar borrador de pedido",
+    description: "Elimina un pedido en borrador que no tiene número, albaranes ni factura. Un pedido confirmado o numerado no se borra: se cancela si aún no se ha servido.",
+    input: z.object({ id }).strict(),
+    route: "DELETE /v1/sales-orders/:id",
+    current: orderCurrent,
+    summary: (_, current) => `Eliminar el pedido ${numberOf(current, "en borrador")}. Solo si sigue en borrador, sin número ni albaranes. No se puede deshacer. ¿Confirmas?`,
+    web: () => "/ventas/pedidos",
   }),
   defineRestWrite({
     name: "sales_order_close",
@@ -634,12 +665,31 @@ const deliveryTools: readonly AnyTool[] = [
     module: "sales",
     scope: "sales.manage",
     title: "Anular albarán",
-    description: "Anula un albarán con motivo. Si estaba emitido, el stock vuelve; no se puede si ya salió (eso es una devolución) ni si está facturado. Es irreversible.",
+    description: "Anula un albarán emitido que aún no ha salido, con motivo: el stock vuelve y el número se conserva. Un borrador no se anula (anularlo le asignaría número): se elimina con sales_delivery_note_delete. No se puede si ya salió (eso es una devolución) ni si está facturado. Es irreversible.",
     input: z.object({ id, reason }).strict(),
     route: "POST /v1/delivery-notes/:id/void",
     current: deliveryCurrent,
-    summary: (input, current) => `Anular el albarán ${numberOf(current, "en borrador")} («${input.reason}»). Si estaba emitido, el stock vuelve al almacén. Es irreversible. ¿Confirmas?`,
+    summary: (input, current) => {
+      const status = fieldsOf(current).status;
+      const number = fieldsOf(current).number;
+      if (status === "draft" && (typeof number !== "string" || number === "")) {
+        return "El albarán sigue en borrador y no tiene número. No se anula: anularlo le asignaría número. Elimínalo.";
+      }
+      return `Anular el albarán ${numberOf(current, "")} («${input.reason}»). Si estaba emitido, el stock vuelve al almacén y el número se conserva. Es irreversible. ¿Confirmas?`;
+    },
     web: deliveryLink,
+  }),
+  defineRestWrite({
+    name: "sales_delivery_note_delete",
+    module: "sales",
+    scope: "sales.write",
+    title: "Eliminar borrador de albarán",
+    description: "Elimina un albarán en borrador que no tiene número ni movimientos de stock, fiscales ni Verifactu. Un albarán emitido o numerado no se borra: se anula, si aún no ha salido, o se devuelve.",
+    input: z.object({ id }).strict(),
+    route: "DELETE /v1/delivery-notes/:id",
+    current: deliveryCurrent,
+    summary: (_, current) => `Eliminar el albarán ${numberOf(current, "en borrador")}. Solo si sigue en borrador, sin número ni movimientos. No se puede deshacer. ¿Confirmas?`,
+    web: () => "/ventas/albaranes",
   }),
   defineRestWrite({
     name: "sales_delivery_note_return_create",

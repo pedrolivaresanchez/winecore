@@ -26,6 +26,8 @@ const CATALOG = {
   WC_NOT_APPROVED: [409, 'La aprobación no está aprobada'],
   WC050: [409, 'Versión de tarifa no editable'],
   WC060: [409, 'Albarán no editable'],
+  WC_DRAFT_DELETE: [409, 'Solo se elimina un borrador sin número ni movimientos. Un documento emitido se anula o se rectifica.'],
+  WC_DRAFT_VOID: [409, 'Un borrador no se anula: elimínalo. Anularlo le asignaría número.'],
   WC070: [409, 'Reglas de facturación no editables'],
   WC_RULES_INACTIVE: [409, 'No hay reglas de facturación activas: apruébalas en Aprobaciones'],
   WC080: [409, 'Factura emitida no editable; crea una rectificativa'],

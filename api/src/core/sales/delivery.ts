@@ -136,7 +136,16 @@ export async function voidDelivery(tx: Tx, actor: Actor, id: string, reason: str
   if (status === 'shipped' || status === 'delivered') {
     throw new DomainError('WC060', 409, 'El albarán ya ha salido; la corrección es una devolución');
   }
-  if (status === 'draft') return cancelDraft(tx, id, reason);
+  if (status === 'draft') {
+    if (!textOf(note.number)) {
+      throw domainError(
+        'WC_DRAFT_VOID',
+        { status: 'Elimina el borrador' },
+        'Un albarán en borrador no se anula: no tiene número. Elimínalo.',
+      );
+    }
+    return cancelDraft(tx, id, reason);
+  }
   if (await hasIssuedInvoice(tx, id)) {
     throw new DomainError('WC060', 409, 'El albarán ya está facturado');
   }
@@ -171,23 +180,29 @@ export async function voidDelivery(tx: Tx, actor: Actor, id: string, reason: str
 
 async function cancelDraft(tx: Tx, id: string, reason: string): Promise<Record<string, unknown>> {
   const note = await loadNote(tx, id);
+  const number = textOf(note.number);
+  const seriesId = idOrNull(note.series_id);
+  if (!number || !seriesId) {
+    throw domainError(
+      'WC_DRAFT_VOID',
+      { status: 'Elimina el borrador' },
+      'Un albarán en borrador no se anula: no tiene número. Elimínalo.',
+    );
+  }
   const now = new Date();
-  const taken = textOf(note.number)
-    ? { number: String(note.number), seriesId: idOf(note.series_id) }
-    : await assignNumber(tx, idOf(note.legal_entity_id), 'delivery_note', now);
   const issueDate = note.issue_date == null ? businessDate(now) : dateOf(note.issue_date);
   tx.write(sql`
     UPDATE sales.delivery_note
-    SET status = 'cancelled', number = ${taken.number}, series_id = CAST(${taken.seriesId} AS UUID),
+    SET status = 'cancelled', number = ${number}, series_id = CAST(${seriesId} AS UUID),
         issue_date = CAST(${issueDate} AS DATE), cancelled_reason = ${reason.trim()}, updated_at = ${now}
     WHERE id = CAST(${id} AS UUID) AND status = 'draft'
   `);
-  tx.audit({ table: 'sales.delivery_note', rowId: id, action: 'UPDATE', before: { status: 'draft' }, after: { status: 'cancelled', number: taken.number } });
+  tx.audit({ table: 'sales.delivery_note', rowId: id, action: 'UPDATE', before: { status: 'draft', number }, after: { status: 'cancelled', number } });
   return presentNote({
     ...note,
     status: 'cancelled',
-    number: taken.number,
-    series_id: taken.seriesId,
+    number,
+    series_id: seriesId,
     issue_date: issueDate,
     cancelled_reason: reason.trim(),
   }, await loadLines(tx, id));

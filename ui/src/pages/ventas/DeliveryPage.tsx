@@ -13,6 +13,7 @@ import { commercialLines, draftsFrom, type DraftLine } from '@/lib/sales-draft'
 import {
   channelLabel,
   createIncident,
+  deleteDeliveryDraft,
   deliverDelivery,
   deliveryStatusLabel,
   dispatchDelivery,
@@ -89,7 +90,7 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
   const [shipTo, setShipTo] = useState<ShipToDraft>(() => shipToDraftOf(note.ship_to))
   const [references, setReferences] = useState(note.customer_references ?? '')
   const [tracking, setTracking] = useState(note.tracking_ref ?? '')
-  const [dialog, setDialog] = useState<null | 'issue' | 'void' | 'return' | 'incident' | 'skip'>(null)
+  const [dialog, setDialog] = useState<null | 'issue' | 'void' | 'delete' | 'return' | 'incident' | 'skip'>(null)
   const [issueError, setIssueError] = useState<string | null>(null)
   const canWrite = allows(me, 'sales.write')
   const canManage = allows(me, 'sales.manage')
@@ -178,6 +179,11 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
                     {copy.sales.issue}
                   </Button>
                 ) : null}
+                {draft && canWrite && !note.number ? (
+                  <Button type="button" variant="secondary" size="sm" onClick={() => setDialog('delete')}>
+                    {copy.sales.deleteDraft}
+                  </Button>
+                ) : null}
                 {note.status === 'issued' ? (
                   <Button
                     type="button"
@@ -199,11 +205,11 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
                 </Button>
               </>
             )}
-            {((draft || note.status === 'issued') && canManage) || moved ? (
+            {(note.status === 'issued' && canManage) || moved ? (
               <MoreMenu>
                 {(close) => (
                   <>
-                    {(draft || note.status === 'issued') && canManage ? (
+                    {note.status === 'issued' && canManage ? (
                       <MenuItem tone="danger" onClick={() => { close(); setDialog('void') }}>{copy.sales.voidDoc}</MenuItem>
                     ) : null}
                     {moved ? <MenuItem onClick={() => { close(); setDialog('return') }}>{copy.sales.returnDoc}</MenuItem> : null}
@@ -314,6 +320,23 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
             })
             .catch((error: unknown) => setIssueError(errorText(error)))
             .finally(() => setBusy(false))
+        }}
+      />
+      <ConfirmDialog
+        open={dialog === 'delete'}
+        title={copy.sales.deleteDraftTitle}
+        body={copy.sales.deleteDraftBody}
+        confirmLabel={copy.sales.deleteDraft}
+        danger
+        busy={busy}
+        onClose={() => { if (!busy) setDialog(null) }}
+        onConfirm={() => {
+          void run(async () => {
+            await deleteDeliveryDraft(note.id)
+            toast(copy.sales.toast.deleted)
+            setDialog(null)
+            navigate(docPath('delivery'))
+          })
         }}
       />
       {dialog === 'void' ? (

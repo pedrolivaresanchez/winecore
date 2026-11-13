@@ -1,6 +1,7 @@
 import { sessionOf } from '../auth/guard';
+import { deleteDraft } from '../core/documents/delete-draft';
 import type { Writer } from '../core/db/writer';
-import { actorOf } from '../core/sales/db';
+import { actorOf, pathId } from '../core/sales/db';
 import {
   acceptQuote,
   createQuote,
@@ -25,6 +26,11 @@ export function getQuoteById(writer: Writer, request: Request, id: string) {
 
 export function postQuote(writer: Writer, request: Request) {
   return createQuote(writer, request);
+}
+
+export async function deleteQuoteById(writer: Writer, request: Request, id: string) {
+  const user = sessionOf(request);
+  return deleteDraft(writer, actorOf(user, request), user, 'quote', pathId(id));
 }
 
 export function postQuoteSend(writer: Writer, request: Request, id: string) {

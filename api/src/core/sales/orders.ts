@@ -297,52 +297,26 @@ export async function cancelSalesOrder(tx: Tx, actor: Actor, id: string, reason:
     WHERE sales_order_id = CAST(${id} AS UUID) AND status IN ('issued', 'shipped', 'delivered')
   `);
   if (issued[0]) fail('Hay albaranes emitidos; no se puede cancelar el pedido');
+  if (status === 'draft' && !textOf(order.number)) {
+    throw domainError(
+      'WC_DRAFT_VOID',
+      { status: 'Elimina el borrador' },
+      'Un pedido en borrador no se cancela: no tiene número. Elimínalo.',
+    );
+  }
   const now = new Date();
   const notes = appendNote(textOf(order.notes), `Cancelado: ${reason.trim()}`);
-  let next: Record<string, unknown> = { ...order, status: 'cancelled', notes };
-  if (status === 'draft') {
-    const exception = jsonOf(order.billing_rule_trace).exception;
-    const override = overrideOf(exception);
-    if (override) await assertEntity(tx, override);
-    const resolved = await resolveIssuingEntity(tx, {
-      customerId: idOf(order.customer_id),
-      channel: String(order.channel),
-      bootstrap: { actorId: actor.id, entityId: override },
-    });
-    const entityId = override ?? resolved.entityId;
-    const taken = await assignNumber(tx, entityId, 'sales_order', now);
-    const trace = { ...resolved.trace, exception: exception ?? null };
-    next = {
-      ...next,
-      number: taken.number,
-      series_id: taken.seriesId,
-      legal_entity_id: entityId,
-      billing_rule_set_id: resolved.ruleSetId,
-      billing_rule_id: resolved.ruleId,
-      billing_rule_trace: trace,
-    };
-    tx.write(sql`
-      UPDATE sales.sales_order SET
-        status = 'cancelled', number = ${taken.number}, series_id = CAST(${taken.seriesId} AS UUID),
-        legal_entity_id = CAST(${entityId} AS UUID),
-        billing_rule_set_id = CAST(${resolved.ruleSetId} AS UUID),
-        billing_rule_id = CAST(${resolved.ruleId} AS UUID),
-        billing_rule_trace = ${sql.json(trace)},
-        notes = ${notes}, updated_at = ${now}
-      WHERE id = CAST(${id} AS UUID)
-    `);
-  } else {
-    tx.write(sql`
-      UPDATE sales.sales_order SET status = 'cancelled', notes = ${notes}, updated_at = ${now}
-      WHERE id = CAST(${id} AS UUID)
-    `);
-  }
+  const next: Record<string, unknown> = { ...order, status: 'cancelled', notes };
+  tx.write(sql`
+    UPDATE sales.sales_order SET status = 'cancelled', notes = ${notes}, updated_at = ${now}
+    WHERE id = CAST(${id} AS UUID)
+  `);
   tx.audit({
     table: 'sales.sales_order',
     rowId: id,
     action: 'UPDATE',
     before: { status },
-    after: { status: 'cancelled', reason: reason.trim() },
+    after: { status: 'cancelled', reason: reason.trim(), by: actor.id },
   });
   return presentOrder(tx, next, await loadLines(tx, id), false);
 }
