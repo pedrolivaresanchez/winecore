@@ -31,6 +31,7 @@ import {
 import type { Me } from '@/lib/types'
 import { Button, DatePicker, MenuItem, SegmentedControl, Select, Switch, Textarea, useToast } from '@/ui'
 import { DocLink, FactList, LineTable, MoreMenu, RecordFrame, SalesHistory, StatusBadge, TotalsBox } from '@/pages/ventas/chrome'
+import { QuoteTrace } from '@/pages/ventas/QuoteConversion'
 import { ReasonDialog } from '@/pages/ventas/dialogs'
 import { LineEditor } from '@/pages/ventas/lines'
 import { TariffSelect } from '@/pages/ventas/tariff-select'
@@ -295,6 +296,7 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
             <LineTable lines={quote.lines} />
           )}
           <TotalsBox subtotal={quote.subtotal} tax={quote.tax_total} total={quote.total} />
+          {editing ? null : <QuoteTrace id={quote.id} />}
         </div>
       ) : null}
       {tab === 'summary' ? (

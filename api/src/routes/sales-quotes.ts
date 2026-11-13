@@ -1,6 +1,7 @@
 import { sessionOf } from '../auth/guard';
 import type { Writer } from '../core/db/writer';
 import { actorOf } from '../core/sales/db';
+import { quoteConversion } from '../core/sales/quote-conversion';
 import {
   acceptQuote,
   createQuote,
@@ -16,6 +17,10 @@ import {
 export function getQuotes(writer: Writer, request: Request) {
   sessionOf(request);
   return listQuotes(writer, request);
+}
+
+export function getQuoteConversion(writer: Writer, request: Request) {
+  return quoteConversion(writer, request);
 }
 
 export function getQuoteById(writer: Writer, request: Request, id: string) {

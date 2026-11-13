@@ -34,6 +34,7 @@ import { createSalesOrder } from './orders';
 import { parseCommercialLines, resolveLinePrice } from './pricing';
 import { renderQuotePdf } from './proforma';
 import { draftEntity, previewIssuingEntity } from './rules';
+import { linkQuoteLines } from './quote-conversion';
 import { priceTotals, type PricedLine } from './totals';
 
 type ReadDb = Pick<Tx, 'read'>;
@@ -352,6 +353,10 @@ export async function quoteToOrder(writer: Writer, request: Request, id: string)
         price_reason: 'Precio del presupuesto',
       })),
     });
+    const created = order.body as { id?: unknown; lines?: { id?: unknown; line_no?: unknown }[] };
+    if (typeof created.id === 'string' && Array.isArray(created.lines)) {
+      linkQuoteLines(tx, quoteId, lines, created.id, created.lines);
+    }
     return order;
   });
 }

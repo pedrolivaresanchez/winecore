@@ -235,6 +235,35 @@ const deliveryCurrent = { route: "GET /v1/delivery-notes/:id" } as const;
 
 const quoteTools: readonly AnyTool[] = [
   defineRestRead({
+    name: "sales_quotes_conversion_report",
+    module: "sales",
+    scope: "sales.read",
+    title: "Conversión de presupuestos",
+    description: "Presupuestado frente a lo que acaba en factura: número de presupuestos, botellas, base y total posibles, botellas e importe facturados y el porcentaje de conversión. Desglose por vino, añada y lote (botellas e importes presupuestados y facturados, precio medio). Con include omitido la pantalla pide solo el resumen; esta herramienta pide también la lista. Con quote_id, la trazabilidad de ese presupuesto: albarán, factura y, si la conversión es parcial, la diferencia por línea. Filtros: sociedad PO o CVPO, periodo y estado (abierto, aceptado, rechazado, convertido).",
+    input: z.object({
+      entity: z.enum(["PO", "CVPO"]).optional().describe("Sociedad: PO o CVPO. Sin ella, las dos"),
+      from: isoDate.optional().describe("Desde, AAAA-MM-DD"),
+      to: isoDate.optional().describe("Hasta, AAAA-MM-DD"),
+      status: z.string().trim().max(80).optional().describe("abierto (borrador o enviado), aceptado, rechazado o convertido. Se pueden combinar con comas"),
+      origin: z.enum(["holded", "winecore"]).optional().describe("Solo el histórico de Holded o solo los presupuestos de WineCore"),
+      customer_id: id.optional().describe("Solo los presupuestos de este cliente"),
+      quote_id: id.optional().describe("Trazabilidad de un presupuesto: albaranes, facturas y diferencia por línea"),
+    }).strict(),
+    route: "GET /v1/quotes/conversion",
+    send: (input) => {
+      const query: Record<string, string> = { include: "quotes" };
+      if (input.entity) query.entity = input.entity;
+      if (input.from) query.from = input.from;
+      if (input.to) query.to = input.to;
+      if (input.status) query.status = input.status;
+      if (input.origin) query.origin = input.origin;
+      if (input.customer_id) query.customer_id = input.customer_id;
+      if (input.quote_id) query.quote_id = input.quote_id;
+      return query;
+    },
+    web: (input) => input.quote_id ? `/ventas/presupuestos/${input.quote_id}` : "/ventas/presupuestos",
+  }),
+  defineRestRead({
     name: "sales_quotes_list",
     module: "sales",
     scope: "sales.read",
