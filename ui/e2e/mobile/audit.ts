@@ -105,6 +105,7 @@ async function routes(): Promise<Route[]> {
     { slug: "catas_evolucion", url: "/bodega/catas/evolucion" },
     { slug: "calculadoras", url: "/bodega/calculadoras" },
     { slug: "stock", url: "/stock" },
+    { slug: "stock_valoracion", url: "/stock/valoracion" },
     { slug: "stock_movimientos", url: "/stock/movimientos" },
     { slug: "stock_informe", url: "/stock/informe" },
     { slug: "stock_aforos", url: "/stock/aforos" },

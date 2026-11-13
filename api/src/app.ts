@@ -191,6 +191,7 @@ import { salesRoutes } from './routes/sales';
 import { getSalesDocuments } from './routes/sales-documents';
 import { SALES_DOCUMENTS_READ } from './core/sales-documents/list';
 import { correctBottled, disposeBottled, stockBalances, stockFiscalBalances, stockInspection, stockMoves, stockWarehouses, unlabeledBottles } from './routes/stock';
+import { putValuationSettings, stockValuation, valuationSettings } from './routes/stock-valuation';
 import { listRegulatoryObligations, postSyncObligations } from './routes/regulatory-obligations';
 import {
   getRegulatorySubmission,
@@ -695,6 +696,15 @@ export function createApp(deps: AppDeps) {
     })
     .get('/v1/stock/warehouses', () => stockWarehouses(deps.writer), {
       beforeHandle: requirePermission(guardDeps, 'inventory.read'),
+    })
+    .get('/v1/stock/valuation', ({ request }) => stockValuation(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.read'),
+    })
+    .get('/v1/stock/valuation-settings', ({ request }) => valuationSettings(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.read'),
+    })
+    .put('/v1/stock/valuation-settings', ({ request }) => putValuationSettings(deps.writer, request), {
+      beforeHandle: requirePermission(guardDeps, 'inventory.count'),
     })
     .patch('/v1/stock/bottled-placements/:id', ({ request, params }) => correctBottled(deps.writer, request, params.id), {
       beforeHandle: requirePermission(guardDeps, 'inventory.count'),

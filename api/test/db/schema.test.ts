@@ -366,8 +366,8 @@ test("el esquema DuckDB reproduce tablas, vistas y columnas de la referencia", a
   expect(migrations[0]).toBe("0001_core.sql");
   expect(migrations).toContain("0002_core_ops.sql");
   expect(migrations).toContain("0016_legacy.sql");
-  expect(migrations.at(-1)).toBe("0052_quote_line_link.sql");
-  expect(migrations).toHaveLength(51);
+  expect(migrations.at(-1)).toBe("0053_stock_valuation.sql");
+  expect(migrations).toHaveLength(52);
   await migrate(client);
 
   const refs = referenceObjects(root);

@@ -3,6 +3,7 @@ import { sql } from '../db/sql';
 import { newId } from '../ids';
 import { CAVES_CURRENCY_UNSTATED, LIST_NAMES, TAX_INCLUDED_LISTS, TARIFF_LINES, WINE_NAME_ALIASES, type TariffLine } from './tariff-rules';
 import { fold } from '../inventory/bottled-snapshot';
+import { seedValuationPrices } from '../inventory/valuation-seed';
 
 const ACTOR = { type: 'migration' as const, id: '019c0000-0000-7000-8000-0000000000ab', requestId: 'load-tariffs' };
 const NOTE = 'tarifa-pedro-2026';
@@ -143,6 +144,7 @@ export async function loadTariffs(writer: Writer): Promise<TariffLoadReport> {
       for (const statement of statements) tx.write(statement);
     });
   }
+  await seedValuationPrices(writer);
   return report;
 }
 
