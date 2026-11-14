@@ -153,6 +153,14 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
     }
   }
 
+  function convert() {
+    void run(async () => {
+      const order = await quoteToOrder(quote.id)
+      toast(copy.sales.toast.accepted)
+      navigate(`${docPath('order')}/${order.id}`)
+    })
+  }
+
   async function save() {
     const built = commercialLines(lines)
     if (built.error) {
@@ -236,19 +244,14 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
                   {copy.sales.reject}
                 </Button>
               ) : null}
-              {canOrder && !open ? (
+              {canOrder ? (
                 <Button
                   type="button"
-                  variant="primary"
+                  variant={open ? 'secondary' : 'primary'}
                   size="sm"
+                  className="max-md:hidden"
                   loading={busy}
-                  onClick={() =>
-                    void run(async () => {
-                      const order = await quoteToOrder(quote.id)
-                      toast(copy.sales.toast.accepted)
-                      navigate(`${docPath('order')}/${order.id}`)
-                    })
-                  }
+                  onClick={convert}
                 >
                   {copy.sales.toOrder}
                 </Button>
@@ -261,15 +264,11 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
                     {draft && !quote.number ? (
                       <MenuItem tone="danger" onClick={() => { close(); setDeleting(true) }}>{copy.sales.deleteDraft}</MenuItem>
                     ) : null}
-                    {canOrder && open ? (
+                    {canOrder ? (
                       <MenuItem
                         onClick={() => {
                           close()
-                          void run(async () => {
-                            const order = await quoteToOrder(quote.id)
-                            toast(copy.sales.toast.accepted)
-                            navigate(`${docPath('order')}/${order.id}`)
-                          })
+                          convert()
                         }}
                       >
                         {copy.sales.toOrder}
@@ -384,6 +383,13 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
         </div>
       ) : null}
       {tab === 'history' ? <SalesHistory table="sales.quote" id={quote.id} /> : null}
+      {canOrder && !editing ? (
+        <div className="sticky bottom-0 z-(--z-sticky) -mx-4 border-t border-border-subtle bg-surface px-4 py-2 md:hidden sm:-mx-8">
+          <Button type="button" variant="primary" size="sm" className="w-full" loading={busy} onClick={convert}>
+            {copy.sales.toOrder}
+          </Button>
+        </div>
+      ) : null}
       <ConfirmDialog
         open={deleting}
         title={copy.sales.deleteDraftTitle}

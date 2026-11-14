@@ -78,6 +78,7 @@ test("Móvil: presupuesto nuevo", async ({ page }) => {
     await dialog.getByRole("button", { name: "Crear" }).tap();
     expect((await creado).ok()).toBe(true);
     await page.waitForURL(/\/ventas\/presupuestos\/[0-9a-f-]+/i);
+    await expect(page.getByRole("button", { name: "Crear pedido" })).toBeVisible();
     await sinDesborde(page, "ficha del presupuesto");
   });
 });
