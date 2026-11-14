@@ -385,6 +385,60 @@ export const inventoryRestTools: readonly AnyTool[] = [
     web: () => "/stock",
   }),
   defineRestRead({
+    name: "inventory_stock_valuation_get",
+    module: "inventory",
+    scope: "inventory.read",
+    title: "Valoración de existencias",
+    description: "Valor del vino inmovilizado, sin IVA: envasado por almacén, referencia y lote (tarifa vigente; si no hay precio, la versión anterior más reciente; un precio fijado manda; sin ninguno queda sin precio), damajuanas y granel —depósitos y barricas— a euro por litro. Las lías y lo marcado sin valor valen 0. Agrupado por vino y por tipo de la ficha (tinto, blanco, naranja…), con subtotales.",
+    input: z.object({
+      list: z.enum(["distributor", "shop", "custom-horeca", "final"]).optional()
+        .describe("distributor distribución, shop tienda, custom-horeca restaurante, final PVP. Por defecto, distribución."),
+    }).strict(),
+    route: "GET /v1/stock/valuation",
+    alsoCovers: ["GET /v1/stock/valuation-settings"],
+    web: (input) => `/stock/valoracion?tarifa=${input.list ?? "distributor"}`,
+  }),
+  defineRestWrite({
+    name: "inventory_valuation_settings_update",
+    module: "inventory",
+    scope: "inventory.count",
+    title: "Cambiar la valoración",
+    description: "Guarda el euro por litro de damajuanas o granel, un precio de valoración por referencia (pisa la tarifa de esa lista; unit_price vacío lo quita) o marca un recipiente o un lote como sin valor. Devuelve la valoración recalculada.",
+    input: z.object({
+      list: z.enum(["distributor", "shop", "custom-horeca", "final"]).optional(),
+      demijohn_eur_per_litre: z.string().regex(/^\d{1,6}([.,]\d{1,2})?$/).optional().describe("Euro por litro de damajuana, p. ej. 50,00"),
+      bulk_eur_per_litre: z.string().regex(/^\d{1,6}([.,]\d{1,2})?$/).optional().describe("Euro por litro de granel, p. ej. 3,00"),
+      bulk_wines: z.array(z.object({
+        wine_id: id,
+        eur_per_litre: z.string().regex(/^\d{1,6}([.,]\d{1,2})?$/),
+      }).strict()).max(200).optional().describe("Sustituye los precios por litro de cada vino. Lista vacía los quita."),
+      price: z.object({
+        product_id: id,
+        list: z.enum(["distributor", "shop", "custom-horeca", "final"]),
+        unit_price: z.string().regex(/^\d{1,6}([.,]\d{1,2})?$/).nullable().describe("Base sin IVA. Null quita el precio fijado."),
+      }).strict().optional(),
+      worthless: z.object({
+        subject: z.enum(["vessel", "lot"]),
+        subject_key: z.string().min(2).max(40).describe("Código del recipiente (LIAS) o uuid del lote"),
+        enabled: z.boolean(),
+      }).strict().optional(),
+    }).strict(),
+    route: "PUT /v1/stock/valuation-settings",
+    current: { route: "GET /v1/stock/valuation-settings" },
+    send: (input) => {
+      const body: Record<string, unknown> = {};
+      if (input.list !== undefined) body.list = input.list;
+      if (input.demijohn_eur_per_litre !== undefined) body.demijohn_eur_per_litre = input.demijohn_eur_per_litre;
+      if (input.bulk_eur_per_litre !== undefined) body.bulk_eur_per_litre = input.bulk_eur_per_litre;
+      if (input.bulk_wines !== undefined) body.bulk_wines = input.bulk_wines;
+      if (input.price !== undefined) body.price = input.price;
+      if (input.worthless !== undefined) body.worthless = input.worthless;
+      return body;
+    },
+    summary: () => "Guardar el cambio en la valoración de existencias. ¿Confirmas?",
+    web: (input) => `/stock/valoracion?tarifa=${input.list ?? input.price?.list ?? "distributor"}`,
+  }),
+  defineRestRead({
     name: "inventory_warehouses_get",
     module: "inventory",
     scope: "inventory.read",

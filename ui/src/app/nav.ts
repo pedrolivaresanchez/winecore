@@ -102,6 +102,7 @@ export const railGroups: RailGroup[] = [
       { id: 'catalog', label: copy.nav.catalog, icon: Box, path: '/catalogo', permission: 'catalog.read', tier: 'primary', tint: 'warning' },
       { id: 'expenses', label: copy.gastos.title, icon: Briefcase, path: '/gastos', permission: 'purchasing.read', tier: 'primary', tint: 'red' },
       { id: 'stock', label: copy.nav.stock, icon: Archive, path: '/stock', permission: 'inventory.read', tier: 'primary', tint: 'sky' },
+      { id: 'valuation', label: copy.stock.valuation, icon: ChartBar, path: '/stock/valoracion', permission: 'inventory.read', tier: 'palette', tint: 'sky', keywords: 'valoracion existencias inmovilizado tarifa precio' },
       { id: 'reports', label: copy.nav.reports, icon: ChartBar, path: '/informes', permission: 'reports.read', tier: 'primary' },
       { id: 'wines', label: copy.catalog.wines, icon: Tag, path: '/catalogo/vinos', permission: 'catalog.read', tier: 'more', tint: 'pink' },
       { id: 'formats', label: copy.catalog.formats, icon: Box, path: '/catalogo/formatos', permission: 'catalog.read', tier: 'more', tint: 'slate' },
@@ -131,6 +132,11 @@ export function itemMatches(pathname: string, item: RailItem): boolean {
 /** The longest matching path wins, so Catálogo does not stay lit on Vinos. */
 export function activeRailId(pathname: string, groups: RailGroup[]): string | null {
   const hits = groups.flatMap((group) => group.items).filter((item) => itemMatches(pathname, item))
-  hits.sort((left, right) => right.path.length - left.path.length)
+  hits.sort((left, right) => {
+    const palette = (item: RailItem) => (item.tier === 'palette' ? 1 : 0)
+    const byPalette = palette(left) - palette(right)
+    if (byPalette !== 0) return byPalette
+    return right.path.length - left.path.length
+  })
   return hits[0]?.id ?? null
 }

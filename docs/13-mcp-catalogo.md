@@ -1,6 +1,6 @@
 # 13 · Catálogo de herramientas MCP
 
-> Generado con `bun run scripts/mcp-catalog.ts` (en `api/`). 445 herramientas, 217 de escritura en dos pasos (`_prepare` y `_commit`). Reglas y exclusiones: `13-mcp.md`.
+> Generado con `bun run scripts/mcp-catalog.ts` (en `api/`). 447 herramientas, 218 de escritura en dos pasos (`_prepare` y `_commit`). Reglas y exclusiones: `13-mcp.md`.
 
 ## Sistema y búsqueda (15)
 
@@ -266,7 +266,7 @@
 | `purchasing_expenses_export_csv` | lectura | Libro de facturas recibidas (CSV) |
 | `purchasing_expenses_list` | lectura | Gastos |
 
-## Stock, aforos y ubicaciones (25)
+## Stock, aforos y ubicaciones (27)
 
 | Herramienta | Tipo | Qué hace |
 |---|---|---|
@@ -293,7 +293,9 @@
 | `inventory_stock_at` | lectura | Stock a una fecha |
 | `inventory_stock_balances_list` | lectura | Existencias físicas |
 | `inventory_stock_moves_list` | lectura | Movimientos de stock |
+| `inventory_stock_valuation_get` | lectura | Valoración de existencias |
 | `inventory_tax_warehouses_list` | lectura | Depósitos fiscales |
+| `inventory_valuation_settings_update_prepare` / `_commit` | escritura | Cambiar la valoración |
 | `inventory_warehouses_get` | lectura | Almacenes de envasado |
 
 ## Bodega: depósitos, operaciones, lotes y enología (86)

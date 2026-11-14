@@ -10,12 +10,46 @@ import { GlassMenu, MenuItem, useMenuOpen } from '@/ui'
 
 const SECTIONS = [
   { id: 'stock', label: copy.stock.title, path: '/stock' },
+  { id: 'valuation', label: copy.stock.valuation, path: '/stock/valoracion' },
   { id: 'warehouses', label: copy.stock.warehouses, path: '/stock/almacenes' },
   { id: 'moves', label: copy.stock.moves, path: '/stock/movimientos' },
   { id: 'counts', label: copy.stock.counts, path: '/stock/aforos' },
 ] as const
 
 export type StockSection = (typeof SECTIONS)[number]['id']
+
+function SectionSwitch({ section }: { section: StockSection }) {
+  const navigate = useNavigate()
+  const menu = useMenuOpen()
+  const label = SECTIONS.find((item) => item.id === section)?.label ?? copy.stock.title
+  return (
+    <GlassMenu
+      open={menu.open}
+      onOpenChange={menu.setOpen}
+      placement="bottom-start"
+      panelClassName="min-w-[180px]"
+      trigger={
+        <button type="button" className="flex h-11 min-w-0 items-center gap-1 text-label font-medium text-ink-900" onClick={menu.toggle}>
+          <span className="truncate">{label}</span>
+          <ChevronDown className="size-3.5 shrink-0 text-icon-muted" strokeWidth={iconStroke} />
+        </button>
+      }
+    >
+      {SECTIONS.map((item) => (
+        <MenuItem
+          key={item.id}
+          checked={item.id === section}
+          onClick={() => {
+            menu.close()
+            navigate(item.path)
+          }}
+        >
+          {item.label}
+        </MenuItem>
+      ))}
+    </GlassMenu>
+  )
+}
 
 export function ListFrame({
   screen,
@@ -77,6 +111,9 @@ export function ListFrame({
       {bar ?? (
         <>
           <div className={cn('flex h-11 shrink-0 items-center gap-1.5 border-b border-border-subtle', FRAME_GUTTER)}>
+            <div className="shrink-0 md:hidden">
+              <SectionSwitch section={section} />
+            </div>
             {toolbar}
           </div>
           {filters ? (

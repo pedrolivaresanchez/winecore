@@ -38,6 +38,7 @@ import { CountsPage } from '@/pages/existencias/CountsPage'
 import { InspectionPage } from '@/pages/existencias/InspectionPage'
 import { MovesPage } from '@/pages/existencias/MovesPage'
 import { StockPage } from '@/pages/existencias/StockPage'
+import { ValuationPage } from '@/pages/existencias/ValuationPage'
 import { WarehousePage } from '@/pages/existencias/WarehousePage'
 import { DeliveryPage } from '@/pages/ventas/DeliveryPage'
 import { OrderPage } from '@/pages/ventas/OrderPage'
@@ -102,6 +103,7 @@ export function AppRoutes({ me }: { me: Me }) {
       <Route path="bodega/:vesselId" element={<DepositoPage me={me} />} />
       <Route path="q/:token" element={<QrOpen me={me} />} />
       <Route path="stock" element={<StockPage me={me} />} />
+      <Route path="stock/valoracion" element={<ValuationPage me={me} />} />
       <Route path="stock/almacenes" element={<WarehousePage me={me} />} />
       <Route path="stock/movimientos" element={<MovesPage me={me} />} />
       <Route path="stock/informe" element={<InspectionPage me={me} />} />
