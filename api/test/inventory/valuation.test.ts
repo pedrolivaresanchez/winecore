@@ -6,6 +6,7 @@ import {
   currentVersion,
   exVatUnit,
   litresValue,
+  mergePackaged,
   parseEur,
   previousPriceNote,
   unitsValue,
@@ -56,7 +57,47 @@ describe('precio de valoración', () => {
     expect(parseEur('50,5', 'price')).toBe('50.50');
     expect(() => parseEur('3.555', 'price')).toThrow(/2 decimales|no válido/);
   });
+
+  it('cuenta una vez Arcal, La Gran Oxidación O1 y XPO aunque el libro no traiga la misma clave', () => {
+    const map = [
+      row({ location_code: 'BOD', product_id: 'arcal', lot_id: 'lot-2023', bottles: 912, volume_ml: 684_000, sku: 'ARCAL-2023' }),
+      row({ location_code: 'TFRP', product_id: 'arcal', lot_id: 'lot-2023', bottles: 1254, volume_ml: 940_500, sku: 'ARCAL-2023' }),
+      row({ location_code: 'BOD', product_id: 'o1', lot_id: 'lem', bottles: 70, volume_ml: 35_000, sku: 'LEM2023' }),
+      row({ location_code: 'BOD', product_id: 'xpo', lot_id: 'l2021', bottles: 27, volume_ml: 20_250, sku: 'XPO-2016' }),
+    ];
+    const book = [
+      row({ location_code: 'BOD', bottles: 912, volume_ml: 684_000 }),
+      row({ location_code: 'TFRP', lot_id: 'otro-lote', bottles: 1254, volume_ml: 940_500 }),
+      row({ location_code: 'BOD', lot_id: 'lem', bottles: 70, volume_ml: 35_000 }),
+      row({ location_code: 'BOD', product_id: 'xpo', bottles: 27, volume_ml: 20_250 }),
+    ];
+    const merged = mergePackaged(map, book);
+    expect(merged.reduce((sum, line) => sum + line.bottles, 0)).toBe(912 + 1254 + 70 + 27);
+    expect(merged.filter((line) => line.sku === 'ARCAL-2023').map((line) => line.bottles).sort((a, b) => a - b)).toEqual([912, 1254]);
+    expect(merged.find((line) => line.sku === 'LEM2023')?.bottles).toBe(70);
+    expect(merged.find((line) => line.sku === 'XPO-2016')?.bottles).toBe(27);
+    const distinct = mergePackaged(
+      [
+        row({ location_code: 'BOD', product_id: 'a', lot_id: 'shared', bottles: 4, volume_ml: 3_000 }),
+        row({ location_code: 'BOD', product_id: 'b', lot_id: 'shared', bottles: 2, volume_ml: 1_500 }),
+      ],
+      [],
+    );
+    expect(distinct).toHaveLength(2);
+    expect(distinct.reduce((sum, line) => sum + line.bottles, 0)).toBe(6);
+  });
 });
+
+function row(partial: { location_code: string; bottles: number; volume_ml: number; product_id?: string; lot_id?: string; sku?: string }) {
+  return {
+    location_code: partial.location_code,
+    product_id: partial.product_id ?? null,
+    lot_id: partial.lot_id ?? null,
+    bottles: partial.bottles,
+    volume_ml: partial.volume_ml,
+    sku: partial.sku ?? null,
+  };
+}
 
 describe('valoración de existencias', () => {
   it('desglosa por almacén y vino, con tarifa anterior, precio fijado y lías a cero', async () => {
@@ -227,7 +268,88 @@ describe('valoración de existencias', () => {
       await ctx.close();
     }
   });
+
+  it('no dobla Arcal 2023, La Gran Oxidación O1 ni XPO Interaction 2016', async () => {
+    const ctx = await createTestApp();
+    try {
+      const cellar = await seedCellar(ctx.client);
+      const arcal = '019a1000-0000-7000-8000-0000000000d1';
+      const o1 = '019a1000-0000-7000-8000-0000000000d2';
+      const xpo = '019a1000-0000-7000-8000-0000000000d3';
+      const lotArcal = '019a1000-0000-7000-8000-0000000000d4';
+      const lotO1 = '019a1000-0000-7000-8000-0000000000d5';
+      const lotXpo = '019a1000-0000-7000-8000-0000000000d6';
+      const lotOther = '019a1000-0000-7000-8000-0000000000d7';
+      const list = '019a1000-0000-7000-8000-0000000000d8';
+      const version = '019a1000-0000-7000-8000-0000000000d9';
+      await ctx.client.query(`
+        INSERT INTO catalog.product (id, sku, name, kind, wine_id, vintage, format_id, unit, default_tax_code, requires_lot)
+        VALUES
+          ('${arcal}', 'ARCAL-2023', 'Arcal 2023', 'wine', '${cellar.wine}', 2023, '${cellar.format}', 'ud', 'IVA21', TRUE),
+          ('${o1}', 'LEM2023', 'La Gran Oxidación O1', 'wine', '${cellar.wine}', 2023, '${cellar.format}', 'ud', 'IVA21', TRUE),
+          ('${xpo}', 'XPO-2016', 'XPO Interaction 2016', 'wine', '${cellar.wine}', 2016, '${cellar.format}', 'ud', 'IVA21', TRUE);
+        INSERT INTO inventory.lot (id, producer_entity_id, code, kind, wine_id, vintage, origin, status) VALUES
+          ('${lotArcal}', '${cellar.po}', '2023', 'bottled', '${cellar.wine}', 2023, 'reception', 'active'),
+          ('${lotO1}', '${cellar.po}', 'LEM2023', 'bottled', '${cellar.wine}', 2023, 'reception', 'active'),
+          ('${lotXpo}', '${cellar.po}', 'L2021-E1001', 'bottled', '${cellar.wine}', 2016, 'reception', 'active'),
+          ('${lotOther}', '${cellar.po}', 'OTRO-LOTE', 'bottled', '${cellar.wine}', 2023, 'reception', 'active');
+        INSERT INTO catalog.price_list (id, code, name, tax_included, is_active)
+        VALUES ('${list}', 'distributor', 'Distribución', FALSE, TRUE);
+        INSERT INTO catalog.price_list_version (id, price_list_id, version, valid_from, status, created_by)
+        VALUES ('${version}', '${list}', 1, DATE '2026-01-01', 'active', 'test');
+        INSERT INTO catalog.price_list_item (id, version_id, product_id, min_qty, unit_price) VALUES
+          ('019a1000-0000-7000-8000-0000000000e1', '${version}', '${arcal}', 1, 9.900000),
+          ('019a1000-0000-7000-8000-0000000000e2', '${version}', '${xpo}', 1, 130.000000);
+      `);
+      await place(ctx.client, '019a1000-0000-7000-8000-0000000000e3', cellar.bod, arcal, lotArcal, cellar.po, 912, 684_000);
+      await place(ctx.client, '019a1000-0000-7000-8000-0000000000e4', cellar.vlc, arcal, lotArcal, cellar.po, 1254, 940_500);
+      await place(ctx.client, '019a1000-0000-7000-8000-0000000000e5', cellar.bod, o1, lotO1, cellar.po, 70, 35_000);
+      await place(ctx.client, '019a1000-0000-7000-8000-0000000000e6', cellar.bod, xpo, lotXpo, cellar.po, 27, 20_250);
+      await insertStockMove(ctx.client, packaged('019a1000-0000-7000-8000-0000000000e7', cellar.bod, null, null, cellar.po, 912, 684_000));
+      await insertStockMove(ctx.client, packaged('019a1000-0000-7000-8000-0000000000e8', cellar.vlc, lotOther, null, cellar.po, 1254, 940_500));
+      await insertStockMove(ctx.client, packaged('019a1000-0000-7000-8000-0000000000e9', cellar.bod, lotO1, null, cellar.po, 70, 35_000));
+      await insertStockMove(ctx.client, move('019a1000-0000-7000-8000-0000000000ea', cellar.bod, null, null, xpo, cellar.po, 27, 20_250));
+
+      const page = await jsonOf<Valuation>(await ctx.app.handle(call('GET', '/v1/stock/valuation?list=distributor')));
+      const lines = page.groups.flatMap((group) => group.lines).filter((line) => line.kind === 'packaged');
+      expect(lines.filter((line) => line.product_id === arcal).map((line) => line.bottles).sort((a, b) => (a ?? 0) - (b ?? 0))).toEqual([912, 1254]);
+      expect(lines.filter((line) => line.product_id === o1)).toEqual([expect.objectContaining({ bottles: 70, missing_price: true })]);
+      expect(lines.find((line) => line.product_id === xpo)).toMatchObject({ bottles: 27, unit_price: '130.00', value: '3510.00' });
+      expect(lines.some((line) => line.product_id == null)).toBe(false);
+      expect(page.packaged.bottles).toBe(912 + 1254 + 70 + 27);
+    } finally {
+      await ctx.close();
+    }
+  });
 });
+
+async function place(
+  client: { query(sql: string): Promise<unknown> },
+  id: string,
+  locationId: string,
+  productId: string,
+  lotId: string,
+  ownerId: string,
+  bottles: number,
+  volume: number,
+) {
+  const moveId = `${id.slice(0, -1)}${(Number.parseInt(id.slice(-1), 16) + 8).toString(16)}`;
+  await client.query(`
+    INSERT INTO cellar.bottled_placement (
+      id, location_id, slot_kind, slot_code, line_no, wine_label, product_id, lot_id, owner_entity_id,
+      bottle_ml, product_state, match_status, source_sheet, source_row, photo_date
+    ) VALUES (
+      '${id}', '${locationId}', 'caja', 'CAJ-${id.slice(-2).toUpperCase()}', 1, 'Vino', '${productId}', '${lotId}', '${ownerId}',
+      ${Math.round(volume / bottles)}, 'packaged_labeled', 'matched', 'test-${id.slice(-2)}', 1, DATE '2026-11-09'
+    );
+    INSERT INTO cellar.bottled_move (
+      id, occurred_at, placement_id, qty_units, volume_ml, move_type, lot_id, source_table, source_id, created_by
+    ) VALUES (
+      '${moveId}', TIMESTAMP '2026-11-09 12:00:00+01', '${id}', ${bottles}, ${volume},
+      'opening', '${lotId}', 'cellar.bottled_placement', '${id}', 'test'
+    );
+  `);
+}
 
 type Line = {
   kind: string;
@@ -252,6 +374,18 @@ type Valuation = {
   bulk: { value: string | null };
   total: { value: string | null; partial: boolean };
 };
+
+function packaged(
+  id: string,
+  locationId: string,
+  lotId: string | null,
+  productId: string | null,
+  ownerId: string,
+  qty: number,
+  volume: number,
+) {
+  return { ...move(id, locationId, null, lotId, productId, ownerId, qty, volume), productState: 'packaged_labeled' };
+}
 
 function move(
   id: string,
