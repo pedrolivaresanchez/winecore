@@ -7,6 +7,7 @@ import {
   compareWarehouses,
   compareWineTypes,
   currentVersion,
+  mergePackaged,
   exVatUnit,
   isValuationList,
   litresValue,
@@ -454,17 +455,11 @@ async function loadTaxes(writer: Writer): Promise<Map<string, string>> {
 async function loadPackaged(writer: Writer): Promise<RawPack[]> {
   const mapRows = await readPack(writer, 'map');
   const bookRows = await readPack(writer, 'book');
-  const covered = new Set(mapRows.filter((row) => row.product_id).map(packKey));
-  const extra = bookRows.filter((row) => !row.product_id || !covered.has(packKey(row)));
-  return [...mapRows, ...extra].sort((left, right) =>
+  return mergePackaged(mapRows, bookRows).sort((left, right) =>
     compareWarehouses(left.location_code, right.location_code)
     || left.reference.localeCompare(right.reference, 'es')
     || (left.lot_code ?? '').localeCompare(right.lot_code ?? '', 'es'),
   );
-}
-
-function packKey(row: RawPack): string {
-  return `${row.location_code}|${row.product_id ?? ''}|${row.lot_id ?? ''}`;
 }
 
 async function readPack(writer: Writer, source: 'map' | 'book'): Promise<RawPack[]> {

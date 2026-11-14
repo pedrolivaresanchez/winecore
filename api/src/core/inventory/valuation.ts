@@ -99,6 +99,66 @@ export function compareWineTypes(left: string, right: string): number {
   return rank(left) - rank(right);
 }
 
+/**
+ * El mapa (huecos) y el libro físico guardan las mismas botellas con claves
+ * distintas: una fila trae la referencia y otra el lote, o una no trae ni
+ * referencia ni lote. Son el mismo stock si comparten almacén y, o bien la
+ * referencia, o bien el lote, o bien la cantidad cuando a alguna le falta
+ * un dato. Dos referencias distintas del mismo lote no se juntan.
+ */
+export type PackIdentity = {
+  location_code: string;
+  product_id: string | null;
+  lot_id: string | null;
+  bottles: number;
+  volume_ml: number;
+};
+
+export function samePhysicalPack(left: PackIdentity, right: PackIdentity): boolean {
+  if (left.location_code !== right.location_code) return false;
+  const sameLot = Boolean(left.lot_id && right.lot_id && left.lot_id === right.lot_id);
+  const sameProduct = Boolean(left.product_id && right.product_id && left.product_id === right.product_id);
+  if (sameLot && left.product_id && right.product_id && left.product_id !== right.product_id) return false;
+  if (sameProduct && left.lot_id && right.lot_id && left.lot_id !== right.lot_id) return false;
+  if (sameLot || sameProduct) return true;
+  if (left.bottles !== right.bottles) return false;
+  if (left.volume_ml > 0 && right.volume_ml > 0 && left.volume_ml !== right.volume_ml) return false;
+  if (left.product_id && right.product_id && left.product_id !== right.product_id) return false;
+  const leftGap = !left.product_id || !left.lot_id;
+  const rightGap = !right.product_id || !right.lot_id;
+  if (!leftGap && !rightGap) return false;
+  return true;
+}
+
+/** Une mapa y libro. La cantidad del mapa manda; del libro solo se rellena la referencia o el lote que faltaba. */
+export function mergePackaged<T extends PackIdentity>(mapRows: readonly T[], bookRows: readonly T[]): T[] {
+  const rows: T[] = [];
+  for (const row of [...mapRows, ...bookRows]) {
+    const index = rows.findIndex((existing) => samePhysicalPack(existing, row));
+    if (index < 0) {
+      rows.push({ ...row });
+      continue;
+    }
+    const current = rows[index];
+    if (!current) continue;
+    rows[index] = fillPack(current, row);
+  }
+  return rows;
+}
+
+function fillPack<T extends PackIdentity>(base: T, extra: T): T {
+  const filled = { ...base };
+  for (const key of Object.keys(extra) as (keyof T)[]) {
+    if (key === 'bottles' || key === 'volume_ml' || key === 'location_code') continue;
+    const value = extra[key];
+    const current = filled[key];
+    if ((current == null || current === '') && value != null && value !== '') filled[key] = value;
+  }
+  filled.bottles = base.bottles;
+  filled.volume_ml = base.volume_ml > 0 ? base.volume_ml : extra.volume_ml;
+  return filled;
+}
+
 /** Bodega y TFRP primero; el resto por código. */
 export function compareWarehouses(left: string, right: string): number {
   const rank = (code: string) => WAREHOUSE_ORDER.get(code) ?? 2;
