@@ -23,6 +23,7 @@ test.describe("móvil", () => {
     await expect(page.getByRole("combobox", { name: "Tarifa" })).toBeVisible();
     await page.locator("button").filter({ hasText: /^Valoración$/ }).click();
     await page.getByRole("menuitemcheckbox", { name: "Existencias" }).click();
-    await pantalla(page, "stock");
+    await expect(page).toHaveURL(/\/stock$/);
+    await expect(page.locator('[data-screen^="existencias"]')).toBeVisible();
   });
 });
