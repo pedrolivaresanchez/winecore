@@ -6,7 +6,7 @@ import { Badge, Button, GlassMenu, InfoTip, Switch, Textarea, useMenuOpen, type 
 import { copy } from '@/i18n'
 import { iconStroke } from '@/lib/motion'
 import { cn } from '@/lib/cn'
-import { deliveryLabel, deliveryTone, entityLabel, hasAmount, money, qty, statusLabel, statusTone, verifactuLabel } from '@/pages/facturas/format'
+import { deliveryLabel, deliveryTone, entityLabel, hasAmount, isHistoricalOrigin, money, qty, statusLabel, statusTone, verifactuLabel } from '@/pages/facturas/format'
 import type { DeliveryStatus, Invoice, InvoiceLine } from '@/pages/facturas/types'
 
 export function RecordFrame({
@@ -98,7 +98,7 @@ export function InvoiceBadges({ invoice, delivery }: { invoice: Invoice; deliver
       {invoice.stock_already_deducted ? <Badge tone="warning">{copy.facturas.stockAlready}</Badge> : null}
       <DeliveryBadge status={delivery} />
       {invoice.status === 'issued' || invoice.status === 'voided' ? (
-        <Badge tone={invoice.origin === 'holded_import' || !invoice.verifactu_record_id ? 'neutral' : 'success'}>{verifactuLabel(invoice.verifactu_record_id, invoice.origin)}</Badge>
+        <Badge tone={isHistoricalOrigin(invoice.origin) || !invoice.verifactu_record_id ? 'neutral' : 'success'}>{verifactuLabel(invoice.verifactu_record_id, invoice.origin)}</Badge>
       ) : null}
     </>
   )

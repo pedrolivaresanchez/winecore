@@ -22,12 +22,14 @@ export function DeliveryPanel({
   invoiceId,
   issued,
   historical = false,
+  origin = null,
   onStatus,
 }: {
   me: Me
   invoiceId: string
   issued: boolean
   historical?: boolean
+  origin?: string | null
   onStatus: (status: DeliveryStatus | null) => void
 }) {
   const [pack, setPack] = useState<DeliveryPackage | null>(null)
@@ -95,7 +97,16 @@ export function DeliveryPanel({
     }
   }
 
-  if (historical) return <EmptyState size="sm" title={copy.facturas.historicalHolded} description={copy.facturas.historicalHoldedHint} />
+  if (historical) {
+    const stripe = origin === 'stripe_import'
+    return (
+      <EmptyState
+        size="sm"
+        title={stripe ? copy.facturas.historicalStripe : copy.facturas.historicalHolded}
+        description={stripe ? copy.facturas.historicalStripeHint : copy.facturas.historicalHoldedHint}
+      />
+    )
+  }
   if (!canDeliver) return <EmptyState size="sm" title={copy.facturas.noDelivery} description={copy.facturas.noDeliveryHint} />
   if (!issued) return <EmptyState size="sm" title={copy.facturas.noDelivery} description={copy.facturas.noDeliveryHint} />
   if (loading) return <Skeleton className="h-40 w-full" />
