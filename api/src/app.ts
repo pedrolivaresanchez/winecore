@@ -142,6 +142,7 @@ import {
   validateInvoiceRoute,
   voidInvoiceRoute,
 } from './routes/invoices';
+import { importStripeInvoiceRoute } from './routes/stripe-import';
 import { handleAuthenticatedMcp } from './mcp/http';
 import { RateLimiter } from './mcp/rate';
 import { createMcpClient, listMcpClients, revokeMcpClient, rotateMcpClient } from './routes/mcp-clients';
@@ -442,6 +443,13 @@ export function createApp(deps: AppDeps) {
     })
     .post('/v1/invoices/batch-issue/:requestId/execute', ({ request, params }) => batchIssueExecute(deps.writer, request, params.requestId), {
       beforeHandle: requirePermission(guardDeps, 'billing.issue'),
+    })
+    .post('/v1/invoices/import/stripe', async ({ request, set }) => {
+      const result = await importStripeInvoiceRoute(deps.writer, request);
+      set.status = result.status;
+      return result.body;
+    }, {
+      beforeHandle: requirePermission(guardDeps, 'billing.write'),
     })
     .post('/v1/invoices', async ({ request, set }) => {
       const body = await createInvoice(deps.writer, request);
