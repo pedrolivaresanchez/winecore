@@ -514,7 +514,7 @@ async function assertIdentityLock(
 ): Promise<void> {
   const changed = state.wine_id !== current.wine_id
     || state.vintage !== current.vintage
-    || state.format_id !== current.format_id;
+    || (state.format_id !== current.format_id && current.format_id != null);
   if (!changed) return;
   const rows = await tx.read(sql`
     SELECT 1 AS hit FROM inventory.stock_move WHERE product_id = CAST(${id} AS UUID) LIMIT 1

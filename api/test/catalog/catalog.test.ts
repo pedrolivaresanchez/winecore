@@ -284,6 +284,66 @@ describe('catálogo HTTP', () => {
     expect(off.json?.is_active).toBe(false);
   });
 
+  it('permite rellenar un formato vacío aunque haya movimientos', async () => {
+    const wine = await call('/v1/wines', {
+      method: 'POST',
+      body: JSON.stringify({ code: code('W'), name: 'Tinto sin formato', color: 'red' }),
+    });
+    const format = await call('/v1/formats', {
+      method: 'POST',
+      body: JSON.stringify({ code: code('F'), name: 'Botella 0,75 L', container: 'bottle', nominal_volume_ml: 750 }),
+    });
+    const otherFormat = await call('/v1/formats', {
+      method: 'POST',
+      body: JSON.stringify({ code: code('F'), name: 'Magnum 1,5 L', container: 'bottle', nominal_volume_ml: 1500 }),
+    });
+    const productId = newId();
+    const now = new Date();
+    await ctx.client.query(sql`
+      INSERT INTO catalog.product (
+        id, sku, name, kind, wine_id, vintage, format_id, unit,
+        is_stock_tracked, requires_lot, is_active, created_at, updated_at
+      ) VALUES (
+        CAST(${productId} AS UUID), ${code('SKU')}, 'Vino sin formato', 'wine',
+        CAST(${String(wine.json?.id)} AS UUID), 2023, NULL, 'ud',
+        TRUE, TRUE, TRUE, ${now}, ${now}
+      )
+    `);
+    const entities = await ctx.writer.read<{ id: string }>(`SELECT id FROM core.legal_entity WHERE code = 'PO'`);
+    const entityId = String(entities[0]?.id);
+    const locationId = newId();
+    await ctx.client.query(sql`
+      INSERT INTO inventory.location (id, code, name, kind, controlling_entity_id)
+      VALUES (CAST(${locationId} AS UUID), ${code('LOC')}, 'Bodega de prueba', 'cellar', CAST(${entityId} AS UUID))
+    `);
+    await ctx.client.query(sql`
+      INSERT INTO inventory.stock_move (
+        id, occurred_at, move_type, location_id, owner_entity_id, product_id, product_state,
+        qty_units, volume_ml, mass_g, source_table, source_id, created_by
+      ) VALUES (
+        CAST(${newId()} AS UUID), now(), 'opening', CAST(${locationId} AS UUID), CAST(${entityId} AS UUID),
+        CAST(${productId} AS UUID), 'packaged_labeled', 2, 1500, 0, 'catalog.product', CAST(${productId} AS UUID), 'test'
+      )
+    `);
+    const current = await call(`/v1/products/${productId}`);
+    expect(current.status).toBe(200);
+    expect(current.json?.format_id).toBeNull();
+    const filled = await call(`/v1/products/${productId}`, {
+      method: 'PATCH',
+      headers: { 'if-match': String(current.json?.updated_at) },
+      body: JSON.stringify({ format_id: format.json?.id }),
+    });
+    expect(filled.status).toBe(200);
+    expect(filled.json?.format_id).toBe(format.json?.id);
+    const locked = await call(`/v1/products/${productId}`, {
+      method: 'PATCH',
+      headers: { 'if-match': String(filled.json?.updated_at) },
+      body: JSON.stringify({ format_id: otherFormat.json?.id }),
+    });
+    expect(locked.status).toBe(422);
+    expect((locked.json?.fields as Record<string, string>).format_id).toContain('movimientos');
+  });
+
   it('pagina vinos con cursor y total', async () => {
     await call('/v1/wines', { method: 'POST', body: JSON.stringify({ code: code('W'), name: 'Uno', color: 'red' }) });
     await call('/v1/wines', { method: 'POST', body: JSON.stringify({ code: code('W'), name: 'Dos', color: 'white' }) });
