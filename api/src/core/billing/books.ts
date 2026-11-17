@@ -3,6 +3,7 @@ import type { Tx } from '../db/writer';
 import { DomainError, domainError } from '../errors';
 import { money } from '../money';
 import { decimalOf, day, flag, idOf, importeOf, isUuid, jsonObject, moneyText, text } from './format';
+import { isHistoricalInvoiceOrigin } from './origin';
 
 type Read = Pick<Tx, 'read'>;
 
@@ -22,7 +23,7 @@ export interface BookRow {
 /**
  * Cuadres del libro de emitidas. Si Verifactu está apagado, el tercer cuadre
  * no exige registros: el módulo no los genera (P.O hasta el 30-06-2027).
- * Las facturas con verifactuRequired = false (histórico Holded) tampoco:
+ * Las facturas con verifactuRequired = false (histórico Holded o Stripe) tampoco:
  * no se firman ni se envían.
  */
 export function reconcileBook(input: {
@@ -97,7 +98,7 @@ export function reconcileBook(input: {
       detail: input.verifactuEnabled
         ? (verifactuOk
           ? (historical > 0
-            ? 'Cada factura emitida en WineCore tiene registro Verifactu; las importadas de Holded no se envían'
+            ? 'Cada factura emitida en WineCore tiene registro Verifactu; las importadas de Holded o Stripe no se envían'
             : 'Cada factura del libro tiene registro Verifactu')
           : `Faltan registros Verifactu (${recorded} de ${subject.length})`)
         : 'Verifactu está apagado: no hay registros que cuadrar',
@@ -151,7 +152,8 @@ export async function exportIssuedBook(
     const importe = importeOf(moneyText(invoice.subtotal), moneyText(invoice.tax_total), moneyText(invoice.surcharge_total))
       ?? moneyText(invoice.total)
       ?? '0.00';
-    const historical = text(invoice.origin) === 'holded_import';
+    const origin = text(invoice.origin);
+    const historical = isHistoricalInvoiceOrigin(origin);
     bookInvoices.push({
       id,
       importeTotal: importe,
@@ -175,7 +177,7 @@ export async function exportIssuedBook(
         withholding: moneyText(invoice.withholding_total) ?? '0.00',
         first: true,
         tax: null,
-        historical,
+        historicalNote: historicalNote(origin, historical),
       }));
       continue;
     }
@@ -192,7 +194,7 @@ export async function exportIssuedBook(
         withholding: moneyText(invoice.withholding_total) ?? '0.00',
         first: index === 0,
         tax,
-        historical,
+        historicalNote: historicalNote(origin, historical),
       }));
     });
   }
@@ -233,7 +235,7 @@ function csvLine(input: {
   withholding: string;
   first: boolean;
   tax: Record<string, unknown> | null;
-  historical: boolean;
+  historicalNote: string;
 }): string[] {
   return [
     input.ejercicio,
@@ -257,8 +259,14 @@ function csvLine(input: {
     input.first ? input.importe : '',
     input.first ? input.withholding : '',
     '',
-    input.historical ? 'no aplica (histórico Holded)' : '',
+    input.historicalNote,
   ];
+}
+
+function historicalNote(origin: string | null, historical: boolean): string {
+  if (!historical) return '';
+  if (origin === 'stripe_import') return 'no aplica (histórico Stripe)';
+  return 'no aplica (histórico Holded)';
 }
 
 function periodLabel(issueDate: string, from: string, to: string): string {

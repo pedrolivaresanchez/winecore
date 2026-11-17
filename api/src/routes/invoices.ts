@@ -14,6 +14,7 @@ import { day, idOf, isUuid, jsonObject, moneyText, stamp, text } from '../core/b
 import { issueInvoice } from '../core/billing/issue';
 import { loadEntity, loadEntityByCode, loadInvoice, presentInvoice } from '../core/billing/readModel';
 import { validateInvoice } from '../core/billing/validate';
+import { historicalOriginSqlList, invoiceOrigin, isHistoricalInvoiceOrigin } from '../core/billing/origin';
 import { voidInvoice } from '../core/billing/void';
 
 const ISSUE_ROUTE = 'POST /v1/invoices/:id/issue';
@@ -36,11 +37,11 @@ export async function listInvoices(writer: Writer, request: Request) {
   if (query.to) filters.push(sql`i.issue_date <= CAST(${query.to} AS DATE)`);
   if (query.paymentStatus) filters.push(sql`i.payment_status = ${query.paymentStatus}`);
   if (query.verifactuStatus === 'pending') {
-    filters.push("i.verifactu_record_id IS NULL AND COALESCE(i.origin, 'native') <> 'holded_import'");
+    filters.push(`i.verifactu_record_id IS NULL AND COALESCE(i.origin, 'native') NOT IN ${historicalOriginSqlList()}`);
   }
   if (query.verifactuStatus === 'accepted') filters.push('i.verifactu_record_id IS NOT NULL');
   if (query.deliveryStatus === 'none') {
-    filters.push("del.invoice_id IS NULL AND COALESCE(i.origin, 'native') <> 'holded_import'");
+    filters.push(`del.invoice_id IS NULL AND COALESCE(i.origin, 'native') NOT IN ${historicalOriginSqlList()}`);
   }
   else if (query.deliveryStatus) filters.push(sql`del.status = ${query.deliveryStatus}`);
   const where = filters.join(' AND ');
@@ -251,8 +252,8 @@ function listItem(row: Record<string, unknown>) {
     invoice_type: String(row.invoice_type),
     series_id: row.series_id == null ? null : idOf(row.series_id),
     verifactu_record_id: row.verifactu_record_id == null ? null : idOf(row.verifactu_record_id),
-    origin: row.origin === 'holded_import' ? 'holded_import' : 'native',
-    delivery_status: row.origin === 'holded_import' ? null : deliveryStatusOf(row.delivery_status),
+    origin: invoiceOrigin(row.origin),
+    delivery_status: isHistoricalInvoiceOrigin(row.origin) ? null : deliveryStatusOf(row.delivery_status),
     last_delivery_at: stamp(row.last_delivery_at),
     updated_at: String(row.updated_at),
   };
