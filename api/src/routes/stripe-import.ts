@@ -24,6 +24,30 @@ export async function importStripeInvoiceRoute(writer: Writer, request: Request)
     id: user.id,
     requestId: requestIdFor(request),
   }, user, new Date()));
+  if (outcome.dryRun) {
+    return {
+      status: 200,
+      body: {
+        dry_run: true,
+        replayed: outcome.replayed,
+        customer_created: false,
+        customer_exists: outcome.customerExists,
+        stripe_invoice_id: outcome.stripeInvoiceId,
+        id: outcome.id,
+        number: outcome.number,
+        series_id: outcome.seriesId,
+        invoice_type: outcome.invoiceType,
+        currency: outcome.currency,
+        subtotal: outcome.totals?.subtotal ?? null,
+        tax_total: outcome.totals?.taxTotal ?? null,
+        surcharge_total: outcome.totals?.surchargeTotal ?? null,
+        withholding_total: outcome.totals?.withholdingTotal ?? null,
+        total: outcome.totals?.total ?? null,
+        warnings: outcome.warnings,
+      },
+    };
+  }
+  if (!outcome.id) throw domainError('WC_VALIDATION', { stripe_invoice_id: 'La importación no ha creado la factura' });
   const view = await loadInvoice(writer, outcome.id);
   if (view.header.origin !== 'stripe_import') {
     throw domainError('WC_VALIDATION', { origin: 'La factura no quedó marcada como importación de Stripe' });

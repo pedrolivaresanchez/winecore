@@ -89,6 +89,7 @@ function invoiceBody(overrides: Record<string, unknown> = {}) {
     number: 'VV-0001',
     issue_date: '2026-03-01',
     series_code: 'VV',
+    currency: 'EUR',
     description: 'Suscripción Vinoveo',
     customer: customer('Bodega Ejemplo SL', companyCif()),
     lines: [{ description: 'Suscripción marzo', quantity: '1', unit_price: '100.00', tax_code: 'IVA21' }],
@@ -402,6 +403,209 @@ describe('importación de facturas de Stripe', () => {
       }));
       expect(second.status).toBe(422);
       expect((await json(second)).fields).toMatchObject({ rectifies: expect.stringContaining('ya tiene') });
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  it('no guarda otra moneda como euros, ni un número JSON, ni un NS_LOC de un cliente español', async () => {
+    const ctx = await createTestApp();
+    try {
+      const clp = await post(ctx, invoiceBody({ series_code: undefined, currency: 'clp', total: '121.00' }));
+      expect(clp.status).toBe(422);
+      expect((await json(clp)).fields).toMatchObject({ currency: expect.stringContaining('euros') });
+
+      const missing = await post(ctx, invoiceBody({ series_code: undefined, currency: undefined }));
+      expect(missing.status).toBe(422);
+
+      const numeric = await post(ctx, invoiceBody({
+        series_code: undefined,
+        stripe_invoice_id: 'in_1VinoveoCents2',
+        number: 'VV-0092',
+        total: 121,
+      }));
+      expect(numeric.status).toBe(422);
+      expect((await json(numeric)).fields).toMatchObject({ total: expect.stringContaining('texto') });
+
+      const eu = await post(ctx, invoiceBody({
+        series_code: undefined,
+        stripe_invoice_id: 'in_1VinoveoNsEu01',
+        number: 'VV-0093',
+        lines: [{ description: 'Servicio', quantity: '1', unit_price: '100.00', tax_code: 'NS_LOC' }],
+        total: '100.00',
+      }));
+      expect(eu.status).toBe(422);
+      expect((await json(eu)).fields).toMatchObject({ tax_code: expect.stringContaining('España') });
+
+      const france = await post(ctx, invoiceBody({
+        series_code: undefined,
+        stripe_invoice_id: 'in_1VinoveoNsFr01',
+        number: 'VV-0095',
+        customer: customer('Château Exemple SAS', 'FRXX123456789', 'FR'),
+        lines: [{ description: 'Servicio', quantity: '1', unit_price: '80.00', tax_code: 'NS_LOC' }],
+        total: '80.00',
+        tax_total: '0.00',
+      }));
+      expect(france.status).toBe(201);
+      expect((await json(france)).tax_total).toBe('0.00');
+
+      const lower = await post(ctx, invoiceBody({
+        series_code: undefined,
+        stripe_invoice_id: 'in_1VinoveoEurLow1',
+        number: 'VV-0094',
+        currency: 'eur',
+      }));
+      expect(lower.status).toBe(201);
+      expect((await json(lower)).currency).toBe('EUR');
+
+      const count = await ctx.writer.read<{ n: unknown }>(sql`
+        SELECT count(*) AS n FROM billing.invoice WHERE origin = 'stripe_import'
+      `);
+      expect(Number(count[0]?.n)).toBe(2);
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  it('la simulación no graba, no cambia el cobro al repetir y rechaza el modo prueba', async () => {
+    const ctx = await createTestApp();
+    try {
+      const cvpo = await entityId(ctx, 'CVPO');
+      const po = await entityId(ctx, 'PO');
+      const vv = await openSeries(ctx, cvpo, 'invoice', 'VV', 'VV-', { verifactu: false, active: false });
+      const preview = await post(ctx, invoiceBody({ dry_run: true, livemode: true }));
+      expect(preview.status).toBe(200);
+      const previewBody = await json(preview);
+      expect(previewBody.dry_run).toBe(true);
+      expect(previewBody.replayed).toBe(false);
+      expect(previewBody.total).toBe('121.00');
+      expect(previewBody.tax_total).toBe('21.00');
+      expect(previewBody.series_id).toBe(vv);
+      expect(previewBody.customer_created).toBe(false);
+      expect(await nextValue(ctx, vv)).toBe(1);
+      const none = await ctx.writer.read<{ n: unknown }>(sql`SELECT count(*) AS n FROM billing.invoice`);
+      expect(Number(none[0]?.n)).toBe(0);
+
+      const trial = await post(ctx, invoiceBody({ livemode: false }));
+      expect(trial.status).toBe(422);
+      expect((await json(trial)).fields).toMatchObject({ livemode: expect.stringContaining('prueba') });
+
+      const chile = await json(await post(ctx, invoiceBody({
+        dry_run: true,
+        livemode: true,
+        series_code: undefined,
+        stripe_invoice_id: 'in_1VinoveoChileDry',
+        number: '8EC75E91-0099',
+        customer: customer('Viña del Sur SpA', `${'76086428'}-${'K'}`, 'CL'),
+        lines: [{ description: 'Servicio', quantity: '1', unit_price: '40.00', tax_code: 'NS_LOC' }],
+        total: '40.00',
+      })));
+      expect(chile.dry_run).toBe(true);
+      expect((chile.warnings as string[]).some((warning) => warning.includes('Chile'))).toBe(true);
+      expect(Number((await ctx.writer.read<{ n: unknown }>(sql`SELECT count(*) AS n FROM billing.invoice`))[0]?.n)).toBe(0);
+
+      const created = await json(await post(ctx, invoiceBody({ livemode: true, payment: { status: 'unpaid' } })));
+      expect(created.status).toBe('issued');
+      const again = await json(await post(ctx, invoiceBody({
+        dry_run: true,
+        payment: { status: 'paid' },
+      })));
+      expect(again.replayed).toBe(true);
+      expect(again.dry_run).toBe(true);
+      const stored = await ctx.writer.read<{ payment_status: string; n: unknown }>(sql`
+        SELECT payment_status, (SELECT count(*) FROM billing.invoice WHERE origin = 'stripe_import') AS n
+        FROM billing.invoice WHERE origin = 'stripe_import'
+      `);
+      expect(stored[0]?.payment_status).toBe('unpaid');
+      expect(Number(stored[0]?.n)).toBe(1);
+
+      const poList = await json(await ctx.app.handle(new Request(`http://localhost/v1/invoices?entity=${po}`)));
+      expect((poList.items as { id: string }[]).some((item) => item.id === created.id)).toBe(false);
+      const cvpoList = await json(await ctx.app.handle(new Request(`http://localhost/v1/invoices?entity=${cvpo}`)));
+      expect((cvpoList.items as { id: string }[]).some((item) => item.id === created.id)).toBe(true);
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  it('acepta el id cn_ de un abono y, si hay varias series, usa la del año', async () => {
+    const ctx = await createTestApp();
+    try {
+      const cvpo = await entityId(ctx, 'CVPO');
+      const older = await ctx.writer.withWrite(actor, (tx) => createSeries(tx, {
+        legal_entity_id: cvpo,
+        doc_type: 'invoice',
+        code: 'VV',
+        prefix: 'VV25-',
+        padding: 4,
+        is_default: false,
+        verifactu: false,
+        year: 2025,
+      }));
+      const newer = await ctx.writer.withWrite(actor, (tx) => createSeries(tx, {
+        legal_entity_id: cvpo,
+        doc_type: 'invoice',
+        code: 'VV',
+        prefix: 'VV26-',
+        padding: 4,
+        is_default: false,
+        verifactu: true,
+        year: 2026,
+      }));
+      await ctx.writer.withWrite(actor, (tx) => deactivateSeries(tx, older));
+      const taxId = companyCif();
+      const original = await post(ctx, invoiceBody({
+        stripe_invoice_id: 'in_1VinoveoYear001',
+        number: 'VV-0025',
+        issue_date: '2025-06-01',
+        customer: customer('Cliente Año SL', taxId),
+      }));
+      expect(original.status).toBe(201);
+      expect((await json(original)).series_id).toBe(older);
+      expect(await nextValue(ctx, older)).toBe(1);
+      expect(await nextValue(ctx, newer)).toBe(1);
+
+      const wrongYear = await post(ctx, invoiceBody({
+        stripe_invoice_id: 'in_1VinoveoYear002',
+        number: 'VV-0024',
+        issue_date: '2024-06-01',
+        customer: customer('Cliente Año SL', taxId),
+      }));
+      expect(wrongYear.status).toBe(422);
+      expect((await json(wrongYear)).fields).toMatchObject({ series_code: expect.stringContaining('2024') });
+
+      const blocked = await post(ctx, invoiceBody({
+        stripe_invoice_id: 'in_1VinoveoYear003',
+        number: 'VV-0026',
+        issue_date: '2026-06-01',
+      }));
+      expect(blocked.status).toBe(422);
+      expect((await json(blocked)).fields).toMatchObject({ series_code: expect.stringContaining('Verifactu') });
+
+      await openSeries(ctx, cvpo, 'credit_note', 'VVR', 'VVR-', { verifactu: false, active: false });
+      const note = await post(ctx, creditBody(taxId, {
+        stripe_invoice_id: 'cn_1VinoveoCredit9',
+        rectifies: { stripe_invoice_id: 'in_1VinoveoYear001' },
+        issue_date: '2025-07-01',
+      }));
+      expect(note.status).toBe(201);
+      const credited = await json(note);
+      expect(credited.invoice_type).toBe('R1');
+      expect(credited.total).toBe('-121.00');
+      const legacy = credited.legacy_refs as { stripe?: string };
+      expect(legacy.stripe).toBe('cn_1VinoveoCredit9');
+
+      const replay = await post(ctx, creditBody(taxId, {
+        stripe_invoice_id: 'cn_1VinoveoCredit9',
+        number: 'VVR-0099',
+        rectifies: { stripe_invoice_id: 'in_1VinoveoYear001' },
+      }));
+      expect(replay.status).toBe(200);
+      expect((await json(replay)).replayed).toBe(true);
+      const notes = await ctx.writer.read<{ n: unknown }>(sql`
+        SELECT count(*) AS n FROM billing.invoice WHERE invoice_type = 'R1'
+      `);
+      expect(Number(notes[0]?.n)).toBe(1);
     } finally {
       await ctx.close();
     }

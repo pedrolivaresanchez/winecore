@@ -27,16 +27,23 @@
  * cambiado de signo) y, si se indica serie, una serie de rectificativas sin
  * Verifactu (la prevista es VVR).
  *
- * Identificación del cliente: se reutiliza el contacto vivo con ese NIF.
- * Un identificador de fuera de la UE (RUT chileno, etc.) se guarda como
- * `foreign_id` con `id_otro_type` 04 (IDOtro, documento oficial del país),
- * aunque el texto coincida con la forma de un NIF español. No se pasa por
- * la letra de control española.
+ * Identificación del cliente: el país es obligatorio. Se reutiliza el contacto
+ * vivo con ese identificador. Fuera de la UE (un RUT chileno, etc.) se guarda
+ * como `foreign_id` con `id_otro_type` 04, aunque el texto coincida con la
+ * forma de un NIF español. No se asume España si el país falta: si no, un RUT
+ * que cuadre con la letra de control española se grabaría como NIF.
  *
- * Tratamientos de línea admitidos: IVA21 y NS_LOC (no sujeta por localización,
- * art. 69 LIVA, servicios B2B a empresas de fuera de la UE). El total que
- * guarda WineCore es el calculado con `computeInvoice`; si no coincide con
- * el total de Stripe, no se graba nada.
+ * Moneda: hay que indicar EUR (mayúsculas o minúsculas). Otra moneda (CLP, USD)
+ * se rechaza y no se convierte. Los importes van en texto y en unidades mayores
+ * ("121.00"), nunca en céntimos de Stripe ni como número JSON.
+ *
+ * Tratamientos de línea: IVA21, y NS_LOC (no sujeta por localización, art. 69
+ * LIVA) si el cliente no está en España: otro país de la UE o de fuera. El
+ * total que guarda WineCore es el calculado con `computeInvoice`; si no
+ * coincide con el de Stripe, no se graba nada.
+ *
+ * `dry_run: true` valida y no escribe. `livemode: false` (modo prueba de
+ * Stripe) se rechaza. El id puede ser `in_…` o el de un abono `cn_…`.
  */
 import type { Actor, Tx } from '../db/writer';
 import { sql } from '../db/sql';
@@ -55,7 +62,7 @@ import { loadEntity, loadEntityByCode, loadTaxCodes } from './readModel';
 import type { TaxCode } from './taxCodes';
 import { assertWc080 } from './wc080';
 
-const STRIPE_ID = /^in_[A-Za-z0-9]{8,64}$/;
+const STRIPE_ID = /^(?:in|cn)_[A-Za-z0-9]{8,64}$/;
 const NUMBER = /^[A-Za-z0-9][A-Za-z0-9./_-]{0,59}$/;
 const SERIES_CODE = /^[A-Z]{1,4}$/;
 const COUNTRY = /^[A-Z]{2}$/;
@@ -73,10 +80,24 @@ const NS_LOC_MENTION = 'Prestación de servicios a un empresario no establecido 
 const HISTORICAL_NOTE = 'Importada de Stripe (Vinoveo). Ya estaba emitida: no recibe número F26, no se envía a Verifactu y no se entrega desde WineCore.';
 
 export interface StripeImportOutcome {
-  id: string;
+  id: string | null;
   replayed: boolean;
   customerCreated: boolean;
   stripeInvoiceId: string;
+  dryRun: boolean;
+  customerExists: boolean;
+  number: string | null;
+  seriesId: string | null;
+  invoiceType: 'F1' | 'R1' | null;
+  currency: 'EUR';
+  totals: {
+    subtotal: string | null;
+    taxTotal: string | null;
+    surchargeTotal: string | null;
+    withholdingTotal: string | null;
+    total: string;
+  } | null;
+  warnings: string[];
 }
 
 interface PaymentResolved {
@@ -140,6 +161,8 @@ export async function importStripeInvoice(
 ): Promise<StripeImportOutcome> {
   if (!isUuid(actor.id)) throw domainError('WC_VALIDATION', { actor: 'El usuario no es válido' });
   const body = record(raw);
+  assertLiveMode(body.livemode);
+  const dryRun = dryRunOf(body.dry_run);
   const stripeInvoiceId = stripeId(body.stripe_invoice_id);
   const entity = await requireCvpo(tx, body.entity, user);
   const existing = await findImported(tx, stripeInvoiceId);
@@ -147,27 +170,51 @@ export async function importStripeInvoice(
     if (existing.legalEntityId !== entity.id) {
       throw domainError('WC_VALIDATION', { entity: 'Esta factura de Stripe ya está importada en otra sociedad' });
     }
-    if (body.payment !== undefined) {
+    if (!dryRun && body.payment !== undefined) {
       const payment = resolvePayment(decimalOf(existing.total), paymentRecord(body.payment));
       await applyPayment(tx, existing, payment, now);
     }
-    return { id: existing.id, replayed: true, customerCreated: false, stripeInvoiceId };
+    return {
+      id: existing.id,
+      replayed: true,
+      customerCreated: false,
+      stripeInvoiceId,
+      dryRun,
+      customerExists: true,
+      number: null,
+      seriesId: null,
+      invoiceType: null,
+      currency: 'EUR',
+      totals: {
+        subtotal: null,
+        taxTotal: null,
+        surchargeTotal: null,
+        withholdingTotal: null,
+        total: existing.total,
+      },
+      warnings: dryRun
+        ? ['La factura ya estaba importada. La simulación no ha cambiado el cobro.']
+        : [],
+    };
   }
 
   const parsed = parseCreate(body, now);
   const series = parsed.seriesCode
-    ? await requireOpenSeries(tx, entity.id, parsed.seriesCode, seriesDocType(parsed.invoiceType))
+    ? await requireOpenSeries(
+      tx,
+      entity.id,
+      parsed.seriesCode,
+      seriesDocType(parsed.invoiceType),
+      yearOf(parsed.issueDate),
+    )
     : null;
   await assertNumberFree(tx, entity.id, parsed.number);
   const taxCodes = await loadTaxCodes(tx);
   const computed = calculate(parsed, taxCodes);
   assertDeclared(parsed, computed);
-  const customer = await resolveCustomer(tx, parsed.customer, actor, now);
   const original = parsed.invoiceType === 'R1'
     ? await requireRectified(tx, entity.id, parsed.rectifiesStripeId, stripeInvoiceId, computed.totalToPay)
     : null;
-
-  const id = newId();
   const totals = {
     subtotal: money.toString(computed.subtotal),
     taxTotal: money.toString(computed.taxTotal),
@@ -175,10 +222,28 @@ export async function importStripeInvoice(
     withholdingTotal: money.toString(computed.withholdingTotal),
     total: money.toString(computed.totalToPay),
   };
+  if (dryRun) {
+    const live = await findLiveTaxId(tx, parsed.customer.taxId);
+    return {
+      id: null,
+      replayed: false,
+      customerCreated: false,
+      stripeInvoiceId,
+      dryRun: true,
+      customerExists: live != null,
+      number: parsed.number,
+      seriesId: series?.id ?? null,
+      invoiceType: parsed.invoiceType,
+      currency: 'EUR',
+      totals,
+      warnings: previewWarnings(parsed, body.livemode),
+    };
+  }
+  const customer = await resolveCustomer(tx, parsed.customer, actor, now);
+
+  const id = newId();
   const mentions = mentionsOf(parsed, computed.taxes.map((tax) => tax.taxCode));
-  const notes = clip([parsed.notes, HISTORICAL_NOTE, parsed.lines.some((line) => line.taxCode === 'NS_LOC') ? NS_LOC_MENTION : null]
-    .filter((part): part is string => part != null && part.trim() !== '')
-    .join(' '), 2000);
+  const notes = composeNotes(parsed);
   const snapshot = customerSnapshot(customer.stored, parsed.customer.address, customer.stored.idOtroType, parsed.customer.email);
   const legacy = {
     source: 'stripe_import',
@@ -320,7 +385,20 @@ export async function importStripeInvoice(
       verifactu_record_id: null,
     },
   });
-  return { id, replayed: false, customerCreated: customer.created, stripeInvoiceId };
+  return {
+    id,
+    replayed: false,
+    customerCreated: customer.created,
+    stripeInvoiceId,
+    dryRun: false,
+    customerExists: true,
+    number: parsed.number,
+    seriesId: series?.id ?? null,
+    invoiceType: parsed.invoiceType,
+    currency: 'EUR',
+    totals,
+    warnings: [],
+  };
 }
 
 function calculate(parsed: ParsedCreate, taxCodes: Map<string, TaxCode>) {
@@ -449,6 +527,7 @@ async function requireOpenSeries(
   entityId: string,
   code: string,
   docType: 'invoice' | 'credit_note' | 'simplified_invoice',
+  issueYear: number,
 ): Promise<{ id: string }> {
   const rows = await tx.read(sql`
     SELECT id, verifactu, "year" AS series_year
@@ -458,10 +537,16 @@ async function requireOpenSeries(
       AND doc_type = ${docType}
     ORDER BY "year" DESC
   `);
-  const row = rows[0];
+  if (rows.length === 0) {
+    throw domainError('WC_VALIDATION', {
+      series_code: `No hay una serie ${code} (${docType}) en CVPO. VV y VVR se crean a mano, sin Verifactu; mientras, omite series_code`,
+    });
+  }
+  const sameYear = rows.find((candidate) => Number(candidate.series_year) === issueYear);
+  const row = sameYear ?? (rows.length === 1 ? rows[0] : undefined);
   if (!row) {
     throw domainError('WC_VALIDATION', {
-      series_code: `No hay una serie ${code} (${docType}) en CVPO. VV y VVR se crean al fusionar; mientras, omite series_code`,
+      series_code: `Hay varias series ${code} y ninguna es del año ${issueYear}. Crea la de ese año o usa una sola serie`,
     });
   }
   if (flag(row.verifactu)) {
@@ -678,14 +763,14 @@ function mentionsOf(parsed: ParsedCreate, taxes: TaxCode[]): string[] {
     const mention = parsed.language === 'en' ? tax.legalMentionEn : tax.legalMentionEs;
     if (mention) mentions.add(mention);
   }
-  if (parsed.lines.some((line) => line.taxCode === 'NS_LOC')) mentions.add(NS_LOC_MENTION);
+  if (parsed.lines.some((line) => line.taxCode === 'NS_LOC') && !EU.has(parsed.customer.countryCode)) {
+    mentions.add(NS_LOC_MENTION);
+  }
   return [...mentions];
 }
 
 function parseCreate(body: Record<string, unknown>, now: Date): ParsedCreate {
-  if (body.currency != null && body.currency !== 'EUR') {
-    throw domainError('WC_VALIDATION', { currency: 'Solo se importan facturas en euros' });
-  }
+  requireEur(body.currency);
   const invoiceType = body.invoice_type == null || body.invoice_type === 'F1'
     ? 'F1'
     : body.invoice_type === 'R1'
@@ -704,6 +789,11 @@ function parseCreate(body: Record<string, unknown>, now: Date): ParsedCreate {
   }
   const lines = parseLines(body.lines);
   const customer = parseCustomer(body.customer);
+  if (lines.some((line) => line.taxCode === 'NS_LOC') && customer.countryCode === 'ES') {
+    throw domainError('WC_VALIDATION', {
+      tax_code: 'NS_LOC (art. 69 LIVA) no vale para un cliente de España. Sí vale para otro país de la UE o de fuera',
+    });
+  }
   const paymentTermsDays = body.payment_terms_days == null ? 0 : intIn(body.payment_terms_days, 'payment_terms_days', 0, 180);
   return {
     number: invoiceNumber(body.number),
@@ -759,7 +849,12 @@ function parseCustomer(value: unknown): ParsedCustomer {
   const customer = record(value, 'customer');
   const legalName = optionalText(customer.legal_name, 'customer.legal_name', 120);
   if (!legalName) throw domainError('WC_VALIDATION', { 'customer.legal_name': 'Indica la razón social' });
-  const countryCode = country(customer.country_code ?? 'ES', 'customer.country_code');
+  if (customer.country_code == null || customer.country_code === '') {
+    throw domainError('WC_VALIDATION', {
+      'customer.country_code': 'Indica el país. Sin él, un identificador extranjero se trataría como NIF español',
+    });
+  }
+  const countryCode = country(customer.country_code, 'customer.country_code');
   const taxRaw = typeof customer.tax_id === 'string' ? customer.tax_id.trim() : '';
   if (!taxRaw) throw domainError('WC_VALIDATION', { 'customer.tax_id': 'Indica el NIF o el identificador fiscal' });
   const tax = classifyTax(taxRaw, countryCode);
@@ -903,7 +998,9 @@ function resolvePayment(
 
 function stripeId(value: unknown, field = 'stripe_invoice_id'): string {
   const id = typeof value === 'string' ? value.trim() : '';
-  if (!STRIPE_ID.test(id)) throw domainError('WC_VALIDATION', { [field]: 'Tiene que ser un id de factura de Stripe (in_…)' });
+  if (!STRIPE_ID.test(id)) {
+    throw domainError('WC_VALIDATION', { [field]: 'Tiene que ser un id de factura (in_…) o de abono (cn_…) de Stripe' });
+  }
   return id;
 }
 
@@ -950,11 +1047,12 @@ function country(value: unknown, field: string): string {
 }
 
 function parseAmount(value: unknown, field: string, scale: number): ReturnType<typeof money.fromString> {
-  const raw = typeof value === 'number' && Number.isFinite(value)
-    ? (Object.is(value, -0) ? '0' : String(value))
-    : typeof value === 'string'
-      ? value.trim()
-      : '';
+  if (typeof value === 'number') {
+    throw domainError('WC_VALIDATION', {
+      [field]: 'Envía el importe como texto con punto decimal (por ejemplo "121.00"), en euros y no en céntimos',
+    });
+  }
+  const raw = typeof value === 'string' ? value.trim() : '';
   if (!/^-?\d+(\.\d+)?$/.test(raw)) throw domainError('WC_VALIDATION', { [field]: 'Importe no válido' });
   const places = raw.includes('.') ? (raw.split('.')[1]?.length ?? 0) : 0;
   if (places > scale) throw domainError('WC_VALIDATION', { [field]: `Usa como máximo ${scale} decimales` });
@@ -994,4 +1092,62 @@ function fail(field: string, message: string): never {
 
 function instantOf(day: string): Date {
   return new Date(`${day}T12:00:00.000Z`);
+}
+
+function yearOf(day: string): number {
+  return Number(day.slice(0, 4));
+}
+
+function requireEur(value: unknown): void {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw domainError('WC_VALIDATION', {
+      currency: 'Indica la moneda. Solo se importan euros; una factura en CLP o USD no se guarda como EUR',
+    });
+  }
+  if (value.trim().toUpperCase() !== 'EUR') {
+    throw domainError('WC_VALIDATION', {
+      currency: 'Solo se importan facturas en euros. No conviertas otra moneda en este alta',
+    });
+  }
+}
+
+function dryRunOf(value: unknown): boolean {
+  if (value == null || value === false) return false;
+  if (value === true) return true;
+  throw domainError('WC_VALIDATION', { dry_run: 'Tiene que ser verdadero o falso' });
+}
+
+function assertLiveMode(value: unknown): void {
+  if (value == null || value === true) return;
+  if (value === false) {
+    throw domainError('WC_VALIDATION', { livemode: 'Las facturas de prueba de Stripe no se importan' });
+  }
+  throw domainError('WC_VALIDATION', { livemode: 'Tiene que ser verdadero o falso' });
+}
+
+function composeNotes(parsed: ParsedCreate): string {
+  const outsideEu = parsed.lines.some((line) => line.taxCode === 'NS_LOC') && !EU.has(parsed.customer.countryCode);
+  const tail = [HISTORICAL_NOTE, outsideEu ? NS_LOC_MENTION : null]
+    .filter((part): part is string => part != null);
+  const suffix = tail.join(' ');
+  const room = parsed.notes ? 2000 - suffix.length - 1 : 0;
+  const head = parsed.notes && room > 0 ? clip(parsed.notes, room) : null;
+  return [head, suffix].filter((part): part is string => part != null && part !== '').join(' ');
+}
+
+function previewWarnings(parsed: ParsedCreate, livemode: unknown): string[] {
+  const warnings: string[] = [];
+  if (!parsed.customer.address) {
+    warnings.push('Sin dirección el PDF no se puede componer.');
+  }
+  if (!parsed.seriesCode) {
+    warnings.push('Sin series_code la factura no queda enlazada a VV ni a VVR.');
+  }
+  if (parsed.customer.countryCode === 'CL') {
+    warnings.push('Cliente de Chile. La carga completa los excluye; esta simulación no ha grabado nada.');
+  }
+  if (livemode == null) {
+    warnings.push('No has indicado livemode. Una factura de prueba de Stripe (livemode false) no se importa.');
+  }
+  return warnings;
 }
