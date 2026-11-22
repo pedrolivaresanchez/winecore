@@ -113,6 +113,7 @@ export async function listSalesDocuments(writer: Writer, user: UserCtx, url: URL
   // Las facturas de venta muestran Holded y WineCore, cada una una vez.
   // La proyección (origin = holded_import) lleva la etiqueta Holded; la fila
   // legacy no se repite si ya está en billing. Los gastos siguen sin el histórico.
+  // stripe_import se queda en WineCore (es ingreso de CVPO) pero sin Verifactu ni envío.
   const saleInvoices = query.kind === 'invoice' && query.direction === 'sale';
   const origins = saleInvoices ? readableOrigins : query.kind === 'invoice' ? readableOrigins.filter((origin) => origin === 'winecore') : readableOrigins;
   const visible: Codes = { po: books.holded.po || books.winecore.po, cvpo: books.holded.cvpo || books.winecore.cvpo };
@@ -399,14 +400,14 @@ function nativeInvoices(entity: string): string {
              CAST(CASE WHEN i.status = 'issued' THEN i.total - i.amount_paid WHEN i.status = 'voided' THEN 0 END AS DECIMAL(14,2)) AS pending,
              i.currency, ${nativeInvoiceBase('i.status', 'i.payment_status')} AS base, FALSE AS flagged_overdue,
              CASE
-               WHEN COALESCE(i.origin, 'native') = 'holded_import' THEN NULL
+               WHEN COALESCE(i.origin, 'native') IN ('holded_import', 'stripe_import') THEN NULL
                WHEN i.status NOT IN ('issued', 'voided') THEN NULL
                WHEN v.send_status = 'rejected' THEN 'rejected'
                WHEN v.send_status IN ('accepted', 'accepted_with_errors', 'not_required') THEN 'accepted'
                ELSE 'pending'
              END AS verifactu,
              CASE
-               WHEN COALESCE(i.origin, 'native') = 'holded_import' THEN NULL
+               WHEN COALESCE(i.origin, 'native') IN ('holded_import', 'stripe_import') THEN NULL
                WHEN i.status IN ('issued', 'voided') THEN COALESCE(dl.status, 'none')
              END AS delivery,
              'billing' AS record

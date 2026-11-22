@@ -80,8 +80,12 @@ export function methodLabel(method: string | null | undefined): string {
   return method || '—'
 }
 
+export function isHistoricalOrigin(origin?: string | null): boolean {
+  return origin === 'holded_import' || origin === 'stripe_import'
+}
+
 export function verifactuLabel(recordId: string | null | undefined, origin?: string | null): string {
-  if (origin === 'holded_import') return copy.facturas.verifactuHistorical
+  if (isHistoricalOrigin(origin)) return copy.facturas.verifactuHistorical
   return recordId ? copy.facturas.verifactuAccepted : copy.facturas.verifactuPending
 }
 

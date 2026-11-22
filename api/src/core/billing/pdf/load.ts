@@ -54,7 +54,7 @@ export async function loadInvoiceDocument(reader: SqlReader, id: string): Promis
             AND v.is_active
             AND v.starts_on <= i.issue_date
         )
-        AND COALESCE(i.origin, 'native') <> 'holded_import'
+        AND COALESCE(i.origin, 'native') NOT IN ('holded_import', 'stripe_import')
       ) AS verifactu_active,
       (
         SELECT r.qr_url FROM regulatory.verifactu_record r

@@ -16,6 +16,7 @@ import {
   stamp,
   text,
 } from './format';
+import { invoiceOrigin, type InvoiceOrigin } from './origin';
 import { readStockAlready, skipsStock } from './stock-already';
 
 type Read = Pick<Tx, 'read'>;
@@ -53,7 +54,7 @@ export interface HeaderView {
   approvalRequestId: string | null;
   issuedAt: string | null;
   verifactuRecordId: string | null;
-  origin: 'native' | 'holded_import';
+  origin: InvoiceOrigin;
   voidedAt: string | null;
   voidReason: string | null;
   legacyRefs: Record<string, unknown>;
@@ -238,7 +239,7 @@ export function headerOf(row: Record<string, unknown>): HeaderView {
     approvalRequestId: row.approval_request_id == null ? null : idOf(row.approval_request_id),
     issuedAt: stamp(row.issued_at),
     verifactuRecordId: row.verifactu_record_id == null ? null : idOf(row.verifactu_record_id),
-    origin: row.origin === 'holded_import' ? 'holded_import' : 'native',
+    origin: invoiceOrigin(row.origin),
     voidedAt: stamp(row.voided_at),
     voidReason: text(row.void_reason),
     legacyRefs,
