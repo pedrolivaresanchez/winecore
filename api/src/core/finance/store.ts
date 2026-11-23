@@ -403,3 +403,53 @@ function safeName(filename: string): string {
   const clean = filename.replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 80);
   return clean === '' ? 'fichero.bin' : clean;
 }
+
+/**
+ * Una factura de Holded proyectada en `billing.invoice` (origin `holded_import`)
+ * guarda su deuda en `legacy.open_item`: el cobro se imputa a la partida, no a la
+ * factura. Para que la factura no siga "sin cobrar" se refleja aquí lo cobrado,
+ * sin imputar dos veces: lo pendiente de la factura es lo pendiente de la partida.
+ *
+ *   cobrado factura = total factura − (importe partida − cobrado partida)
+ *
+ * Solo toca facturas `issued` de Holded enlazadas por `holded_invoice_id`, y solo
+ * los campos de cobro (WC080 los admite en una emitida).
+ */
+export async function syncHoldedInvoicePaid(
+  tx: Tx,
+  input: { holdedInvoiceId: string; openAmount: Decimal; openPaid: Decimal; now: Date },
+): Promise<{ invoiceId: string; before: { amount_paid: string; payment_status: string }; after: { amount_paid: string; payment_status: string } } | null> {
+  const rows = await tx.read<Record<string, unknown>>(sql`
+    SELECT id, total, amount_paid, payment_status
+    FROM billing.invoice
+    WHERE holded_invoice_id = CAST(${input.holdedInvoiceId} AS UUID)
+      AND origin = 'holded_import'
+      AND status = 'issued'
+  `);
+  if (rows.length !== 1) return null;
+  const row = rows[0]!;
+  const total = decimalOf(row.total ?? 0);
+  if (!total.gt(0)) return null;
+  const outstanding = Decimal.max(input.openAmount.minus(input.openPaid), 0);
+  let paid = total.minus(outstanding);
+  if (paid.lt(0)) paid = new Decimal(0);
+  if (paid.gt(total)) paid = total;
+  const status = paid.eq(0) ? 'unpaid' : paid.lt(total) ? 'partially_paid' : 'paid';
+  const before = { amount_paid: moneyText(decimalOf(row.amount_paid ?? 0)), payment_status: String(row.payment_status) };
+  const after = { amount_paid: moneyText(paid), payment_status: status };
+  if (before.amount_paid === after.amount_paid && before.payment_status === after.payment_status) return null;
+  const invoiceId = String(row.id).toLowerCase();
+  tx.write(sql`
+    UPDATE billing.invoice
+    SET amount_paid = ${paid}, payment_status = ${status}, updated_at = ${input.now}
+    WHERE id = CAST(${invoiceId} AS UUID) AND status = 'issued'
+  `);
+  tx.audit({
+    table: 'billing.invoice',
+    rowId: invoiceId,
+    action: 'UPDATE',
+    before,
+    after: { ...after, source: 'legacy.open_item' },
+  });
+  return { invoiceId, before, after };
+}

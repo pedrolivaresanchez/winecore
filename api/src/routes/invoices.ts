@@ -16,6 +16,8 @@ import { loadEntity, loadEntityByCode, loadInvoice, presentInvoice } from '../co
 import { validateInvoice } from '../core/billing/validate';
 import { historicalOriginSqlList, invoiceOrigin, isHistoricalInvoiceOrigin } from '../core/billing/origin';
 import { voidInvoice } from '../core/billing/void';
+import { markHoldedInvoiceNeverIssued } from '../core/billing/neverIssued';
+import { backfillHoldedInvoicePaid } from '../core/finance/holdedInvoiceSync';
 
 const ISSUE_ROUTE = 'POST /v1/invoices/:id/issue';
 
@@ -193,6 +195,38 @@ export async function voidInvoiceRoute(writer: Writer, request: Request, id: str
     now: new Date(),
   }));
   return { status: outcome.status === 'pending' ? 202 : 200, body: outcome };
+}
+
+/** Factura de Holded que nunca se emitió: fuera de lo emitido, sin rectificativa ni AEAT. */
+export async function neverIssuedInvoiceRoute(writer: Writer, request: Request, id: string) {
+  const user = sessionOf(request);
+  const raw = await readOptionalJson(request);
+  const body = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+  const outcome = await writer.withWrite(actor(user, request), (tx) => markHoldedInvoiceNeverIssued(tx, {
+    invoiceId: id,
+    reason: body.reason,
+    user,
+    now: new Date(),
+  }));
+  return outcome;
+}
+
+/** Refleja en las facturas de Holded lo cobrado en sus partidas. `dry_run` (por defecto true) no escribe. */
+export async function syncHoldedInvoicesPaidRoute(writer: Writer, request: Request) {
+  const user = sessionOf(request);
+  const raw = await readOptionalJson(request);
+  const body = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+  const dryRun = body.dry_run !== false;
+  if (dryRun) return backfillHoldedInvoicePaid(readOnlyTx(writer), { dryRun: true });
+  return writer.withWrite(actor(user, request), (tx) => backfillHoldedInvoicePaid(tx, { dryRun: false, now: new Date() }));
+}
+
+function readOnlyTx(writer: Writer) {
+  return {
+    read: <T = Record<string, unknown>>(statement: string) => writer.read<T>(statement),
+    write: () => { throw new Error('read-only'); },
+    audit: () => { throw new Error('read-only'); },
+  };
 }
 
 export async function deleteInvoiceRoute(writer: Writer, request: Request, id: string) {
