@@ -138,7 +138,9 @@ import {
   getInvoice,
   issueInvoiceRoute,
   listInvoices,
+  neverIssuedInvoiceRoute,
   patchInvoice,
+  syncHoldedInvoicesPaidRoute,
   validateInvoiceRoute,
   voidInvoiceRoute,
 } from './routes/invoices';
@@ -498,6 +500,12 @@ export function createApp(deps: AppDeps) {
       return result.body;
     }, {
       beforeHandle: requirePermission(guardDeps, 'billing.void'),
+    })
+    .post('/v1/invoices/:id/never-issued', ({ request, params }) => neverIssuedInvoiceRoute(deps.writer, request, params.id), {
+      beforeHandle: requireOwnerOrAdmin(guardDeps),
+    })
+    .post('/v1/invoices/holded/sync-paid', ({ request }) => syncHoldedInvoicesPaidRoute(deps.writer, request), {
+      beforeHandle: requireOwnerOrAdmin(guardDeps),
     })
     .post('/v1/invoices/:id/discard', ({ request, params }) => discardInvoice(deps.writer, request, params.id), {
       beforeHandle: requirePermission(guardDeps, 'billing.write'),

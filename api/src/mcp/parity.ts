@@ -10,6 +10,8 @@ const PEOPLE = "Alta y cambios de personas y roles: la API exige una passkey rec
 
 export const NOT_IN_MCP: Readonly<Record<string, string>> = {
   "GET /v1/auth/credentials": SIGN_IN,
+  "POST /v1/invoices/:id/never-issued": "Corrección puntual del histórico de Holded, solo para propietario o admin; no se expone a agentes.",
+  "POST /v1/invoices/holded/sync-paid": "Puesta al día de una sola vez de cobros de Holded, solo para propietario o admin; no se expone a agentes.",
   "PATCH /v1/auth/credentials/:id": SIGN_IN,
   "POST /v1/auth/credentials/:id/revoke": SIGN_IN,
   "POST /v1/auth/passkeys/registration/options": SIGN_IN,

@@ -28,7 +28,7 @@ import {
   todayMadrid,
   type TargetTable,
 } from './support';
-import { findEntity, loadDocument, loadParty, registeredPaid, writeDocumentPaid, type PayableDocument } from './store';
+import { findEntity, loadDocument, loadParty, registeredPaid, syncHoldedInvoicePaid, writeDocumentPaid, type PayableDocument } from './store';
 
 const METHODS = new Set(['transfer', 'direct_debit', 'card', 'cash', 'stripe', 'compensation', 'other']);
 const ROUTE = 'POST /v1/payments';
@@ -310,6 +310,7 @@ export async function register(
     seen.add(doc.targetId);
     const paid = paidByDoc.get(doc.targetId) ?? doc.amountPaid;
     const updated = writeDocumentPaid(tx, doc, paid, command.now);
+    await syncInvoiceOf(tx, doc, paid, command.now);
     options.pending?.set(`${doc.targetTable}:${doc.targetId}`, {
       ...doc,
       amountPaid: paid,
@@ -387,6 +388,7 @@ async function reverse(tx: Tx, user: UserCtx, id: string, reason: string, now: D
     if (!doc) continue;
     const paid = await registeredPaid(tx, table, targetId, id);
     const updated = writeDocumentPaid(tx, doc, paid, now);
+    await syncInvoiceOf(tx, doc, paid, now);
     documents.set(key, {
       outstanding: updated.outstanding,
       payment_status: updated.paymentStatus,
@@ -591,4 +593,10 @@ function decodeCursor(value: string | null): { date: string; id: string } | null
 
 export function contentKey(value: unknown): string {
   return sha256Hex(canonicalJson(value));
+}
+
+/** Cobro de una partida de Holded: la factura proyectada refleja lo cobrado (sin imputar dos veces). */
+async function syncInvoiceOf(tx: Tx, doc: PayableDocument, paid: Decimal, now: Date): Promise<void> {
+  if (doc.targetTable !== 'legacy.open_item' || doc.direction !== 'in') return;
+  await syncHoldedInvoicePaid(tx, { holdedInvoiceId: doc.documentId, openAmount: doc.total, openPaid: paid, now });
 }

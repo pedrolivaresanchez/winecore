@@ -119,6 +119,8 @@ export async function exportIssuedBook(
     LEFT JOIN party.contact c ON c.id = i.customer_id
     WHERE i.legal_entity_id = CAST(${input.entityId} AS UUID)
       AND i.status IN ('issued', 'voided')
+      -- "Nunca emitida" (billing/neverIssued.ts): no existió como factura.
+      AND NOT (i.status = 'voided' AND starts_with(COALESCE(i.void_reason, ''), 'never_issued:'))
       AND i.issue_date >= CAST(${input.from} AS DATE)
       AND i.issue_date <= CAST(${input.to} AS DATE)
     ORDER BY i.issue_date, i.number
