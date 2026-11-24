@@ -70,6 +70,14 @@ export function paymentLabel(status: string): string {
   return status || '—'
 }
 
+/** La ficha sigue emitida. El estado que se lee es el del cobro: Cobrada cuando no queda pendiente. */
+export function collectionFace(status: string, paymentStatus: string): { label: string; tone: 'success' | 'warning' } | null {
+  if (status !== 'issued') return null
+  if (paymentStatus === 'paid') return { label: copy.facturas.paidStatus, tone: 'success' }
+  if (paymentStatus === 'partially_paid') return { label: copy.facturas.partialCollection, tone: 'warning' }
+  return null
+}
+
 export function methodLabel(method: string | null | undefined): string {
   if (method === 'transfer') return copy.facturas.payTransfer
   if (method === 'direct_debit') return copy.facturas.payDebit

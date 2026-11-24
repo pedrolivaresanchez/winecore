@@ -313,7 +313,7 @@ async function paymentsOf(writer: Writer, owner: Owner, scope: (column: string) 
   const contact = uuidOf(owner.id);
   const native = await writer.read<Row>(`
     SELECT CAST(p.id AS VARCHAR) AS id, CAST(p.value_date AS VARCHAR) AS date, CAST(p.amount AS VARCHAR) AS amount,
-           p.method, p.reference, e.code AS entity_code
+           p.method, p.method_alias, p.reference, e.code AS entity_code
     FROM finance.payment p
     JOIN core.legal_entity e ON e.id = p.legal_entity_id
     WHERE p.direction = 'in'
@@ -377,7 +377,7 @@ async function paymentsOf(writer: Writer, owner: Owner, scope: (column: string) 
       date: textOf(row.date),
       document_date: null,
       amount: decimal(row.amount),
-      method: textOf(row.method),
+      method: textOf(row.method_alias) === 'bizum' ? 'bizum' : textOf(row.method),
       reference: textOf(row.reference),
       entity_code: String(row.entity_code),
       documents: documents.get(String(row.id)) ?? [],

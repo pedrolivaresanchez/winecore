@@ -30,7 +30,8 @@ import {
 } from './support';
 import { findEntity, loadDocument, loadParty, registeredPaid, syncHoldedInvoicePaid, writeDocumentPaid, type PayableDocument } from './store';
 
-const METHODS = new Set(['transfer', 'direct_debit', 'card', 'cash', 'stripe', 'compensation', 'other']);
+// Bizum no entra en el CHECK de DuckDB. Se persiste como other y method_alias = 'bizum' (0054).
+const METHODS = new Set(['transfer', 'direct_debit', 'card', 'cash', 'stripe', 'compensation', 'other', 'bizum']);
 const ROUTE = 'POST /v1/payments';
 
 interface AllocationInput {
@@ -48,6 +49,7 @@ export interface PaymentInput {
   legalEntityId: string | null;
   bankAccountId: string | null;
   reference: string | null;
+  notes: string | null;
   allocations: AllocationInput[];
 }
 
@@ -118,6 +120,8 @@ export async function listPayments(writer: Writer, user: UserCtx, request: Reque
   if (from) parseDate(from, 'from');
   if (to) parseDate(to, 'to');
   if (counterparty) parseUuid(counterparty, 'counterparty_id');
+  const invoiceId = url.searchParams.get('invoice_id')?.trim() || null;
+  if (invoiceId) parseUuid(invoiceId, 'invoice_id');
   const limit = limitOf(url.searchParams.get('limit'));
   const cursor = decodeCursor(url.searchParams.get('cursor'));
   const scope = entityScope(user, 'finance.read');
@@ -138,6 +142,14 @@ export async function listPayments(writer: Writer, user: UserCtx, request: Reque
   if (counterparty) filters.push(sql`p.counterparty_id = CAST(${counterparty} AS UUID)`);
   if (from) filters.push(sql`p.value_date >= CAST(${from} AS DATE)`);
   if (to) filters.push(sql`p.value_date <= CAST(${to} AS DATE)`);
+  if (invoiceId) {
+    filters.push(sql`EXISTS (
+      SELECT 1 FROM finance.payment_allocation a
+      WHERE a.payment_id = p.id
+        AND a.target_table = 'billing.invoice'
+        AND a.target_id = CAST(${invoiceId} AS UUID)
+    )`);
+  }
   const where = filters.join(' AND ');
   const cursorSql = cursor
     ? sql` AND (p.value_date < CAST(${cursor.date} AS DATE) OR (p.value_date = CAST(${cursor.date} AS DATE) AND p.id < CAST(${cursor.id} AS UUID)))`
@@ -261,12 +273,13 @@ export async function register(
   tx.write(sql`
     INSERT INTO finance.payment (
       id, legal_entity_id, direction, method, amount, currency, value_date, bank_account_id,
-      counterparty_id, reference, source, status, created_by, created_at
+      counterparty_id, reference, notes, method_alias, source, status, created_by, created_at
     ) VALUES (
-      CAST(${id} AS UUID), CAST(${entityId} AS UUID), ${command.direction}, ${command.method},
+      CAST(${id} AS UUID), CAST(${entityId} AS UUID), ${command.direction}, ${storedMethod(command.method)},
       ${command.amount}, 'EUR', CAST(${command.valueDate} AS DATE),
       CAST(${command.bankAccountId} AS UUID), CAST(${command.counterpartyId} AS UUID),
-      ${command.reference}, ${command.source}, 'registered', ${user.id}, ${command.now}
+      ${command.reference}, ${command.notes}, ${methodAlias(command.method)},
+      ${command.source}, 'registered', ${user.id}, ${command.now}
     )
   `);
   tx.audit({
@@ -280,6 +293,7 @@ export async function register(
       amount: moneyText(command.amount),
       value_date: command.valueDate,
       counterparty_id: command.counterpartyId,
+      notes: command.notes,
       source: command.source,
       status: 'registered',
     },
@@ -338,6 +352,7 @@ export async function register(
     counterparty_name: party.legalName,
     bank_account_id: command.bankAccountId,
     reference: command.reference,
+    notes: command.notes,
     source: command.source,
     status: 'registered',
     allocations: applied,
@@ -433,6 +448,7 @@ function paymentBody(
   documents: Map<string, { outstanding: string; payment_status: string; document_number: string }>,
 ) {
   const amount = decimalOf(row.amount);
+  const shown = presented(row);
   let allocated = new Decimal(0);
   const items = allocations.map((allocation) => {
     const part = decimalOf(allocation.amount);
@@ -453,7 +469,7 @@ function paymentBody(
     id: String(row.id).toLowerCase(),
     legal_entity_id: String(row.legal_entity_id).toLowerCase(),
     direction: String(row.direction),
-    method: String(row.method),
+    method: shown.method,
     amount: moneyText(amount),
     currency: String(row.currency),
     value_date: dateOnly(row.value_date),
@@ -461,6 +477,7 @@ function paymentBody(
     counterparty_name: textOf(row.counterparty_name),
     bank_account_id: row.bank_account_id == null ? null : String(row.bank_account_id).toLowerCase(),
     reference: textOf(row.reference),
+    notes: shown.notes,
     source: String(row.source),
     status: String(row.status),
     reversal_reason: textOf(row.reversal_reason),
@@ -540,6 +557,7 @@ function parsePayment(raw: unknown): PaymentInput {
     ? null
     : parseUuid(bankRaw, 'bank_account_id');
   const reference = optionalText(pick(body, 'reference'), 'reference', 140);
+  const notes = optionalText(pick(body, 'notes', 'note'), 'notes', 500);
   const allocationsRaw = pick(body, 'allocations');
   if (!Array.isArray(allocationsRaw)) throw domainError('WC_VALIDATION', { allocations: 'Indica las imputaciones' });
   const allocations = allocationsRaw.map((item, index) => {
@@ -554,7 +572,21 @@ function parsePayment(raw: unknown): PaymentInput {
       amount: parseAmount(pick(row, 'amount'), `allocations.${index}.amount`),
     };
   });
-  return { direction, method, amount, valueDate, counterpartyId, legalEntityId, bankAccountId, reference, allocations };
+  return { direction, method, amount, valueDate, counterpartyId, legalEntityId, bankAccountId, reference, notes, allocations };
+}
+
+/** Lo que cabe en el CHECK. Bizum se guarda como other. */
+function storedMethod(method: string): string {
+  return method === 'bizum' ? 'other' : method;
+}
+
+function methodAlias(method: string): string | null {
+  return method === 'bizum' ? 'bizum' : null;
+}
+
+function presented(row: Record<string, unknown>): { method: string; notes: string | null } {
+  const notes = textOf(row.notes);
+  return { method: textOf(row.method_alias) === 'bizum' ? 'bizum' : String(row.method), notes };
 }
 
 export function assertScope(user: UserCtx, permission: 'finance.read' | 'finance.write' | 'finance.manage', entityId: string): void {

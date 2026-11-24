@@ -3,7 +3,7 @@ import { api, apiBlob } from '@/lib/api'
 export type AgingBucket = '0-30' | '31-60' | '61-90' | '>90'
 export type TargetTable = 'billing.invoice' | 'purchasing.supplier_invoice' | 'legacy.open_item'
 export type Direction = 'in' | 'out'
-export type PaymentMethod = 'transfer' | 'direct_debit' | 'card' | 'cash' | 'stripe' | 'compensation' | 'other'
+export type PaymentMethod = 'transfer' | 'direct_debit' | 'card' | 'cash' | 'bizum' | 'stripe' | 'compensation' | 'other'
 export type RemittanceKind = 'direct_debit' | 'credit_transfer'
 export type StatementFormat = 'n43' | 'camt053'
 
@@ -79,6 +79,7 @@ export type Payment = {
   counterparty_name: string | null
   bank_account_id: string | null
   reference: string | null
+  notes: string | null
   source: string
   status: string
   reversal_reason: string | null
@@ -197,7 +198,7 @@ export function receivablesPath(entity: string | null, aging: string | null, con
 }
 
 export function paymentsPath(
-  query: { entity?: string | null; direction?: string | null; from?: string | null; to?: string | null },
+  query: { entity?: string | null; direction?: string | null; from?: string | null; to?: string | null; invoiceId?: string | null },
   cursor?: string | null,
   limit = 100,
 ) {
@@ -206,6 +207,7 @@ export function paymentsPath(
   if (query.direction) params.set('direction', query.direction)
   if (query.from) params.set('from', query.from)
   if (query.to) params.set('to', query.to)
+  if (query.invoiceId) params.set('invoice_id', query.invoiceId)
   params.set('limit', String(limit))
   if (cursor) params.set('cursor', cursor)
   return `/v1/payments?${params.toString()}`
@@ -223,6 +225,7 @@ export function createPayment(body: {
   counterparty_id: string
   legal_entity_id: string
   reference?: string | null
+  notes?: string | null
   bank_account_id?: string | null
   allocations: { target_table: TargetTable; target_id: string; amount: string }[]
 }) {

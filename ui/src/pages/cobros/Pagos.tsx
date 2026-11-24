@@ -319,6 +319,7 @@ function PagoDrawer({
                 <Fact label={copy.cobros.method} value={methodLabel(payment.method)} />
                 <Fact label={copy.cobros.entity} value={entityLabel(payment.legal_entity_id, me.entities)} />
                 <Fact label={copy.cobros.reference} value={payment.reference || '—'} />
+                {payment.notes ? <Fact label={copy.cobros.note} value={payment.notes} /> : null}
                 <Fact label={copy.cobros.unallocated} value={moneyOf(payment.unallocated)} />
                 {payment.reversal_reason ? <Fact label={copy.cobros.reason} value={payment.reversal_reason} /> : null}
               </section>
