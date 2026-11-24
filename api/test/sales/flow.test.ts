@@ -454,6 +454,9 @@ describe('ventas', () => {
     expect(text).toContain('LOTE: L25T01B1');
     expect(text).toContain('Cliente Ejemplo');
     expect(text).toContain('BASE IMPONIBLE');
+    expect(text).toContain('21%');
+    expect(text).not.toContain('PAGADO');
+    expect(text).not.toContain('PENDIENTE');
 
     const empty = await json(ctx, 'GET', `/v1/delivery-notes/${id}/incidents`);
     expect(empty.items).toEqual([]);

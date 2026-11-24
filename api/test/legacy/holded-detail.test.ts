@@ -158,6 +158,9 @@ describe('detalle de documentos Holded', () => {
     expect(text).toContain('Vencimiento: 01/07/2026');
     expect(text).toContain('CONCEPTO');
     expect(text).toContain('BASE IMPONIBLE');
+    expect(text).toContain('21%');
+    expect(text).not.toContain('PAGADO');
+    expect(text).not.toContain('PENDIENTE');
     expect(text).toContain('Pág. 1 de 1');
     expect(text).not.toContain('RECTIFICATIVA');
     expect(text).toContain('Cliente Ejemplo');
@@ -174,7 +177,10 @@ describe('detalle de documentos Holded', () => {
 
     const creditPdf = await ctx.app.handle(new Request(`http://localhost/v1/legacy/invoices/${credit}/pdf`));
     expect(creditPdf.status).toBe(200);
-    expect(extractPdfText(new Uint8Array(await creditPdf.arrayBuffer()))).toContain('FACTURA RECTIFICATIVA #');
+    const creditText = extractPdfText(new Uint8Array(await creditPdf.arrayBuffer()));
+    expect(creditText).toContain('FACTURA RECTIFICATIVA #');
+    expect(creditText).not.toContain('PAGADO');
+    expect(creditText).not.toContain('PENDIENTE');
     await ctx.writer.withWrite({ type: 'system', id: 'holded-detail-scan', requestId: newId() }, (tx) =>
       putAttachment(tx, { bytes: PNG, mime: 'image/png', name: 'escaneo.png' }, {
         table: 'legacy.holded_invoice',
@@ -310,6 +316,9 @@ describe('detalle de documentos Holded', () => {
     expect(noteText).toContain('Linea de albaran');
     expect(noteText).not.toContain('Vencimiento');
     expect(noteText).not.toContain('Válido hasta');
+    expect(noteText).toContain('21%');
+    expect(noteText).not.toContain('PAGADO');
+    expect(noteText).not.toContain('PENDIENTE');
     expect(noteText).not.toContain('Linea de presupuesto');
 
     const missing = await ctx.app.handle(new Request(`http://localhost/v1/legacy/documents/${newId()}`));

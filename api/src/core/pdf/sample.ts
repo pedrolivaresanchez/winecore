@@ -241,7 +241,6 @@ export function sampleDocument(options: {
     totals: quote
       ? { subtotal: money.toString(subtotal), vat: money.toString(vat), withholding: null, total: money.toString(money.add(subtotal, vat)) }
       : null,
-    settlement: null,
     note: order
       ? (english ? 'Sales order. This is not an invoice.' : 'Pedido de venta. No es una factura.')
       : quote

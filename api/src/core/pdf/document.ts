@@ -30,8 +30,6 @@ interface Labels {
   vat: string;
   withholding: string;
   total: string;
-  paid: string;
-  pending: string;
   shipTo: string;
   noLines: string;
   discountShort: string;
@@ -51,8 +49,6 @@ const LABELS: Record<DocumentPdfLang, Labels> = {
     vat: 'IVA',
     withholding: 'RETENCIÓN',
     total: 'TOTAL',
-    paid: 'PAGADO',
-    pending: 'PENDIENTE',
     shipTo: 'Dirección de envío',
     noLines: 'Sin líneas.',
     discountShort: 'Dto.',
@@ -78,8 +74,6 @@ const LABELS: Record<DocumentPdfLang, Labels> = {
     vat: 'VAT',
     withholding: 'WITHHOLDING',
     total: 'TOTAL',
-    paid: 'PAID',
-    pending: 'PENDING',
     shipTo: 'Shipping address',
     noLines: 'No lines.',
     discountShort: 'Disc.',
@@ -154,8 +148,6 @@ export interface DocumentPdfInput {
   priced?: boolean;
   /** Sin totales, el documento no lleva bloque de importes (albarán sin valorar). */
   totals: { subtotal: string; vat: string; withholding: string | null; total: string } | null;
-  /** Solo las facturas llevan cobrado y pendiente. */
-  settlement: { paid: string | null; pending: string | null } | null;
   note: string;
   currency?: string;
   profile?: DocumentProfileView | null;
@@ -219,9 +211,10 @@ export async function renderDocumentPdfStrict(input: DocumentPdfInput): Promise<
   sheet.references(textLines(input.customerReferences));
 
   const columns = columnsFor(variant, priced, labels);
+  const sharedRate = documentVatRate(input.totals);
   const rows = input.lines.length === 0
     ? [{ concept: { title: labels.noLines, detail: [] }, cells: columns.slice(1).map(() => '') }]
-    : input.lines.map((line) => rowFor(line, variant, priced, labels, lang, currency));
+    : input.lines.map((line) => rowFor(line, variant, priced, labels, lang, currency, sharedRate));
   sheet.table(columns, rows);
 
   if (input.totals) sheet.totals(totalRows(input, labels, lang, currency));
@@ -293,12 +286,82 @@ function round2(value: Decimal): Decimal {
   return value.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 }
 
-/** Porcentaje del impuesto de la línea: el numérico si viene; si no, el «21%» de la etiqueta. */
+/** Tipos de IVA que usa el catálogo (0, 4, 5, 10 y 21). El 5 % es el tipo histórico reducido. */
+const VAT_RATES = [0, 4, 5, 10, 21].map((rate) => new Decimal(rate));
+
+/**
+ * Porcentaje con el que se calcula el total de la línea: el del catálogo, o el «21%» de la etiqueta.
+ * Un importe suelto («10.4814») no es un tipo: no debe inflar el total de la línea.
+ */
 function rateOf(line: DocumentPdfLine): Decimal | null {
   const direct = decimal(line.tax_rate);
-  if (direct) return direct;
+  if (direct && direct.gte(0) && direct.lte(100)) return direct;
   const match = /(\d+(?:[.,]\d+)?)\s*%/u.exec(line.tax_code ?? '');
   return match?.[1] ? decimal(match[1].replace(',', '.')) : null;
+}
+
+/** Tipo único del documento cuando base e IVA cuadran con un tipo estándar (p. ej. 110,05 / 524,07 = 21 %). */
+function documentVatRate(totals: DocumentPdfInput['totals']): Decimal | null {
+  if (!totals) return null;
+  const base = decimal(totals.subtotal);
+  const vat = decimal(totals.vat);
+  if (!base || !vat || base.isZero()) return null;
+  return snapVatRate(vat.abs().mul(100).div(base.abs()));
+}
+
+/**
+ * Texto de la columna IVA. Holded imprime el tipo («21%»), igual que la factura nativa.
+ * Si la etiqueta es el importe en bruto («10.4814», «12.4992»), se recupera el tipo;
+ * si no cuadra con ninguno, el importe sale con dos decimales y el símbolo del euro.
+ */
+function vatCell(
+  line: DocumentPdfLine,
+  explicit: Decimal | null,
+  documentRate: Decimal | null,
+  lang: DocumentPdfLang,
+  currency: string,
+): string {
+  if (explicit) return formatPercent(explicit, lang);
+  const bare = labeledNumber(line.tax_code);
+  const asRate = bare ? exactVatRate(bare, line.tax_code) : null;
+  if (asRate) return formatPercent(asRate, lang);
+  const fromQuota = quotaRate(bare, baseOf(line));
+  if (fromQuota) return formatPercent(fromQuota, lang);
+  if (bare && documentRate) return formatPercent(documentRate, lang);
+  if (bare) return formatAmount(bare, lang, currency);
+  return line.tax_code ?? '';
+}
+
+function quotaRate(amount: Decimal | null, base: Decimal | null): Decimal | null {
+  if (!amount || !base || base.isZero()) return null;
+  return snapVatRate(amount.abs().mul(100).div(base.abs()));
+}
+
+function snapVatRate(value: Decimal): Decimal | null {
+  const rounded = value.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  for (const rate of VAT_RATES) {
+    if (rounded.minus(rate).abs().lte('0.05')) return rate;
+  }
+  return null;
+}
+
+/** «21» o «10.00» son un tipo. «10.42» o «10.4814» son un importe. */
+function exactVatRate(value: Decimal, raw: string | null): Decimal | null {
+  if (decimalPlaces(raw) > 2 || value.gt(100)) return null;
+  const rounded = value.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+  return VAT_RATES.find((rate) => rounded.equals(rate)) ?? null;
+}
+
+function labeledNumber(value: string | null | undefined): Decimal | null {
+  if (value == null) return null;
+  const text = value.trim();
+  if (!/^-?\d+(?:[.,]\d+)?$/u.test(text)) return null;
+  return decimal(text.replace(',', '.'));
+}
+
+function decimalPlaces(value: string | null | undefined): number {
+  const match = /[.,](\d+)/u.exec(value ?? '');
+  return match?.[1]?.length ?? 0;
 }
 
 function baseOf(line: DocumentPdfLine): Decimal | null {
@@ -324,6 +387,7 @@ function rowFor(
   labels: Labels,
   lang: DocumentPdfLang,
   currency: string,
+  documentRate: Decimal | null,
 ): TableRow {
   const title = (line.description ?? line.sku ?? '—').trim() || '—';
   const detail: string[] = [];
@@ -340,7 +404,7 @@ function rowFor(
   const discount = decimal(line.discount_pct);
   const discountText = discount && !discount.isZero() ? formatPercent(discount, lang) : '';
   const price = formatUnitPrice(line.unit_price, lang, currency);
-  const vat = rate ? formatPercent(rate, lang) : (line.tax_code ?? '');
+  const vat = vatCell(line, rate, documentRate, lang, currency);
   const totalText = total ? formatAmount(total, lang, currency) : '';
   if (variant === 'po') {
     return { concept: { title, detail }, cells: [price, quantity, discountText, vat, totalText] };
@@ -393,12 +457,6 @@ function totalRows(input: DocumentPdfInput, labels: Labels, lang: DocumentPdfLan
     if (held) rows.push({ label: labels.withholding, value: formatAmount(held.neg(), lang, currency) });
   }
   rows.push({ label: labels.total, value: formatAmount(totals.total, lang, currency) });
-  if (input.settlement) {
-    if (input.settlement.paid != null) rows.push({ label: labels.paid, value: formatAmount(input.settlement.paid, lang, currency) });
-    if (input.settlement.pending != null) {
-      rows.push({ label: labels.pending, value: formatAmount(input.settlement.pending, lang, currency) });
-    }
-  }
   return rows;
 }
 

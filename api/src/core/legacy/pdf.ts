@@ -30,7 +30,6 @@ export function holdedPdfInput(loaded: HoldedInvoiceLoaded, extras: HoldedPdfExt
     description: detail.description,
     lines: detail.lines,
     totals: { subtotal: detail.subtotal, vat: detail.vat, withholding: detail.withholding, total: detail.total },
-    settlement: { paid: detail.paid, pending: detail.pending },
     note: INVOICE_NOTE,
   };
 }
@@ -53,7 +52,6 @@ export function holdedDocumentPdfInput(loaded: HoldedDocumentLoaded, extras: Hol
     description: detail.description,
     lines: detail.lines,
     totals: { subtotal: detail.subtotal, vat: detail.vat, withholding: detail.withholding, total: detail.total },
-    settlement: null,
     note: DOCUMENT_NOTE,
   };
 }

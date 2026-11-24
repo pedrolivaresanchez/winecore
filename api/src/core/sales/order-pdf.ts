@@ -71,7 +71,6 @@ export async function renderSalesOrderPdf(db: ReadDb, order: Record<string, unkn
       withholding: null,
       total: String(order.total),
     },
-    settlement: null,
     note: 'Pedido de venta. No es una factura.',
   });
   return { bytes, filename: `pedido-${safeName(number ?? 'borrador')}.pdf` };
