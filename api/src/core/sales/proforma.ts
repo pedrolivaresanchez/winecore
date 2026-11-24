@@ -75,7 +75,6 @@ export async function renderQuotePdf(db: ReadDb, quote: Record<string, unknown>)
       withholding: null,
       total: String(quote.total),
     },
-    settlement: null,
     note: english ? 'This document is not a tax invoice.' : 'Este documento no es una factura fiscal.',
   });
   const stem = proforma ? 'proforma' : (english ? 'quote' : 'presupuesto');

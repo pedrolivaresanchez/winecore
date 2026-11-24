@@ -38,6 +38,8 @@ describe('pedido en PDF', () => {
     expect(draftText).toContain('PEDIDO 56192401');
     expect(draftText).toContain('Entregar por la mañana');
     expect(draftText).toContain('No es una factura');
+    expect(draftText).not.toContain('PAGADO');
+    expect(draftText).not.toContain('PENDIENTE');
     expect(draftText).not.toContain('Verifactu');
 
     const confirmed = await json(ctx, 'POST', `/v1/sales-orders/${id}/confirm`);

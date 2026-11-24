@@ -45,7 +45,6 @@ function input(overrides: Partial<DocumentPdfInput> = {}): DocumentPdfInput {
       },
     ],
     totals: { subtotal: '1760.00', vat: '369.60', withholding: null, total: '2129.60' },
-    settlement: null,
     note: 'Copia generada desde el histórico de Holded.',
     ...overrides,
   };

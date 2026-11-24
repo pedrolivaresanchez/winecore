@@ -86,7 +86,6 @@ export async function deliveryNotePdf(writer: Writer, id: string): Promise<Respo
     lines: rows,
     priced,
     totals: priced ? valuedTotals(rows) : null,
-    settlement: null,
     note: 'Albarán de entrega. No es una factura.',
   });
   const filename = `albaran-${safeName(number ?? 'borrador')}.pdf`;

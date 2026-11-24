@@ -374,6 +374,9 @@ describe('renderInvoicePdf', () => {
     const base = build({ taxCode: IVA21, rectifications: [rectification] });
     const corrective = await textOf({ ...base, invoiceType: 'R1' }, 'es');
     expect(corrective).toContain('FACTURA RECTIFICATIVA #CF26-0001');
+    expect(corrective).not.toContain('PAGADO');
+    expect(corrective).not.toContain('PENDIENTE');
+    expect(corrective).toContain('21%');
     expect(corrective).toContain('Sustituye la factura CF25-0007 del 01/02/2026, NIF B00000000');
     const english = await textOf({ ...base, invoiceType: 'R1' }, 'en');
     expect(english).toContain('CORRECTIVE INVOICE #CF26-0001');
