@@ -333,6 +333,7 @@ async function confirm(tx: Tx, user: UserCtx, importId: string, lineId: string, 
     legalEntityId: line.legalEntityId,
     bankAccountId: line.bankAccountId,
     reference: line.reference,
+    notes: null,
     allocations,
   }, {
     source: 'bank_import',
@@ -393,6 +394,7 @@ function paymentInput(
     legalEntityId: entityId,
     bankAccountId,
     reference: movement.reference,
+    notes: null,
     allocations: [{
       targetTable: winner.target_table as TargetTable,
       targetId: winner.target_id,

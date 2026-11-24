@@ -8,6 +8,7 @@ import { iconStroke } from '@/lib/motion'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
 import { InvoiceActions, QuoteActions } from '@/pages/documents/DocumentActions'
+import { InvoicePayments } from '@/pages/facturas/CobroDialog'
 import { QuoteTrace } from '@/pages/ventas/QuoteConversion'
 import { PdfActions, PdfPreview } from '@/pages/documents/PdfPreview'
 import { usePdf, type PdfHandle } from '@/pages/documents/pdf'
@@ -320,6 +321,15 @@ function Details({
             </div>
           ))}
         </dl>
+      ) : null}
+
+      {record.source === 'invoice' ? (
+        <InvoicePayments
+          key={`${record.data.id}:${record.data.amount_paid ?? ''}:${record.data.payment_status}`}
+          me={me}
+          invoice={record.data}
+          onChanged={onChanged}
+        />
       ) : null}
 
       <section className="grid gap-2">

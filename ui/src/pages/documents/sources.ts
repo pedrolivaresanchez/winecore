@@ -4,7 +4,7 @@ import { ApiError, api, isAbortError } from '@/lib/api'
 import { deliveryStatusLabel, docPath, lineBase, orderStatusLabel, quoteStatusLabel, statusTone as salesTone, type DeliveryNote, type Quote, type SalesOrder } from '@/lib/sales'
 import { statusTone as commonTone, type StatusTone } from '@/lib/status-tones'
 import type { Me } from '@/lib/types'
-import { day, entityLabel, hasAmount, invoiceTitle, money, qty, statusLabel, statusTone as invoiceTone } from '@/pages/facturas/format'
+import { collectionFace, day, entityLabel, hasAmount, invoiceTitle, money, qty, statusLabel, statusTone as invoiceTone } from '@/pages/facturas/format'
 import { linesOf, moneySum } from '@/pages/facturas/holded-detail'
 import type { Invoice } from '@/pages/facturas/types'
 export type DocSource = 'holded-invoice' | 'holded-document' | 'invoice' | 'quote' | 'order' | 'delivery'
@@ -211,12 +211,13 @@ function invoiceView(data: Invoice): DocView {
     totals.push({ label: copy.documents.pending, value: moneySum([data.total, negate(data.amount_paid)]) })
   }
   const due = data.dues[0]?.due_date
+  const collected = collectionFace(data.status, data.payment_status)
   return {
     title: invoiceTitle(data.status, data.number),
     kind: data.rectification_kind ? copy.documents.kinds.rectifying : copy.documents.kinds.invoice,
     holded: false,
     entity: entityLabel(data.entity_code),
-    status: { label: statusLabel(data.status), tone: invoiceTone(data.status) },
+    status: collected ?? { label: statusLabel(data.status), tone: invoiceTone(data.status) },
     party: { label: copy.documents.customer, name: data.customer_name || '—', contactId: data.customer_id },
     dates: [
       { label: copy.documents.issueDate, value: day(data.issue_date) },

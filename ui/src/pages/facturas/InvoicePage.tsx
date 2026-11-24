@@ -14,6 +14,7 @@ import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
 import { Alert, Button, DatePicker, Input, MenuItem, Select, Skeleton, Textarea, useToast } from '@/ui'
 import { deleteInvoiceDraft, discardInvoice, issueInvoice, patchInvoice, validateInvoice, voidInvoice } from '@/pages/facturas/api'
+import { CobroButton, InvoicePayments } from '@/pages/facturas/CobroDialog'
 import {
   FactList,
   InvoiceBadges,
@@ -308,6 +309,7 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
                     {copy.facturas.issue}
                   </Button>
                 ) : null}
+                {invoice.status === 'issued' ? <CobroButton me={me} invoice={invoice} onChanged={onReload} /> : null}
                 {invoice.status === 'issued' && canWrite && desktop ? (
                   <Button type="button" variant="secondary" size="sm" onClick={() => navigate(`/facturas/${invoice.id}/rectificar`)}>
                     {copy.facturas.rectify}
@@ -410,7 +412,17 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
                     <FactList rows={facts} />
                     <TaxBreakdown invoice={invoice} />
                   </div>
-                  <Totals invoice={invoice} />
+                  <div className="grid gap-4">
+                    <Totals invoice={invoice} />
+                    {invoice.status === 'issued' || invoice.status === 'voided' ? (
+                      <InvoicePayments
+                        key={`${invoice.amount_paid ?? ''}:${invoice.payment_status}`}
+                        me={me}
+                        invoice={invoice}
+                        onChanged={onReload}
+                      />
+                    ) : null}
+                  </div>
                 </div>
               </>
             )}

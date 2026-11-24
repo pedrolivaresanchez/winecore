@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { sql } from '../../src/core/db/sql';
 import { addCalendarDays, todayMadrid } from '../../src/core/finance/support';
+import { newId } from '../../src/core/ids';
 import { bodyOf, financeApp, insertContact, insertInvoice, insertOpenItem, insertSupplierInvoice, world } from './fixture';
 
 async function post(ctx: Awaited<ReturnType<typeof financeApp>>, key: string, body: unknown, user?: string) {
@@ -213,6 +214,108 @@ describe('cobros e imputaciones', () => {
       `);
       expect(Number(invoiceRow[0]?.amount_paid)).toBe(0);
       expect(invoiceRow[0]?.payment_status).toBe('unpaid');
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  it('cobra una factura emitida en parte y del todo, la lista y se puede anular', async () => {
+    const ctx = await financeApp();
+    try {
+      const today = todayMadrid();
+      const ids = await world(ctx.writer);
+      const customer = await insertContact(ctx.writer, ids.ownerId, { name: 'Cliente Ficha SL', customer: true });
+      const invoice = await insertInvoice(ctx.writer, ids.ownerId, {
+        entityId: ids.cvpo.id, customerId: customer, total: '180.00', dueDate: today, number: 'F260114',
+      });
+      const accountId = newId();
+      await ctx.writer.withWrite({ type: 'user', id: ids.ownerId, requestId: `cuenta-${accountId}` }, async (tx) => {
+        tx.write(sql`
+          INSERT INTO finance.bank_account (
+            id, legal_entity_id, bank_name, iban_enc, iban_last4, is_default, is_active
+          ) VALUES (
+            CAST(${accountId} AS UUID), CAST(${ids.cvpo.id} AS UUID), 'Caja Rural',
+            ${new Uint8Array([9])}, '1800', TRUE, TRUE
+          )
+        `);
+      });
+
+      const partial = await post(ctx, 'ficha-parcial-01', {
+        direction: 'in',
+        method: 'transfer',
+        amount: '100.00',
+        value_date: today,
+        counterparty_id: customer,
+        legal_entity_id: ids.cvpo.id,
+        bank_account_id: accountId,
+        notes: 'Transferencia de la mitad',
+        allocations: [{ target_table: 'billing.invoice', target_id: invoice.id, amount: '100.00' }],
+      });
+      expect(partial.status).toBe(201);
+      const partialBody = await bodyOf(partial);
+      expect(partialBody).toMatchObject({
+        method: 'transfer',
+        amount: '100.00',
+        notes: 'Transferencia de la mitad',
+        bank_account_id: accountId,
+      });
+      expect(partialBody.allocations).toMatchObject([{ outstanding: '80.00', payment_status: 'partially_paid' }]);
+
+      const listed = await bodyOf(await ctx.app.handle(new Request(
+        `http://localhost/v1/payments?invoice_id=${invoice.id}&direction=in`,
+      )));
+      expect(listed.total).toBe(1);
+      expect(listed.items).toMatchObject([{ id: partialBody.id, method: 'transfer', notes: 'Transferencia de la mitad' }]);
+      const otherInvoice = await insertInvoice(ctx.writer, ids.ownerId, {
+        entityId: ids.cvpo.id, customerId: customer, total: '10.00', dueDate: today,
+      });
+      const notThis = await bodyOf(await ctx.app.handle(new Request(
+        `http://localhost/v1/payments?invoice_id=${otherInvoice.id}`,
+      )));
+      expect(notThis.total).toBe(0);
+
+      const rest = await post(ctx, 'ficha-resto-0001', {
+        direction: 'in',
+        method: 'bizum',
+        amount: '80.00',
+        value_date: today,
+        counterparty_id: customer,
+        legal_entity_id: 'CVPO',
+        notes: 'Bizum del resto',
+        allocations: [{ target_table: 'billing.invoice', target_id: invoice.id, amount: '80.00' }],
+      });
+      expect(rest.status).toBe(201);
+      const restBody = await bodyOf(rest);
+      expect(restBody).toMatchObject({ method: 'bizum', amount: '80.00', notes: 'Bizum del resto' });
+      expect(restBody.allocations).toMatchObject([{ outstanding: '0.00', payment_status: 'paid' }]);
+      const stored = await ctx.writer.read<{ method: string; method_alias: string | null }>(sql`
+        SELECT method, method_alias FROM finance.payment WHERE id = CAST(${String(restBody.id)} AS UUID)
+      `);
+      expect(stored[0]?.method).toBe('other');
+      expect(stored[0]?.method_alias).toBe('bizum');
+
+      const got = await bodyOf(await ctx.app.handle(new Request(`http://localhost/v1/invoices/${invoice.id}`)));
+      expect(got).toMatchObject({ payment_status: 'paid', amount_paid: '180.00', status: 'issued' });
+
+      const tooMuch = await post(ctx, 'ficha-exceso-01', {
+        direction: 'in', method: 'cash', amount: '0.01', value_date: today, counterparty_id: customer,
+        allocations: [{ target_table: 'billing.invoice', target_id: invoice.id, amount: '0.01' }],
+      });
+      expect((await bodyOf(tooMuch)).code).toBe('WC100');
+
+      const reversed = await ctx.app.handle(new Request(`http://localhost/v1/payments/${String(restBody.id)}/reverse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': 'ficha-anular-01' },
+        body: JSON.stringify({ reason: 'Bizum duplicado' }),
+      }));
+      expect(reversed.status).toBe(200);
+      expect((await bodyOf(reversed)).status).toBe('reversed');
+      const after = await bodyOf(await ctx.app.handle(new Request(`http://localhost/v1/invoices/${invoice.id}`)));
+      expect(after).toMatchObject({ payment_status: 'partially_paid', amount_paid: '100.00' });
+      const both = await bodyOf(await ctx.app.handle(new Request(`http://localhost/v1/payments?invoice_id=${invoice.id}`)));
+      expect(both.total).toBe(2);
+      const bizum = (both.items as { id: string; method: string; status: string }[]).find((item) => item.id === restBody.id);
+      expect(bizum).toMatchObject({ method: 'bizum', status: 'reversed' });
     } finally {
       await ctx.close();
     }

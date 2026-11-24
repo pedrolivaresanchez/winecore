@@ -146,6 +146,7 @@ export function vatLabel(value: string): string {
 
 export function paymentLabel(value: string | null | undefined): string {
   if (!value) return "Sin indicar";
+  if (value === "bizum") return "Bizum";
   return PAYMENT_METHODS.find((item) => item.value === value)?.label ?? value;
 }
 

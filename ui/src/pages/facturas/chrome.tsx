@@ -6,7 +6,9 @@ import { Badge, Button, GlassMenu, InfoTip, Switch, Textarea, useMenuOpen, type 
 import { copy } from '@/i18n'
 import { iconStroke } from '@/lib/motion'
 import { cn } from '@/lib/cn'
-import { deliveryLabel, deliveryTone, entityLabel, hasAmount, isHistoricalOrigin, money, qty, statusLabel, statusTone, verifactuLabel } from '@/pages/facturas/format'
+import { collectionFace, deliveryLabel, deliveryTone, entityLabel, hasAmount, isHistoricalOrigin, money, qty, statusLabel, statusTone, verifactuLabel } from '@/pages/facturas/format'
+import { textFromCents } from '@/pages/cobros/money'
+import { outstandingCents } from '@/pages/facturas/cobro'
 import type { DeliveryStatus, Invoice, InvoiceLine } from '@/pages/facturas/types'
 
 export function RecordFrame({
@@ -90,9 +92,10 @@ export function DeliveryBadge({ status }: { status: DeliveryStatus | null }) {
 }
 
 export function InvoiceBadges({ invoice, delivery }: { invoice: Invoice; delivery: DeliveryStatus | null }) {
+  const collected = collectionFace(invoice.status, invoice.payment_status)
   return (
     <>
-      <StatusBadge status={invoice.status} />
+      {collected ? <Badge tone={collected.tone}>{collected.label}</Badge> : <StatusBadge status={invoice.status} />}
       <Badge tone="neutral">{entityLabel(invoice.entity_code)}</Badge>
       {invoice.invoice_type.startsWith('R') ? <Badge tone="info">{invoice.invoice_type}</Badge> : null}
       {invoice.stock_already_deducted ? <Badge tone="warning">{copy.facturas.stockAlready}</Badge> : null}
@@ -170,6 +173,10 @@ export function Totals({ invoice }: { invoice: Invoice }) {
       {withholding ? <TotalRow label={copy.facturas.withholding} value={money(invoice.withholding_total)} /> : null}
       <TotalRow label={copy.facturas.importe} value={money(invoice.importe_total ?? invoice.total)} strong={!withholding} />
       {withholding ? <TotalRow label={copy.facturas.payable} value={money(invoice.total)} strong /> : null}
+      {invoice.status === 'issued' ? <TotalRow label={copy.facturas.paid} value={money(invoice.amount_paid ?? '0')} /> : null}
+      {invoice.status === 'issued' ? (
+        <TotalRow label={copy.documents.pending} value={money(textFromCents(outstandingCents(invoice.total, invoice.amount_paid)))} />
+      ) : null}
     </section>
   )
 }

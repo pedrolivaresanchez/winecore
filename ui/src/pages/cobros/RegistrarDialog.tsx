@@ -18,7 +18,7 @@ import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
 import { centsOf, entityLabel, moneyOf, textFromCents, todayMadrid } from '@/pages/cobros/money'
 
-const METHODS: PaymentMethod[] = ['transfer', 'direct_debit', 'card', 'cash', 'stripe', 'compensation', 'other']
+const METHODS: PaymentMethod[] = ['transfer', 'direct_debit', 'card', 'cash', 'bizum', 'stripe', 'compensation', 'other']
 const CASH_LIMIT = 100_000
 
 type Line = {

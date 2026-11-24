@@ -6,6 +6,8 @@ import { allows } from '@/lib/permissions'
 import { acceptQuote, docPath, errorText, quoteToOrder, rejectQuote, sendQuote, type Quote } from '@/lib/sales'
 import type { Me } from '@/lib/types'
 import { issueInvoice, resendDelivery, validateInvoice } from '@/pages/facturas/api'
+import { CobroButton } from '@/pages/facturas/CobroDialog'
+import { canCollectInvoice } from '@/pages/facturas/cobro'
 import { IssueDialog } from '@/pages/facturas/dialogs'
 import { NumberingStep } from '@/pages/facturas/NumberingStep'
 import { numberingNeed } from '@/pages/ajustes/numeracion/api'
@@ -30,7 +32,8 @@ export function InvoiceActions({ me, invoice, onChanged }: { me: Me; invoice: In
   const canIssue = open && allows(me, 'billing.issue')
   const canSend = issued && allows(me, 'billing.deliver')
   const canRectify = issued && allows(me, 'billing.write')
-  if (!canIssue && !canSend && !canRectify) return null
+  const canCollect = canCollectInvoice(invoice, allows(me, 'finance.write'))
+  if (!canIssue && !canSend && !canRectify && !canCollect) return null
   const errors = issues?.errors ?? []
   const numbering = errors.every((issue) => issue.code === 'WC_INV_NUMBERING')
     ? numberingNeed(errors.find((issue) => issue.code === 'WC_INV_NUMBERING')?.details)
@@ -94,8 +97,9 @@ export function InvoiceActions({ me, invoice, onChanged }: { me: Me; invoice: In
             {copy.facturas.issue}
           </Button>
         ) : null}
+        <CobroButton me={me} invoice={invoice} onChanged={onChanged} />
         {canSend ? (
-          <Button type="button" variant="primary" size="sm" loading={busy} onClick={() => void send()}>
+          <Button type="button" variant={canCollect ? 'secondary' : 'primary'} size="sm" loading={busy} onClick={() => void send()}>
             {copy.documents.send}
           </Button>
         ) : null}
