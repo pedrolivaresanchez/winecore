@@ -82,8 +82,9 @@ export function requestBatch(invoiceIds: string[]) {
   })
 }
 
-export function exportBook(entity: string, from: string, to: string) {
+export function exportBook(entity: string, from: string, to: string, invoiceType?: string) {
   const params = new URLSearchParams({ entity, from, to })
+  if (invoiceType) params.set('invoice_type', invoiceType)
   return apiText(`/v1/invoices/export?${params}`)
 }
 

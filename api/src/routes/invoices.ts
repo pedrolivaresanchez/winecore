@@ -87,7 +87,8 @@ export async function exportInvoices(writer: Writer, request: Request): Promise<
   if (!entity) throw domainError('WC_VALIDATION', { entity: 'Indica la entidad' });
   if (!can(user, 'billing.read', entity.id)) throw domainError('WC_FORBIDDEN');
   const range = rangeOf(url);
-  const book = await exportIssuedBook(writer, { entityId: entity.id, from: range.from, to: range.to });
+  const invoiceType = url.searchParams.get('invoice_type')?.trim().toUpperCase() || null;
+  const book = await exportIssuedBook(writer, { entityId: entity.id, from: range.from, to: range.to, invoiceType });
   const filename = `libro-emitidas-${entity.code}-${range.from}-${range.to}.csv`;
   const bytes = Buffer.from(book.csv.startsWith('\uFEFF') ? book.csv : `\uFEFF${book.csv}`, 'utf8');
   return new Response(bytes, {

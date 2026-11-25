@@ -48,7 +48,7 @@ export interface RectRow {
   reason: string;
 }
 
-const INVOICE_TYPES = new Set(['R1', 'R2', 'R3', 'R4']);
+const INVOICE_TYPES = new Set(['R1', 'R2', 'R3', 'R4', 'R5']);
 
 export function isRectificationType(value: string): boolean {
   return INVOICE_TYPES.has(value);

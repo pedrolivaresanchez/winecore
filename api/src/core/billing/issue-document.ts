@@ -10,6 +10,7 @@ import type { LoadedInvoice } from './pdf/load';
 import type { InvoiceLang, PartyIdentity, TaxIdType } from './pdf/types';
 import type { ComputedInvoice } from './compute';
 import type { InvoiceView, TaxView } from './readModel';
+import { isSimplifiedInvoice } from './simplified';
 
 export async function openIssuedDelivery(
   tx: Tx,
@@ -49,8 +50,10 @@ async function loadedInvoice(
   computed: ComputedInvoice,
 ): Promise<LoadedInvoice> {
   const customer = view.customer;
-  if (!customer) throw domainError('WC_INV_TAX_ID_REQUIRED');
-  const address = customer.address ?? await anyAddress(tx, customer.id) ?? fallbackAddress(customer);
+  if (!customer && !isSimplifiedInvoice(view.header.invoiceType)) throw domainError('WC_INV_TAX_ID_REQUIRED');
+  const address = customer
+    ? customer.address ?? await anyAddress(tx, customer.id) ?? fallbackAddress(customer)
+    : null;
   const issuerRows = await tx.read<Record<string, unknown>>(sql`
     SELECT legal_name, trade_name, tax_id, address_line, postal_code, city, province, country_code, registry_data
     FROM core.legal_entity
@@ -98,7 +101,9 @@ async function loadedInvoice(
       },
       registryData: issuer.registry_data == null ? null : String(issuer.registry_data),
     },
-    customer: customerParty(customer, address),
+    customer: customer && address
+      ? customerParty(customer, address)
+      : walkInParty(issuer),
     lines: view.lines.map((line, index) => ({
       lineNo: line.lineNo,
       sku: line.sku,
@@ -214,6 +219,26 @@ function fallbackAddress(customer: NonNullable<InvoiceView['customer']>): NonNul
     city: 'Sin domicilio de facturación',
     province: null,
     countryCode: country,
+  };
+}
+
+function walkInParty(issuer: Record<string, unknown>): PartyIdentity {
+  return {
+    legalName: 'Consumidor final',
+    tradeName: null,
+    taxId: '',
+    taxIdType: 'none',
+    address: {
+      line1: String(issuer.address_line),
+      line2: null,
+      postalCode: String(issuer.postal_code),
+      city: String(issuer.city),
+      province: issuer.province == null ? null : String(issuer.province),
+      countryCode: String(issuer.country_code),
+    },
+    registryData: null,
+    phone: null,
+    email: null,
   };
 }
 

@@ -12,7 +12,7 @@ import {
   type TableRow,
   type TotalRow,
 } from '../../pdf/holded-layout';
-import { printableLot } from '../../documents/customer-note';
+import { printableLot, printableStatus } from '../../documents/customer-note';
 import { customerSpec, issuerSpec } from '../../pdf/parties';
 import { isDocumentVariant, type DocumentVariant } from '../../pdf/profile';
 import { shipToLines } from '../../pdf/ship-to';
@@ -446,7 +446,9 @@ function noteLines(invoice: IssuedInvoice, labels: Labels, lang: InvoiceLang): N
   if (invoice.description.trim() !== '' && invoice.description.trim() !== DEFAULT_DESCRIPTION) {
     extra.push(`${labels.operation}: ${invoice.description.trim()}`);
   }
-  const notes = textLines(invoice.customerNote);
+  const notes = textLines(invoice.customerNote)
+    .map((line) => printableStatus(line, invoice.number.trim() !== ''))
+    .filter((line) => line !== '');
   notes.forEach((line, index) => extra.push(index === 0 ? `${labels.notes}: ${line}` : line));
   if (invoice.issuer.registryData) extra.push(`${labels.registry}: ${invoice.issuer.registryData}`);
   group(extra);

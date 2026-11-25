@@ -48,6 +48,7 @@ import { parseCustomerReferences, parseShipTo, shipToRecord } from '../pdf/ship-
 import { raiseIssue } from './issues';
 import type { TaxCode } from './taxCodes';
 import { type StockAlready, writeStockAlready } from './stock-already';
+import { assertSimplifiedInvoice, defaultSimplified, isSimplifiedInvoice } from './simplified';
 import { assertEditable, assertWc080 } from './wc080';
 
 const PAYMENTS = new Set(['transfer', 'direct_debit', 'card', 'cash', 'stripe', 'other']);
@@ -71,7 +72,8 @@ interface CreateInput {
   legalEntityId: string | null;
   customerId: string | null;
   seriesId: string | null;
-  invoiceType: string;
+  /** Null cuando el cliente no lo indica y se resuelve al conocer sociedad, cliente y canal. */
+  invoiceType: string | null;
   rectificationKind: 'S' | 'I' | null;
   channel: string | null;
   description: string | null;
@@ -116,7 +118,7 @@ interface BuiltLine {
 interface Built {
   id: string;
   entity: EntityView;
-  customer: CustomerView;
+  customer: CustomerView | null;
   series: SeriesView | null;
   invoiceType: string;
   rectificationKind: 'S' | 'I' | null;
@@ -273,14 +275,13 @@ export async function discardDraft(
 async function buildNew(tx: Tx, input: CreateInput, now: Date): Promise<Built> {
   const sourced = await sourceLines(tx, input, null);
   const customerId = input.customerId ?? sourced.customerId;
-  if (!customerId) throw domainError('WC_VALIDATION', { customer_id: 'El cliente es obligatorio' });
-  const customer = await requireCustomer(tx, customerId);
-  if (sourced.customerId && sourced.customerId !== customer.id) {
+  const customer = customerId ? await requireCustomer(tx, customerId) : null;
+  if (sourced.customerId && customer && sourced.customerId !== customer.id) {
     throw domainError('WC_VALIDATION', { customer_id: 'El cliente no coincide con el documento de origen' });
   }
-  const channel = input.channel ?? sourced.channel ?? customer.defaultChannel;
+  const channel = input.channel ?? sourced.channel ?? customer?.defaultChannel ?? null;
   if (channel) await assertChannel(tx, channel);
-  const rule = await resolveRule(tx, customer.id, channel);
+  const rule = await resolveRule(tx, customer?.id ?? null, channel);
   const entityId = input.legalEntityId ?? sourced.entityId ?? (rule?.entityId ?? null);
   if (!entityId) throw domainError('WC_INV_ENTITY');
   const entity = await requireEntity(tx, entityId);
@@ -288,6 +289,16 @@ async function buildNew(tx: Tx, input: CreateInput, now: Date): Promise<Built> {
     throw domainError('WC_VALIDATION', { legal_entity_id: 'La entidad no coincide con el documento de origen' });
   }
   if (!entity.active) throw domainError('WC_VALIDATION', { legal_entity_id: 'La entidad no está activa' });
+  const invoiceType = input.invoiceType ?? (defaultSimplified({
+    entityCode: entity.code,
+    kind: customer?.kind ?? null,
+    taxId: customer?.taxId ?? null,
+    taxIdType: customer?.taxIdType ?? null,
+    channel,
+  }) ? 'F2' : 'F1');
+  if (!customer && !isSimplifiedInvoice(invoiceType)) {
+    throw domainError('WC_VALIDATION', { customer_id: 'El cliente es obligatorio' });
+  }
   const manual = input.lines ?? [];
   const draftLines = [...sourced.lines, ...manual];
   const priceOn = input.issueDate ?? input.operationDate ?? today(now);
@@ -295,12 +306,13 @@ async function buildNew(tx: Tx, input: CreateInput, now: Date): Promise<Built> {
   const targets = input.rectifies ? await loadTargets(tx, input.rectifies) : [];
   assertRectificationEntity(input, entity.taxId, entity.id, targets);
   const year = Number((input.issueDate ?? today(now)).slice(0, 4));
-  const series = await chooseSeries(tx, input.seriesId, entity.id, seriesDocType(input.invoiceType), year);
-  const terms = input.paymentTermsDays ?? customer.paymentTermsDays;
-  const language = input.language ?? (customer.language === 'en' ? 'en' : 'es');
+  const series = await chooseSeries(tx, input.seriesId, entity.id, seriesDocType(invoiceType), year);
+  const terms = input.paymentTermsDays ?? customer?.paymentTermsDays ?? 0;
+  const language = input.language ?? (customer?.language === 'en' ? 'en' : 'es');
   const description = input.description ?? (input.rectificationKind ? 'Rectificación' : 'Venta de vino');
   assertDescription(description);
   const priced = applyTotals(enriched, await loadTaxCodes(tx), terms, priceOn, language);
+  assertSimplifiedInvoice({ invoiceType, entityCode: entity.code, channel, total: priced.total });
   if (input.rectificationKind && (!input.reason || input.reason.trim().length === 0)) {
     throw domainError('WC_INV_RECTIFICATION_REF', { reason: 'El motivo es obligatorio' });
   }
@@ -315,7 +327,7 @@ async function buildNew(tx: Tx, input: CreateInput, now: Date): Promise<Built> {
     entity,
     customer,
     series,
-    invoiceType: input.invoiceType,
+    invoiceType,
     rectificationKind: input.rectificationKind,
     channel,
     description,
@@ -325,11 +337,11 @@ async function buildNew(tx: Tx, input: CreateInput, now: Date): Promise<Built> {
     incoterm: input.incoterm,
     shipTo: input.shipTo ?? sourced.shipTo,
     customerReferences: input.customerReferences ?? sourced.customerReferences,
-    paymentMethod: input.paymentMethod ?? customer.paymentMethod,
+    paymentMethod: input.paymentMethod ?? customer?.paymentMethod ?? null,
     paymentTermsDays: terms,
     operationDate: input.operationDate,
     issueDate: input.issueDate,
-    currency: /^[A-Z]{3}$/.test(customer.currency) ? customer.currency : 'EUR',
+    currency: customer && /^[A-Z]{3}$/.test(customer.currency) ? customer.currency : 'EUR',
     lines: priced.lines,
     rectRows,
     subtotal: priced.subtotal,
@@ -355,19 +367,24 @@ async function buildUpdate(
   patch: Patch,
   now: Date,
 ): Promise<Built> {
-  const customer = await requireCustomer(tx, patch.customerId ?? current.customerId ?? '');
+  const customerId = patch.customerId ?? current.customerId;
+  const customer = customerId ? await requireCustomer(tx, customerId) : null;
   const entity = await requireEntity(tx, patch.legalEntityId ?? current.legalEntityId);
   const channel = patch.channel === undefined ? current.channel : patch.channel;
   if (channel) await assertChannel(tx, channel);
+  const invoiceType = changedInvoiceType(current.invoiceType, patch.invoiceType);
+  if (!customer && !isSimplifiedInvoice(invoiceType)) {
+    throw domainError('WC_VALIDATION', { customer_id: 'El cliente es obligatorio' });
+  }
   const issueDate = patch.issueDate === undefined ? current.issueDate : patch.issueDate;
   const operationDate = patch.operationDate === undefined ? current.operationDate : patch.operationDate;
   const year = Number((issueDate ?? today(now)).slice(0, 4));
-  const docType = seriesDocType(current.invoiceType);
+  const docType = seriesDocType(invoiceType);
   const series = patch.seriesId === undefined
     ? await keptSeries(tx, current.seriesId, entity.id, docType, year)
     : await chooseSeries(tx, patch.seriesId, entity.id, docType, year);
   const terms = patch.paymentTermsDays === undefined
-    ? current.paymentTermsDays ?? customer.paymentTermsDays
+    ? current.paymentTermsDays ?? customer?.paymentTermsDays ?? 0
     : patch.paymentTermsDays;
   const language = patch.language ?? (current.language === 'en' ? 'en' : 'es');
   const description = patch.description ?? current.description;
@@ -393,6 +410,7 @@ async function buildUpdate(
   }
   const enriched = await enrichLines(tx, sourceLines.filter((line) => isUuid(line.productId)), customer, channel, priceOn, current.rectificationKind);
   const priced = applyTotals(enriched, await loadTaxCodes(tx), terms, priceOn, language);
+  assertSimplifiedInvoice({ invoiceType, entityCode: entity.code, channel, total: priced.total });
   const physical = physicalReturnOf(current, patch);
   const keptIds = patch.lines ? null : await loadLines(tx, current.id);
   if (keptIds) {
@@ -406,7 +424,7 @@ async function buildUpdate(
     entity,
     customer,
     series,
-    invoiceType: current.invoiceType,
+    invoiceType,
     rectificationKind: current.rectificationKind,
     channel,
     description,
@@ -497,10 +515,18 @@ function applyTotals(
   };
 }
 
+function changedInvoiceType(current: string, next: 'F1' | 'F2' | undefined): string {
+  if (next === undefined || next === current) return current;
+  if (current !== 'F1' && current !== 'F2') {
+    throw domainError('WC_VALIDATION', { invoice_type: 'El tipo de una rectificativa no se cambia' });
+  }
+  return next;
+}
+
 async function enrichLines(
   tx: Tx,
   lines: readonly ManualLine[],
-  customer: CustomerView,
+  customer: CustomerView | null,
   channel: string | null,
   priceOn: string,
   kind: 'S' | 'I' | null,
@@ -521,7 +547,7 @@ async function enrichLines(
     }
     const unitPrice = line.unitPrice
       ? scale(line.unitPrice, 6)
-      : await unitPriceOf(tx, product.id, customer.defaultPriceListId, channel, priceOn, quantity.abs());
+      : await unitPriceOf(tx, product.id, customer?.defaultPriceListId ?? null, channel, priceOn, quantity.abs());
     if (unitPrice.isNeg()) throw domainError('WC_VALIDATION', { unit_price: 'El precio no puede ser negativo' });
     const taxCode = line.taxCode ?? product.defaultTaxCode;
     if (!taxCode) throw domainError('WC_VALIDATION', { tax_code: 'Indica el código de impuesto' });
@@ -875,7 +901,7 @@ interface RuleHit {
   scope: string;
 }
 
-async function resolveRule(tx: Tx, customerId: string, channel: string | null): Promise<RuleHit | null> {
+async function resolveRule(tx: Tx, customerId: string | null, channel: string | null): Promise<RuleHit | null> {
   const rows = await tx.read(sql`
     SELECT r.rule_set_id, r.id AS rule_id, r.issuing_entity_id, r.scope
     FROM billing.billing_rule r
@@ -958,7 +984,7 @@ function insertInvoice(tx: Tx, built: Built, actor: Actor, now: Date): void {
       ${built.rectificationKind},
       CAST(${built.issueDate} AS DATE),
       CAST(${built.operationDate} AS DATE),
-      CAST(${built.customer.id} AS UUID),
+      CAST(${built.customer?.id ?? null} AS UUID),
       ${built.channel},
       CAST(${built.salesOrderId} AS UUID),
       CAST(${built.ruleSetId} AS UUID),
@@ -995,7 +1021,7 @@ function insertInvoice(tx: Tx, built: Built, actor: Actor, now: Date): void {
       status: 'draft',
       invoice_type: built.invoiceType,
       legal_entity_id: built.entity.id,
-      customer_id: built.customer.id,
+      customer_id: built.customer?.id ?? null,
       series_id: built.series?.id ?? null,
       total: built.total,
     },
@@ -1074,7 +1100,8 @@ function updateHeader(tx: Tx, before: Awaited<ReturnType<typeof loadHeader>>, bu
     UPDATE billing.invoice SET
       legal_entity_id = CAST(${built.entity.id} AS UUID),
       series_id = CAST(${built.series?.id ?? null} AS UUID),
-      customer_id = CAST(${built.customer.id} AS UUID),
+      invoice_type = ${built.invoiceType},
+      customer_id = CAST(${built.customer?.id ?? null} AS UUID),
       channel = ${built.channel},
       issue_date = CAST(${built.issueDate} AS DATE),
       operation_date = CAST(${built.operationDate} AS DATE),
@@ -1102,7 +1129,7 @@ function updateHeader(tx: Tx, before: Awaited<ReturnType<typeof loadHeader>>, bu
     rowId: built.id,
     action: 'UPDATE',
     before: { customer_id: before.customerId, total: before.total, series_id: before.seriesId },
-    after: { customer_id: built.customer.id, total: built.total, series_id: built.series?.id ?? null },
+    after: { customer_id: built.customer?.id ?? null, total: built.total, series_id: built.series?.id ?? null, invoice_type: built.invoiceType },
   });
 }
 
@@ -1123,6 +1150,7 @@ interface Patch {
   shipTo?: Record<string, string> | null;
   customerReferences?: string | null;
   lines?: ManualLine[];
+  invoiceType?: 'F1' | 'F2';
   noPhysicalReturn?: boolean | null;
   returnDeliveryNote?: string | null;
   stockAlready?: StockAlready;
@@ -1130,22 +1158,23 @@ interface Patch {
 
 function parseCreate(raw: unknown): CreateInput {
   const body = objectBody(raw);
-  const invoiceType = text(pick(body, 'invoice_type', 'invoiceType')) ?? 'F1';
-  if (invoiceType !== 'F1' && !isRectificationType(invoiceType)) {
-    throw domainError('WC_VALIDATION', { invoice_type: 'El tipo debe ser F1 o R1, R2, R3 o R4' });
+  const typeRaw = pick(body, 'invoice_type', 'invoiceType');
+  const invoiceType = typeRaw == null || typeRaw === '' ? null : text(typeRaw);
+  if (invoiceType != null && invoiceType !== 'F1' && invoiceType !== 'F2' && !isRectificationType(invoiceType)) {
+    throw domainError('WC_VALIDATION', { invoice_type: 'El tipo debe ser F1, F2 o R1, R2, R3, R4 o R5' });
   }
   const kindRaw = text(pick(body, 'rectification_kind', 'rectificationKind'));
   const rectifiesRaw = pick(body, 'rectifies');
   const rectifies = rectifiesRaw == null ? null : parseRectSources(rectifiesRaw);
   let rectificationKind: 'S' | 'I' | null = null;
-  if (isRectificationType(invoiceType)) {
+  if (invoiceType != null && isRectificationType(invoiceType)) {
     if (kindRaw !== 'S' && kindRaw !== 'I') {
       throw domainError('WC_VALIDATION', { rectification_kind: 'Indica diferencias (I) o sustitución (S)' });
     }
     if (!rectifies) throw domainError('WC_INV_RECTIFICATION_REF');
     rectificationKind = kindRaw;
   } else if (kindRaw || rectifies) {
-    throw domainError('WC_VALIDATION', { invoice_type: 'Una factura completa no lleva datos de rectificativa' });
+    throw domainError('WC_VALIDATION', { invoice_type: 'Una factura completa o simplificada no lleva datos de rectificativa' });
   }
   const fromNotes = uuidList(pick(body, 'from_delivery_notes', 'fromDeliveryNotes'), 'from_delivery_notes');
   const fromOrderRaw = text(pick(body, 'from_order', 'fromOrder'));
@@ -1233,6 +1262,13 @@ function parsePatch(raw: unknown, current: { stockAlreadyDeducted: boolean; stoc
   if (pick(body, 'lines') !== undefined) {
     const lines = parseLines(pick(body, 'lines'));
     patch.lines = lines ?? [];
+  }
+  if (pick(body, 'invoice_type', 'invoiceType') !== undefined) {
+    const next = text(pick(body, 'invoice_type', 'invoiceType'));
+    if (next !== 'F1' && next !== 'F2') {
+      throw domainError('WC_VALIDATION', { invoice_type: 'En un borrador solo se cambia entre factura completa (F1) y simplificada (F2)' });
+    }
+    patch.invoiceType = next;
   }
   if (pick(body, 'no_physical_return', 'noPhysicalReturn') !== undefined) {
     patch.noPhysicalReturn = optionalBool(pick(body, 'no_physical_return', 'noPhysicalReturn'), 'no_physical_return');

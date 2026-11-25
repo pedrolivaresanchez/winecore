@@ -78,8 +78,8 @@ const invoiceCreate = z.object({
   customer_id: id.optional().describe("Cliente; obligatorio salvo que salga de los albaranes o del pedido"),
   legal_entity_id: id.optional().describe("Sociedad que factura; si falta, la de las reglas de facturación o la del origen"),
   series_id: id.optional().describe("Serie; si falta, la de por defecto del año"),
-  invoice_type: z.enum(["F1", "R1", "R2", "R3", "R4"]).optional()
-    .describe("F1 factura completa (por defecto). Rectificativas: R1 error en la factura, R2 concurso, R3 crédito incobrable, R4 devolución o descuento"),
+  invoice_type: z.enum(["F1", "F2", "R1", "R2", "R3", "R4", "R5"]).optional()
+    .describe("F1 factura completa (por defecto). F2 factura simplificada, solo CVPO (venta bodega: hasta 400 €, o 3.000 € en web, cellar_shop o cellar_sales). Si se omite y el cliente es una persona de CVPO sin NIF en uno de esos canales, se usa F2. Rectificativas: R1 error en la factura, R2 concurso, R3 crédito incobrable, R4 devolución o descuento, R5 rectificativa de simplificada"),
   rectification_kind: z.enum(["I", "S"]).optional().describe("Solo rectificativas: I por diferencias, S por sustitución"),
   rectifies: z.array(rectifiedInvoice).min(1).optional().describe("Solo rectificativas: la factura rectificada"),
   reason: z.string().min(1).max(2000).optional().describe("Motivo; obligatorio en rectificativas"),
@@ -112,6 +112,7 @@ const invoiceChanges = z.object({
   ship_to: shipTo.nullable().optional().describe("null quita la dirección de envío"),
   customer_references: customerReferences.nullable().optional(),
   lines: z.array(invoiceLine).optional().describe("Sustituye todas las líneas del borrador"),
+  invoice_type: z.enum(["F1", "F2"]).optional().describe("Solo en borrador: cambia entre factura completa (F1) y simplificada (F2)"),
   no_physical_return: z.boolean().nullable().optional().describe("Solo rectificativas"),
   return_delivery_note: z.string().max(80).nullable().optional().describe("Solo rectificativas"),
   stock_already_deducted: z.boolean().optional().describe("Marca o quita «stock ya descontado» en el borrador, antes de emitir"),
@@ -180,12 +181,14 @@ export const billingRestTools: readonly AnyTool[] = [
     module: "billing",
     scope: "billing.read",
     title: "Libro de facturas expedidas (CSV)",
-    description: "El libro registro de facturas expedidas de una sociedad para un trimestre, un mes o unas fechas, como lo descarga la app. Devuelve el texto del CSV.",
+    description: "El libro registro de facturas expedidas de una sociedad para un trimestre, un mes o unas fechas, como lo descarga la app. invoice_type F2 deja solo la venta bodega del periodo. Devuelve el texto del CSV.",
     input: z.object({
       entity: z.string().min(2).max(36).describe("Sociedad: código (PO, CVPO) o su id"),
       period: z.string().regex(/^\d{4}-(Q[1-4]|\d{2})$/).optional().describe("2026-Q4 o 2026-10; si no, from y to"),
       from: day.optional(),
       to: day.optional(),
+      invoice_type: z.enum(["F1", "F2", "F3", "R1", "R2", "R3", "R4", "R5"]).optional()
+        .describe("Solo ese tipo. F2 es la venta bodega (factura simplificada) para el CSV trimestral"),
     }).strict(),
     route: "GET /v1/invoices/export",
   }),
@@ -233,7 +236,7 @@ export const billingRestTools: readonly AnyTool[] = [
     module: "billing",
     scope: "billing.write",
     title: "Crear borrador de factura",
-    description: "Crea un borrador de factura desde albaranes, desde un pedido o con líneas manuales; los precios salen de la tarifa del cliente si no se indican. También crea rectificativas (invoice_type R1–R4, rectification_kind, rectifies y reason). Si la mercancía ya salió y el stock de WineCore ya lo refleja, marca stock_already_deducted con stock_already_reason: al emitir no se mueve stock (ni salida en P.O ni entrada en CVPO) y el lote no es obligatorio. Para duplicar una factura, copia cliente y líneas de billing_invoice_get. No numera nada: eso lo hace emitir.",
+    description: "Crea un borrador de factura desde albaranes, desde un pedido o con líneas manuales; los precios salen de la tarifa del cliente si no se indican. También crea rectificativas (invoice_type R1–R5, rectification_kind, rectifies y reason). F2 es la factura simplificada de CVPO (venta bodega); si no indicas tipo y el cliente es una persona de CVPO sin NIF en web, cellar_shop o cellar_sales, se crea F2. Si la mercancía ya salió y el stock de WineCore ya lo refleja, marca stock_already_deducted con stock_already_reason: al emitir no se mueve stock (ni salida en P.O ni entrada en CVPO) y el lote no es obligatorio. Para duplicar una factura, copia cliente y líneas de billing_invoice_get. No numera nada: eso lo hace emitir.",
     input: invoiceCreate,
     route: "POST /v1/invoices",
     web: (_input, body) => {

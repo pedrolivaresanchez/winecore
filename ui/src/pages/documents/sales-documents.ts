@@ -27,6 +27,7 @@ export type SalesDocumentItem = {
   api_path: string
   note_kind?: string | null
   invoicing_status?: string | null
+  invoice_type?: string | null
 }
 
 export type SalesFacet = { value: string; label: string; count: number }

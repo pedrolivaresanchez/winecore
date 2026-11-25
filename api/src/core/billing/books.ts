@@ -106,11 +106,17 @@ export function reconcileBook(input: {
   ];
 }
 
+const BOOK_TYPES = new Set(['F1', 'F2', 'F3', 'R1', 'R2', 'R3', 'R4', 'R5']);
+
 export async function exportIssuedBook(
   db: Read,
-  input: { entityId: string; from: string; to: string },
+  input: { entityId: string; from: string; to: string; invoiceType?: string | null },
 ): Promise<{ csv: string; checks: BookCheck[] }> {
   if (!isUuid(input.entityId)) throw domainError('WC_VALIDATION', { entity: 'Identificador no válido' });
+  const invoiceType = input.invoiceType ?? null;
+  if (invoiceType && !BOOK_TYPES.has(invoiceType)) {
+    throw domainError('WC_VALIDATION', { invoice_type: 'El tipo debe ser F1, F2, F3 o R1, R2, R3, R4 o R5' });
+  }
   const invoices = await db.read(sql`
     SELECT i.id, i.number, i.issue_date, i.operation_date, i.invoice_type, i.status, i.origin,
            i.subtotal, i.tax_total, i.surcharge_total, i.withholding_total, i.total,
@@ -123,6 +129,7 @@ export async function exportIssuedBook(
       AND NOT (i.status = 'voided' AND starts_with(COALESCE(i.void_reason, ''), 'never_issued:'))
       AND i.issue_date >= CAST(${input.from} AS DATE)
       AND i.issue_date <= CAST(${input.to} AS DATE)
+      AND (${invoiceType} IS NULL OR i.invoice_type = ${invoiceType})
     ORDER BY i.issue_date, i.number
   `);
   const ids = invoices.map((row) => idOf(row.id));

@@ -161,7 +161,7 @@ export async function loadInvoiceDocument(reader: SqlReader, id: string): Promis
     description: text(header.description),
     currency: text(header.currency),
     issuer: issuerFrom(header),
-    customer: customerFrom(header.customer_snapshot),
+    customer: customerFrom(header.customer_snapshot, text(header.invoice_type)),
     customerId: header.customer_id == null ? null : text(header.customer_id),
     lines: lineRows.map(lineFrom),
     taxes: taxRows.map(taxFrom),
@@ -238,17 +238,44 @@ function issuerFrom(header: Record<string, unknown>): PartyIdentity {
   };
 }
 
-function customerFrom(snapshot: unknown): PartyIdentity {
+function customerFrom(snapshot: unknown, invoiceType: string): PartyIdentity {
+  const simplified = invoiceType === 'F2' || invoiceType === 'R5';
   const row = asObject(snapshot);
-  if (!row) throw domainError('WC_VALIDATION', { customer_snapshot: 'Falta el cliente congelado' });
+  if (!row) {
+    if (!simplified) throw domainError('WC_VALIDATION', { customer_snapshot: 'Falta el cliente congelado' });
+    return {
+      legalName: 'Consumidor final',
+      tradeName: null,
+      taxId: '',
+      taxIdType: 'none',
+      address: {
+        line1: 'Venta en bodega',
+        line2: null,
+        postalCode: '00000',
+        city: 'Bodega',
+        province: null,
+        countryCode: 'ES',
+      },
+      registryData: null,
+    };
+  }
   const address = asObject(row.address);
-  if (!address) throw domainError('WC_VALIDATION', { customer_snapshot: 'Falta la dirección del cliente' });
+  if (!address && !simplified) throw domainError('WC_VALIDATION', { customer_snapshot: 'Falta la dirección del cliente' });
+  const taxId = optionalText(row.tax_id) ?? '';
+  if (taxId === '' && !simplified) throw domainError('WC_VALIDATION', { customer_snapshot: 'Dato obligatorio vacío' });
   return {
     legalName: required(row.legal_name ?? row.name, 'customer_snapshot'),
     tradeName: optionalText(row.trade_name),
-    taxId: required(row.tax_id, 'customer_snapshot'),
-    taxIdType: taxType(row.tax_id_type),
-    address: addressFrom(address),
+    taxId,
+    taxIdType: taxId === '' ? 'none' : taxType(row.tax_id_type),
+    address: address ? addressFrom(address) : {
+      line1: 'Venta en bodega',
+      line2: null,
+      postalCode: '00000',
+      city: 'Bodega',
+      province: null,
+      countryCode: 'ES',
+    },
     registryData: null,
     phone: optionalText(row.phone),
     email: optionalText(row.email),

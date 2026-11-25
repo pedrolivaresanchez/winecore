@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { useEntity } from '@/app/entity-context'
 import { Combobox } from '@/components/Combobox'
 import { Field } from '@/components/Field'
 import { copy, fill } from '@/i18n'
@@ -44,6 +45,7 @@ import { LineEditor } from '@/pages/ventas/lines'
 import { TariffSelect } from '@/pages/ventas/tariff-select'
 import { ShippingFields } from '@/pages/ventas/shipping'
 import { emptyShipTo, referencesPayload, shipToPayload, type ShipToDraft } from '@/lib/shipping'
+import { prefersSimplified } from '@/pages/facturas/simplified'
 
 const SOURCES: { value: SourceKind; content: string }[] = [
   { value: 'lines', content: copy.facturas.sourceLines },
@@ -65,6 +67,7 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
   const [params] = useSearchParams()
   const [source, setSource] = useState<SourceKind>('lines')
   const [customerId, setCustomerId] = useState(() => params.get('cliente') ?? '')
+  const [invoiceType, setInvoiceType] = useState<'F1' | 'F2'>('F1')
   const [priceListId, setPriceListId] = useState('')
   const [lines, setLines] = useState<DraftLine[]>([blankLine()])
   const [orderId, setOrderId] = useState('')
@@ -81,10 +84,12 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
   const [customerBad, setCustomerBad] = useState(false)
   const [saving, setSaving] = useState(false)
   const stamps = useRef<Record<string, string>>({})
+  const { entities } = useEntity()
   const { customers } = useCustomers()
   const customerOptions = useMemo(() => customers.map(customerOption), [customers])
   const customer = customers.find((item) => item.id === customerId)
   const issuer = useIssuer(customerId, '', 'invoice')
+  const cellar = issuer.code === 'CVPO'
   // No channel: like the invoice itself, prices follow the customer's tariff, then its default channel's.
   const offer = useSalesOffer({ customerId: customerId || undefined, date: todayMadrid(), priceListId: priceListId || undefined })
   const docs = useCustomerDocs(customerId, source)
@@ -150,10 +155,24 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
     }, 0)
   }
 
+  function entityCodeOf(id: string) {
+    return entities.find((item) => item.id === id)?.code ?? ''
+  }
+
+  function suggestType(nextCustomer: string, entityCode: string) {
+    const picked = customers.find((item) => item.id === nextCustomer)
+    setInvoiceType(prefersSimplified({
+      entityCode,
+      kind: picked?.kind,
+      taxId: picked?.taxId,
+    }) ? 'F2' : 'F1')
+  }
+
   function pickCustomer(next: string) {
     setCustomerId(next)
     setOrderId('')
     setNoteIds([])
+    suggestType(next, issuer.code)
     clearErrors()
     for (const line of lines) quoteTier(line, next)
   }
@@ -203,10 +222,12 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
       return
     }
     const body: CreateInvoiceBody = {
+      invoice_type: cellar && invoiceType === 'F2' ? 'F2' : 'F1',
       description: description.trim() || undefined,
       language,
       operation_date: operationDate,
     }
+    if (body.invoice_type === 'F2' && source === 'lines') body.channel = 'cellar_shop'
     const shipPayload = shipToPayload(shipTo)
     const referencePayload = referencesPayload(references)
     if (shipPayload) body.ship_to = shipPayload
@@ -296,12 +317,35 @@ export function CreateInvoice({ onClose, onCreated }: { onClose: () => void; onC
                 options={issuer.options}
                 onChange={(next) => {
                   issuer.choose(next)
+                  const code = entityCodeOf(next)
+                  if (code !== 'CVPO') setInvoiceType('F1')
+                  else suggestType(customerId, code)
                   clearErrors()
                 }}
               />
               {entityNote ? <p className="max-w-64 text-caption text-text-tertiary">{entityNote}</p> : null}
             </div>
           </div>
+          {cellar ? (
+            <div className="grid gap-1.5">
+              <span className="inline-flex items-center gap-1.5 text-label text-text-secondary">
+                {copy.facturas.type}
+                <InfoTip label={copy.facturas.cellarSale}>{copy.facturas.cellarHint}</InfoTip>
+              </span>
+              <SegmentedControl
+                aria-label={copy.facturas.type}
+                value={invoiceType}
+                options={[
+                  { value: 'F1', content: copy.facturas.complete },
+                  { value: 'F2', content: copy.facturas.cellarSale },
+                ]}
+                onChange={(next) => {
+                  setInvoiceType(next === 'F2' ? 'F2' : 'F1')
+                  clearErrors()
+                }}
+              />
+            </div>
+          ) : null}
           <TariffSelect id="tarifa-factura" value={priceListId} onChange={setPriceListId} />
 
           <div className="grid gap-2">

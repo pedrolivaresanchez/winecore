@@ -17,6 +17,7 @@ import {
   type InvoiceView,
   type TaxView,
 } from './readModel';
+import { anonymousSnapshot, isSimplifiedInvoice } from './simplified';
 import { validateInvoice } from './validate';
 
 /**
@@ -80,7 +81,7 @@ export async function issueInvoice(
   const view: InvoiceView = { ...loaded, header: { ...loaded.header, seriesId: series.id }, series };
   const issueDate = validation.issueDate;
   const customer = view.customer;
-  if (!customer) throw domainError('WC_INV_TAX_ID_REQUIRED');
+  if (!customer && !isSimplifiedInvoice(view.header.invoiceType)) throw domainError('WC_INV_TAX_ID_REQUIRED');
 
   const costs = await standardCosts(tx, view, issueDate);
   const deliveries = await deliveryStatusPlan(tx, {
@@ -116,7 +117,9 @@ export async function issueInvoice(
   `);
   if (clash[0]) throw domainError('WC_VALIDATION', { number: 'Ya existe una factura con este número' });
 
-  const snapshot = customerSnapshot(customer);
+  const snapshot = customer
+    ? customerSnapshot(customer)
+    : anonymousSnapshot(await issuerAddress(tx, view.header.legalEntityId));
   const taxes = taxRows(computed);
   const dues = computed.dues.map((due, index) => ({
     seq: index + 1,
@@ -273,6 +276,24 @@ function resultFromView(view: InvoiceView): IssueResult {
     verifactu_record_id: null,
     qr_url: null,
     customer_snapshot: header.customerSnapshot,
+  };
+}
+
+async function issuerAddress(tx: Tx, legalEntityId: string) {
+  const rows = await tx.read<Record<string, unknown>>(sql`
+    SELECT address_line, postal_code, city, province, country_code
+    FROM core.legal_entity
+    WHERE id = CAST(${legalEntityId} AS UUID)
+  `);
+  const row = rows[0];
+  if (!row) return null;
+  return {
+    line1: String(row.address_line),
+    line2: null,
+    postalCode: String(row.postal_code),
+    city: String(row.city),
+    province: row.province == null ? null : String(row.province),
+    countryCode: String(row.country_code),
   };
 }
 

@@ -96,6 +96,7 @@ export async function seed(client: KbClient, input: SeedInput): Promise<void> {
     ...people,
     ...cellarOperationSeriesStatements(),
     ...intercompanySeriesStatements(),
+    ...simplifiedInvoiceSeriesStatements(),
     cvpoCustomerStatement(),
     exportDocumentsSetting(),
     'COMMIT',
@@ -225,6 +226,29 @@ function salesSeries(entityCode: string, docType: string, code: string, year: nu
       AND NOT EXISTS (
         SELECT 1 FROM core.number_series s
         WHERE s.legal_entity_id = e.id AND s.doc_type = ${docType} AND s.year = ${year}
+      )
+  `;
+}
+
+/** Serie CS de factura simplificada, 2026 y 2027, solo CVPO. */
+export function simplifiedInvoiceSeriesStatements(): string[] {
+  return [2026, 2027].map((year) => simplifiedSeries(year));
+}
+
+function simplifiedSeries(year: number): string {
+  const prefix = `CS${String(year).slice(2)}-`;
+  return sql`
+    INSERT INTO core.number_series (
+      id, legal_entity_id, doc_type, code, year, prefix, padding, next_value, is_default, verifactu, is_active
+    )
+    SELECT gen_random_uuid(), e.id, 'simplified_invoice', 'CS', ${year}, ${prefix}, 4, 1, TRUE, FALSE, TRUE
+    FROM core.legal_entity e
+    WHERE e.code = 'CVPO'
+      AND NOT EXISTS (
+        SELECT 1 FROM core.number_series s
+        WHERE s.legal_entity_id = e.id
+          AND s.doc_type = 'simplified_invoice'
+          AND s.year = ${year}
       )
   `;
 }

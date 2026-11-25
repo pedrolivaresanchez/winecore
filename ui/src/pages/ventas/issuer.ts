@@ -56,6 +56,7 @@ export function useIssuer(customerId: string, channel: string, kind: 'sales' | '
 
   return {
     entityId,
+    code: entities.find((item) => item.id === entityId)?.code ?? '',
     label: labelOf(entityId),
     labelOf,
     preview: current,

@@ -206,6 +206,7 @@ export type CreateInvoiceBody = {
   legal_entity_id?: string
   customer_id?: string
   invoice_type?: string
+  channel?: string
   rectification_kind?: 'S' | 'I'
   description?: string
   language?: 'es' | 'en'
