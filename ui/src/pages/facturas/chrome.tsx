@@ -97,7 +97,8 @@ export function InvoiceBadges({ invoice, delivery }: { invoice: Invoice; deliver
     <>
       {collected ? <Badge tone={collected.tone}>{collected.label}</Badge> : <StatusBadge status={invoice.status} />}
       <Badge tone="neutral">{entityLabel(invoice.entity_code)}</Badge>
-      {invoice.invoice_type.startsWith('R') ? <Badge tone="info">{invoice.invoice_type}</Badge> : null}
+      {invoice.invoice_type === 'F2' ? <Badge tone="info">{copy.facturas.cellarSale}</Badge> : null}
+      {invoice.invoice_type.startsWith('R') ? <Badge tone="info">{invoice.invoice_type === 'R5' ? copy.facturas.cellarRectification : invoice.invoice_type}</Badge> : null}
       {invoice.stock_already_deducted ? <Badge tone="warning">{copy.facturas.stockAlready}</Badge> : null}
       <DeliveryBadge status={delivery} />
       {invoice.status === 'issued' || invoice.status === 'voided' ? (

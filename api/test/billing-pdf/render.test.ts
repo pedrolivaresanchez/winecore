@@ -431,6 +431,34 @@ describe('renderInvoicePdf', () => {
     expect(simplified).toContain('FACTURA SIMPLIFICADA #CF26-0001');
   });
 
+  it('la simplificada no imprime NIF, nota interna, lote vacío ni estados', async () => {
+    const made = build({
+      taxCode: IVA21,
+      qty: '1',
+      unitPrice: '10.50',
+      description: 'Copa en bodega',
+      notes: 'Nota interna. Borrador. Pagado. Pendiente. LOTE: Sin lote',
+      customerNote: 'Obsequio copa',
+      lines: [{ qty: '1', unitPrice: '10.50', description: 'Copa en bodega', lotCode: 'Sin lote' }],
+      customer: { taxId: '', taxIdType: 'none', legalName: 'Consumidor final' },
+    });
+    const text = await textOf({ ...made, invoiceType: 'F2' }, 'es');
+    expect(text).toContain('FACTURA SIMPLIFICADA #CF26-0001');
+    expect(text).toContain('Consumidor final');
+    expect(text).not.toContain('B11111111');
+    expect(text).not.toContain('Nota interna');
+    expect(text).not.toContain('LOTE');
+    expect(text).not.toContain('Sin lote');
+    expect(text).not.toContain('Borrador');
+    expect(text).not.toContain('Pagado');
+    expect(text).not.toContain('PAGADO');
+    expect(text).not.toContain('Pendiente');
+    expect(text).not.toContain('PENDIENTE');
+    expect(text).toContain('Obsequio copa');
+    expect(text).toMatch(/10,50€/);
+    expect(text).toMatch(/12,71€/);
+  });
+
   it('imprime dirección de envío, referencias del cliente y albarán de origen', async () => {
     const text = await textOf(build({
       taxCode: IVA21,

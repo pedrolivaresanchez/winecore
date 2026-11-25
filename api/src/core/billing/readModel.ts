@@ -140,6 +140,7 @@ export interface CustomerView {
   paymentTermsDays: number;
   defaultPriceListId: string | null;
   defaultChannel: string | null;
+  kind: 'company' | 'person';
   archived: boolean;
   vatValidatedAt: string | null;
   /** Teléfono y correo de la persona de contacto (la que recibe facturas, si la hay). */
@@ -388,6 +389,7 @@ export async function loadCustomer(tx: Read, id: string): Promise<CustomerView |
     paymentTermsDays: intOf(row.payment_terms_days) ?? 30,
     defaultPriceListId: row.default_price_list_id == null ? null : idOf(row.default_price_list_id),
     defaultChannel: text(row.default_channel),
+    kind: row.kind === 'person' ? 'person' : 'company',
     archived: row.archived_at != null,
     vatValidatedAt: stamp(row.vat_id_validated_at),
     phone,

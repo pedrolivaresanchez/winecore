@@ -4,7 +4,14 @@ import { ApiError, api, isAbortError } from '@/lib/api'
 import { listContacts, type ContactSummary } from '@/lib/contacts'
 import { listStock, type StockItem } from '@/lib/sales'
 
-export type CatalogCustomer = { id: string; name: string; country: string; taxId: string | null; city: string | null }
+export type CatalogCustomer = {
+  id: string
+  name: string
+  country: string
+  taxId: string | null
+  city: string | null
+  kind: 'company' | 'person'
+}
 export type CatalogProduct = { id: string; sku: string; label: string; requiresLot?: boolean }
 export type CatalogLot = { id: string; code: string; productId: string; locationId: string; qty: number }
 export type CatalogLocation = { id: string; code: string; name?: string }
@@ -84,7 +91,14 @@ export async function loadCustomers(signal: AbortSignal): Promise<ContactSummary
 export function customersOf(items: ContactSummary[]): CatalogCustomer[] {
   return items
     .filter((item) => item.is_customer && !item.archived_at)
-    .map((item) => ({ id: item.id, name: item.legal_name, country: item.country_code, taxId: item.tax_id, city: item.city }))
+    .map((item) => ({
+      id: item.id,
+      name: item.legal_name,
+      country: item.country_code,
+      taxId: item.tax_id,
+      city: item.city,
+      kind: item.kind,
+    }))
     .sort((a, b) => a.name.localeCompare(b.name, 'es'))
 }
 

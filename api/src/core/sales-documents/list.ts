@@ -65,6 +65,8 @@ export interface SalesDocumentItem {
   note_kind: string | null;
   /** Estado de facturación del albarán WineCore. Null en el resto. */
   invoicing_status: string | null;
+  /** Tipo Verifactu (F1, F2…). Null fuera de las facturas de WineCore. */
+  invoice_type: string | null;
 }
 
 interface Facet {
@@ -101,6 +103,7 @@ interface Query {
   customerId: string | null;
   verifactu: Verifactu | null;
   delivery: Delivery | null;
+  invoiceType: string | null;
   sort: Sort;
   dir: 'asc' | 'desc';
   limit: number;
@@ -157,7 +160,7 @@ export async function listSalesDocuments(writer: Writer, user: UserCtx, url: URL
       SELECT origin, id, number, CAST(issue_date AS VARCHAR) AS issue_date, CAST(due_date AS VARCHAR) AS due_date,
              customer_id, customer_match, customer_name, entity_code,
              CAST(total AS VARCHAR) AS total, CAST(pending AS VARCHAR) AS pending, currency, status,
-             verifactu, delivery, record, note_kind, invoicing_status
+             verifactu, delivery, record, note_kind, invoicing_status, invoice_type
         FROM rows
        WHERE ${common} AND ${originOk} AND ${entityOk} AND ${statusOk}
        ORDER BY ${orderBy(query.sort, query.dir, query.kind)}
@@ -329,7 +332,7 @@ function rowsCte(
       SELECT docs.origin, docs.id, docs.number, docs.issue_date, docs.sort_date, docs.due_date,
              docs.customer_id, docs.customer_match, docs.customer_name, docs.customer_references,
              docs.entity_code, docs.total, docs.pending, docs.currency, ${status} AS status,
-             docs.verifactu, docs.delivery, docs.record,
+             docs.verifactu, docs.delivery, docs.record, docs.invoice_type,
              ${delivery ? 'meta.kind' : 'CAST(NULL AS VARCHAR)'} AS note_kind,
              ${delivery ? 'meta.invoicing_status' : 'CAST(NULL AS VARCHAR)'} AS invoicing_status
         FROM docs
@@ -337,7 +340,7 @@ function rowsCte(
     )`;
 }
 
-const UNTRACKED = `CAST(NULL AS VARCHAR) AS verifactu, CAST(NULL AS VARCHAR) AS delivery, 'legacy' AS record`;
+const UNTRACKED = `CAST(NULL AS VARCHAR) AS verifactu, CAST(NULL AS VARCHAR) AS delivery, 'legacy' AS record, CAST(NULL AS VARCHAR) AS invoice_type`;
 
 /** Último registro Verifactu y último intento de envío de cada factura emitida en WineCore. */
 const INVOICE_TRACKING = `
@@ -420,7 +423,8 @@ function nativeInvoices(entity: string): string {
                WHEN COALESCE(i.origin, 'native') IN ('holded_import', 'stripe_import') THEN NULL
                WHEN i.status IN ('issued', 'voided') THEN COALESCE(dl.status, 'none')
              END AS delivery,
-             'billing' AS record
+             'billing' AS record,
+             i.invoice_type
         FROM billing.invoice i
         JOIN core.legal_entity e ON e.id = i.legal_entity_id
         LEFT JOIN party.contact c ON c.id = i.customer_id
@@ -570,6 +574,7 @@ function commonFilters(query: Query): string {
   if (query.customerId) filters.push(sql`customer_id = ${query.customerId}`);
   if (query.verifactu) filters.push(sql`verifactu = ${query.verifactu}`);
   if (query.delivery) filters.push(sql`delivery = ${query.delivery}`);
+  if (query.invoiceType) filters.push(sql`invoice_type = ${query.invoiceType}`);
   return filters.join(' AND ');
 }
 
@@ -615,6 +620,7 @@ function itemOf(row: Record<string, unknown>, query: Query): SalesDocumentItem {
     api_path: apiPath(origin, query, id, String(row.record ?? '')),
     note_kind: textOrNull(row.note_kind),
     invoicing_status: textOrNull(row.invoicing_status),
+    invoice_type: textOrNull(row.invoice_type),
   };
 }
 
@@ -675,6 +681,12 @@ function parseQuery(url: URL): Query {
   const delivery = params.get('delivery')?.trim().toLowerCase() || null;
   if (delivery && !(DELIVERIES as readonly string[]).includes(delivery)) fields.delivery = `Debe ser ${DELIVERIES.join(', ')}`;
   else if (delivery && !salesInvoices) fields.delivery = 'Solo las facturas de venta se envían al cliente';
+  const invoiceType = params.get('invoice_type')?.trim().toUpperCase() || null;
+  if (invoiceType && !['F1', 'F2', 'F3', 'R1', 'R2', 'R3', 'R4', 'R5'].includes(invoiceType)) {
+    fields.invoice_type = 'El tipo debe ser F1, F2, F3 o R1, R2, R3, R4 o R5';
+  } else if (invoiceType && !salesInvoices) {
+    fields.invoice_type = 'Solo las facturas de venta tienen tipo';
+  }
 
   const sortRaw = params.get('sort')?.trim() || 'date';
   if (!(SORTS as readonly string[]).includes(sortRaw)) fields.sort = `Debe ser ${SORTS.join(', ')}`;
@@ -696,6 +708,7 @@ function parseQuery(url: URL): Query {
     customerId: customerRaw ? customerRaw.toLowerCase() : null,
     verifactu: verifactu as Verifactu | null,
     delivery: delivery as Delivery | null,
+    invoiceType,
     sort: sortRaw as Sort,
     dir: dirRaw as 'asc' | 'desc',
     limit,

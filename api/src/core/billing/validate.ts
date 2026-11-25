@@ -19,6 +19,7 @@ import {
   type LineView,
   type SeriesView,
 } from './readModel';
+import { simplifiedIssues } from './simplified';
 import type { TaxCode } from './taxCodes';
 
 export interface ValidationResult {
@@ -174,6 +175,13 @@ export async function validateView(
   }
 
   const computed = computeQuiet(view.lines, taxCodes, header.paymentTermsDays ?? customer?.paymentTermsDays ?? 0, issueDate, errors);
+
+  errors.push(...simplifiedIssues({
+    invoiceType: header.invoiceType,
+    entityCode: view.entity.code,
+    channel: header.channel,
+    total: computed ? money.toString(computed.totalToPay) : header.total,
+  }));
 
   if (computed) {
     if (computed.totalToPay.isZero()) {

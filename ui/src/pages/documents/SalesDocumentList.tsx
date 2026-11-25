@@ -37,6 +37,7 @@ import {
 } from '@/pages/documents/sales-documents'
 import { useDocParam } from '@/pages/documents/use-doc-param'
 import { exportBook, requestBatch } from '@/pages/facturas/api'
+import { cellarQuarters, quarterBounds } from '@/pages/facturas/simplified'
 import { downloadBook } from '@/pages/gastos/api'
 import { currentQuarter, quarterOf } from '@/pages/gastos/catalog'
 import { QuoteConversion } from '@/pages/ventas/QuoteConversion'
@@ -74,7 +75,7 @@ type Book = 'invoice' | 'purchase' | 'quote' | 'delivery_note'
 type ColumnId = 'number' | 'date' | 'customer' | 'entity' | 'total' | 'pending' | 'due' | 'status' | 'verifactu' | 'delivery'
 
 const SIZES = [25, 50, 100, 200] as const
-const LIST_KEYS = ['q', 'status', 'entity', 'origin', 'from', 'to', 'year', 'customer', 'verifactu', 'delivery', 'page']
+const LIST_KEYS = ['q', 'status', 'entity', 'origin', 'from', 'to', 'year', 'customer', 'verifactu', 'delivery', 'cellar', 'page']
 const DEFAULT_HIDDEN: Record<Book, ColumnId[]> = {
   invoice: ['due', 'verifactu', 'delivery'],
   purchase: ['due'],
@@ -216,6 +217,8 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
     : ''
   const customer = params.get('customer') ?? ''
   const verifactu = tracked ? verifactuOf(params.get('verifactu')) : ''
+  const cellarRaw = params.get('cellar') ?? ''
+  const cellar = tracked && quarterBounds(cellarRaw) ? cellarRaw : ''
   const delivery = tracked && DELIVERY_STATES.includes(params.get('delivery') as DeliveryState) ? (params.get('delivery') as DeliveryState) : ''
   const sortRaw = params.get('sort') as SalesSort | null
   const sort: SalesSort = sortRaw && SALES_SORTS.includes(sortRaw) && (sortRaw !== 'pending' || kind === 'invoice') ? sortRaw : 'date'
@@ -267,7 +270,12 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
     if (statuses.length > 0) next.set('status', statuses.join(','))
     if (entity) next.set('entity', entity)
     if (origin) next.set('origin', origin)
-    if (periodYear) {
+    const cellarRange = cellar ? quarterBounds(cellar) : null
+    if (cellarRange) {
+      next.set('invoice_type', 'F2')
+      next.set('from', cellarRange.from)
+      next.set('to', cellarRange.to)
+    } else if (periodYear) {
       next.set('from', `${periodYear}-01-01`)
       next.set('to', `${periodYear}-12-31`)
     } else {
@@ -282,7 +290,7 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
       next.set('dir', dir)
     }
     return next.toString()
-  }, [customer, debounced, delivery, dir, direction, entity, from, kind, periodYear, origin, page, pageSize, sort, statuses, to, verifactu])
+  }, [cellar, customer, debounced, delivery, dir, direction, entity, from, kind, periodYear, origin, page, pageSize, sort, statuses, to, verifactu])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -444,6 +452,12 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
       })
     }
     if (tracked) {
+      defs.push({
+        id: 'cellar',
+        label: copy.facturas.cellarSale,
+        kind: 'single',
+        options: cellarQuarters().map((item) => ({ value: item.value, label: item.label })),
+      })
       defs.push(
         {
           id: 'verifactu',
@@ -472,6 +486,7 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
     customer,
     verifactu,
     delivery,
+    cellar,
   }
 
   const invoiceRows = useCallback(async (rows: SalesDocumentItem[]) => {
@@ -504,6 +519,7 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
             <Badge size="sm" tone={row.origin === 'holded' ? 'neutral' : 'info'} className="shrink-0" title={row.origin === 'holded' ? copy.salesDocs.holdedTip : undefined}>
               {row.origin === 'holded' ? copy.salesDocs.holded : copy.salesDocs.winecore}
             </Badge>
+            {row.invoice_type === 'F2' ? <Badge size="sm" tone="info" className="shrink-0">{copy.facturas.cellarSale}</Badge> : null}
           </span>
         ),
       },
@@ -701,8 +717,12 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
       if (book === 'purchase') {
         await downloadBook(entity, from ? quarterOf(from.slice(0, 7)) ?? currentQuarter() : currentQuarter())
       } else {
-        const range = from && to ? { from, to } : monthRange()
-        saveText(`libro-emitidas-${entity}.csv`, await exportBook(entity, range.from, range.to))
+        const cellarRange = cellar ? quarterBounds(cellar) : null
+        const range = cellarRange ?? (from && to ? { from, to } : monthRange())
+        saveText(
+          cellarRange ? `libro-emitidas-${entity}-F2.csv` : `libro-emitidas-${entity}.csv`,
+          await exportBook(entity, range.from, range.to, cellarRange ? 'F2' : undefined),
+        )
       }
     } catch (err: unknown) {
       toast(err instanceof ApiError ? err.message : copy.api.generic)
@@ -713,7 +733,7 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
 
   if (!canRead(me, book)) return <NoPermission />
 
-  const filtersActive = Boolean(debounced || statuses.length || entity || origin || from || to || yearParam || customer || verifactu || delivery)
+  const filtersActive = Boolean(debounced || statuses.length || entity || origin || from || to || yearParam || customer || verifactu || delivery || cellar)
   const loadingFirst = loading && !data
   const screen = screenOf(book, loadingFirst ? 'loading' : items.length === 0 && !filtersActive ? 'empty' : 'list')
 
@@ -898,6 +918,9 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
                           <Badge size="sm" tone="neutral" className="shrink-0">
                             {copy.salesDocs.holded}
                           </Badge>
+                        ) : null}
+                        {row.invoice_type === 'F2' ? (
+                          <Badge size="sm" tone="info" className="shrink-0">{copy.facturas.cellarSale}</Badge>
                         ) : null}
                       </span>
                     </span>
