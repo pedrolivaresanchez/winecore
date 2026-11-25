@@ -7,14 +7,6 @@ import { renderDocumentPdf, type DocumentPdfLine } from '../pdf/document';
 import { shipToFrom } from '../pdf/ship-to';
 import { dateOf, decOf, pathId, textOf } from './db';
 
-const KINDS: Record<string, string> = {
-  sale: 'Venta',
-  consignment: 'Consigna',
-  transfer: 'Traspaso',
-  return: 'Devolución',
-  sample: 'Muestra',
-};
-
 const STATUSES: Record<string, string> = {
   draft: 'Borrador',
   issued: 'Emitido',
@@ -27,12 +19,9 @@ const STATUSES: Record<string, string> = {
 export async function deliveryNotePdf(writer: Writer, id: string): Promise<Response> {
   const noteId = pathId(id);
   const notes = await writer.read<Record<string, unknown>>(sql`
-    SELECT n.number, n.kind, n.status, n.issue_date, n.notes, n.legal_entity_id, n.customer_id,
-           n.ship_to, n.customer_references,
-           fl.name AS from_name, tl.name AS to_name
+    SELECT n.number, n.status, n.issue_date, n.customer_note, n.legal_entity_id, n.customer_id,
+           n.ship_to, n.customer_references
     FROM sales.delivery_note n
-    JOIN inventory.location fl ON fl.id = n.from_location_id
-    LEFT JOIN inventory.location tl ON tl.id = n.to_location_id
     WHERE n.id = CAST(${noteId} AS UUID)
   `);
   const note = notes[0];
@@ -45,7 +34,6 @@ export async function deliveryNotePdf(writer: Writer, id: string): Promise<Respo
     ORDER BY l.line_no
   `);
   const number = textOf(note.number);
-  const kind = KINDS[String(note.kind)] ?? String(note.kind);
   const priced = lines.length > 0 && lines.every((line) => line.unit_price != null);
   const { seller, profile } = await loadSellerContext(writer, idText(note.legal_entity_id));
   const customer = await loadCustomerParty(writer, note.customer_id == null ? null : idText(note.customer_id));
@@ -64,7 +52,7 @@ export async function deliveryNotePdf(writer: Writer, id: string): Promise<Respo
       tax_rate: taxCode == null ? null : rates.get(taxCode) ?? null,
       discount_pct: discount.toString(),
       unit: textOf(line.unit),
-      lot: textOf(line.lot_code) ?? 'Sin lote',
+      lot: textOf(line.lot_code),
     };
   });
   const bytes = await renderDocumentPdf({
@@ -74,7 +62,6 @@ export async function deliveryNotePdf(writer: Writer, id: string): Promise<Respo
     dueLabel: null,
     dueDate: null,
     status: STATUSES[String(note.status)] ?? String(note.status),
-    meta: [`Clase ${kind}`, `Origen ${textOf(note.from_name) ?? '—'}`, `Destino ${textOf(note.to_name) ?? '—'}`],
     partyLabel: 'Cliente',
     seller,
     profile,
@@ -82,7 +69,7 @@ export async function deliveryNotePdf(writer: Writer, id: string): Promise<Respo
     customerName: customer?.legalName ?? '—',
     shipTo: shipToFrom(note.ship_to),
     customerReferences: textOf(note.customer_references),
-    description: textOf(note.notes),
+    description: textOf(note.customer_note),
     lines: rows,
     priced,
     totals: priced ? valuedTotals(rows) : null,

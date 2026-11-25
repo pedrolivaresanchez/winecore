@@ -138,6 +138,7 @@ async function loadedInvoice(
     })),
     legalMentions: [],
     notes: view.header.notes,
+    customerNote: view.header.customerNote,
     incoterm: view.header.incoterm,
     paymentMethod: view.header.paymentMethod,
     rectifications: view.rectifications.map((row) => ({

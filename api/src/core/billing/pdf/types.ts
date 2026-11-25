@@ -105,7 +105,10 @@ export interface IssuedInvoice {
   totalToPay: string;
   dues: readonly InvoiceDueView[];
   legalMentions: readonly string[];
+  /** Nota interna. El PDF no la imprime. */
   notes: string | null;
+  /** Texto explícito para el cliente. Es lo único que sale como «Notas». */
+  customerNote: string | null;
   incoterm: string | null;
   paymentMethod: string | null;
   rectifications: readonly RectificationView[];

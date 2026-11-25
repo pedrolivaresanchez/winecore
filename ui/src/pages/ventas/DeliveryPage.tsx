@@ -35,6 +35,7 @@ import type { Me } from '@/lib/types'
 import { Alert, Button, Input, MenuItem, useToast } from '@/ui'
 import { RecordSkeleton } from '@/components/RecordSkeleton'
 import { DocumentModal } from '@/pages/documents/DocumentModal'
+import { DraftNotes, IssuedInternalNote } from '@/pages/documents/NoteFields'
 import { useDocParam } from '@/pages/documents/use-doc-param'
 import {
   DocLink,
@@ -89,6 +90,8 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
   const [lines, setLines] = useState<DraftLine[]>(() => draftsFrom(note.lines))
   const [shipTo, setShipTo] = useState<ShipToDraft>(() => shipToDraftOf(note.ship_to))
   const [references, setReferences] = useState(note.customer_references ?? '')
+  const [customerNote, setCustomerNote] = useState(note.customer_note ?? '')
+  const [internalNote, setInternalNote] = useState(note.notes ?? '')
   const [tracking, setTracking] = useState(note.tracking_ref ?? '')
   const [dialog, setDialog] = useState<null | 'issue' | 'void' | 'delete' | 'return' | 'incident' | 'skip'>(null)
   const [issueError, setIssueError] = useState<string | null>(null)
@@ -124,6 +127,8 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
       await patchDelivery(note.id, built.ok, {
         ship_to: shipToPayload(shipTo),
         customer_references: referencesPayload(references),
+        notes: internalNote.trim() || null,
+        customer_note: customerNote.trim() || null,
       })
       toast(copy.sales.toast.saved)
       setEditing(false)
@@ -168,6 +173,8 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
                     setLines(draftsFrom(note.lines))
                     setShipTo(shipToDraftOf(note.ship_to))
                     setReferences(note.customer_references ?? '')
+                    setCustomerNote(note.customer_note ?? '')
+                    setInternalNote(note.notes ?? '')
                     setEditing(true)
                     setTab('lines')
                   }}>
@@ -256,6 +263,13 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
               references={references}
               onReferences={setReferences}
             />
+            <DraftNotes
+              idPrefix="albaran"
+              customer={customerNote}
+              internal={internalNote}
+              onCustomer={setCustomerNote}
+              onInternal={setInternalNote}
+            />
           </div>
         ) : (
           <LineTable
@@ -281,7 +295,8 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
               { label: copy.sales.date, value: formatIsoDate(note.issue_date) },
               { label: copy.sales.incoterm, value: note.incoterm || '—' },
               { label: copy.sales.tracking, value: note.tracking_ref || '—' },
-              { label: copy.sales.notes, value: note.notes || '—' },
+              { label: copy.sales.customerNote, value: note.customer_note || '—' },
+              { label: copy.sales.internalNote, value: note.notes || '—' },
               ...shippingRows(note.ship_to, note.customer_references),
               {
                 label: copy.sales.relatedOrder,
@@ -289,6 +304,23 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
               },
             ]}
           />
+          {!draft && canWrite ? (
+            <IssuedInternalNote
+              idPrefix="albaran"
+              value={note.notes ?? ''}
+              busy={busy}
+                    onSave={async (value) => {
+                      try {
+                        await patchDelivery(note.id, null, { notes: value.trim() || null })
+                        toast(copy.sales.toast.saved)
+                        onReload()
+                      } catch (error: unknown) {
+                        toast(errorText(error))
+                        throw error
+                      }
+                    }}
+            />
+          ) : null}
         </div>
       ) : null}
       {tab === 'history' ? <SalesHistory table="sales.delivery_note" id={note.id} /> : null}

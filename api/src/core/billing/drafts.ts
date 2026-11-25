@@ -48,7 +48,7 @@ import { parseCustomerReferences, parseShipTo, shipToRecord } from '../pdf/ship-
 import { raiseIssue } from './issues';
 import type { TaxCode } from './taxCodes';
 import { type StockAlready, writeStockAlready } from './stock-already';
-import { assertEditable } from './wc080';
+import { assertEditable, assertWc080 } from './wc080';
 
 const PAYMENTS = new Set(['transfer', 'direct_debit', 'card', 'cash', 'stripe', 'other']);
 const INCOTERMS = new Set(['EXW', 'FCA', 'CPT', 'CIP', 'DAP', 'DPU', 'DDP', 'FAS', 'FOB', 'CFR', 'CIF']);
@@ -81,6 +81,7 @@ interface CreateInput {
   operationDate: string | null;
   issueDate: string | null;
   notes: string | null;
+  customerNote: string | null;
   incoterm: string | null;
   shipTo: Record<string, string> | null;
   customerReferences: string | null;
@@ -123,6 +124,7 @@ interface Built {
   description: string;
   language: 'es' | 'en';
   notes: string | null;
+  customerNote: string | null;
   incoterm: string | null;
   shipTo: Record<string, string> | null;
   customerReferences: string | null;
@@ -173,6 +175,10 @@ export async function updateDraft(
   now: Date,
 ): Promise<void> {
   const current = await loadHeader(tx, id);
+  if (current.status === 'issued' || current.status === 'voided') {
+    updateIssuedInternalNote(tx, current, raw, user, ifMatch, now);
+    return;
+  }
   assertEditable(current.status);
   if (!ifMatch || !sameVersion(current.updatedAt, ifMatch)) throw domainError('WC_STALE_VERSION');
   if (!can(user, 'billing.write', current.legalEntityId)) throw domainError('WC_FORBIDDEN');
@@ -203,6 +209,38 @@ export async function updateDraft(
       reason: current.stockAlreadyReason,
     }, now);
   }
+}
+
+/** Una factura emitida no cambia su contenido fiscal. La nota interna sí: no se imprime. */
+function updateIssuedInternalNote(
+  tx: Tx,
+  current: Awaited<ReturnType<typeof loadHeader>>,
+  raw: unknown,
+  user: UserCtx,
+  ifMatch: string | null,
+  now: Date,
+): void {
+  if (!ifMatch || !sameVersion(current.updatedAt, ifMatch)) throw domainError('WC_STALE_VERSION');
+  if (!can(user, 'billing.write', current.legalEntityId)) throw domainError('WC_FORBIDDEN');
+  const body = objectBody(raw);
+  const keys = Object.keys(body);
+  if (keys.length !== 1 || keys[0] !== 'notes') {
+    throw domainError('WC080', { notes: 'En una factura emitida solo se cambia la nota interna' });
+  }
+  const notes = optionalShort(body.notes, 'notes');
+  assertWc080(current.status, { notes: current.notes, status: current.status }, { notes, status: current.status });
+  tx.write(sql`
+    UPDATE billing.invoice
+    SET notes = ${notes}, updated_at = ${now}
+    WHERE id = CAST(${current.id} AS UUID)
+  `);
+  tx.audit({
+    table: 'billing.invoice',
+    rowId: current.id,
+    action: 'UPDATE',
+    before: { notes: current.notes },
+    after: { notes },
+  });
 }
 
 export async function discardDraft(
@@ -283,6 +321,7 @@ async function buildNew(tx: Tx, input: CreateInput, now: Date): Promise<Built> {
     description,
     language,
     notes: input.notes,
+    customerNote: input.customerNote,
     incoterm: input.incoterm,
     shipTo: input.shipTo ?? sourced.shipTo,
     customerReferences: input.customerReferences ?? sourced.customerReferences,
@@ -373,6 +412,7 @@ async function buildUpdate(
     description,
     language,
     notes: patch.notes === undefined ? current.notes : patch.notes,
+    customerNote: patch.customerNote === undefined ? current.customerNote : patch.customerNote,
     incoterm: patch.incoterm === undefined ? current.incoterm : patch.incoterm,
     shipTo: patch.shipTo === undefined ? shipToRecord(current.shipTo) : patch.shipTo,
     customerReferences: patch.customerReferences === undefined ? current.customerReferences : patch.customerReferences,
@@ -859,7 +899,7 @@ function insertInvoice(tx: Tx, built: Built, actor: Actor, now: Date): void {
       id, legal_entity_id, series_id, status, invoice_type, rectification_kind,
       issue_date, operation_date, customer_id, channel, sales_order_id,
       billing_rule_set_id, billing_rule_id, billing_rule_trace, currency, language,
-      description, legal_mentions, notes, incoterm, ship_to, customer_references,
+      description, legal_mentions, notes, customer_note, incoterm, ship_to, customer_references,
       subtotal, tax_total, surcharge_total,
       withholding_total, total, payment_method, payment_terms_days, legacy_refs,
       created_by, created_at, updated_at
@@ -883,6 +923,7 @@ function insertInvoice(tx: Tx, built: Built, actor: Actor, now: Date): void {
       ${built.description},
       ${built.mentions},
       ${built.notes},
+      ${built.customerNote},
       ${built.incoterm},
       ${built.shipTo ? sql.json(built.shipTo) : null},
       ${built.customerReferences},
@@ -995,6 +1036,7 @@ function updateHeader(tx: Tx, before: Awaited<ReturnType<typeof loadHeader>>, bu
       description = ${built.description},
       legal_mentions = ${built.mentions},
       notes = ${built.notes},
+      customer_note = ${built.customerNote},
       incoterm = ${built.incoterm},
       ship_to = ${built.shipTo ? sql.json(built.shipTo) : null},
       customer_references = ${built.customerReferences},
@@ -1030,6 +1072,7 @@ interface Patch {
   operationDate?: string | null;
   issueDate?: string | null;
   notes?: string | null;
+  customerNote?: string | null;
   incoterm?: string | null;
   shipTo?: Record<string, string> | null;
   customerReferences?: string | null;
@@ -1076,6 +1119,7 @@ function parseCreate(raw: unknown): CreateInput {
     operationDate: optionalDay(pick(body, 'operation_date', 'operationDate'), 'operation_date'),
     issueDate: optionalDay(pick(body, 'issue_date', 'issueDate'), 'issue_date'),
     notes: optionalShort(pick(body, 'notes'), 'notes'),
+    customerNote: optionalShort(pick(body, 'customer_note', 'customerNote'), 'customer_note'),
     incoterm: optionalIncoterm(pick(body, 'incoterm')),
     shipTo: parseShipTo(pick(body, 'ship_to', 'shipTo')),
     customerReferences: parseCustomerReferences(pick(body, 'customer_references', 'customerReferences')),
@@ -1132,6 +1176,9 @@ function parsePatch(raw: unknown, current: { stockAlreadyDeducted: boolean; stoc
     patch.issueDate = optionalDay(pick(body, 'issue_date', 'issueDate'), 'issue_date');
   }
   if (pick(body, 'notes') !== undefined) patch.notes = optionalShort(pick(body, 'notes'), 'notes');
+  if (pick(body, 'customer_note', 'customerNote') !== undefined) {
+    patch.customerNote = optionalShort(pick(body, 'customer_note', 'customerNote'), 'customer_note');
+  }
   if (pick(body, 'incoterm') !== undefined) patch.incoterm = optionalIncoterm(pick(body, 'incoterm'));
   if (pick(body, 'ship_to', 'shipTo') !== undefined) patch.shipTo = parseShipTo(pick(body, 'ship_to', 'shipTo'));
   if (pick(body, 'customer_references', 'customerReferences') !== undefined) {

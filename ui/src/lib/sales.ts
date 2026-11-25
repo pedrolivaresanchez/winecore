@@ -42,6 +42,7 @@ export type Quote = {
   is_proforma: boolean
   incoterm: string | null
   notes: string | null
+  customer_note?: string | null
   ship_to?: unknown
   customer_references?: string | null
   subtotal: string
@@ -85,6 +86,7 @@ export type SalesOrder = {
   issuing_preview: IssuingPreview | null
   currency: string
   notes: string | null
+  customer_note?: string | null
   customer_references?: string | null
   subtotal: string
   tax_total: string
@@ -115,6 +117,7 @@ export type DeliveryNote = {
   cancelled_reason: string | null
   source_delivery_note_id: string | null
   notes: string | null
+  customer_note?: string | null
   lines: SalesLine[]
 }
 

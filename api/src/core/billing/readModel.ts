@@ -41,6 +41,7 @@ export interface HeaderView {
   language: string;
   description: string;
   notes: string | null;
+  customerNote: string | null;
   incoterm: string | null;
   subtotal: string | null;
   taxTotal: string | null;
@@ -226,6 +227,7 @@ export function headerOf(row: Record<string, unknown>): HeaderView {
     language: String(row.language),
     description: String(row.description),
     notes: text(row.notes),
+    customerNote: text(row.customer_note),
     incoterm: text(row.incoterm),
     subtotal: moneyText(row.subtotal),
     taxTotal: moneyText(row.tax_total),
@@ -576,6 +578,7 @@ export function presentInvoice(
     language: header.language,
     description: header.description,
     notes: header.notes,
+    customer_note: header.customerNote,
     no_physical_return: header.noPhysicalReturn,
     return_delivery_note: header.returnDeliveryNote,
     stock_already_deducted: header.stockAlreadyDeducted,

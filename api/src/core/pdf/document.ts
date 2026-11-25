@@ -14,6 +14,7 @@ import {
 import { logPdfFallback, renderFallbackPdf } from './fallback';
 import { customerSpec, issuerSpec, type PartyLike } from './parties';
 import { EMPTY_DOCUMENT_PROFILE, type DocumentProfileView, type DocumentVariant } from './profile';
+import { printableLot, printableStatus } from '../documents/customer-note';
 import { shipToLines, type ShipToView } from './ship-to';
 
 export type DocumentPdfLang = PdfLang;
@@ -193,7 +194,8 @@ export async function renderDocumentPdfStrict(input: DocumentPdfInput): Promise<
   const dateLines: string[] = [];
   if (input.issueDate) dateLines.push(`${labels.date}: ${civilDate(input.issueDate, lang)}`);
   if (input.dueLabel && input.dueDate) dateLines.push(`${input.dueLabel}: ${civilDate(input.dueDate, lang)}`);
-  if (input.status.trim() !== '') dateLines.push(`${labels.status}: ${input.status.trim()}`);
+  const status = printableStatus(input.status, number !== '');
+  if (status !== '') dateLines.push(`${labels.status}: ${status}`);
   const brand = input.seller.tradeName?.trim() ?? '';
   sheet.header({
     title,
@@ -392,7 +394,8 @@ function rowFor(
   const title = (line.description ?? line.sku ?? '—').trim() || '—';
   const detail: string[] = [];
   if (line.sku && line.sku !== title) detail.push(`${labels.ref} ${line.sku}`);
-  if (line.lot) detail.push(`${labels.lot}: ${line.lot}`);
+  const lot = printableLot(line.lot);
+  if (lot) detail.push(`${labels.lot}: ${lot}`);
   const quantity = formatNumber(line.quantity, lang, 3);
   const unit = unitLabel(line.unit, lang);
   const withUnit = `${quantity} ${unit}`.trim();

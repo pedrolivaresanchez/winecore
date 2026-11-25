@@ -104,6 +104,7 @@ export type Invoice = {
   language: string
   description: string | null
   notes: string | null
+  customer_note?: string | null
   stock_already_deducted?: boolean
   stock_already_reason?: string | null
   moves_stock?: boolean

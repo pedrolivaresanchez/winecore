@@ -70,7 +70,8 @@ const invoiceFields = {
   description: z.string().min(1).max(500).optional().describe("Concepto general de la factura (al crearla, por defecto «Venta de vino»)"),
   language: z.enum(["es", "en"]).optional(),
   payment_terms_days: z.number().int().min(0).max(180).optional().describe("Días de vencimiento; por defecto, los del cliente"),
-  notes: z.string().max(2000).optional(),
+  notes: z.string().max(2000).optional().describe("Nota interna. No se imprime en el PDF. También se puede cambiar en una factura emitida"),
+  customer_note: z.string().max(2000).optional().describe("Nota para el cliente. Se imprime en el PDF. Solo en borrador"),
 };
 
 const invoiceCreate = z.object({
@@ -117,6 +118,7 @@ const invoiceChanges = z.object({
   stock_already_reason: z.string().min(3).max(500).nullable().optional().describe("Motivo; obligatorio al marcar stock_already_deducted"),
   ...invoiceFields,
   notes: invoiceFields.notes.nullable(),
+  customer_note: invoiceFields.customer_note.nullable(),
 }).strict();
 
 const invoiceListFilters = {
@@ -399,7 +401,7 @@ export const billingRestTools: readonly AnyTool[] = [
     module: "billing",
     scope: "billing.write",
     title: "Editar borrador de factura",
-    description: "Cambia un borrador (cliente, sociedad, serie, fechas, concepto, idioma, forma y plazo de pago, notas, incoterm, líneas o la marca stock_already_deducted con su motivo) y recalcula los importes. Solo hace falta mandar lo que cambia; si se mandan líneas, sustituyen a todas. Una factura emitida no se edita: se rectifica.",
+    description: "Cambia un borrador (cliente, sociedad, serie, fechas, concepto, idioma, forma y plazo de pago, nota interna, nota para el cliente, incoterm, líneas o la marca stock_already_deducted con su motivo) y recalcula los importes. Solo hace falta mandar lo que cambia; si se mandan líneas, sustituyen a todas. En una factura emitida solo se puede cambiar la nota interna, que no sale en el PDF. El resto se rectifica.",
     input: z.object({ id, changes: invoiceChanges }).strict(),
     route: "PATCH /v1/invoices/:id",
     current: { route: "GET /v1/invoices/:id" },

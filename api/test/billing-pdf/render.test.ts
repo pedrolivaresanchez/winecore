@@ -32,6 +32,7 @@ function build(options: {
   operationDate?: string | null;
   incoterm?: string | null;
   notes?: string | null;
+  customerNote?: string | null;
   registry?: string | null;
   tradeName?: string | null;
   logo?: Uint8Array | null;
@@ -145,6 +146,7 @@ function build(options: {
     })),
     legalMentions: [],
     notes: options.notes ?? null,
+    customerNote: options.customerNote ?? null,
     incoterm: options.incoterm ?? null,
     paymentMethod: 'transfer',
     rectifications: options.rectifications ?? [],
@@ -345,7 +347,8 @@ describe('renderInvoicePdf', () => {
       taxCode: IVA21,
       operationDate: '2026-03-01',
       incoterm: 'FCA',
-      notes: 'Entrega en muelle',
+      notes: 'Nota interna de tarifa distribuidor',
+      customerNote: 'Entrega en muelle',
       registry: 'Tomo 1, folio 1',
       rectifications: [{
         rectifiedNumber: 'CF25-0007',
@@ -360,7 +363,50 @@ describe('renderInvoicePdf', () => {
     expect(text).toContain('Motivo: Devolución');
     expect(text).toContain('Incoterm: FCA');
     expect(text).toContain('Notas: Entrega en muelle');
+    expect(text).not.toContain('tarifa distribuidor');
     expect(text).toContain('Datos registrales: Tomo 1, folio 1');
+  });
+
+  it('la factura y el abono imprimen la nota del cliente y no la interna', async () => {
+    const internal = 'Venta a tarifa distribuidor. Sustituye el borrador anterior 01a1e629-3f4d-79eb-848b-445c7cec883e';
+    const gift = 'Obsequio Pack Navidad 2026 (PACK-NAV-2026)';
+    const made = build({
+      taxCode: IVA21,
+      notes: internal,
+      customerNote: gift,
+      lines: [{ qty: '1', unitPrice: '10.00', description: 'Tinto Ejemplo', lotCode: 'Sin lote' }],
+    });
+    const invoice = await textOf(made, 'es');
+    expect(invoice).toContain('FACTURA #CF26-0001');
+    expect(invoice).toContain(`Notas: ${gift}`);
+    expect(invoice).not.toContain('tarifa distribuidor');
+    expect(invoice).not.toContain('01a1e629');
+    expect(invoice).not.toContain('LOTE');
+    expect(invoice).not.toContain('Sin lote');
+    expect(invoice).not.toContain('Borrador');
+    expect(invoice).not.toContain('PAGADO');
+    expect(invoice).not.toContain('PENDIENTE');
+
+    const credit = await textOf({
+      ...made,
+      invoiceType: 'R1',
+      rectifications: [{
+        rectifiedNumber: 'CF25-0007',
+        rectifiedIssueDate: '2026-02-01',
+        rectifiedIssuerTaxId: 'B00000000',
+        relation: 'rectified',
+        reason: 'Devolución',
+      }],
+    }, 'es');
+    expect(credit).toContain('FACTURA RECTIFICATIVA #CF26-0001');
+    expect(credit).toContain(`Notas: ${gift}`);
+    expect(credit).not.toContain('tarifa distribuidor');
+    expect(credit).not.toContain('01a1e629');
+    expect(credit).not.toContain('LOTE');
+    expect(credit).not.toContain('Sin lote');
+    expect(credit).not.toContain('Borrador');
+    expect(credit).not.toContain('PAGADO');
+    expect(credit).not.toContain('PENDIENTE');
   });
 
   it('titula la rectificativa y la simplificada y sustituye en lugar de rectificar', async () => {

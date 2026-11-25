@@ -40,15 +40,15 @@ const EXTRA_COLUMNS: Record<string, readonly string[]> = {
   "catalog.product": ["for_sale", "merged_into_id"],
   "catalog.wine": ["merged_into_id"],
   // 0042 añade los campos que Holded imprime en sus documentos.
-  "billing.invoice": ["ship_to", "customer_references", "origin", "holded_invoice_id"],
+  "billing.invoice": ["ship_to", "customer_references", "origin", "holded_invoice_id", "customer_note"],
   // 0054: DuckDB no amplía el CHECK de method. Bizum vive en method_alias.
   "finance.payment": ["method_alias"],
   "purchasing.supplier_invoice": ["origin", "holded_invoice_id"],
-  "sales.quote": ["ship_to", "customer_references"],
+  "sales.quote": ["ship_to", "customer_references", "customer_note"],
   "sales.quote_line": ["unit"],
-  "sales.delivery_note": ["customer_references"],
+  "sales.delivery_note": ["customer_references", "customer_note"],
   "sales.delivery_note_line": ["unit"],
-  "sales.sales_order": ["customer_references"],
+  "sales.sales_order": ["customer_references", "customer_note"],
   "sales.sales_order_line": ["unit"],
   // TASK-VIN-002 amplía vineyard.treatment sin reescribir el DDL de referencia.
   "vineyard.treatment": [
@@ -368,8 +368,8 @@ test("el esquema DuckDB reproduce tablas, vistas y columnas de la referencia", a
   expect(migrations[0]).toBe("0001_core.sql");
   expect(migrations).toContain("0002_core_ops.sql");
   expect(migrations).toContain("0016_legacy.sql");
-  expect(migrations.at(-1)).toBe("0054_payment_method_alias.sql");
-  expect(migrations).toHaveLength(53);
+  expect(migrations.at(-1)).toBe("0055_document_notes.sql");
+  expect(migrations).toHaveLength(54);
   await migrate(client);
 
   const refs = referenceObjects(root);

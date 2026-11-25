@@ -35,7 +35,8 @@ import {
   type SalesPage,
 } from '@/lib/sales'
 import type { Me } from '@/lib/types'
-import { Button, DatePicker, Input, MenuItem, Select, Textarea, useToast } from '@/ui'
+import { Button, DatePicker, Input, MenuItem, Select, useToast } from '@/ui'
+import { DraftNotes, IssuedInternalNote } from '@/pages/documents/NoteFields'
 import { DocumentModal } from '@/pages/documents/DocumentModal'
 import { useDocParam } from '@/pages/documents/use-doc-param'
 import { RecordSkeleton } from '@/components/RecordSkeleton'
@@ -89,6 +90,7 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
   const [channel, setChannel] = useState(order.channel)
   const [priceListId, setPriceListId] = useState('')
   const [notesText, setNotesText] = useState(order.notes ?? '')
+  const [customerNote, setCustomerNote] = useState(order.customer_note ?? '')
   const [incoterm, setIncoterm] = useState(order.incoterm ?? '')
   const [orderDate, setOrderDate] = useState(order.order_date)
   const [requested, setRequested] = useState<string | null>(order.requested_date)
@@ -167,6 +169,7 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
         customer_cost_center: costCenter || null,
         incoterm: incoterm || null,
         notes: notesText || null,
+        customer_note: customerNote || null,
         ship_to: shipToPayload({ ...shipTo, country_code: ship }),
         customer_references: referencesPayload(references),
         lines: built.ok,
@@ -215,6 +218,8 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
                     setShipTo(shipToDraftOf(order.ship_to))
                     setShip(shipCountry(order.ship_to))
                     setReferences(order.customer_references ?? '')
+                    setNotesText(order.notes ?? '')
+                    setCustomerNote(order.customer_note ?? '')
                     setEditing(true)
                     setTab('lines')
                   }}>
@@ -335,9 +340,13 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
                   </Field>
                 </>
               ) : null}
-              <Field id="notas-pedido" label={copy.sales.notes}>
-                <Textarea id="notas-pedido" value={notesText} onChange={(event) => setNotesText(event.target.value)} />
-              </Field>
+              <DraftNotes
+                idPrefix="pedido"
+                customer={customerNote}
+                internal={notesText}
+                onCustomer={setCustomerNote}
+                onInternal={setNotesText}
+              />
               <ShippingFields
                 idPrefix="pedido"
                 shipTo={shipTo}
@@ -357,7 +366,8 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
                 { label: copy.sales.requestedDate, value: formatIsoDate(order.requested_date) },
                 { label: copy.sales.incoterm, value: order.incoterm || '—' },
                 { label: copy.sales.shipCountry, value: shipCountry(order.ship_to) || '—' },
-                { label: copy.sales.notes, value: order.notes || '—' },
+                { label: copy.sales.customerNote, value: order.customer_note || '—' },
+                { label: copy.sales.internalNote, value: order.notes || '—' },
                 ...shippingRows(order.ship_to, order.customer_references),
                 {
                   label: copy.sales.relatedQuote,
@@ -378,6 +388,23 @@ function Loaded({ me, order, onReload }: { me: Me; order: SalesOrder; onReload: 
               ]}
             />
           )}
+          {!draft && canWrite ? (
+            <IssuedInternalNote
+              idPrefix="pedido"
+              value={order.notes ?? ''}
+              busy={busy}
+              onSave={async (value) => {
+                try {
+                  await patchOrder(order.id, { notes: value.trim() || null })
+                  toast(copy.sales.toast.saved)
+                  onReload()
+                } catch (error: unknown) {
+                  toast(errorText(error))
+                  throw error
+                }
+              }}
+            />
+          ) : null}
         </div>
       ) : null}
       {tab === 'history' ? <SalesHistory table="sales.sales_order" id={order.id} /> : null}
