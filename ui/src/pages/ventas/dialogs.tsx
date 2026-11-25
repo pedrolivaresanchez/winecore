@@ -45,6 +45,8 @@ import {
 import { useIssuer } from '@/pages/ventas/issuer'
 import { LineEditor } from '@/pages/ventas/lines'
 import { TariffSelect } from '@/pages/ventas/tariff-select'
+import { WarehouseField } from '@/pages/ventas/WarehouseField'
+import { warehouseLabel } from '@/pages/ventas/warehouse'
 import { ShippingFields } from '@/pages/ventas/shipping'
 import { emptyShipTo, referencesPayload, shipToPayload, type ShipToDraft } from '@/lib/shipping'
 
@@ -538,6 +540,20 @@ export function CreateDelivery({
             void submit()
           }}
         >
+          <WarehouseField
+            id="almacen-salida"
+            locations={locations}
+            lots={offer.lots}
+            value={fromId}
+            products={lines.flatMap((line) => {
+              const product = offer.products.find((item) => item.id === line.productId)
+              return product ? [{ id: product.id, label: product.label }] : []
+            })}
+            onChange={(next) => {
+              setFromChoice(next)
+              setLines((current) => current.map((line) => ({ ...line, lotId: '', lotCode: '' })))
+            }}
+          />
           <Field id="tipo-albaran" label={copy.sales.kind}>
             <Select id="tipo-albaran" className="w-full" value={kind} onChange={(event) => setKind(event.target.value as DeliveryKind)}>
               {(['sale', 'consignment', 'transfer', 'return', 'sample'] as const).map((value) => (
@@ -579,22 +595,13 @@ export function CreateDelivery({
             </Field>
           ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
-            <Field id="origen" label={copy.sales.from}>
-              <Select id="origen" className="w-full" value={fromId} onChange={(event) => setFromChoice(event.target.value)}>
-                {locations.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.code}
-                  </option>
-                ))}
-              </Select>
-            </Field>
             {needsTo ? (
               <Field id="destino" label={copy.sales.to}>
                 <Select id="destino" className="w-full" value={toId} onChange={(event) => setToId(event.target.value)}>
                   <option value="">{copy.sales.to}</option>
                   {locations.filter((item) => item.id !== fromId).map((item) => (
                     <option key={item.id} value={item.id}>
-                      {item.code}
+                      {warehouseLabel(item)}
                     </option>
                   ))}
                 </Select>
@@ -705,15 +712,20 @@ export function DeliveryFromOrder({
             void submit()
           }}
         >
-          <Field id="origen-pedido" label={copy.sales.from}>
-            <Select id="origen-pedido" className="w-full" value={fromId} onChange={(event) => setFromChoice(event.target.value)}>
-              {locations.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.code}
-                </option>
-              ))}
-            </Select>
-          </Field>
+          <WarehouseField
+            id="almacen-pedido"
+            locations={locations}
+            lots={lots}
+            value={fromId}
+            products={rows.flatMap((row) => {
+              const name = productName(row.productId)
+              return row.productId ? [{ id: row.productId, label: name }] : []
+            })}
+            onChange={(next) => {
+              setFromChoice(next)
+              setRows((current) => current.map((row) => ({ ...row, lotId: '' })))
+            }}
+          />
           <ul className="grid gap-3">
             {rows.map((row) => {
               const choices = lots.filter((lot) => lot.productId === row.productId && lot.locationId === fromId)

@@ -61,6 +61,10 @@ export interface SalesDocumentItem {
   verifactu: Verifactu | null;
   delivery: Delivery | null;
   api_path: string;
+  /** Tipo de albarán WineCore (venta, muestra…). Null en el resto de documentos. */
+  note_kind: string | null;
+  /** Estado de facturación del albarán WineCore. Null en el resto. */
+  invoicing_status: string | null;
 }
 
 interface Facet {
@@ -153,7 +157,7 @@ export async function listSalesDocuments(writer: Writer, user: UserCtx, url: URL
       SELECT origin, id, number, CAST(issue_date AS VARCHAR) AS issue_date, CAST(due_date AS VARCHAR) AS due_date,
              customer_id, customer_match, customer_name, entity_code,
              CAST(total AS VARCHAR) AS total, CAST(pending AS VARCHAR) AS pending, currency, status,
-             verifactu, delivery, record
+             verifactu, delivery, record, note_kind, invoicing_status
         FROM rows
        WHERE ${common} AND ${originOk} AND ${entityOk} AND ${statusOk}
        ORDER BY ${orderBy(query.sort, query.dir, query.kind)}
@@ -315,15 +319,21 @@ function rowsCte(
     }
     status = 'base';
   }
+  const delivery = query.kind === 'delivery_note';
   return `
     WITH ${ctes.join(',\n')},
     docs AS (
       ${branches.join('\n      UNION ALL\n')}
     ),
     rows AS (
-      SELECT origin, id, number, issue_date, sort_date, due_date, customer_id, customer_match, customer_name,
-             customer_references, entity_code, total, pending, currency, ${status} AS status, verifactu, delivery, record
+      SELECT docs.origin, docs.id, docs.number, docs.issue_date, docs.sort_date, docs.due_date,
+             docs.customer_id, docs.customer_match, docs.customer_name, docs.customer_references,
+             docs.entity_code, docs.total, docs.pending, docs.currency, ${status} AS status,
+             docs.verifactu, docs.delivery, docs.record,
+             ${delivery ? 'meta.kind' : 'CAST(NULL AS VARCHAR)'} AS note_kind,
+             ${delivery ? 'meta.invoicing_status' : 'CAST(NULL AS VARCHAR)'} AS invoicing_status
         FROM docs
+        ${delivery ? "LEFT JOIN sales.delivery_note meta ON docs.origin = 'winecore' AND meta.id = CAST(docs.id AS UUID)" : ''}
     )`;
 }
 
@@ -603,6 +613,8 @@ function itemOf(row: Record<string, unknown>, query: Query): SalesDocumentItem {
     verifactu: oneOf(row.verifactu, VERIFACTU),
     delivery: oneOf(row.delivery, DELIVERIES),
     api_path: apiPath(origin, query, id, String(row.record ?? '')),
+    note_kind: textOrNull(row.note_kind),
+    invoicing_status: textOrNull(row.invoicing_status),
   };
 }
 

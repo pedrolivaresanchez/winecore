@@ -118,13 +118,23 @@ export async function dispatch(tx: Tx, input: { id: string; actor: Actor; tracki
 
 export async function markDelivered(tx: Tx, id: string): Promise<Record<string, unknown>> {
   const note = await loadNote(tx, id);
-  if (String(note.status) !== 'shipped') fail('Solo se entrega un albarán expedido', { status: String(note.status) });
+  const status = String(note.status);
+  if (status !== 'issued' && status !== 'shipped') {
+    fail('Solo se entrega un albarán emitido o enviado', { status });
+  }
+  if (status === 'issued' && await needsEad(tx, note) && !idOrNull(note.emcs_document_id)) {
+    throw domainError('WC_REG_EAD_REQUIRED');
+  }
   const now = new Date();
   tx.write(sql`
-    UPDATE sales.delivery_note SET status = 'delivered', delivered_at = ${now}, updated_at = ${now}
+    UPDATE sales.delivery_note SET
+      status = 'delivered',
+      delivered_at = ${now},
+      shipped_at = COALESCE(shipped_at, ${now}),
+      updated_at = ${now}
     WHERE id = CAST(${id} AS UUID)
   `);
-  tx.audit({ table: 'sales.delivery_note', rowId: id, action: 'UPDATE', before: { status: 'shipped' }, after: { status: 'delivered' } });
+  tx.audit({ table: 'sales.delivery_note', rowId: id, action: 'UPDATE', before: { status }, after: { status: 'delivered' } });
   return presentNote({ ...note, status: 'delivered', delivered_at: now.toISOString() }, await loadLines(tx, id));
 }
 
@@ -470,6 +480,35 @@ export async function patchDelivery(tx: Tx, id: string, raw: unknown): Promise<R
       after: { ship_to: shipTo, customer_references: customerReferences },
     });
     header = { ...header, ship_to: shipTo, customer_references: customerReferences };
+  }
+  if ('from_location_id' in body) {
+    const fields: Record<string, string> = {};
+    const fromId = body.from_location_id == null || body.from_location_id === ''
+      ? null
+      : bodyId(body.from_location_id, 'from_location_id', fields);
+    throwIf(fields);
+    if (!fromId) fail('El almacén de salida es obligatorio', { from_location_id: 'Obligatorio' });
+    const from = await loadLocation(tx, fromId);
+    if (!from.is_active) fail('El almacén de salida no está activo', { from_location_id: fromId });
+    if (!['cellar', 'own_warehouse', 'third_party_warehouse'].includes(from.kind)) {
+      fail('Ese almacén no puede ser el origen', { from_location_id: fromId });
+    }
+    const toId = idOrNull(header.to_location_id);
+    if (toId && toId === fromId) fail('El destino debe ser distinto del origen', { from_location_id: fromId });
+    const now = new Date();
+    tx.write(sql`
+      UPDATE sales.delivery_note
+      SET from_location_id = CAST(${fromId} AS UUID), updated_at = ${now}
+      WHERE id = CAST(${id} AS UUID) AND status = 'draft'
+    `);
+    tx.audit({
+      table: 'sales.delivery_note',
+      rowId: id,
+      action: 'UPDATE',
+      before: { from_location_id: idOf(note.from_location_id) },
+      after: { from_location_id: fromId },
+    });
+    header = { ...header, from_location_id: fromId };
   }
   if (body.lines != null) {
     const parsed = parseDeliveryLines(body.lines);
@@ -984,7 +1023,29 @@ async function loadOrder(tx: Tx, id: string): Promise<Record<string, unknown>> {
 }
 
 async function noteView(db: Pick<Tx, 'read'>, id: string): Promise<Record<string, unknown>> {
-  return presentNote(await loadNote(db, id), await loadLines(db, id));
+  const body = presentNote(await loadNote(db, id), await loadLines(db, id));
+  body.invoice = await linkedInvoice(db, id);
+  return body;
+}
+
+/** Borrador o factura emitida que ya cubre alguna línea. La ficha abre esa factura en vez de crear otra. */
+async function linkedInvoice(
+  db: Pick<Tx, 'read'>,
+  noteId: string,
+): Promise<{ id: string; number: string | null; status: string } | null> {
+  const rows = await db.read<{ id: unknown; number: unknown; status: unknown }>(sql`
+    SELECT i.id, i.number, i.status
+    FROM billing.invoice i
+    JOIN billing.invoice_line l ON l.invoice_id = i.id
+    JOIN sales.delivery_note_line d ON d.id = l.delivery_note_line_id
+    WHERE d.delivery_note_id = CAST(${noteId} AS UUID)
+      AND i.status IN ('draft', 'pending_approval', 'issued')
+    ORDER BY CASE i.status WHEN 'issued' THEN 0 WHEN 'pending_approval' THEN 1 ELSE 2 END, i.created_at DESC
+    LIMIT 1
+  `);
+  const row = rows[0];
+  if (!row) return null;
+  return { id: idOf(row.id), number: textOf(row.number), status: String(row.status) };
 }
 
 function presentNote(note: Record<string, unknown>, lines: NoteLine[]): Record<string, unknown> {

@@ -15,6 +15,7 @@ export function RecordFrame({
   title,
   subtitle,
   badges,
+  lead,
   actions,
   tabs,
   tab,
@@ -26,6 +27,7 @@ export function RecordFrame({
   title: string
   subtitle?: string
   badges?: ReactNode
+  lead?: ReactNode
   actions?: ReactNode
   tabs: { id: string; label: string }[]
   tab: string
@@ -45,6 +47,7 @@ export function RecordFrame({
             <h1 className="text-body font-medium break-words text-ink-900">{title}</h1>
             {subtitle ? <p className="mt-0.5 text-label text-text-secondary">{subtitle}</p> : null}
           </header>
+          {lead}
           {badges ? <div className="flex flex-wrap items-center gap-1.5">{badges}</div> : null}
           <div role="tablist" aria-label={copy.sales.lines} className="scrollbar-none -mx-4 flex gap-1 overflow-x-auto border-b border-border-subtle px-4">
             {tabs.map((item) => (

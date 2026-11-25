@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useEntity } from '@/app/entity-context'
 import { useListedEntity } from '@/lib/listed-entity'
@@ -41,6 +41,8 @@ import { downloadBook } from '@/pages/gastos/api'
 import { currentQuarter, quarterOf } from '@/pages/gastos/catalog'
 import { QuoteConversion } from '@/pages/ventas/QuoteConversion'
 import { SalesHeader, SalesSwitch } from '@/pages/ventas/SalesTabs'
+import { deliveryListChip, listRowInvoiceable } from '@/pages/ventas/delivery-stage'
+import { openInvoiceFromNotes } from '@/pages/ventas/invoice-from-notes'
 import { FRAME_GUTTER } from '@/ui/frame'
 import { DownloadSimple, FileText, Receipt, Send } from '@/ui/icons'
 import {
@@ -238,7 +240,7 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
     total: 130,
     pending: 130,
     due: 120,
-    status: 160,
+    status: kind === 'delivery_note' ? 240 : 160,
     verifactu: 120,
     delivery: 150,
   })
@@ -472,6 +474,19 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
     delivery,
   }
 
+  const invoiceRows = useCallback(async (rows: SalesDocumentItem[]) => {
+    if (rows.length === 0) return
+    try {
+      const id = await openInvoiceFromNotes({
+        noteIds: rows.map((row) => row.id),
+        customerId: rows[0]?.customer.id ?? undefined,
+      })
+      navigate(`/facturas/${id}`)
+    } catch (err: unknown) {
+      toast(err instanceof ApiError ? err.message : copy.api.generic)
+    }
+  }, [navigate, toast])
+
   const columns = useMemo<GridColumn<SalesDocumentItem>[]>(() => {
     const all: (GridColumn<SalesDocumentItem> & { id: ColumnId })[] = [
       {
@@ -515,8 +530,17 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
       {
         id: 'status',
         header: copy.salesDocs.status,
-        filterValue: (row) => row.status_label,
-        cell: (row) => <StatusPill tone={statusTone(row.status)}>{row.status_label}</StatusPill>,
+        filterValue: (row) => (kind === 'delivery_note' ? deliveryListChip(row.status) : row.status_label),
+        cell: (row) => (
+          <span className="flex items-center gap-1.5">
+            <StatusPill tone={statusTone(row.status)}>{kind === 'delivery_note' ? deliveryListChip(row.status) : row.status_label}</StatusPill>
+            {kind === 'delivery_note' && allows(me, 'billing.write') && rowCanInvoice(row) ? (
+              <Button type="button" variant="primary" size="sm" onClick={() => void invoiceRows([row])}>
+                {copy.sales.invoiceNote}
+              </Button>
+            ) : null}
+          </span>
+        ),
       },
       ...(tracked
         ? [
@@ -541,7 +565,7 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
     if (verifactu) shown.delete('verifactu')
     if (delivery) shown.delete('delivery')
     return all.filter((column) => column.id === 'number' || !shown.has(column.id))
-  }, [book, delivery, hidden, kind, tracked, verifactu])
+  }, [book, delivery, hidden, invoiceRows, kind, me, tracked, verifactu])
 
   const choosable = useMemo(() => {
     const ids: ColumnId[] = ['date', 'customer', 'entity', 'total']
@@ -652,6 +676,17 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
   }
 
   const actions: SelectionAction[] = [{ id: 'export', label: copy.lists.bulk.exportCsv, icon: DownloadSimple, onRun: exportSelection }]
+  if (kind === 'delivery_note' && allows(me, 'billing.write')) {
+    const sameCustomer = new Set(chosen.map((row) => row.customer.id)).size <= 1
+    const sameEntity = new Set(chosen.map((row) => row.entity_code)).size <= 1
+    actions.push({
+      id: 'invoice',
+      label: copy.sales.invoiceNote,
+      icon: Receipt,
+      disabled: chosen.length === 0 || !chosen.every(rowCanInvoice) || !sameCustomer || !sameEntity,
+      onRun: () => invoiceRows(chosen),
+    })
+  }
   if (tracked && allows(me, 'billing.write')) {
     actions.push({ id: 'issue', label: copy.salesDocs.issueDrafts, icon: Send, disabled: !issuable, onRun: issueDrafts })
   }
@@ -847,11 +882,11 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
           ) : (
             <ul className="flex flex-col gap-2 p-3">
               {items.map((row) => (
-                <li key={row.id}>
+                <li key={row.id} className="flex items-start gap-2 rounded-2xl border border-border-subtle bg-surface p-3 shadow-(--shadow-card)">
                   <button
                     type="button"
                     onClick={() => openRow(row)}
-                    className="flex w-full items-start gap-3 rounded-2xl border border-border-subtle bg-surface p-3 text-left shadow-(--shadow-card)"
+                    className="flex min-w-0 flex-1 items-start gap-3 text-left"
                   >
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-label font-medium text-ink-900">{row.customer.name || '—'}</span>
@@ -868,9 +903,14 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
                     </span>
                     <span className="flex shrink-0 flex-col items-end gap-1.5">
                       <span className="text-label font-medium tabular-nums text-ink-900">{money(row.total)}</span>
-                      <StatusPill tone={statusTone(row.status)}>{row.status_label}</StatusPill>
+                      <StatusPill tone={statusTone(row.status)}>{kind === 'delivery_note' ? deliveryListChip(row.status) : row.status_label}</StatusPill>
                     </span>
                   </button>
+                  {kind === 'delivery_note' && allows(me, 'billing.write') && rowCanInvoice(row) ? (
+                    <Button type="button" variant="primary" size="sm" onClick={() => void invoiceRows([row])}>
+                      {copy.sales.invoiceNote}
+                    </Button>
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -928,6 +968,17 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
       ) : null}
     </div>
   )
+}
+
+function rowCanInvoice(row: SalesDocumentItem): boolean {
+  return listRowInvoiceable({
+    origin: row.origin,
+    status: row.status,
+    invoicing_status: row.invoicing_status,
+    note_kind: row.note_kind,
+    customerId: row.customer.id,
+    entityCode: row.entity_code,
+  })
 }
 
 function screenOf(book: Book, state: 'loading' | 'empty' | 'list'): string {

@@ -8,6 +8,7 @@ import { iconStroke } from '@/lib/motion'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
 import { InvoiceActions, QuoteActions } from '@/pages/documents/DocumentActions'
+import { DeliveryPrimaryButton, DeliveryStageBar } from '@/pages/ventas/DeliveryProgress'
 import { InvoicePayments } from '@/pages/facturas/CobroDialog'
 import { QuoteTrace } from '@/pages/ventas/QuoteConversion'
 import { PdfActions, PdfPreview } from '@/pages/documents/PdfPreview'
@@ -274,6 +275,14 @@ function Details({
 
       {record.source === 'invoice' ? <InvoiceActions key={record.data.id} me={me} invoice={record.data} onChanged={onChanged} /> : null}
       {record.source === 'quote' ? <QuoteActions key={record.data.id} me={me} quote={record.data} onChanged={onChanged} /> : null}
+      {record.source === 'delivery' ? (
+        <div className="grid gap-3">
+          <DeliveryStageBar note={record.data} />
+          <div>
+            <DeliveryPrimaryButton me={me} note={record.data} onDone={onChanged} />
+          </div>
+        </div>
+      ) : null}
       {record.source === 'quote' || (record.source === 'holded-document' && record.data.kind === 'quote') ? (
         <QuoteTrace id={record.data.id} />
       ) : null}

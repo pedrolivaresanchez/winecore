@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { copy } from '@/i18n'
 import { ApiError, api, isAbortError } from '@/lib/api'
-import { deliveryStatusLabel, docPath, lineBase, orderStatusLabel, quoteStatusLabel, statusTone as salesTone, type DeliveryNote, type Quote, type SalesOrder } from '@/lib/sales'
+import { docPath, lineBase, orderStatusLabel, quoteStatusLabel, statusTone as salesTone, type DeliveryNote, type Quote, type SalesOrder } from '@/lib/sales'
+import { deliveryStage } from '@/pages/ventas/delivery-stage'
 import { statusTone as commonTone, type StatusTone } from '@/lib/status-tones'
 import type { Me } from '@/lib/types'
 import { collectionFace, day, entityLabel, hasAmount, invoiceTitle, money, qty, statusLabel, statusTone as invoiceTone } from '@/pages/facturas/format'
@@ -305,7 +306,10 @@ function deliveryView(data: DeliveryNote, me: Me, partyName: string | null): Doc
     kind: copy.documents.kinds.delivery,
     holded: false,
     entity: entityOf(me, data.legal_entity_id),
-    status: { label: deliveryStatusLabel(data.status), tone: salesTone(data.status) },
+    status: {
+      label: deliveryStage({ status: data.status, invoicingStatus: data.invoicing_status, kind: data.kind, customerId: data.customer_id }).chip,
+      tone: salesTone(data.invoicing_status === 'invoiced' ? 'invoiced' : data.status),
+    },
     party: data.customer_id ? { label: copy.documents.customer, name: partyName ?? '—', contactId: data.customer_id } : null,
     dates: [{ label: copy.documents.issueDate, value: day(data.issue_date) }],
     totals: [],

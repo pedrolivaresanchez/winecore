@@ -7,7 +7,7 @@ import { listStock, type StockItem } from '@/lib/sales'
 export type CatalogCustomer = { id: string; name: string; country: string; taxId: string | null; city: string | null }
 export type CatalogProduct = { id: string; sku: string; label: string; requiresLot?: boolean }
 export type CatalogLot = { id: string; code: string; productId: string; locationId: string; qty: number }
-export type CatalogLocation = { id: string; code: string }
+export type CatalogLocation = { id: string; code: string; name?: string }
 
 export function useSalesCatalog(aliases?: ReadonlyMap<string, string>) {
   const [customers, setCustomers] = useState<CatalogCustomer[]>([])
@@ -168,6 +168,8 @@ type OfferTax = {
 
 export type TaxRate = { rate: number; surcharge: number }
 
+type OfferPlace = { id: string; code: string; name: string }
+
 type OfferLot = {
   id: string
   code: string
@@ -210,7 +212,7 @@ export function useSalesOffer(query: SalesOfferQuery | null) {
     if (date) params.set('date', date)
     if (priceListId) params.set('price_list_id', priceListId)
     setLoading(true)
-    api<{ products: OfferProduct[]; lots: OfferLot[]; taxes?: OfferTax[] }>(`/v1/sales/catalog?${params}`, { signal: controller.signal })
+    api<{ products: OfferProduct[]; lots: OfferLot[]; taxes?: OfferTax[]; locations?: OfferPlace[] }>(`/v1/sales/catalog?${params}`, { signal: controller.signal })
       .then((body) => {
         if (!active) return
         const nextPrices = new Map<string, string>()
@@ -233,6 +235,10 @@ export function useSalesOffer(query: SalesOfferQuery | null) {
         nextProducts.sort((a, b) => a.label.localeCompare(b.label, 'es'))
         const nextLots: CatalogLot[] = []
         const places = new Map<string, CatalogLocation>()
+        for (const place of body.locations ?? []) {
+          if (!place.id) continue
+          places.set(place.id, { id: place.id, code: place.code, name: place.name })
+        }
         for (const lot of body.lots ?? []) {
           if (!lot.product_id || !lot.location_id) continue
           const qty = Number(lot.qty_units)

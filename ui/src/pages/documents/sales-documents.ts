@@ -25,6 +25,8 @@ export type SalesDocumentItem = {
   verifactu: VerifactuState | null
   delivery: DeliveryState | null
   api_path: string
+  note_kind?: string | null
+  invoicing_status?: string | null
 }
 
 export type SalesFacet = { value: string; label: string; count: number }
