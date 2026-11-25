@@ -8,7 +8,7 @@ describe('venta bodega', () => {
     expect(prefersSimplified({ entityCode: 'CVPO', kind: 'person', taxId: null })).toBe(true)
     expect(prefersSimplified({ entityCode: 'PO', kind: 'person', taxId: null, channel: 'web' })).toBe(false)
     expect(prefersSimplified({ entityCode: 'CVPO', kind: 'company', taxId: null, channel: 'web' })).toBe(false)
-    expect(prefersSimplified({ entityCode: 'CVPO', kind: 'person', taxId: '12345678Z', channel: 'web' })).toBe(false)
+    expect(prefersSimplified({ entityCode: 'CVPO', kind: 'person', taxId: 'B00000000', channel: 'web' })).toBe(false)
     expect(prefersSimplified({ entityCode: 'CVPO', kind: 'person', taxId: null, channel: 'horeca' })).toBe(false)
   })
 
