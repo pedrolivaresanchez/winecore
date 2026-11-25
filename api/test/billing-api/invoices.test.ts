@@ -236,10 +236,18 @@ describe('facturación', () => {
       const frozen = await json(await ctx.app.handle(new Request(`http://localhost/v1/invoices/${invoice.id}`)));
       expect((frozen.customer_snapshot as { name: string }).name).toBe('Cliente Sintetico SL');
 
-      const immutable = await ctx.app.handle(new Request(`http://localhost/v1/invoices/${invoice.id}`, {
+      const internal = await ctx.app.handle(new Request(`http://localhost/v1/invoices/${invoice.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', 'If-Match': String(frozen.updated_at) },
         body: JSON.stringify({ notes: 'cambio' }),
+      }));
+      expect(internal.status).toBe(200);
+      expect((await json(internal)).notes).toBe('cambio');
+      const afterNote = await json(await ctx.app.handle(new Request(`http://localhost/v1/invoices/${invoice.id}`)));
+      const immutable = await ctx.app.handle(new Request(`http://localhost/v1/invoices/${invoice.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'If-Match': String(afterNote.updated_at) },
+        body: JSON.stringify({ description: 'Cambio fiscal' }),
       }));
       expect(immutable.status).toBe(409);
       expect((await json(immutable)).code).toBe('WC080');

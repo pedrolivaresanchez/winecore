@@ -14,6 +14,8 @@ export const ISSUED_MUTABLE = [
   'voided_at',
   'void_reason',
   'updated_at',
+  // Nota interna. No sale en el PDF ni cambia la factura fiscal.
+  'notes',
 ] as const;
 
 const MUTABLE = new Set<string>(ISSUED_MUTABLE);

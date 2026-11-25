@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts, type PDFFont } from 'pdf-lib';
+import { printableStatus } from '../documents/customer-note';
 import type { DocumentPdfInput } from './document';
 import { printable } from './holded-layout';
 
@@ -51,7 +52,8 @@ async function drawFallback(input: DocumentPdfInput): Promise<Uint8Array> {
   y -= 8;
   if (input.issueDate) line(`Fecha: ${input.issueDate}`, regular, 10);
   if (input.dueLabel && input.dueDate) line(`${input.dueLabel}: ${input.dueDate}`, regular, 10);
-  if (input.status.trim() !== '') line(`Estado: ${input.status}`, regular, 10);
+  const status = printableStatus(input.status, (input.number?.trim() ?? '') !== '');
+  if (status !== '') line(`Estado: ${status}`, regular, 10);
   line(`${input.partyLabel}: ${input.customerName}`, bold, 10, 10);
   if (input.description?.trim()) line(input.description.trim().split('\n')[0] ?? '', regular, 10, 8);
 

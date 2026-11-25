@@ -186,7 +186,10 @@ describe('catálogo de ventas y presupuestos', () => {
     const again = await json(ctx, 'POST', `/v1/quotes/${String(created.id)}/accept`, {});
     expect(again.status).toBe('accepted');
 
-    const locked = await call(ctx, 'PATCH', `/v1/quotes/${String(created.id)}`, { notes: 'tarde' });
+    const notedLate = await json(ctx, 'PATCH', `/v1/quotes/${String(created.id)}`, { notes: 'tarde' });
+    expect(notedLate.notes).toBe('tarde');
+    expect(notedLate.status).toBe('accepted');
+    const locked = await call(ctx, 'PATCH', `/v1/quotes/${String(created.id)}`, { channel: 'horeca' });
     expect(locked.status).toBe(422);
     const rejectedLate = await call(ctx, 'POST', `/v1/quotes/${String(created.id)}/reject`, { reason: 'ya aceptado' });
     expect(rejectedLate.status).toBe(422);

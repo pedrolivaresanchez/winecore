@@ -21,7 +21,8 @@ describe('pedido en PDF', () => {
       customer_id: fx.customer,
       channel: 'direct',
       customer_order_ref: 'OC-77',
-      notes: 'Entregar por la mañana',
+      notes: 'Nota interna: tarifa distribuidor, no imprimir',
+      customer_note: 'Entregar por la mañana',
       customer_references: 'PEDIDO 56192401\nCENTRO 0059',
       lines: [{ product_id: fx.product, quantity: '12' }],
     }, { 'Idempotency-Key': `pedido-pdf-${newId()}` });
@@ -37,6 +38,7 @@ describe('pedido en PDF', () => {
     expect(draftText).toContain('OC-77');
     expect(draftText).toContain('PEDIDO 56192401');
     expect(draftText).toContain('Entregar por la mañana');
+    expect(draftText).not.toContain('tarifa distribuidor');
     expect(draftText).toContain('No es una factura');
     expect(draftText).not.toContain('PAGADO');
     expect(draftText).not.toContain('PENDIENTE');
@@ -48,6 +50,11 @@ describe('pedido en PDF', () => {
     const text = pdfLines(new Uint8Array(await pdf.arrayBuffer())).join('\n');
     expect(text).toContain(`PEDIDO #${String(confirmed.number)}`);
     expect(text).toContain('Confirmado');
+    expect(text).toContain('Entregar por la mañana');
+    expect(text).not.toContain('tarifa distribuidor');
+    expect(text).not.toContain('Borrador');
+    expect(text).not.toContain('PAGADO');
+    expect(text).not.toContain('PENDIENTE');
   });
 
   it('responde 404 si el pedido no existe', async () => {

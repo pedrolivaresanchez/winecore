@@ -31,7 +31,8 @@ import {
   type SalesPage,
 } from '@/lib/sales'
 import type { Me } from '@/lib/types'
-import { Button, DatePicker, MenuItem, SegmentedControl, Select, Switch, Textarea, useToast } from '@/ui'
+import { Button, DatePicker, MenuItem, SegmentedControl, Select, Switch, useToast } from '@/ui'
+import { DraftNotes, IssuedInternalNote } from '@/pages/documents/NoteFields'
 import { DocLink, FactList, LineTable, MoreMenu, RecordFrame, SalesHistory, StatusBadge, TotalsBox } from '@/pages/ventas/chrome'
 import { QuoteTrace } from '@/pages/ventas/QuoteConversion'
 import { ReasonDialog } from '@/pages/ventas/dialogs'
@@ -81,6 +82,7 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
   const [incoterm, setIncoterm] = useState(quote.incoterm ?? '')
   const [validUntil, setValidUntil] = useState<string | null>(quote.valid_until)
   const [notesText, setNotesText] = useState(quote.notes ?? '')
+  const [customerNote, setCustomerNote] = useState(quote.customer_note ?? '')
   const [shipTo, setShipTo] = useState<ShipToDraft>(() => shipToDraftOf(quote.ship_to))
   const [references, setReferences] = useState(quote.customer_references ?? '')
   const stamps = useRef<Record<string, string>>({})
@@ -136,6 +138,7 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
     setIncoterm(quote.incoterm ?? '')
     setValidUntil(quote.valid_until)
     setNotesText(quote.notes ?? '')
+    setCustomerNote(quote.customer_note ?? '')
     setShipTo(shipToDraftOf(quote.ship_to))
     setReferences(quote.customer_references ?? '')
     setEditing(true)
@@ -177,6 +180,7 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
         incoterm: incoterm || null,
         valid_until: validUntil,
         notes: notesText || null,
+        customer_note: customerNote || null,
         ship_to: shipToPayload(shipTo),
         customer_references: referencesPayload(references),
         lines: built.ok,
@@ -351,9 +355,13 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
                   ))}
                 </Select>
               </Field>
-              <Field id="notas-presupuesto" label={copy.sales.notes}>
-                <Textarea id="notas-presupuesto" value={notesText} onChange={(event) => setNotesText(event.target.value)} />
-              </Field>
+              <DraftNotes
+                idPrefix="presupuesto"
+                customer={customerNote}
+                internal={notesText}
+                onCustomer={setCustomerNote}
+                onInternal={setNotesText}
+              />
               <ShippingFields
                 idPrefix="presupuesto"
                 shipTo={shipTo}
@@ -371,7 +379,8 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
                 { label: copy.sales.incoterm, value: quote.incoterm || '—' },
                 { label: copy.sales.validUntil, value: formatIsoDate(quote.valid_until) },
                 { label: copy.sales.date, value: formatIsoDate(quote.issue_date) },
-                { label: copy.sales.notes, value: quote.notes || '—' },
+                { label: copy.sales.customerNote, value: quote.customer_note || '—' },
+                { label: copy.sales.internalNote, value: quote.notes || '—' },
                 ...shippingRows(quote.ship_to, quote.customer_references),
                 {
                   label: copy.sales.relatedOrder,
@@ -380,6 +389,23 @@ function Loaded({ me, quote, onReload }: { me: Me; quote: Quote; onReload: () =>
               ]}
             />
           )}
+          {!draft && canWrite ? (
+            <IssuedInternalNote
+              idPrefix="presupuesto"
+              value={quote.notes ?? ''}
+              busy={busy}
+              onSave={async (value) => {
+                try {
+                  await patchQuote(quote.id, { notes: value.trim() || null })
+                  toast(copy.sales.toast.saved)
+                  onReload()
+                } catch (error: unknown) {
+                  toast(errorText(error))
+                  throw error
+                }
+              }}
+            />
+          ) : null}
         </div>
       ) : null}
       {tab === 'history' ? <SalesHistory table="sales.quote" id={quote.id} /> : null}

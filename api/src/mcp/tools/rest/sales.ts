@@ -60,7 +60,8 @@ const quoteFields = {
   is_proforma: z.boolean().optional().describe("true para una factura proforma (no es una factura fiscal)"),
   incoterm: incoterm.optional(),
   valid_until: isoDate.optional().describe("Válido hasta, AAAA-MM-DD"),
-  notes: z.string().max(2000).optional(),
+  notes: z.string().max(2000).optional().describe("Nota interna. No se imprime en el PDF"),
+  customer_note: z.string().max(2000).optional().describe("Nota para el cliente. Se imprime en el PDF"),
   ship_to: shipTo.optional(),
   customer_references: customerReferences.optional(),
 };
@@ -72,7 +73,8 @@ const quoteChanges = z.object({
   is_proforma: z.boolean().optional(),
   incoterm: incoterm.nullable().optional(),
   valid_until: isoDate.nullable().optional(),
-  notes: z.string().max(2000).nullable().optional(),
+  notes: z.string().max(2000).nullable().optional().describe("Nota interna. No se imprime en el PDF"),
+  customer_note: z.string().max(2000).nullable().optional().describe("Nota para el cliente. Se imprime en el PDF. Solo en borrador"),
   ship_to: shipTo.nullable().optional().describe("null quita la dirección de envío"),
   customer_references: customerReferences.nullable().optional(),
   lines: z.array(commercialLine).min(1).optional().describe("Si se manda, sustituye todas las líneas"),
@@ -80,7 +82,7 @@ const quoteChanges = z.object({
 
 const ORDER_KEYS = [
   "customer_id", "channel", "order_date", "requested_date", "customer_order_ref", "customer_department",
-  "customer_cost_center", "external_ref", "ship_to", "incoterm", "notes", "customer_references",
+  "customer_cost_center", "external_ref", "ship_to", "incoterm", "notes", "customer_note", "customer_references",
 ] as const;
 
 const orderText = z.string().max(80);
@@ -97,7 +99,8 @@ const orderChanges = z.object({
   ship_to: shipTo.nullable().optional(),
   customer_references: customerReferences.nullable().optional(),
   incoterm: incoterm.nullable().optional(),
-  notes: z.string().max(2000).nullable().optional(),
+  notes: z.string().max(2000).nullable().optional().describe("Nota interna. No se imprime. En un pedido que ya no es borrador es lo único que se puede cambiar"),
+  customer_note: z.string().max(2000).nullable().optional().describe("Nota para el cliente. Se imprime en el PDF. Solo en borrador"),
   lines: z.array(commercialLine).min(1).optional()
     .describe("Todas las líneas, en el mismo orden y número que ahora (para añadir o quitar, cancela el pedido y crea otro)"),
 }).strict();
@@ -437,7 +440,8 @@ const orderTools: readonly AnyTool[] = [
       ship_to: shipTo.optional(),
       customer_references: customerReferences.optional(),
       incoterm: incoterm.optional().describe("Obligatorio al confirmar si se entrega fuera de España"),
-      notes: z.string().max(2000).optional(),
+      notes: z.string().max(2000).optional().describe("Nota interna. No se imprime en el PDF"),
+      customer_note: z.string().max(2000).optional().describe("Nota para el cliente. Se imprime en el PDF"),
       quote_id: id.optional().describe("Presupuesto del que viene"),
       lines: z.array(commercialLine).min(1),
     }).strict(),
@@ -454,6 +458,8 @@ const orderTools: readonly AnyTool[] = [
     route: "PATCH /v1/sales-orders/:id",
     current: orderCurrent,
     send: (input, current) => {
+      const status = current && typeof current === 'object' && 'status' in current ? String(current.status) : '';
+      if (status !== '' && status !== 'draft') return input.changes;
       const body = patchOnto(current, ORDER_KEYS, input.changes);
       if (input.changes.lines === undefined) body.lines = keptOrderLines(current);
       if (body.ship_to !== undefined && body.ship_to !== null) body.ship_to = objectOf(body.ship_to);
@@ -546,7 +552,8 @@ const orderTools: readonly AnyTool[] = [
       ship_to: shipTo.optional().describe("Sin ella, la del pedido"),
       customer_references: customerReferences.optional().describe("Sin ellas, las del pedido"),
       incoterm: incoterm.optional(),
-      notes: z.string().max(2000).optional(),
+      notes: z.string().max(2000).optional().describe("Nota interna. No se imprime en el PDF"),
+      customer_note: z.string().max(2000).optional().describe("Nota para el cliente. Se imprime en el PDF"),
       lines: z.array(deliveryLine).min(1),
     }).strict(),
     route: "POST /v1/sales-orders/:id/delivery-notes",
@@ -629,7 +636,8 @@ const deliveryTools: readonly AnyTool[] = [
       ship_to: shipTo.optional(),
       customer_references: customerReferences.optional(),
       incoterm: incoterm.optional(),
-      notes: z.string().max(2000).optional(),
+      notes: z.string().max(2000).optional().describe("Nota interna. No se imprime en el PDF"),
+      customer_note: z.string().max(2000).optional().describe("Nota para el cliente. Se imprime en el PDF"),
       lines: z.array(deliveryLine).min(1),
     }).strict(),
     route: "POST /v1/delivery-notes",
@@ -640,11 +648,13 @@ const deliveryTools: readonly AnyTool[] = [
     module: "sales",
     scope: "sales.write",
     title: "Editar albarán",
-    description: "Cambia un albarán en borrador: dirección de envío, referencias del cliente o líneas. Solo hace falta mandar lo que cambia; las líneas, si se mandan, sustituyen a todas (producto o línea de pedido, cantidad, lote, precio, unidad).",
+    description: "Cambia un albarán en borrador: dirección de envío, referencias del cliente, notas o líneas. En uno ya emitido solo se puede cambiar la nota interna, que no sale en el PDF. Las líneas, si se mandan, sustituyen a todas.",
     input: z.object({
       id,
       ship_to: shipTo.nullable().optional().describe("null quita la dirección de envío"),
       customer_references: customerReferences.nullable().optional(),
+      notes: z.string().max(2000).nullable().optional().describe("Nota interna. No se imprime. También se puede cambiar en un albarán emitido"),
+      customer_note: z.string().max(2000).nullable().optional().describe("Nota para el cliente. Se imprime en el PDF. Solo en borrador"),
       lines: z.array(deliveryLine).min(1).optional(),
     }).strict(),
     route: "PATCH /v1/delivery-notes/:id",
@@ -733,7 +743,8 @@ const deliveryTools: readonly AnyTool[] = [
         line_id: id.describe("Línea del albarán original"),
         quantity: decimal.describe("Unidades que vuelven, sin pasar de lo entregado"),
       }).strict()).min(1),
-      notes: z.string().max(2000).optional(),
+      notes: z.string().max(2000).optional().describe("Nota interna. No se imprime en el PDF"),
+      customer_note: z.string().max(2000).optional().describe("Nota para el cliente. Se imprime en el PDF"),
     }).strict(),
     route: "POST /v1/delivery-notes/:id/return",
     current: deliveryCurrent,

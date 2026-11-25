@@ -91,7 +91,7 @@ export async function createSalesOrder(
     INSERT INTO sales.sales_order (
       id, status, invoicing_status, source, channel, customer_id, customer_order_ref,
       customer_department, customer_cost_center, external_ref, order_date, requested_date,
-      ship_to, incoterm, quote_id, billing_rule_trace, currency, notes, customer_references,
+      ship_to, incoterm, quote_id, billing_rule_trace, currency, notes, customer_note, customer_references,
       subtotal, tax_total, total, created_by, created_at, updated_at
     ) VALUES (
       CAST(${id} AS UUID), 'draft', 'not_invoiced', ${input.source}, ${input.channel},
@@ -100,7 +100,7 @@ export async function createSalesOrder(
       CASE WHEN ${input.requestedDate} IS NULL THEN NULL ELSE CAST(${input.requestedDate} AS DATE) END,
       ${input.shipTo ? sql.json(input.shipTo) : null}, ${input.incoterm},
       CASE WHEN ${input.quoteId} IS NULL THEN NULL ELSE CAST(${input.quoteId} AS UUID) END,
-      ${trace ? sql.json(trace) : null}, 'EUR', ${input.notes}, ${input.customerReferences},
+      ${trace ? sql.json(trace) : null}, 'EUR', ${input.notes}, ${input.customerNote}, ${input.customerReferences},
       CAST(${totals.subtotal} AS DECIMAL(14,2)), CAST(${totals.tax_total} AS DECIMAL(14,2)),
       CAST(${totals.total} AS DECIMAL(14,2)), ${actor.id}, ${now}, ${now}
     )
@@ -142,6 +142,7 @@ export async function createSalesOrder(
     billing_rule_trace: trace,
     currency: 'EUR',
     notes: input.notes,
+    customer_note: input.customerNote,
     customer_references: input.customerReferences,
     subtotal: totals.subtotal,
     tax_total: totals.tax_total,
@@ -156,10 +157,38 @@ export async function createSalesOrder(
   return { status: 201, body };
 }
 
+async function patchIssuedOrderNote(
+  tx: Tx,
+  id: string,
+  order: Record<string, unknown>,
+  body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const keys = Object.keys(body);
+  if (keys.length !== 1 || keys[0] !== 'notes') fail('Solo se edita un pedido en borrador', { status: String(order.status) });
+  const fields: Record<string, string> = {};
+  const notes = optionalText(body.notes, 'notes', fields, 2000);
+  throwIf(fields);
+  const now = new Date();
+  tx.write(sql`
+    UPDATE sales.sales_order
+    SET notes = ${notes}, updated_at = ${now}
+    WHERE id = CAST(${id} AS UUID) AND status <> 'draft'
+  `);
+  tx.audit({
+    table: 'sales.sales_order',
+    rowId: id,
+    action: 'UPDATE',
+    before: { notes: textOf(order.notes) },
+    after: { notes },
+  });
+  return presentOrder(tx, { ...order, notes }, await loadLines(tx, id), false);
+}
+
 export async function patchSalesOrder(tx: Tx, id: string, raw: unknown): Promise<Record<string, unknown>> {
   const order = await loadOrder(tx, id);
-  assertDraft(order);
-  const input = await parseOrderBody(tx, raw, false);
+  const body = asRecord(raw);
+  if (String(order.status) !== 'draft') return patchIssuedOrderNote(tx, id, order, body);
+  const input = await parseOrderBody(tx, body, false);
   const customer = await loadCustomer(tx, input.customerId);
   if (!customer.is_customer) fail('El contacto no es cliente', { customer_id: input.customerId });
   await assertChannel(tx, input.channel);
@@ -181,6 +210,7 @@ export async function patchSalesOrder(tx: Tx, id: string, raw: unknown): Promise
     sql`ship_to = ${input.shipTo ? sql.json(input.shipTo) : null}`,
     sql`incoterm = ${input.incoterm}`,
     sql`notes = ${input.notes}`,
+    sql`customer_note = ${input.customerNote}`,
     sql`customer_references = ${input.customerReferences}`,
     sql`subtotal = CAST(${totals.subtotal} AS DECIMAL(14,2))`,
     sql`tax_total = CAST(${totals.tax_total} AS DECIMAL(14,2))`,
@@ -208,6 +238,7 @@ export async function patchSalesOrder(tx: Tx, id: string, raw: unknown): Promise
     ship_to: input.shipTo,
     incoterm: input.incoterm,
     notes: input.notes,
+    customer_note: input.customerNote,
     customer_references: input.customerReferences,
     subtotal: totals.subtotal,
     tax_total: totals.tax_total,
@@ -480,6 +511,7 @@ async function presentOrder(
     issuing_preview: preview,
     currency: String(order.currency),
     notes: textOf(order.notes),
+    customer_note: textOf(order.customer_note),
     customer_references: textOf(order.customer_references),
     subtotal: decOf(order.subtotal).toFixed(2),
     tax_total: decOf(order.tax_total).toFixed(2),
@@ -543,6 +575,7 @@ type OrderInput = {
   shipTo: Record<string, unknown> | null;
   incoterm: string | null;
   notes: string | null;
+  customerNote: string | null;
   customerReferences: string | null;
   quoteId: string | null;
   lines: CommercialLineInput[];
@@ -570,6 +603,7 @@ async function parseOrderBody(tx: Tx, raw: unknown, creating: boolean): Promise<
   const externalRef = optionalText(body.external_ref, 'external_ref', fields, 80);
   const incoterm = parseIncoterm(body.incoterm, 'incoterm', fields);
   const notes = optionalText(body.notes, 'notes', fields, 2000);
+  const customerNote = optionalText(body.customer_note, 'customer_note', fields, 2000);
   let customerReferences: string | null = null;
   try {
     customerReferences = parseCustomerReferences(body.customer_references);
@@ -605,6 +639,7 @@ async function parseOrderBody(tx: Tx, raw: unknown, creating: boolean): Promise<
     shipTo,
     incoterm,
     notes,
+    customerNote,
     customerReferences,
     quoteId,
     lines,

@@ -94,6 +94,7 @@ function quoteJson(row: Record<string, unknown>, lines: QuoteLine[]): Record<str
     is_proforma: boolOf(row.is_proforma),
     incoterm: textOf(row.incoterm),
     notes: textOf(row.notes),
+    customer_note: textOf(row.customer_note),
     ship_to: shipToRecord(row.ship_to),
     customer_references: textOf(row.customer_references),
     subtotal: decOf(row.subtotal).toFixed(2),
@@ -135,6 +136,7 @@ export async function createQuote(writer: Writer, request: Request): Promise<{ s
   const isProforma = raw.is_proforma === true;
   const incoterm = parseIncoterm(raw.incoterm, 'incoterm', fields);
   const notes = optionalText(raw.notes, 'notes', fields, 2000);
+  const customerNote = optionalText(raw.customer_note, 'customer_note', fields, 2000);
   const shipTo = parseShipToField(raw.ship_to, fields);
   const customerReferences = parseReferencesField(raw.customer_references, fields);
   const validUntil = parseDate(raw.valid_until, 'valid_until', fields, false);
@@ -163,11 +165,11 @@ export async function createQuote(writer: Writer, request: Request): Promise<{ s
     tx.write(sql`
       INSERT INTO sales.quote (
         id, legal_entity_id, status, customer_id, channel, currency, language, is_proforma,
-        incoterm, notes, ship_to, customer_references, valid_until, subtotal, tax_total, total,
+        incoterm, notes, customer_note, ship_to, customer_references, valid_until, subtotal, tax_total, total,
         created_by, created_at, updated_at
       ) VALUES (
         CAST(${id} AS UUID), CAST(${entityId} AS UUID), 'draft', CAST(${customerId} AS UUID),
-        ${channel}, 'EUR', ${language}, ${isProforma}, ${incoterm}, ${notes},
+        ${channel}, 'EUR', ${language}, ${isProforma}, ${incoterm}, ${notes}, ${customerNote},
         ${shipTo ? sql.json(shipTo) : null}, ${customerReferences},
         CASE WHEN ${validUntil} IS NULL THEN NULL ELSE CAST(${validUntil} AS DATE) END,
         CAST(${totals.subtotal} AS DECIMAL(14,2)), CAST(${totals.tax_total} AS DECIMAL(14,2)),
@@ -206,6 +208,7 @@ export async function createQuote(writer: Writer, request: Request): Promise<{ s
       is_proforma: isProforma,
       incoterm,
       notes,
+      customer_note: customerNote,
       ship_to: shipTo,
       customer_references: customerReferences,
       subtotal: totals.subtotal,
@@ -339,6 +342,7 @@ export async function quoteToOrder(writer: Writer, request: Request, id: string)
       order_date: businessDate(new Date()),
       incoterm: textOf(fresh.incoterm),
       notes: textOf(fresh.notes),
+      customer_note: textOf(fresh.customer_note),
       ship_to: shipToRecord(fresh.ship_to),
       customer_references: textOf(fresh.customer_references),
       quote_id: quoteId,
@@ -415,11 +419,43 @@ async function transitQuote(
   });
 }
 
+async function patchIssuedQuoteNote(
+  writer: Writer,
+  actor: ReturnType<typeof actorOf>,
+  quoteId: string,
+  raw: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const keys = Object.keys(raw);
+  if (keys.length !== 1 || keys[0] !== 'notes') fail('Solo se puede editar un presupuesto en borrador');
+  const fields: Record<string, string> = {};
+  const notes = optionalText(raw.notes, 'notes', fields, 2000);
+  throwIf(fields);
+  return writer.withWrite(actor, async (tx) => {
+    const row = await loadQuote(tx, quoteId);
+    if (String(row.status) === 'draft') fail('Solo se puede editar un presupuesto en borrador');
+    tx.write(sql`
+      UPDATE sales.quote
+      SET notes = ${notes}, updated_at = ${new Date()}
+      WHERE id = CAST(${quoteId} AS UUID) AND status <> 'draft'
+    `);
+    tx.audit({
+      table: 'sales.quote',
+      rowId: quoteId,
+      action: 'UPDATE',
+      before: { notes: textOf(row.notes) },
+      after: { notes },
+    });
+    return quoteJson({ ...row, notes }, await loadQuoteLines(tx, quoteId));
+  });
+}
+
 export async function patchQuote(writer: Writer, request: Request, id: string): Promise<Record<string, unknown>> {
   const user = sessionOf(request);
   const quoteId = pathId(id);
   const raw = asRecord(await readJson(request));
   const actor = actorOf(user, request);
+  const existing = await loadQuote(writer, quoteId);
+  if (String(existing.status) !== 'draft') return patchIssuedQuoteNote(writer, actor, quoteId, raw);
   const reading: Tx = {
     read: (statement) => writer.read(statement),
     write() {
@@ -452,6 +488,7 @@ export async function patchQuote(writer: Writer, request: Request, id: string): 
           is_proforma = ${plan.isProforma},
           incoterm = ${plan.incoterm},
           notes = ${plan.notes},
+          customer_note = ${plan.customerNote},
           ship_to = ${plan.shipTo ? sql.json(plan.shipTo) : null},
           customer_references = ${plan.customerReferences},
           valid_until = CASE WHEN ${plan.validUntil} IS NULL THEN NULL ELSE CAST(${plan.validUntil} AS DATE) END,
@@ -470,6 +507,7 @@ export async function patchQuote(writer: Writer, request: Request, id: string): 
           is_proforma = ${plan.isProforma},
           incoterm = ${plan.incoterm},
           notes = ${plan.notes},
+          customer_note = ${plan.customerNote},
           ship_to = ${plan.shipTo ? sql.json(plan.shipTo) : null},
           customer_references = ${plan.customerReferences},
           valid_until = CASE WHEN ${plan.validUntil} IS NULL THEN NULL ELSE CAST(${plan.validUntil} AS DATE) END,
@@ -500,6 +538,7 @@ export async function patchQuote(writer: Writer, request: Request, id: string): 
       is_proforma: plan.isProforma,
       incoterm: plan.incoterm,
       notes: plan.notes,
+      customer_note: plan.customerNote,
       ship_to: plan.shipTo,
       customer_references: plan.customerReferences,
       valid_until: plan.validUntil,
@@ -543,6 +582,8 @@ async function prepareQuotePatch(tx: Tx, quoteId: string, raw: Record<string, un
   if (has('incoterm')) incoterm = parseIncoterm(raw.incoterm, 'incoterm', fields);
   let notes = textOf(row.notes);
   if (has('notes')) notes = optionalText(raw.notes, 'notes', fields, 2000);
+  let customerNote = textOf(row.customer_note);
+  if (has('customer_note')) customerNote = optionalText(raw.customer_note, 'customer_note', fields, 2000);
   let shipTo = shipToRecord(row.ship_to);
   if (has('ship_to')) shipTo = parseShipToField(raw.ship_to, fields);
   let customerReferences = textOf(row.customer_references);
@@ -556,7 +597,7 @@ async function prepareQuotePatch(tx: Tx, quoteId: string, raw: Record<string, un
   const channelChanged = channel !== String(row.channel);
   const replaceLines = has('lines');
   const reprice = replaceLines || customerChanged || channelChanged;
-  if (!reprice && !has('language') && !has('is_proforma') && !has('incoterm') && !has('notes') && !has('valid_until')
+  if (!reprice && !has('language') && !has('is_proforma') && !has('incoterm') && !has('notes') && !has('customer_note') && !has('valid_until')
     && !has('ship_to') && !has('customer_references')) {
     return null;
   }
@@ -613,6 +654,7 @@ async function prepareQuotePatch(tx: Tx, quoteId: string, raw: Record<string, un
     isProforma,
     incoterm,
     notes,
+    customerNote,
     shipTo,
     customerReferences,
     validUntil,

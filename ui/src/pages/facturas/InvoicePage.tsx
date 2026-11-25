@@ -12,7 +12,7 @@ import { ApiError } from '@/lib/api'
 import { formatDateTime } from '@/lib/format'
 import { allows } from '@/lib/permissions'
 import type { Me } from '@/lib/types'
-import { Alert, Button, DatePicker, Input, MenuItem, Select, Skeleton, Textarea, useToast } from '@/ui'
+import { Alert, Button, DatePicker, Input, MenuItem, Select, Skeleton, useToast } from '@/ui'
 import { deleteInvoiceDraft, discardInvoice, issueInvoice, patchInvoice, validateInvoice, voidInvoice } from '@/pages/facturas/api'
 import { CobroButton, InvoicePayments } from '@/pages/facturas/CobroDialog'
 import {
@@ -35,6 +35,7 @@ import type { AuditItem, DeliveryStatus, Invoice, LineDraft, ValidationResult, V
 import { RecordSkeleton } from '@/components/RecordSkeleton'
 import { ShippingFields } from '@/pages/ventas/shipping'
 import { referencesPayload, shipToDraftOf, shipToPayload, shippingRows, type ShipToDraft } from '@/lib/shipping'
+import { DraftNotes, IssuedInternalNote } from '@/pages/documents/NoteFields'
 import { PdfActions, PdfPreview } from '@/pages/documents/PdfPreview'
 import { usePdf } from '@/pages/documents/pdf'
 
@@ -80,6 +81,7 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
   const [description, setDescription] = useState(invoice.description ?? '')
   const [language, setLanguage] = useState(invoice.language === 'en' ? 'en' : 'es')
   const [notes, setNotes] = useState(invoice.notes ?? '')
+  const [customerNote, setCustomerNote] = useState(invoice.customer_note ?? '')
   const [operationDate, setOperationDate] = useState<string | null>(invoice.operation_date)
   const [shipTo, setShipTo] = useState<ShipToDraft>(() => shipToDraftOf(invoice.ship_to))
   const [references, setReferences] = useState(invoice.customer_references ?? '')
@@ -103,6 +105,7 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
     setDescription(invoice.description ?? '')
     setLanguage(invoice.language === 'en' ? 'en' : 'es')
     setNotes(invoice.notes ?? '')
+    setCustomerNote(invoice.customer_note ?? '')
     setOperationDate(invoice.operation_date)
     setShipTo(shipToDraftOf(invoice.ship_to))
     setReferences(invoice.customer_references ?? '')
@@ -123,6 +126,7 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
         description: description.trim(),
         language,
         notes: notes.trim() || null,
+        customer_note: customerNote.trim() || null,
         operation_date: operationDate,
         ship_to: shipToPayload(shipTo),
         customer_references: referencesPayload(references),
@@ -264,7 +268,8 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
     })
   }
   if (invoice.void_reason) facts.push({ label: copy.facturas.voidReason, value: invoice.void_reason })
-  if (invoice.notes) facts.push({ label: copy.facturas.notes, value: invoice.notes })
+  facts.push({ label: copy.facturas.customerNote, value: invoice.customer_note || '—' })
+  facts.push({ label: copy.facturas.internalNote, value: invoice.notes || '—' })
   facts.push(...shippingRows(invoice.ship_to, invoice.customer_references))
 
   return (
@@ -386,9 +391,14 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
                 <Field id="operacion-factura" label={copy.facturas.operationDate}>
                   <DatePicker value={operationDate} labels={DATE_LABELS} onChange={setOperationDate} />
                 </Field>
-                <Field id="notas-factura" label={copy.facturas.notes}>
-                  <Textarea id="notas-factura" rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} />
-                </Field>
+                <DraftNotes
+                  idPrefix="factura"
+                  customer={customerNote}
+                  internal={notes}
+                  onCustomer={setCustomerNote}
+                  onInternal={setNotes}
+                  labels={copy.facturas}
+                />
                 <ShippingFields
                   idPrefix="factura"
                   shipTo={shipTo}
@@ -410,6 +420,24 @@ function Loaded({ me, invoice, onReload }: { me: Me; invoice: Invoice; onReload:
                 <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_20rem]">
                   <div className="grid gap-4">
                     <FactList rows={facts} />
+                    {issued && canWrite ? (
+                      <IssuedInternalNote
+                        idPrefix="factura"
+                        value={invoice.notes ?? ''}
+                        busy={busy}
+                        labels={copy.facturas}
+                        onSave={async (value) => {
+                          try {
+                            await patchInvoice(invoice.id, invoice.updated_at, { notes: value.trim() || null })
+                            toast(copy.sales.toast.saved)
+                            onReload()
+                          } catch (error: unknown) {
+                            toast(error instanceof ApiError ? error.message : copy.api.generic)
+                            throw error
+                          }
+                        }}
+                      />
+                    ) : null}
                     <TaxBreakdown invoice={invoice} />
                   </div>
                   <div className="grid gap-4">

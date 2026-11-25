@@ -143,6 +143,7 @@ export function sampleInvoice(options: {
     })),
     legalMentions: [],
     notes: null,
+    customerNote: null,
     incoterm: null,
     paymentMethod: 'transfer',
     rectifications: corrective
@@ -208,7 +209,7 @@ export function sampleDocument(options: {
       line_base: money.toString(base),
       tax_code: 'IVA21',
       tax_rate: '21',
-      lot: quote ? null : line.lotCode ?? 'Sin lote',
+      lot: quote ? null : line.lotCode,
     };
   });
   const subtotal = lines.reduce((sum, line) => money.add(sum, money.fromString(line.line_base ?? '0')), money.fromString('0'));
@@ -227,7 +228,7 @@ export function sampleDocument(options: {
     status: order
       ? (english ? 'Confirmed' : 'Confirmado')
       : quote ? (english ? 'Sent' : 'Enviado') : (english ? 'Issued' : 'Emitido'),
-    meta: order ? [english ? 'Channel Direct' : 'Canal Venta directa'] : quote ? [] : [english ? 'Type Sale' : 'Clase Venta'],
+    meta: order ? [english ? 'Channel Direct' : 'Canal Venta directa'] : [],
     partyLabel: english ? 'Customer' : 'Cliente',
     seller: options.seller,
     profile: options.profile,

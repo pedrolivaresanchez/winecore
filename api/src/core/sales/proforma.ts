@@ -67,7 +67,7 @@ export async function renderQuotePdf(db: ReadDb, quote: Record<string, unknown>)
     customerName: customer?.legalName ?? (english ? 'Customer' : 'Cliente'),
     shipTo: shipToFrom(quote.ship_to),
     customerReferences: typeof quote.customer_references === 'string' ? quote.customer_references : null,
-    description: typeof quote.notes === 'string' && quote.notes.trim() !== '' ? quote.notes : null,
+    description: typeof quote.customer_note === 'string' && quote.customer_note.trim() !== '' ? quote.customer_note : null,
     lines,
     totals: {
       subtotal: String(quote.subtotal),

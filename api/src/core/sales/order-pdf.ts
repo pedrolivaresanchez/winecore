@@ -47,7 +47,7 @@ export async function renderSalesOrderPdf(db: ReadDb, order: Record<string, unkn
   if (customerRef) meta.push(`Pedido del cliente ${customerRef}`);
   const incoterm = textOf(order.incoterm);
   if (incoterm) meta.push(`Incoterm ${incoterm}`);
-  const notes = textOf(order.notes);
+  const notes = textOf(order.customer_note);
   const bytes = await renderDocumentPdf({
     title: 'Pedido',
     number,

@@ -12,6 +12,7 @@ import {
   type TableRow,
   type TotalRow,
 } from '../../pdf/holded-layout';
+import { printableLot } from '../../documents/customer-note';
 import { customerSpec, issuerSpec } from '../../pdf/parties';
 import { isDocumentVariant, type DocumentVariant } from '../../pdf/profile';
 import { shipToLines } from '../../pdf/ship-to';
@@ -337,7 +338,8 @@ function rowFor(
   const discount = isZeroAmount(line.discountPct) ? '' : formatPercent(line.discountPct, lang);
   const detail: string[] = [];
   if (line.sku) detail.push(`${labels.ref} ${line.sku}`);
-  if (line.lotCode) detail.push(`${labels.lot}: ${line.lotCode}`);
+  const lot = printableLot(line.lotCode);
+  if (lot) detail.push(`${labels.lot}: ${lot}`);
   const quantity = formatNumber(line.quantity, lang, 3);
   const price = formatUnitPrice(line.unitPrice, lang, currency);
   const vat = formatPercent(rate, lang);
@@ -444,7 +446,7 @@ function noteLines(invoice: IssuedInvoice, labels: Labels, lang: InvoiceLang): N
   if (invoice.description.trim() !== '' && invoice.description.trim() !== DEFAULT_DESCRIPTION) {
     extra.push(`${labels.operation}: ${invoice.description.trim()}`);
   }
-  const notes = textLines(invoice.notes);
+  const notes = textLines(invoice.customerNote);
   notes.forEach((line, index) => extra.push(index === 0 ? `${labels.notes}: ${line}` : line));
   if (invoice.issuer.registryData) extra.push(`${labels.registry}: ${invoice.issuer.registryData}`);
   group(extra);

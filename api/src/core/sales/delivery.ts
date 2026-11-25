@@ -221,6 +221,7 @@ export async function createDeliveryNote(tx: Tx, actor: Actor, raw: unknown): Pr
   const channel = typeof body.channel === 'string' ? body.channel : null;
   const incoterm = parseIncoterm(body.incoterm, 'incoterm', fields);
   const notes = optionalText(body.notes, 'notes', fields, 2000);
+  const customerNote = optionalText(body.customer_note, 'customer_note', fields, 2000);
   let customerReferences: string | null = null;
   try {
     customerReferences = parseCustomerReferences(body.customer_references);
@@ -272,7 +273,7 @@ export async function createDeliveryNote(tx: Tx, actor: Actor, raw: unknown): Pr
   tx.write(sql`
     INSERT INTO sales.delivery_note (
       id, legal_entity_id, kind, status, customer_id, sales_order_id, channel, from_location_id,
-      to_location_id, ship_to, customer_references, incoterm, is_valued, notes, created_by, created_at, updated_at
+      to_location_id, ship_to, customer_references, incoterm, is_valued, notes, customer_note, created_by, created_at, updated_at
     ) VALUES (
       CAST(${id} AS UUID), CAST(${entityId} AS UUID), ${kind}, 'draft',
       CASE WHEN ${resolvedCustomer} IS NULL THEN NULL ELSE CAST(${resolvedCustomer} AS UUID) END,
@@ -280,7 +281,7 @@ export async function createDeliveryNote(tx: Tx, actor: Actor, raw: unknown): Pr
       ${resolvedChannel}, CAST(${fromId} AS UUID),
       CASE WHEN ${toId} IS NULL THEN NULL ELSE CAST(${toId} AS UUID) END,
       ${shipTo ? sql.json(shipTo) : null}, ${customerReferences},
-      ${incoterm}, ${valued}, ${notes}, ${actor.id}, ${now}, ${now}
+      ${incoterm}, ${valued}, ${notes}, ${customerNote}, ${actor.id}, ${now}, ${now}
     )
   `);
   const stored = await insertLines(tx, id, parsed, orderId);
@@ -307,6 +308,7 @@ export async function createDeliveryNote(tx: Tx, actor: Actor, raw: unknown): Pr
     delivered_at: null,
     cancelled_reason: null,
     notes,
+    customer_note: customerNote,
   }, stored);
 }
 
@@ -365,6 +367,7 @@ export async function createReturn(tx: Tx, actor: Actor, sourceId: string, raw: 
     from_location_id: fromId,
     to_location_id: toId,
     notes,
+    customer_note: optionalText(body.customer_note, 'customer_note', {}, 2000),
     lines: newLines.map((line) => ({
       id: line.id,
       product_id: line.productId,
@@ -379,11 +382,63 @@ export async function createReturn(tx: Tx, actor: Actor, sourceId: string, raw: 
   });
 }
 
+async function patchIssuedDeliveryNote(
+  tx: Tx,
+  id: string,
+  note: Record<string, unknown>,
+  body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  if (String(note.status) === 'cancelled') throw domainError('WC060');
+  const keys = Object.keys(body);
+  if (keys.length !== 1 || keys[0] !== 'notes') throw domainError('WC060');
+  const fields: Record<string, string> = {};
+  const visible = optionalText(body.notes, 'notes', fields, 2000);
+  throwIf(fields);
+  const notes = storedNote(textOf(note.notes), visible);
+  const now = new Date();
+  tx.write(sql`
+    UPDATE sales.delivery_note
+    SET notes = ${notes}, updated_at = ${now}
+    WHERE id = CAST(${id} AS UUID) AND status <> 'draft' AND status <> 'cancelled'
+  `);
+  tx.audit({
+    table: 'sales.delivery_note',
+    rowId: id,
+    action: 'UPDATE',
+    before: { notes: textOf(note.notes) },
+    after: { notes },
+  });
+  return presentNote({ ...note, notes }, await loadLines(tx, id));
+}
+
 export async function patchDelivery(tx: Tx, id: string, raw: unknown): Promise<Record<string, unknown>> {
   const note = await loadNote(tx, id);
-  if (String(note.status) !== 'draft') throw domainError('WC060');
   const body = asRecord(raw);
+  if (String(note.status) !== 'draft') return patchIssuedDeliveryNote(tx, id, note, body);
   let header = note;
+  if ('notes' in body || 'customer_note' in body) {
+    const fields: Record<string, string> = {};
+    const visible = 'notes' in body ? optionalText(body.notes, 'notes', fields, 2000) : visibleNote(textOf(note.notes));
+    const notes = 'notes' in body ? storedNote(textOf(note.notes), visible) : textOf(note.notes);
+    const customerNote = 'customer_note' in body
+      ? optionalText(body.customer_note, 'customer_note', fields, 2000)
+      : textOf(note.customer_note);
+    throwIf(fields);
+    const now = new Date();
+    tx.write(sql`
+      UPDATE sales.delivery_note
+      SET notes = ${notes}, customer_note = ${customerNote}, updated_at = ${now}
+      WHERE id = CAST(${id} AS UUID) AND status = 'draft'
+    `);
+    tx.audit({
+      table: 'sales.delivery_note',
+      rowId: id,
+      action: 'UPDATE',
+      before: { notes: textOf(note.notes), customer_note: textOf(note.customer_note) },
+      after: { notes, customer_note: customerNote },
+    });
+    header = { ...header, notes, customer_note: customerNote };
+  }
   if ('ship_to' in body || 'customer_references' in body) {
     const fields: Record<string, string> = {};
     let shipTo: Record<string, unknown> | null = shipToJson(note.ship_to);
@@ -414,7 +469,7 @@ export async function patchDelivery(tx: Tx, id: string, raw: unknown): Promise<R
       before: { ship_to: shipToJson(note.ship_to), customer_references: textOf(note.customer_references) },
       after: { ship_to: shipTo, customer_references: customerReferences },
     });
-    header = { ...note, ship_to: shipTo, customer_references: customerReferences };
+    header = { ...header, ship_to: shipTo, customer_references: customerReferences };
   }
   if (body.lines != null) {
     const parsed = parseDeliveryLines(body.lines);
@@ -957,6 +1012,7 @@ function presentNote(note: Record<string, unknown>, lines: NoteLine[]): Record<s
     cancelled_reason: textOf(note.cancelled_reason),
     source_delivery_note_id: link?.source_delivery_note_id ?? null,
     notes: link ? link.user_notes : textOf(note.notes),
+    customer_note: textOf(note.customer_note),
     lines,
   };
 }
@@ -1138,6 +1194,20 @@ async function returnedQty(tx: Tx, sourceId: string, lineId: string): Promise<De
 }
 
 type ReturnLink = { source_delivery_note_id: string; user_notes: string | null; lines: Record<string, string> };
+
+function visibleNote(notes: string | null): string | null {
+  return returnLink(notes)?.user_notes ?? notes;
+}
+
+function storedNote(existing: string | null, next: string | null): string | null {
+  const link = returnLink(existing);
+  if (!link) return next;
+  return JSON.stringify({
+    source_delivery_note_id: link.source_delivery_note_id,
+    user_notes: next,
+    lines: link.lines,
+  });
+}
 
 function returnLink(notes: string | null): ReturnLink | null {
   if (!notes || !notes.startsWith('{')) return null;
