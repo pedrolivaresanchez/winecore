@@ -60,6 +60,9 @@ describe('catálogo de ventas y presupuestos', () => {
     expect(full?.location_code).toBe('BOD');
     expect(Number(full?.qty_units)).toBe(10000);
     expect(lots.some((lot) => lot.id === fx.shortLot)).toBe(true);
+    const places = catalog.locations as { code: string; name: string }[];
+    expect(places.find((place) => place.code === 'BOD')?.name).toBe('Bodega');
+    expect(places.some((place) => place.code === 'TFRP')).toBe(true);
 
     const forbidden = await call(ctx, 'GET', '/v1/sales/catalog', undefined, { 'x-dev-user': 'bodega@winecore.test' });
     expect(forbidden.status).toBe(403);

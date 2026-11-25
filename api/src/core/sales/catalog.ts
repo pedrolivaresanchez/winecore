@@ -44,6 +44,13 @@ export interface CatalogTax {
   surcharge_rate: string;
 }
 
+export interface CatalogPlace {
+  id: string;
+  code: string;
+  name: string;
+  kind: string;
+}
+
 export async function salesCatalog(writer: Writer, url: URL, now: Date): Promise<{
   date: string;
   channel: string | null;
@@ -52,6 +59,7 @@ export async function salesCatalog(writer: Writer, url: URL, now: Date): Promise
   products: CatalogProduct[];
   lots: CatalogLot[];
   taxes: CatalogTax[];
+  locations: CatalogPlace[];
 }> {
   const fields: Record<string, string> = {};
   const channelRaw = url.searchParams.get('channel')?.trim() ?? '';
@@ -95,12 +103,30 @@ export async function salesCatalog(writer: Writer, url: URL, now: Date): Promise
     listId = chosenList;
   }
 
-  const [products, lots, taxes] = await Promise.all([
+  const [products, lots, taxes, locations] = await Promise.all([
     loadProducts(writer, listId, day),
     loadLots(writer),
     loadTaxes(writer),
+    loadPlaces(writer),
   ]);
-  return { date: day, channel, customer_id: customerId, price_list_id: listId, products, lots, taxes };
+  return { date: day, channel, customer_id: customerId, price_list_id: listId, products, lots, taxes, locations };
+}
+
+/** Almacenes de los que puede salir un albarán, con o sin stock. */
+async function loadPlaces(writer: Writer): Promise<CatalogPlace[]> {
+  const rows = await writer.read<Record<string, unknown>>(`
+    SELECT id, code, name, kind
+    FROM inventory.location
+    WHERE is_active
+      AND NOT is_virtual
+      AND kind IN ('cellar', 'own_warehouse', 'third_party_warehouse')
+    ORDER BY CASE code WHEN 'BOD' THEN 0 WHEN 'TFRP' THEN 1 ELSE 2 END, code
+  `);
+  return rows.flatMap((row) => {
+    const id = idOf(row.id);
+    if (!id) return [];
+    return [{ id, code: String(row.code), name: String(row.name), kind: String(row.kind) }];
+  });
 }
 
 async function loadTaxes(writer: Writer): Promise<CatalogTax[]> {

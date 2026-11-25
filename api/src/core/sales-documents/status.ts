@@ -66,7 +66,7 @@ const QUOTE_LABELS: Record<(typeof QUOTE_STATUSES)[number], string> = {
 const DELIVERY_NOTE_LABELS: Record<(typeof DELIVERY_NOTE_STATUSES)[number], string> = {
   draft: 'Borrador',
   issued: 'Emitido',
-  shipped: 'Expedido',
+  shipped: 'Enviado',
   delivered: 'Entregado',
   partially_invoiced: 'Facturado en parte',
   invoiced: 'Facturado',

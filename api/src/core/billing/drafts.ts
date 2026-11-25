@@ -321,7 +321,7 @@ async function buildNew(tx: Tx, input: CreateInput, now: Date): Promise<Built> {
     description,
     language,
     notes: input.notes,
-    customerNote: input.customerNote,
+    customerNote: input.customerNote ?? sourced.customerNote,
     incoterm: input.incoterm,
     shipTo: input.shipTo ?? sourced.shipTo,
     customerReferences: input.customerReferences ?? sourced.customerReferences,
@@ -609,13 +609,14 @@ async function sourceLines(tx: Tx, input: CreateInput, exceptInvoiceId: string |
   salesOrderId: string | null;
   shipTo: Record<string, string> | null;
   customerReferences: string | null;
+  customerNote: string | null;
 }> {
   if (input.fromDeliveryNotes && input.fromOrder) {
     throw domainError('WC_VALIDATION', { from_delivery_notes: 'Indica albaranes o un pedido, no los dos' });
   }
   if (input.fromDeliveryNotes) return linesFromNotes(tx, input.fromDeliveryNotes, exceptInvoiceId);
   if (input.fromOrder) return linesFromOrder(tx, input.fromOrder);
-  return { lines: [], customerId: null, entityId: null, channel: null, salesOrderId: null, shipTo: null, customerReferences: null };
+  return { lines: [], customerId: null, entityId: null, channel: null, salesOrderId: null, shipTo: null, customerReferences: null, customerNote: null };
 }
 
 async function linesFromNotes(tx: Tx, ids: readonly string[], exceptInvoiceId: string | null): Promise<{
@@ -626,6 +627,7 @@ async function linesFromNotes(tx: Tx, ids: readonly string[], exceptInvoiceId: s
   salesOrderId: string | null;
   shipTo: Record<string, string> | null;
   customerReferences: string | null;
+  customerNote: string | null;
 }> {
   const lines: ManualLine[] = [];
   let customerId: string | null = null;
@@ -634,6 +636,7 @@ async function linesFromNotes(tx: Tx, ids: readonly string[], exceptInvoiceId: s
   let salesOrderId: string | null = null;
   let shipTo: Record<string, string> | null = null;
   const references: string[] = [];
+  const printed: string[] = [];
   for (const id of ids) {
     const notes = await tx.read(sql`SELECT * FROM sales.delivery_note WHERE id = CAST(${id} AS UUID)`);
     const note = notes[0];
@@ -642,8 +645,11 @@ async function linesFromNotes(tx: Tx, ids: readonly string[], exceptInvoiceId: s
     if (!['issued', 'shipped', 'delivered'].includes(status)) {
       throw domainError('WC_VALIDATION', { from_delivery_notes: 'El albarán no está emitido' });
     }
+    if (String(note.invoicing_status) === 'not_invoiceable') {
+      throw domainError('WC_VALIDATION', { from_delivery_notes: 'Este albarán no se factura' });
+    }
     if (String(note.invoicing_status) === 'invoiced') {
-      throw domainError('WC_INV_ALREADY_INVOICED');
+      throw await alreadyInvoiced(tx, id, 'El albarán ya está facturado');
     }
     const noteCustomer = note.customer_id == null ? null : idOf(note.customer_id);
     const noteEntity = idOf(note.legal_entity_id);
@@ -660,6 +666,8 @@ async function linesFromNotes(tx: Tx, ids: readonly string[], exceptInvoiceId: s
     shipTo = shipTo ?? shipToRecord(note.ship_to);
     const noteReferences = text(note.customer_references);
     if (noteReferences && !references.includes(noteReferences)) references.push(noteReferences);
+    const printedNote = text(note.customer_note);
+    if (printedNote && !printed.includes(printedNote)) printed.push(printedNote);
     const noteLines = await tx.read(sql`
       SELECT * FROM sales.delivery_note_line
       WHERE delivery_note_id = CAST(${id} AS UUID)
@@ -684,12 +692,21 @@ async function linesFromNotes(tx: Tx, ids: readonly string[], exceptInvoiceId: s
       });
     }
   }
-  return { lines, customerId, entityId, channel, salesOrderId, shipTo, customerReferences: references.length > 0 ? references.join('\n') : null };
+  return {
+    lines,
+    customerId,
+    entityId,
+    channel,
+    salesOrderId,
+    shipTo,
+    customerReferences: references.length > 0 ? references.join('\n') : null,
+    customerNote: printed.length > 0 ? printed.join('\n') : null,
+  };
 }
 
 async function assertLineFree(tx: Tx, lineId: string, exceptInvoiceId: string | null): Promise<void> {
-  const rows = await tx.read<{ status: unknown }>(sql`
-    SELECT i.status
+  const rows = await tx.read<{ status: unknown; invoice_id: unknown }>(sql`
+    SELECT i.status, i.id AS invoice_id
     FROM billing.invoice_line l
     JOIN billing.invoice i ON i.id = l.invoice_id
     WHERE l.delivery_note_line_id = CAST(${lineId} AS UUID)
@@ -699,8 +716,35 @@ async function assertLineFree(tx: Tx, lineId: string, exceptInvoiceId: string | 
   `);
   const row = rows[0];
   if (!row) return;
-  if (String(row.status) === 'issued') throw domainError('WC_INV_ALREADY_INVOICED');
-  throw new DomainError('WC_INV_ALREADY_INVOICED', 409, 'El albarán ya está incluido en otro borrador');
+  const invoiceId = idOf(row.invoice_id);
+  const issued = String(row.status) === 'issued';
+  throw new DomainError(
+    'WC_INV_ALREADY_INVOICED',
+    409,
+    issued ? 'El albarán ya está facturado' : 'El albarán ya está incluido en otro borrador',
+    undefined,
+    { invoice_id: invoiceId },
+  );
+}
+
+async function alreadyInvoiced(tx: Tx, noteId: string, message: string): Promise<DomainError> {
+  const rows = await tx.read<{ invoice_id: unknown }>(sql`
+    SELECT i.id AS invoice_id
+    FROM billing.invoice_line l
+    JOIN billing.invoice i ON i.id = l.invoice_id
+    JOIN sales.delivery_note_line d ON d.id = l.delivery_note_line_id
+    WHERE d.delivery_note_id = CAST(${noteId} AS UUID)
+      AND i.status = 'issued'
+    LIMIT 1
+  `);
+  const invoiceId = rows[0] ? idOf(rows[0].invoice_id) : null;
+  return new DomainError(
+    'WC_INV_ALREADY_INVOICED',
+    409,
+    message,
+    undefined,
+    invoiceId ? { invoice_id: invoiceId } : undefined,
+  );
 }
 
 async function linesFromOrder(tx: Tx, orderId: string): Promise<{
@@ -711,6 +755,7 @@ async function linesFromOrder(tx: Tx, orderId: string): Promise<{
   salesOrderId: string | null;
   shipTo: Record<string, string> | null;
   customerReferences: string | null;
+  customerNote: string | null;
 }> {
   const orders = await tx.read(sql`SELECT * FROM sales.sales_order WHERE id = CAST(${orderId} AS UUID)`);
   const order = orders[0];
@@ -728,6 +773,7 @@ async function linesFromOrder(tx: Tx, orderId: string): Promise<{
     salesOrderId: orderId.toLowerCase(),
     shipTo: shipToRecord(order.ship_to),
     customerReferences: text(order.customer_references),
+    customerNote: text(order.customer_note),
     lines: rows.map((row) => ({
       productId: idOf(row.product_id),
       description: String(row.description),

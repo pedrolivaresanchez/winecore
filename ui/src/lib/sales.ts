@@ -119,6 +119,7 @@ export type DeliveryNote = {
   notes: string | null
   customer_note?: string | null
   lines: SalesLine[]
+  invoice?: { id: string; number: string | null; status: string } | null
 }
 
 export type SalesPage<T> = { items: T[]; next_cursor: string | null }

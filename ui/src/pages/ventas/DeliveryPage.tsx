@@ -14,14 +14,10 @@ import {
   channelLabel,
   createIncident,
   deleteDeliveryDraft,
-  deliverDelivery,
-  deliveryStatusLabel,
   dispatchDelivery,
   docPath,
   errorText,
   formatIsoDate,
-  invoicingLabel,
-  issueDelivery,
   kindLabel,
   markNotInvoiceable,
   patchDelivery,
@@ -32,7 +28,7 @@ import {
   type DeliveryNote,
 } from '@/lib/sales'
 import type { Me } from '@/lib/types'
-import { Alert, Button, Input, MenuItem, useToast } from '@/ui'
+import { Button, Input, MenuItem, useToast } from '@/ui'
 import { RecordSkeleton } from '@/components/RecordSkeleton'
 import { DocumentModal } from '@/pages/documents/DocumentModal'
 import { DraftNotes, IssuedInternalNote } from '@/pages/documents/NoteFields'
@@ -46,12 +42,14 @@ import {
   PhysicalChip,
   RecordFrame,
   SalesHistory,
-  StatusBadge,
 } from '@/pages/ventas/chrome'
 import { IncidentDialog, ReasonDialog, ReturnDialog } from '@/pages/ventas/dialogs'
 import { LineEditor } from '@/pages/ventas/lines'
 import { ShippingFields } from '@/pages/ventas/shipping'
 import { referencesPayload, shipToDraftOf, shipToPayload, shippingRows, type ShipToDraft } from '@/lib/shipping'
+import { DeliveryPrimaryButton, DeliveryStageBar } from '@/pages/ventas/DeliveryProgress'
+import { WarehouseField } from '@/pages/ventas/WarehouseField'
+import { findWarehouse, warehouseLabel } from '@/pages/ventas/warehouse'
 
 export function DeliveryPage({ me }: { me: Me }) {
   const { id = '' } = useParams()
@@ -92,9 +90,9 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
   const [references, setReferences] = useState(note.customer_references ?? '')
   const [customerNote, setCustomerNote] = useState(note.customer_note ?? '')
   const [internalNote, setInternalNote] = useState(note.notes ?? '')
+  const [fromId, setFromId] = useState(note.from_location_id)
   const [tracking, setTracking] = useState(note.tracking_ref ?? '')
-  const [dialog, setDialog] = useState<null | 'issue' | 'void' | 'delete' | 'return' | 'incident' | 'skip'>(null)
-  const [issueError, setIssueError] = useState<string | null>(null)
+  const [dialog, setDialog] = useState<null | 'void' | 'delete' | 'return' | 'incident' | 'skip'>(null)
   const canWrite = allows(me, 'sales.write')
   const canManage = allows(me, 'sales.manage')
   const draft = note.status === 'draft'
@@ -129,6 +127,7 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
         customer_references: referencesPayload(references),
         notes: internalNote.trim() || null,
         customer_note: customerNote.trim() || null,
+        from_location_id: fromId,
       })
       toast(copy.sales.toast.saved)
       setEditing(false)
@@ -146,18 +145,17 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
       backLabel={copy.sales.deliveries}
       title={note.number ?? copy.sales.draft}
       subtitle={`${kindLabel(note.kind)} · ${catalog.customerName(note.customer_id)}`}
+      lead={<DeliveryStageBar note={note} />}
       badges={
         <>
-          <StatusBadge status={note.status} label={deliveryStatusLabel(note.status)} />
-          <StatusBadge status={note.invoicing_status === 'invoiced' ? 'invoiced' : 'draft'} label={invoicingLabel(note.invoicing_status)} />
           {moved ? <PhysicalChip /> : null}
           {needsEad && note.status === 'issued' ? <EadChip /> : null}
         </>
       }
       actions={
-        canWrite ? (
+        canWrite || allows(me, 'billing.write') ? (
           <>
-            {editing ? (
+            {editing && canWrite ? (
               <>
                 <Button type="button" variant="primary" size="sm" loading={busy} onClick={() => void save()}>
                   {busy ? copy.sales.saving : copy.sales.save}
@@ -168,22 +166,19 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
               </>
             ) : (
               <>
-                {draft ? (
+                <DeliveryPrimaryButton me={me} note={note} onDone={onReload} />
+                {draft && canWrite ? (
                   <Button type="button" variant="secondary" size="sm" onClick={() => {
                     setLines(draftsFrom(note.lines))
                     setShipTo(shipToDraftOf(note.ship_to))
                     setReferences(note.customer_references ?? '')
                     setCustomerNote(note.customer_note ?? '')
                     setInternalNote(note.notes ?? '')
+                    setFromId(note.from_location_id)
                     setEditing(true)
                     setTab('lines')
                   }}>
                     {copy.sales.edit}
-                  </Button>
-                ) : null}
-                {draft ? (
-                  <Button type="button" variant="primary" size="sm" onClick={() => { setIssueError(null); setDialog('issue') }}>
-                    {copy.sales.issue}
                   </Button>
                 ) : null}
                 {draft && canWrite && !note.number ? (
@@ -191,31 +186,18 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
                     {copy.sales.deleteDraft}
                   </Button>
                 ) : null}
-                {note.status === 'issued' ? (
-                  <Button
-                    type="button"
-                    variant="primary"
-                    size="sm"
-                    loading={busy}
-                    onClick={() => void run(async () => { await dispatchDelivery(note.id, tracking.trim() || undefined); toast(copy.sales.toast.shipped); onReload() })}
-                  >
-                    {copy.sales.dispatch}
-                  </Button>
-                ) : null}
-                {note.status === 'shipped' ? (
-                  <Button type="button" variant="primary" size="sm" loading={busy} onClick={() => void run(async () => { await deliverDelivery(note.id); toast(copy.sales.toast.delivered); onReload() })}>
-                    {copy.sales.deliver}
-                  </Button>
-                ) : null}
                 <Button type="button" variant="secondary" size="sm" onClick={() => opened.open(note.id)}>
                   {copy.sales.pdf}
                 </Button>
               </>
             )}
-            {(note.status === 'issued' && canManage) || moved ? (
+            {canWrite && (note.status === 'issued' || moved) ? (
               <MoreMenu>
                 {(close) => (
                   <>
+                    {note.status === 'issued' ? (
+                      <MenuItem onClick={() => { close(); void run(async () => { await dispatchDelivery(note.id, tracking.trim() || undefined); toast(copy.sales.toast.shipped); onReload() }) }}>{copy.sales.dispatch}</MenuItem>
+                    ) : null}
                     {note.status === 'issued' && canManage ? (
                       <MenuItem tone="danger" onClick={() => { close(); setDialog('void') }}>{copy.sales.voidDoc}</MenuItem>
                     ) : null}
@@ -246,13 +228,27 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
       {tab === 'lines' ? (
         editing ? (
           <div className="grid gap-5">
+            <WarehouseField
+              id="almacen-albaran"
+              locations={places}
+              lots={offer.lots}
+              value={fromId}
+              products={lines.flatMap((line) => {
+                const product = products.find((item) => item.id === line.productId)
+                return product ? [{ id: product.id, label: product.label }] : []
+              })}
+              onChange={(next) => {
+                setFromId(next)
+                setLines((current) => current.map((line) => ({ ...line, lotId: '', lotCode: '' })))
+              }}
+            />
             <LineEditor
               lines={lines}
               products={products}
               lots={offer.lots}
               locations={places}
               showLot
-              locationId={note.from_location_id}
+              locationId={fromId}
               onChange={setLines}
               onPrice={() => undefined}
             />
@@ -272,10 +268,17 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
             />
           </div>
         ) : (
-          <LineTable
-            lines={note.lines}
-            lotName={(id) => offer.lots.find((lot) => lot.id === id)?.code ?? id.slice(0, 8)}
-          />
+          <div className="grid gap-4">
+            <p className="text-label text-text-secondary">
+              {copy.sales.warehouse}
+              {' · '}
+              <span className="text-ink-900">{warehouseLabel(findWarehouse(places, note.from_location_id) ?? { id: note.from_location_id, code: from })}</span>
+            </p>
+            <LineTable
+              lines={note.lines}
+              lotName={(id) => offer.lots.find((lot) => lot.id === id)?.code ?? id.slice(0, 8)}
+            />
+          </div>
         )
       ) : null}
       {tab === 'summary' ? (
@@ -290,7 +293,7 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
               { label: copy.sales.kind, value: kindLabel(note.kind) },
               { label: copy.sales.customer, value: catalog.customerName(note.customer_id) },
               { label: copy.sales.channel, value: channelLabel(note.channel) },
-              { label: copy.sales.from, value: from },
+              { label: copy.sales.warehouse, value: warehouseLabel(findWarehouse(places, note.from_location_id) ?? { id: note.from_location_id, code: from }) },
               { label: copy.sales.to, value: to },
               { label: copy.sales.date, value: formatIsoDate(note.issue_date) },
               { label: copy.sales.incoterm, value: note.incoterm || '—' },
@@ -325,35 +328,6 @@ function Loaded({ me, note, onReload }: { me: Me; note: DeliveryNote; onReload: 
       ) : null}
       {tab === 'history' ? <SalesHistory table="sales.delivery_note" id={note.id} /> : null}
 
-      <ConfirmDialog
-        open={dialog === 'issue'}
-        title={copy.sales.issueTitle}
-        body={
-          <div data-screen="ventas-emitir" className="grid gap-3">
-            <span>{copy.sales.issueBody}</span>
-            {issueError ? <Alert tone="danger">{issueError}</Alert> : null}
-          </div>
-        }
-        confirmLabel={copy.sales.issue}
-        busy={busy}
-        onClose={() => {
-          if (busy) return
-          setDialog(null)
-          setIssueError(null)
-        }}
-        onConfirm={() => {
-          setBusy(true)
-          setIssueError(null)
-          void issueDelivery(note.id)
-            .then(() => {
-              toast(copy.sales.toast.issued)
-              setDialog(null)
-              onReload()
-            })
-            .catch((error: unknown) => setIssueError(errorText(error)))
-            .finally(() => setBusy(false))
-        }}
-      />
       <ConfirmDialog
         open={dialog === 'delete'}
         title={copy.sales.deleteDraftTitle}
