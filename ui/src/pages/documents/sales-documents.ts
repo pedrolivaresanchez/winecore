@@ -17,6 +17,7 @@ export type SalesDocumentItem = {
   due_date: string | null
   customer: { id: string | null; name: string; match: 'contact' | 'tax_id' | 'name' | null }
   entity_code: string
+  base: string | null
   total: string | null
   pending: string | null
   currency: string
@@ -44,7 +45,7 @@ export type SalesDocumentPage = {
   offset: number
   sort: SalesSort
   dir: 'asc' | 'desc'
-  totals: { amount: string; pending: string }
+  totals: { base: string; amount: string; pending: string }
   facets: { status: SalesFacet[]; entity: SalesFacet[]; origin: SalesFacet[] }
 }
 

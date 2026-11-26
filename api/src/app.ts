@@ -191,7 +191,7 @@ import {
   submitInventoryCountRoute,
 } from './routes/stock-counts';
 import { salesRoutes } from './routes/sales';
-import { getSalesDocuments } from './routes/sales-documents';
+import { getSalesDocuments, getSalesDocumentsExport } from './routes/sales-documents';
 import { SALES_DOCUMENTS_READ } from './core/sales-documents/list';
 import { correctBottled, disposeBottled, stockBalances, stockFiscalBalances, stockInspection, stockMoves, stockWarehouses, unlabeledBottles } from './routes/stock';
 import { putValuationSettings, stockValuation, valuationSettings } from './routes/stock-valuation';
@@ -357,6 +357,9 @@ export function createApp(deps: AppDeps) {
     })
     // Holded y WineCore en una sola lista; cada libro exige su permiso de lectura.
     .get('/v1/sales-documents', ({ request }) => getSalesDocuments(deps.writer, request, guardDeps.now?.() ?? new Date()), {
+      beforeHandle: requireAnyPermission(guardDeps, SALES_DOCUMENTS_READ),
+    })
+    .get('/v1/sales-documents/export', ({ request }) => getSalesDocumentsExport(deps.writer, request, guardDeps.now?.() ?? new Date()), {
       beforeHandle: requireAnyPermission(guardDeps, SALES_DOCUMENTS_READ),
     })
     .get('/v1/reports/sales.csv', ({ request }) => getReport(deps.writer, request, 'sales'), {

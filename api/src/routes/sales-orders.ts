@@ -3,6 +3,7 @@ import { deleteDraft } from '../core/documents/delete-draft';
 import type { Writer } from '../core/db/writer';
 import { actorOf, asRecord, optionalText, pathId, readJson } from '../core/sales/db';
 import { createDeliveryNote } from '../core/sales/delivery';
+import { exportSalesOrders } from '../core/sales/orders-export';
 import { salesOrderPdf } from '../core/sales/order-pdf';
 import {
   cancelSalesOrder,
@@ -18,6 +19,11 @@ import {
 export function getOrders(writer: Writer, request: Request) {
   sessionOf(request);
   return listSalesOrders(writer, request);
+}
+
+export function getOrdersExport(writer: Writer, request: Request) {
+  sessionOf(request);
+  return exportSalesOrders(writer, request);
 }
 
 export async function deleteOrder(writer: Writer, request: Request, id: string) {

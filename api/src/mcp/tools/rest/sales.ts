@@ -389,12 +389,13 @@ const orderTools: readonly AnyTool[] = [
     module: "sales",
     scope: "sales.read",
     title: "Lista de pedidos",
-    description: "Pedidos de venta, del más reciente al más antiguo, con filtros por estado, sociedad, canal y cliente. Paginada con next_cursor.",
+    description: "Pedidos de venta, del más reciente al más antiguo, con filtros por estado, sociedad, canal, cliente y búsqueda. Paginada con next_cursor. totals suma base y total del filtro completo, sin pedidos cancelados.",
     input: z.object({
       status: z.enum(["draft", "confirmed", "partially_delivered", "delivered", "closed", "cancelled"]).optional(),
       entity: id.optional().describe("Id de la sociedad que factura"),
       channel: channel.optional(),
       customer_id: id.optional(),
+      q: z.string().max(120).optional().describe("Número, cliente, referencia o notas"),
       limit,
       cursor: id.optional(),
     }).strict(),
@@ -803,7 +804,7 @@ const listTools: readonly AnyTool[] = [
     scope: "reports.read",
     extraScopes: ["finance.read", "sales.read", "billing.read", "purchasing.read"],
     title: "Documentos de venta",
-    description: "La lista unificada de Holded y WineCore: facturas (de venta o de compra), presupuestos o albaranes, con filtros de estado, sociedad, fechas, cliente y búsqueda, orden, totales y recuentos por estado.",
+    description: "La lista unificada de Holded y WineCore: facturas (de venta o de compra), presupuestos o albaranes, con filtros de estado, sociedad, fechas, cliente y búsqueda, orden, totales y recuentos por estado. Cada fila trae base (sin IVA) y total. totals.base y totals.amount suman el filtro completo y dejan fuera anuladas, canceladas y rechazadas; una rectificativa emitida resta.",
     input: z.object({
       kind: z.enum(["invoice", "quote", "delivery_note"]),
       direction: z.enum(["sale", "purchase"]).optional().describe("purchase solo con facturas (facturas de compra)"),

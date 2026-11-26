@@ -8,10 +8,11 @@ import { NoPermission } from '@/components/NoPermission'
 import { useApi } from '@/hooks/use-api'
 import { useMinWidth } from '@/hooks/use-media'
 import { copy, fill } from '@/i18n'
-import { ApiError, isAbortError } from '@/lib/api'
+import { ApiError, apiBlob, isAbortError } from '@/lib/api'
 import { cn } from '@/lib/cn'
 import { listContacts } from '@/lib/contacts'
 import { downloadCsv } from '@/lib/csv'
+import { downloadBlob } from '@/lib/download'
 import { formatDate, formatMoney } from '@/lib/format'
 import { iconStroke } from '@/lib/motion'
 import { allows } from '@/lib/permissions'
@@ -20,6 +21,8 @@ import { entityTone, originTone, statusTone, type StatusTone } from '@/lib/statu
 import { readStorage, writeStorage } from '@/lib/storage'
 import type { Me } from '@/lib/types'
 import { DocumentModal } from '@/pages/documents/DocumentModal'
+import { ExportMenu } from '@/pages/documents/ExportMenu'
+import { FilteredTotals } from '@/pages/documents/FilteredTotals'
 import { docKey, parseDocKey, type RecordDoc } from '@/pages/documents/doc-key'
 import {
   DELIVERY_STATES,
@@ -72,7 +75,7 @@ import {
 } from '@/ui'
 
 type Book = 'invoice' | 'purchase' | 'quote' | 'delivery_note'
-type ColumnId = 'number' | 'date' | 'customer' | 'entity' | 'total' | 'pending' | 'due' | 'status' | 'verifactu' | 'delivery'
+type ColumnId = 'number' | 'date' | 'customer' | 'entity' | 'base' | 'total' | 'pending' | 'due' | 'status' | 'verifactu' | 'delivery'
 
 const SIZES = [25, 50, 100, 200] as const
 const LIST_KEYS = ['q', 'status', 'entity', 'origin', 'from', 'to', 'year', 'customer', 'verifactu', 'delivery', 'cellar', 'page']
@@ -234,12 +237,13 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
   const [attempt, setAttempt] = useState(0)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [hidden, setHidden] = useState(() => readHidden(book))
-  const [aggregation, setAggregation] = useState<Record<string, GridAggregation | undefined>>({ total: 'sum', pending: 'sum' })
+  const [aggregation, setAggregation] = useState<Record<string, GridAggregation | undefined>>({ base: 'sum', total: 'sum', pending: 'sum' })
   const [widths, setWidths] = useState<Record<string, number>>({
     number: 170,
     date: 110,
     customer: 280,
     entity: 100,
+    base: 130,
     total: 130,
     pending: 130,
     due: 120,
@@ -248,6 +252,7 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
     delivery: 150,
   })
   const [exporting, setExporting] = useState(false)
+  const [listExporting, setListExporting] = useState(false)
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebounced(q.trim()), 300)
@@ -536,6 +541,7 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
         filterValue: (row) => entityName(row.entity_code),
         cell: (row) => <StatusPill tone={entityTone(row.entity_code)}>{entityName(row.entity_code)}</StatusPill>,
       },
+      { id: 'base', header: copy.salesDocs.base, align: 'right', aggregations: ['sum'], cell: (row) => money(row.base) },
       { id: 'total', header: copy.salesDocs.total, align: 'right', sortable: true, aggregations: ['sum'], cell: (row) => money(row.total) },
       ...(kind === 'invoice'
         ? [{ id: 'pending' as const, header: copy.salesDocs.pending, align: 'right' as const, sortable: true, aggregations: ['sum' as const], cell: (row: SalesDocumentItem) => money(row.pending) }]
@@ -584,7 +590,7 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
   }, [book, delivery, hidden, invoiceRows, kind, me, tracked, verifactu])
 
   const choosable = useMemo(() => {
-    const ids: ColumnId[] = ['date', 'customer', 'entity', 'total']
+    const ids: ColumnId[] = ['date', 'customer', 'entity', 'base', 'total']
     if (kind === 'invoice') ids.push('pending')
     if (kind !== 'delivery_note') ids.push('due')
     ids.push('status')
@@ -597,6 +603,7 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
     date: copy.salesDocs.date,
     customer: book === 'purchase' ? copy.salesDocs.supplier : copy.salesDocs.customer,
     entity: copy.salesDocs.entity,
+    base: copy.salesDocs.base,
     total: copy.salesDocs.total,
     pending: copy.salesDocs.pending,
     due: kind === 'quote' ? copy.salesDocs.validUntil : copy.salesDocs.due,
@@ -645,6 +652,7 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
       copy.salesDocs.date,
       columnLabel.customer,
       copy.salesDocs.entity,
+      copy.salesDocs.base,
       copy.salesDocs.total,
       ...(kind === 'invoice' ? [copy.salesDocs.pending] : []),
       ...(kind === 'delivery_note' ? [] : [columnLabel.due]),
@@ -660,6 +668,7 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
         row.issue_date ?? '',
         row.customer.name,
         entityName(row.entity_code),
+        row.base ?? '',
         row.total ?? '',
         ...(kind === 'invoice' ? [row.pending ?? ''] : []),
         ...(kind === 'delivery_note' ? [] : [row.due_date ?? '']),
@@ -705,6 +714,22 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
   }
   if (tracked && allows(me, 'billing.write')) {
     actions.push({ id: 'issue', label: copy.salesDocs.issueDrafts, icon: Send, disabled: !issuable, onRun: issueDrafts })
+  }
+
+  async function exportList(format: 'xlsx' | 'pdf') {
+    setListExporting(true)
+    try {
+      const params = new URLSearchParams(query)
+      params.delete('limit')
+      params.delete('offset')
+      params.set('format', format)
+      const file = await apiBlob(`/v1/sales-documents/export?${params}`)
+      downloadBlob(file.filename ?? `${copy.salesDocs.files[book]}.${format}`, file.blob)
+    } catch (err: unknown) {
+      toast(err instanceof ApiError ? err.message : copy.salesDocs.exportFailed)
+    } finally {
+      setListExporting(false)
+    }
   }
 
   async function exportPeriod() {
@@ -836,6 +861,7 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
             {book === 'delivery_note' && data ? (
               <span className="text-label text-text-secondary">{fill(copy.salesDocs.periodTotal, { total: money(data.totals.amount) })}</span>
             ) : null}
+            <ExportMenu busy={listExporting} onExport={(format) => void exportList(format)} />
             <GlassMenu
               open={columnsMenu.open}
               onOpenChange={columnsMenu.setOpen}
@@ -884,7 +910,11 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
           openRowKey={current?.id ?? null}
           aggregation={aggregation}
           onAggregationChange={(id, value) => setAggregation((now) => ({ ...now, [id]: value ?? undefined }))}
-          aggregationValues={{ total: data ? money(data.totals.amount) : null, pending: data ? money(data.totals.pending) : null }}
+          aggregationValues={{
+            base: data ? money(data.totals.base) : null,
+            total: data ? money(data.totals.amount) : null,
+            pending: data ? money(data.totals.pending) : null,
+          }}
           total={total ?? undefined}
           loading={loading}
           filterLink={gridFilters}
@@ -926,6 +956,7 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
                     </span>
                     <span className="flex shrink-0 flex-col items-end gap-1.5">
                       <span className="text-label font-medium tabular-nums text-ink-900">{money(row.total)}</span>
+                      <span className="text-caption tabular-nums text-text-tertiary">{copy.salesDocs.base} {money(row.base)}</span>
                       <StatusPill tone={statusTone(row.status)}>{kind === 'delivery_note' ? deliveryListChip(row.status) : row.status_label}</StatusPill>
                     </span>
                   </button>
@@ -940,6 +971,14 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
           )}
         </div>
       )}
+
+      {data && items.length > 0 ? (
+        <FilteredTotals
+          base={money(data.totals.base)}
+          total={money(data.totals.amount)}
+          pending={kind === 'invoice' ? money(data.totals.pending) : null}
+        />
+      ) : null}
 
       <Pagination
         page={page}

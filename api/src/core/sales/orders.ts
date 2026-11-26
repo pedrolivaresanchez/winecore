@@ -1,3 +1,5 @@
+import { likePattern } from '../legacy/scope';
+import { NOT_COUNTED } from '../sales-documents/status';
 import { sql } from '../db/sql';
 import type { Actor, Tx, Writer } from '../db/writer';
 import { DomainError, domainError } from '../errors';
@@ -426,14 +428,15 @@ export async function getSalesOrder(writer: Writer, id: string): Promise<Record<
   return orderView(writer, pathId(id));
 }
 
-export async function listSalesOrders(writer: Writer, request: Request): Promise<Record<string, unknown>> {
-  const url = new URL(request.url);
-  const limit = clampLimit(url.searchParams.get('limit'));
+/** Filtros del listado de pedidos, sin el cursor: valen para la página, el pie y la exportación. */
+export function salesOrderFilters(url: URL): { where: string; cursor: string | null } {
   const status = url.searchParams.get('status');
   const entity = url.searchParams.get('entity');
   const channel = url.searchParams.get('channel');
   const cursor = url.searchParams.get('cursor');
   const customer = url.searchParams.get('customer_id');
+  const q = url.searchParams.get('q')?.trim() || '';
+  if (q.length > 120) throw domainError('WC_VALIDATION', { q: 'La búsqueda es demasiado larga' });
   const filters = ['TRUE'];
   if (status) filters.push(`status = ${sql`${status}`}`);
   if (entity && UUID_RE.test(entity)) filters.push(`legal_entity_id = CAST(${sql`${entity}`} AS UUID)`);
@@ -443,18 +446,54 @@ export async function listSalesOrders(writer: Writer, request: Request): Promise
   } else if (entity) throw domainError('WC_VALIDATION', { entity: 'La entidad debe ser P.O, CVPO o su identificador' });
   if (customer && UUID_RE.test(customer)) filters.push(`customer_id = CAST(${sql`${customer}`} AS UUID)`);
   if (channel) filters.push(`channel = ${sql`${channel}`}`);
-  if (cursor) filters.push(`id < CAST(${sql`${cursor}`} AS UUID)`);
-  const rows = await writer.read<Record<string, unknown>>(`
-    SELECT * FROM sales.sales_order
-    WHERE ${filters.join(' AND ')}
-    ORDER BY id DESC
-    LIMIT ${limit + 1}
-  `);
+  if (q) {
+    const pattern = likePattern(q.normalize('NFD').replace(/\p{M}/gu, ''));
+    filters.push(sql`(
+      strip_accents(lower(COALESCE(number, ''))) LIKE ${pattern} ESCAPE '\\'
+      OR strip_accents(lower(COALESCE(customer_order_ref, ''))) LIKE ${pattern} ESCAPE '\\'
+      OR strip_accents(lower(COALESCE(notes, ''))) LIKE ${pattern} ESCAPE '\\'
+      OR customer_id IN (
+        SELECT id FROM party.contact
+        WHERE strip_accents(lower(legal_name)) LIKE ${pattern} ESCAPE '\\'
+      )
+    )`);
+  }
+  return { where: filters.join(' AND '), cursor: cursor && UUID_RE.test(cursor) ? cursor : cursor ? null : null };
+}
+
+export async function listSalesOrders(writer: Writer, request: Request): Promise<Record<string, unknown>> {
+  const url = new URL(request.url);
+  const limit = clampLimit(url.searchParams.get('limit'));
+  const { where, cursor } = salesOrderFilters(url);
+  if (url.searchParams.get('cursor') && !cursor) throw domainError('WC_VALIDATION', { cursor: 'Identificador no válido' });
+  const pageWhere = cursor ? `${where} AND id < CAST(${sql`${cursor}`} AS UUID)` : where;
+  const excluded = NOT_COUNTED.map((status) => sql`${status}`).join(', ');
+  const [rows, stats] = await Promise.all([
+    writer.read<Record<string, unknown>>(`
+      SELECT * FROM sales.sales_order
+      WHERE ${pageWhere}
+      ORDER BY id DESC
+      LIMIT ${limit + 1}
+    `),
+    writer.read<Record<string, unknown>>(`
+      SELECT count(*) AS n,
+             CAST(COALESCE(sum(CASE WHEN status NOT IN (${excluded}) THEN subtotal END), 0) AS VARCHAR) AS base,
+             CAST(COALESCE(sum(CASE WHEN status NOT IN (${excluded}) THEN total END), 0) AS VARCHAR) AS amount
+        FROM sales.sales_order
+       WHERE ${where}
+    `),
+  ]);
   const page = rows.length > limit ? rows.slice(0, limit) : rows;
   const items = [];
   for (const row of page) items.push(await orderView(writer, idOf(row.id), false));
   const last = page[page.length - 1];
-  return { items, next_cursor: rows.length > limit && last ? idOf(last.id) : null };
+  const stat = stats[0];
+  return {
+    items,
+    next_cursor: rows.length > limit && last ? idOf(last.id) : null,
+    total: Number(stat?.n ?? 0),
+    totals: { base: decOf(stat?.base).toFixed(2), amount: decOf(stat?.amount).toFixed(2) },
+  };
 }
 
 export async function orderView(db: Pick<Tx, 'read'>, id: string, withPreview = true): Promise<Record<string, unknown>> {

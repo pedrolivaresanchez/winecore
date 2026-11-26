@@ -30,6 +30,7 @@ import {
   getOrder,
   getOrderPdf,
   getOrders,
+  getOrdersExport,
   patchOrder,
   postCancel,
   postClose,
@@ -99,6 +100,7 @@ export function salesRoutes(writer: Writer, guardDeps: GuardDeps) {
     .delete('/v1/quotes/:id', ({ request, params }) => deleteQuoteById(writer, request, params.id), { beforeHandle: write })
     .get('/v1/quotes/:id', ({ request, params }) => getQuoteById(writer, request, params.id), { beforeHandle: read })
     .get('/v1/sales-orders', ({ request }) => getOrders(writer, request), { beforeHandle: read })
+    .get('/v1/sales-orders/export', ({ request }) => getOrdersExport(writer, request), { beforeHandle: read })
     .post('/v1/sales-orders', async ({ request, set }) => {
       const result = await postOrder(writer, request);
       set.status = result.status;

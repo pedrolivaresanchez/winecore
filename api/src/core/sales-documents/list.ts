@@ -52,6 +52,8 @@ export interface SalesDocumentItem {
   due_date: string | null;
   customer: { id: string | null; name: string; match: ContactMatch | null };
   entity_code: string;
+  /** Base imponible, sin IVA. Null si el documento no está valorado. */
+  base: string | null;
   total: string | null;
   pending: string | null;
   currency: string;
@@ -87,7 +89,7 @@ export interface SalesDocumentPage {
   offset: number;
   sort: Sort;
   dir: 'asc' | 'desc';
-  totals: { amount: string; pending: string };
+  totals: { base: string; amount: string; pending: string };
   facets: { status: Facet[]; entity: Facet[]; origin: Facet[] };
 }
 
@@ -112,8 +114,19 @@ interface Query {
 
 type Codes = { po: boolean; cvpo: boolean };
 
-export async function listSalesDocuments(writer: Writer, user: UserCtx, url: URL, now: Date): Promise<SalesDocumentPage> {
-  const query = parseQuery(url);
+export async function listSalesDocuments(
+  writer: Writer,
+  user: UserCtx,
+  url: URL,
+  now: Date,
+  paging?: { limit?: number; offset?: number },
+): Promise<SalesDocumentPage> {
+  const parsed = parseQuery(url);
+  const query: Query = {
+    ...parsed,
+    limit: paging?.limit ?? parsed.limit,
+    offset: paging?.offset ?? parsed.offset,
+  };
   if (query.entity) legacyScope(user, query.entity);
   const books = readableBooks(user, query.kind, query.direction, legacyScope(user, 'both'));
   const readableOrigins = ORIGINS.filter((origin) => readable(books[origin]));
@@ -140,7 +153,7 @@ export async function listSalesDocuments(writer: Writer, user: UserCtx, url: URL
     offset: query.offset,
     sort: query.sort,
     dir: query.dir,
-    totals: { amount: '0.00', pending: '0.00' },
+    totals: { base: '0.00', amount: '0.00', pending: '0.00' },
     facets: { status: [], entity: [], origin: [] },
   };
 
@@ -150,8 +163,7 @@ export async function listSalesDocuments(writer: Writer, user: UserCtx, url: URL
   const originOk = query.kind === 'invoice' && query.direction !== 'sale' ? `(origin = 'winecore' AND ${askedOrigin})` : askedOrigin;
   const entityOk = query.entity ? sql`entity_code = ${query.entity}` : 'TRUE';
   const statusOk = query.statuses.length > 0 ? `status IN (${query.statuses.map((status) => sql`${status}`).join(', ')})` : 'TRUE';
-  const excluded = NOT_COUNTED.filter((status) => !query.statuses.includes(status));
-  const counted = excluded.length > 0 ? `status NOT IN (${excluded.map((status) => sql`${status}`).join(', ')})` : 'TRUE';
+  const counted = `status NOT IN (${NOT_COUNTED.map((status) => sql`${status}`).join(', ')})`;
   const receivable = `status IN (${RECEIVABLE.map((status) => sql`${status}`).join(', ')})`;
 
   const [listed, stats] = await Promise.all([
@@ -159,7 +171,7 @@ export async function listSalesDocuments(writer: Writer, user: UserCtx, url: URL
       ${rows}
       SELECT origin, id, number, CAST(issue_date AS VARCHAR) AS issue_date, CAST(due_date AS VARCHAR) AS due_date,
              customer_id, customer_match, customer_name, entity_code,
-             CAST(total AS VARCHAR) AS total, CAST(pending AS VARCHAR) AS pending, currency, status,
+             CAST(net AS VARCHAR) AS net, CAST(total AS VARCHAR) AS total, CAST(pending AS VARCHAR) AS pending, currency, status,
              verifactu, delivery, record, note_kind, invoicing_status, invoice_type
         FROM rows
        WHERE ${common} AND ${originOk} AND ${entityOk} AND ${statusOk}
@@ -173,17 +185,19 @@ export async function listSalesDocuments(writer: Writer, user: UserCtx, url: URL
           FROM rows
          WHERE ${common}
       )
-      SELECT 'status' AS facet, status AS value, count(*) AS n, CAST(NULL AS VARCHAR) AS amount, CAST(NULL AS VARCHAR) AS pending
+      SELECT 'status' AS facet, status AS value, count(*) AS n,
+             CAST(NULL AS VARCHAR) AS amount, CAST(NULL AS VARCHAR) AS net, CAST(NULL AS VARCHAR) AS pending
         FROM filtered WHERE origin_ok AND entity_ok GROUP BY status
       UNION ALL
-      SELECT 'entity', entity_code, count(*), NULL, NULL
+      SELECT 'entity', entity_code, count(*), NULL, NULL, NULL
         FROM filtered WHERE origin_ok AND status_ok GROUP BY entity_code
       UNION ALL
-      SELECT 'origin', origin, count(*), NULL, NULL
+      SELECT 'origin', origin, count(*), NULL, NULL, NULL
         FROM filtered WHERE entity_ok AND status_ok GROUP BY origin
       UNION ALL
       SELECT 'total', NULL, count(*),
              CAST(COALESCE(sum(CASE WHEN ${counted} THEN total END), 0) AS VARCHAR),
+             CAST(COALESCE(sum(CASE WHEN ${counted} THEN net END), 0) AS VARCHAR),
              CAST(COALESCE(sum(CASE WHEN ${receivable} THEN pending END), 0) AS VARCHAR)
         FROM filtered WHERE origin_ok AND entity_ok AND status_ok
     `),
@@ -194,7 +208,7 @@ export async function listSalesDocuments(writer: Writer, user: UserCtx, url: URL
     const facet = String(row.facet);
     if (facet === 'total') {
       page.total = intOf(row.n);
-      page.totals = { amount: money2(row.amount), pending: money2(row.pending) };
+      page.totals = { base: money2(row.net), amount: money2(row.amount), pending: money2(row.pending) };
     } else if (facet === 'status' || facet === 'entity' || facet === 'origin') {
       counts[facet].set(String(row.value), intOf(row.n));
     }
@@ -331,7 +345,7 @@ function rowsCte(
     rows AS (
       SELECT docs.origin, docs.id, docs.number, docs.issue_date, docs.sort_date, docs.due_date,
              docs.customer_id, docs.customer_match, docs.customer_name, docs.customer_references,
-             docs.entity_code, docs.total, docs.pending, docs.currency, ${status} AS status,
+             docs.entity_code, docs.net, docs.total, docs.pending, docs.currency, ${status} AS status,
              docs.verifactu, docs.delivery, docs.record, docs.invoice_type,
              ${delivery ? 'meta.kind' : 'CAST(NULL AS VARCHAR)'} AS note_kind,
              ${delivery ? 'meta.invoicing_status' : 'CAST(NULL AS VARCHAR)'} AS invoicing_status
@@ -371,6 +385,7 @@ function holdedInvoices(direction: Direction, entity: string): string {
              COALESCE(o.due_date, h.due_date) AS due_date,
              ${link.id} AS customer_id, ${link.match} AS customer_match,
              h.counterparty_name AS customer_name, CAST(NULL AS VARCHAR) AS customer_references, e.code AS entity_code,
+             CAST(h.subtotal AS DECIMAL(14,2)) AS net,
              CAST(h.total AS DECIMAL(14,2)) AS total,
              CAST(CASE
                WHEN (${base}) = 'void' THEN 0
@@ -409,6 +424,7 @@ function nativeInvoices(entity: string): string {
              COALESCE(NULLIF(trim(json_extract_string(i.customer_snapshot, '$.name')), ''), c.legal_name, '') AS customer_name,
              i.customer_references,
              e.code AS entity_code,
+             CAST(i.subtotal AS DECIMAL(14,2)) AS net,
              CAST(i.total AS DECIMAL(14,2)) AS total,
              CAST(CASE WHEN i.status = 'issued' THEN i.total - i.amount_paid WHEN i.status = 'voided' THEN 0 END AS DECIMAL(14,2)) AS pending,
              i.currency, ${nativeInvoiceBase('i.status', 'i.payment_status')} AS base, FALSE AS flagged_overdue,
@@ -446,6 +462,7 @@ function nativeSupplierInvoices(entity: string): string {
              COALESCE(c.legal_name, NULLIF(trim(json_extract_string(s.ocr_extraction, '$.supplier_name')), ''), '') AS customer_name,
              CAST(NULL AS VARCHAR) AS customer_references,
              e.code AS entity_code,
+             CAST(s.subtotal AS DECIMAL(14,2)) AS net,
              CAST(s.total AS DECIMAL(14,2)) AS total,
              CAST(CASE
                WHEN s.status = 'approved' THEN s.total - s.amount_paid
@@ -474,6 +491,7 @@ function holdedQuotes(entity: string): string {
              h.valid_until AS due_date,
              ${link.id} AS customer_id, ${link.match} AS customer_match,
              h.counterparty_name AS customer_name, CAST(NULL AS VARCHAR) AS customer_references, e.code AS entity_code,
+             CAST(h.subtotal AS DECIMAL(14,2)) AS net,
              CAST(h.total AS DECIMAL(14,2)) AS total, CAST(NULL AS DECIMAL(14,2)) AS pending,
              'EUR' AS currency, ${holdedQuoteBase('h.status_holded', 'h.invoiced_status')} AS base, FALSE AS flagged_overdue,
              ${UNTRACKED}
@@ -490,6 +508,7 @@ function nativeQuotes(entity: string): string {
              q.valid_until AS due_date,
              CAST(q.customer_id AS VARCHAR) AS customer_id, 'contact' AS customer_match,
              COALESCE(c.legal_name, '') AS customer_name, q.customer_references, e.code AS entity_code,
+             CAST(q.subtotal AS DECIMAL(14,2)) AS net,
              CAST(q.total AS DECIMAL(14,2)) AS total, CAST(NULL AS DECIMAL(14,2)) AS pending,
              q.currency, q.status AS base, FALSE AS flagged_overdue, ${UNTRACKED}
         FROM sales.quote q
@@ -515,6 +534,7 @@ function holdedDeliveryNotes(entity: string): string {
              COALESCE(${link.lineName}, NULLIF(trim(h.destination), ''), NULLIF(trim(h.description), ''), '') AS customer_name,
              CAST(NULL AS VARCHAR) AS customer_references,
              e.code AS entity_code,
+             CAST(h.subtotal AS DECIMAL(14,2)) AS net,
              CAST(h.total AS DECIMAL(14,2)) AS total, CAST(NULL AS DECIMAL(14,2)) AS pending,
              'EUR' AS currency, ${holdedDeliveryNoteStatus('h.invoiced_status')} AS base, FALSE AS flagged_overdue,
              ${UNTRACKED}
@@ -527,7 +547,9 @@ function holdedDeliveryNotes(entity: string): string {
 /** Importe de un albarán valorado: bases por código de IVA más su cuota, como priceTotals. */
 const NOTE_TOTALS = `
     note_totals AS (
-      SELECT g.delivery_note_id, sum(g.base) + sum(round(g.base * COALESCE(tc.rate, 0) * 0.01, 2)) AS total
+      SELECT g.delivery_note_id,
+             sum(g.base) AS net,
+             sum(g.base) + sum(round(g.base * COALESCE(tc.rate, 0) * 0.01, 2)) AS total
         FROM (
           SELECT l.delivery_note_id, l.tax_code,
                  sum(round(l.quantity * l.unit_price * (1 - l.discount_pct * 0.01), 2)) AS base
@@ -547,6 +569,7 @@ function nativeDeliveryNotes(entity: string): string {
              CAST(n.customer_id AS VARCHAR) AS customer_id,
              CASE WHEN n.customer_id IS NOT NULL THEN 'contact' END AS customer_match,
              COALESCE(c.legal_name, tl.name, '') AS customer_name, n.customer_references, e.code AS entity_code,
+             CAST(CASE WHEN n.is_valued THEN COALESCE(t.net, 0) END AS DECIMAL(14,2)) AS net,
              CAST(CASE WHEN n.is_valued THEN COALESCE(t.total, 0) END AS DECIMAL(14,2)) AS total,
              CAST(NULL AS DECIMAL(14,2)) AS pending,
              n.currency, ${nativeDeliveryNoteStatus('n.status', 'n.invoicing_status')} AS base, FALSE AS flagged_overdue,
@@ -610,6 +633,7 @@ function itemOf(row: Record<string, unknown>, query: Query): SalesDocumentItem {
       match: match === 'contact' || match === 'tax_id' || match === 'name' ? match : null,
     },
     entity_code: String(row.entity_code ?? ''),
+    base: row.net == null ? null : money2(row.net),
     total: row.total == null ? null : money2(row.total),
     pending: row.pending == null ? null : money2(row.pending),
     currency: String(row.currency ?? 'EUR'),
