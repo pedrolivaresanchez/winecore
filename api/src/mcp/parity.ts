@@ -31,6 +31,8 @@ export const NOT_IN_MCP: Readonly<Record<string, string>> = {
   "POST /v1/users": PEOPLE,
   "PATCH /v1/users/:id": PEOPLE,
   "GET /v1/stock/unlabeled": "Botellas sin etiquetar del mapa (jaulón y nicho). El libro físico no las separa; el etiquetado las lee aquí.",
+  "GET /v1/sales-documents/export": "Excel y PDF del listado filtrado, para la pantalla. El agente lista los mismos documentos y sus totales en JSON.",
+  "GET /v1/sales-orders/export": "Excel y PDF del listado filtrado de pedidos, para la pantalla. El agente lista los pedidos y sus totales en JSON.",
   "PATCH /v1/lots/:code": "Pedro corrige código, añada y producto del lote en la ficha. El cambio queda en el historial.",
   "PATCH /v1/stock/bottled-placements/:id": "Pedro corrige un nicho, jaulón, caja o palet en el mapa. El ajuste de cantidad va al libro físico y no a SILICIE.",
 };

@@ -7,9 +7,9 @@ import { ErrorState } from '@/components/ErrorState'
 import { NoPermission } from '@/components/NoPermission'
 import { useMinWidth } from '@/hooks/use-media'
 import { copy, fill } from '@/i18n'
-import { ApiError, api } from '@/lib/api'
+import { ApiError, api, apiBlob } from '@/lib/api'
 import { downloadCsv } from '@/lib/csv'
-import { formatMoney } from '@/lib/format'
+import { downloadBlob } from '@/lib/download'
 import { allows } from '@/lib/permissions'
 import { readStorage, writeStorage } from '@/lib/storage'
 import { productAliases, useSalesCatalog } from '@/lib/sales-catalog'
@@ -27,6 +27,8 @@ import {
 } from '@/lib/sales'
 import { entityTone, statusTone } from '@/lib/status-tones'
 import type { Me } from '@/lib/types'
+import { ExportMenu } from '@/pages/documents/ExportMenu'
+import { FilteredTotals } from '@/pages/documents/FilteredTotals'
 import { CreateDocument } from '@/pages/ventas/dialogs'
 import { SalesHeader, SalesSwitch } from '@/pages/ventas/SalesTabs'
 import { DownloadSimple } from '@/ui/icons'
@@ -51,7 +53,7 @@ import {
   type SelectionAction,
 } from '@/ui'
 
-type ColumnId = 'number' | 'customer' | 'channel' | 'entity' | 'date' | 'total' | 'status' | 'invoicing' | 'source'
+type ColumnId = 'number' | 'customer' | 'channel' | 'entity' | 'date' | 'base' | 'total' | 'status' | 'invoicing' | 'source'
 
 const SIZES = [25, 50, 100, 200] as const
 const COLUMN_KEY = 'winecore.columns.sales.order'
@@ -59,7 +61,7 @@ const DEFAULT_HIDDEN: ColumnId[] = ['source']
 
 const GRID_LABELS = {
   addCalculation: copy.sales.grid.add,
-  aggregation: () => copy.sales.grid.count,
+  aggregation: () => copy.salesDocs.sum,
   aggregations: copy.sales.grid.aggregations,
   count: (n: number) => n.toLocaleString('es'),
   clearCalculation: copy.sales.grid.clear,
@@ -88,9 +90,8 @@ function entityName(code: string | null): string {
 }
 
 /**
- * Pedidos: only WineCore has them, so this list reads `/v1/sales-orders` page by page. That
- * endpoint filters by one status, entity and channel and does not count or search; the search
- * box narrows the page on screen.
+ * Pedidos: only WineCore has them. `/v1/sales-orders` filters by status, entity, channel and
+ * search, and returns the count plus base and total of the whole filter (cancelled excluded).
  */
 export function VentasList({ me, creating = false }: { me: Me; creating?: boolean }) {
   useChromeTitle(copy.sales.title)
@@ -106,16 +107,21 @@ export function VentasList({ me, creating = false }: { me: Me; creating?: boolea
   const channel = params.get('channel') ?? ''
   const entityId = entity ? entities.find((item) => item.code === entity)?.id ?? '' : ''
   const [q, setQ] = useState('')
+  const [debounced, setDebounced] = useState('')
+  const [totals, setTotals] = useState<{ base: string; amount: string } | null>(null)
+  const [listExporting, setListExporting] = useState(false)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [dialog, setDialog] = useState(creating)
   const [formKey, setFormKey] = useState(0)
   const [hidden, setHidden] = useState(readHidden)
+  const [aggregation, setAggregation] = useState<Record<string, 'sum' | undefined>>({ base: 'sum', total: 'sum' })
   const [widths, setWidths] = useState<Record<string, number>>({
     number: 160,
     customer: 260,
     channel: 140,
     entity: 100,
     date: 110,
+    base: 130,
     total: 130,
     status: 150,
     invoicing: 150,
@@ -123,8 +129,13 @@ export function VentasList({ me, creating = false }: { me: Me; creating?: boolea
   })
   const canWrite = allows(me, 'sales.write')
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(q.trim()), 300)
+    return () => window.clearTimeout(timer)
+  }, [q])
+
   const pages = useCursorPages<SalesOrder>({
-    queryKey: [status, entityId, channel].join('|'),
+    queryKey: [status, entityId, channel, debounced].join('|'),
     storageKey: 'sales-orders',
     sizes: SIZES,
     fetchPage: ({ cursor, limit, signal }) => {
@@ -132,8 +143,13 @@ export function VentasList({ me, creating = false }: { me: Me; creating?: boolea
       if (status) query.set('status', status)
       if (entityId) query.set('entity', entityId)
       if (channel) query.set('channel', channel)
+      if (debounced) query.set('q', debounced)
       if (cursor) query.set('cursor', cursor)
-      return api<{ items: SalesOrder[]; next_cursor: string | null }>(`/v1/sales-orders?${query}`, { signal })
+      return api<{ items: SalesOrder[]; next_cursor: string | null; total?: number; totals?: { base: string; amount: string } }>(`/v1/sales-orders?${query}`, { signal })
+        .then((page) => {
+          setTotals(page.totals ?? null)
+          return page
+        })
     },
   })
 
@@ -149,16 +165,7 @@ export function VentasList({ me, creating = false }: { me: Me; creating?: boolea
     setPicked(new Set())
   }, [pages.pageKey])
 
-  const needle = q.trim().toLowerCase()
-  const rows = useMemo(() => {
-    if (!needle) return pages.items
-    return pages.items.filter((item) =>
-      [item.number ?? '', catalog.customerName(item.customer_id), item.customer_order_ref ?? '', item.notes ?? '']
-        .join(' ')
-        .toLowerCase()
-        .includes(needle),
-    )
-  }, [catalog, needle, pages.items])
+  const rows = pages.items
 
   function setFilter(id: string, value: FilterValue) {
     const next = new URLSearchParams(params)
@@ -176,6 +183,7 @@ export function VentasList({ me, creating = false }: { me: Me; creating?: boolea
     }
     setParams(next)
     setQ('')
+    setDebounced('')
   }
 
   function toggleColumn(id: ColumnId) {
@@ -222,7 +230,8 @@ export function VentasList({ me, creating = false }: { me: Me; creating?: boolea
       cell: (row) => (row.entity_code ? <StatusPill tone={entityTone(row.entity_code)}>{entityName(row.entity_code)}</StatusPill> : '—'),
     },
     { id: 'date', header: copy.sales.date, cell: (row) => formatIsoDate(row.order_date) },
-    { id: 'total', header: copy.sales.total, align: 'right', cell: (row) => formatAmount(row.total) },
+    { id: 'base', header: copy.salesDocs.base, align: 'right', aggregations: ['sum'], cell: (row) => formatAmount(row.subtotal) },
+    { id: 'total', header: copy.sales.total, align: 'right', aggregations: ['sum'], cell: (row) => formatAmount(row.total) },
     {
       id: 'status',
       header: copy.sales.status,
@@ -243,13 +252,14 @@ export function VentasList({ me, creating = false }: { me: Me; creating?: boolea
   function exportSelection() {
     downloadCsv(
       'pedidos-seleccion.csv',
-      [copy.sales.number, copy.sales.customer, copy.sales.channel, copy.salesDocs.entity, copy.sales.date, copy.sales.total, copy.sales.status, copy.sales.invoicing],
+      [copy.sales.number, copy.sales.customer, copy.sales.channel, copy.salesDocs.entity, copy.sales.date, copy.salesDocs.base, copy.sales.total, copy.sales.status, copy.sales.invoicing],
       chosen.map((row) => [
         row.number ?? copy.sales.draft,
         catalog.customerName(row.customer_id),
         channelLabel(row.channel),
         entityName(row.entity_code),
         row.order_date,
+        row.subtotal ?? '',
         row.total ?? '',
         orderStatusLabel(row.status),
         invoicingLabel(row.invoicing_status),
@@ -257,10 +267,33 @@ export function VentasList({ me, creating = false }: { me: Me; creating?: boolea
     )
     toast(fill(copy.lists.bulk.exported, { n: String(chosen.length) }))
   }
+
+  function orderQuery() {
+    const query = new URLSearchParams()
+    if (status) query.set('status', status)
+    if (entityId) query.set('entity', entityId)
+    if (channel) query.set('channel', channel)
+    if (debounced) query.set('q', debounced)
+    return query
+  }
+
+  async function exportList(format: 'xlsx' | 'pdf') {
+    setListExporting(true)
+    try {
+      const query = orderQuery()
+      query.set('format', format)
+      const file = await apiBlob(`/v1/sales-orders/export?${query}`)
+      downloadBlob(file.filename ?? `pedidos.${format}`, file.blob)
+    } catch (err: unknown) {
+      toast(err instanceof ApiError ? err.message : copy.salesDocs.exportFailed)
+    } finally {
+      setListExporting(false)
+    }
+  }
+
   const actions: SelectionAction[] = [{ id: 'export', label: copy.lists.bulk.exportCsv, icon: DownloadSimple, onRun: exportSelection }]
 
-  const pageSum = rows.reduce((sum, row) => sum + (Number(row.total) || 0), 0)
-  const filtersActive = Boolean(needle || status || channel || entity)
+  const filtersActive = Boolean(debounced || status || channel || entity)
   const loadingFirst = pages.loading && pages.items.length === 0 && !pages.error
   const screen = loadingFirst ? 'ventas-cargando' : rows.length === 0 ? 'ventas-vacio' : 'ventas-lista'
   const error = pages.error ? (pages.error instanceof ApiError ? pages.error : new ApiError(0, 'WC_ERROR', copy.error.load)) : null
@@ -295,6 +328,7 @@ export function VentasList({ me, creating = false }: { me: Me; creating?: boolea
         onChange={setFilter}
         onClear={clearFilters}
         grid={desktop ? gridFilters : undefined}
+        controls={<ExportMenu className="md:hidden" busy={listExporting} onExport={(format) => void exportList(format)} />}
         selection={{
           count: picked.size,
           pageCount: rows.length,
@@ -304,6 +338,7 @@ export function VentasList({ me, creating = false }: { me: Me; creating?: boolea
         }}
         trailing={
           <>
+            <ExportMenu className="max-md:hidden" busy={listExporting} onExport={(format) => void exportList(format)} />
             <GlassMenu
               open={columnsMenu.open}
               onOpenChange={columnsMenu.setOpen}
@@ -363,6 +398,7 @@ export function VentasList({ me, creating = false }: { me: Me; creating?: boolea
                     </span>
                     <span className="flex shrink-0 flex-col items-end gap-1.5">
                       <span className="text-label font-medium tabular-nums text-ink-900">{formatAmount(row.total)}</span>
+                      <span className="text-caption tabular-nums text-text-tertiary">{copy.salesDocs.base} {formatAmount(row.subtotal)}</span>
                       <StatusPill tone={statusTone(row.status)}>{orderStatusLabel(row.status)}</StatusPill>
                     </span>
                   </button>
@@ -383,6 +419,12 @@ export function VentasList({ me, creating = false }: { me: Me; creating?: boolea
           onSelectedChange={setPicked}
           onOpenRow={(row) => navigate(`${docPath('order')}/${row.id}`)}
           rowHref={(row) => `${docPath('order')}/${row.id}`}
+          aggregation={aggregation}
+          onAggregationChange={(id, value) => setAggregation((now) => ({ ...now, [id]: value === 'sum' ? 'sum' : undefined }))}
+          aggregationValues={{
+            base: totals ? formatAmount(totals.base) : null,
+            total: totals ? formatAmount(totals.amount) : null,
+          }}
           total={pages.total ?? undefined}
           loading={pages.loading}
           filterLink={gridFilters}
@@ -398,7 +440,9 @@ export function VentasList({ me, creating = false }: { me: Me; creating?: boolea
         />
       )}
 
-      <Pagination {...pages.pagination} detail={rows.length > 0 ? `${copy.sales.total} ${formatMoney(pageSum)}` : undefined} />
+      {totals && rows.length > 0 ? <FilteredTotals base={formatAmount(totals.base)} total={formatAmount(totals.amount)} /> : null}
+
+      <Pagination {...pages.pagination} />
 
       {dialog ? <CreateDocument key={formKey} doc="order" customers={catalog.customers} onClose={closeCreate} onCreated={(id) => navigate(`${docPath('order')}/${id}`)} /> : null}
     </div>

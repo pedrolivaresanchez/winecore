@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { readZip } from '../../db/migration/zip';
 import { sql } from '../../src/core/db/sql';
 import type { Tx } from '../../src/core/db/writer';
 import { newId } from '../../src/core/ids';
+import { pdfLines } from '../export/pdfText';
 import { createTestApp } from '../helpers';
 
 const NOW = new Date('2026-10-31T10:00:00Z');
@@ -47,7 +49,7 @@ type Facet = { value: string; label: string; count: number };
 type Page = {
   items: Item[];
   total: number;
-  totals: { amount: string; pending: string };
+  totals: { base: string; amount: string; pending: string };
   facets: { status: Facet[]; entity: Facet[]; origin: Facet[] };
   origins: string[];
   entity: string;
@@ -170,6 +172,7 @@ describe('lista única de documentos de venta', () => {
       holdedQuote(tx, { entity: po, number: 'HQ-3', date: '2026-05-01', validUntil: '2026-06-01', name: 'Duplicado SL', status: 'Aceptado', invoiced: 'Facturado', total: '35.00' });
       nativeQuote(tx, { entity: po, number: 'WQ-1', status: 'sent', date: '2026-10-01', validUntil: '2026-10-15', customer: ids.norte, total: '12.10' });
       nativeQuote(tx, { entity: po, number: null, status: 'draft', date: null, validUntil: null, customer: ids.tax, total: '5.00' });
+      holdedQuote(tx, { entity: po, number: 'HQ-R', date: '2026-04-01', validUntil: '2026-05-01', name: 'Duplicado SL', status: 'Rechazado', invoiced: null, total: '99.00' });
 
       holdedNote(tx, { entity: po, number: 'HD-1', date: '2026-10-02', destination: 'Almacén Norte', status: 'Pendiente', total: '18.15' });
       holdedLine(tx, { entity: po, kind: 'delivery_note', number: 'HD-1', date: '2026-10-02', name: 'Cliente Norte SL', tax: 'B12000014' });
@@ -217,7 +220,7 @@ describe('lista única de documentos de venta', () => {
     const w001 = byNumber(page, 'W-001');
     expect(w001).toMatchObject({
       id: native.w001, origin: 'winecore', status: 'pending', status_label: 'Pendiente de cobro',
-      total: '121.00', pending: '121.00', due_date: '2026-11-04',
+      base: '121.00', total: '121.00', pending: '121.00', due_date: '2026-11-04',
       customer: { id: ids.norte, name: 'Cliente Norte SL', match: 'contact' },
       api_path: `/v1/invoices/${native.w001}`,
     });
@@ -227,7 +230,7 @@ describe('lista única de documentos de venta', () => {
     const draft = page.items[0];
     expect(draft).toMatchObject({ id: native.draft, status: 'draft', issue_date: null, total: null, pending: null, customer: { name: 'Bodega Ávila SL' } });
 
-    expect(page.totals).toEqual({ amount: '1565.00', pending: '1265.00' });
+    expect(page.totals).toEqual({ base: '1565.00', amount: '1565.00', pending: '1265.00' });
     expect(counts(page.facets.status)).toEqual({ draft: 1, overdue: 3, paid: 3, void: 2, pending: 2, partial: 1 });
     expect(page.facets.status.map((facet) => facet.value)).toContain('discarded');
     expect(page.facets.status.find((facet) => facet.value === 'partial')?.label).toBe('Cobro parcial');
@@ -256,12 +259,13 @@ describe('lista única de documentos de venta', () => {
 
     const open = await list('kind=invoice&status=overdue,partial&status=pending');
     expect(open.items.map((item) => item.number)).toEqual(['H-IMP', 'H-003', 'W-001', 'H-002', 'W-002', 'H-006']);
-    expect(open.totals).toEqual({ amount: '1335.00', pending: '1265.00' });
+    expect(open.totals).toEqual({ base: '1335.00', amount: '1335.00', pending: '1265.00' });
     expect(counts(open.facets.status)).toEqual({ draft: 1, overdue: 3, paid: 3, void: 2, pending: 2, partial: 1 });
     expect(counts(open.facets.origin)).toEqual({ holded: 4, winecore: 2 });
 
     const voided = await list('kind=invoice&status=void');
-    expect(voided.totals.amount).toBe('40.00');
+    expect(voided.total).toBe(2);
+    expect(voided.totals).toEqual({ base: '0.00', amount: '0.00', pending: '0.00' });
 
     const october = await list('kind=invoice&from=2026-10-01&to=2026-10-31');
     expect(october.items.map((item) => item.number)).toEqual([null, 'H-IMP', 'H-005', 'H-003', 'W-001']);
@@ -341,16 +345,18 @@ describe('lista única de documentos de venta', () => {
       ['WQ-1', 'winecore', 'expired'],
       ['HQ-1', 'holded', 'expired'],
       ['HQ-3', 'holded', 'converted'],
+      ['HQ-R', 'holded', 'rejected'],
     ]);
     expect(byNumber(quotes, 'HQ-1')).toMatchObject({ due_date: '2026-09-30', pending: null, customer: { id: ids.norte, match: 'name' } });
     expect(byNumber(quotes, 'HQ-2').customer).toEqual({ id: ids.avila, name: 'Bodega Avila SL', match: 'name' });
     expect(byNumber(quotes, 'HQ-2').api_path).toMatch(/^\/v1\/legacy\/documents\//);
     expect(byNumber(quotes, 'WQ-1').api_path).toMatch(/^\/v1\/quotes\//);
+    expect(quotes.totals.base).toBe('142.10');
     expect(quotes.totals.amount).toBe('142.10');
     const poQuotes = await list('kind=quote&entity=PO');
     expect(poQuotes.items.every((item) => item.entity_code === 'PO')).toBe(true);
-    expect(poQuotes.items.map((item) => item.number)).toEqual([null, 'WQ-1', 'HQ-1', 'HQ-3']);
-    expect(counts(quotes.facets.status)).toEqual({ draft: 1, accepted: 1, expired: 2, converted: 1 });
+    expect(poQuotes.items.map((item) => item.number)).toEqual([null, 'WQ-1', 'HQ-1', 'HQ-3', 'HQ-R']);
+    expect(counts(quotes.facets.status)).toEqual({ draft: 1, accepted: 1, expired: 2, converted: 1, rejected: 1 });
 
     const notes = await list('kind=delivery_note');
     expect(notes.items.map((item) => [item.number, item.status, item.total])).toEqual([
@@ -366,6 +372,7 @@ describe('lista única de documentos de venta', () => {
     expect(byNumber(notes, 'HD-2').customer).toEqual({ id: null, name: 'Destino Sur', match: null });
     expect(byNumber(notes, 'WD-3').customer).toEqual({ id: null, name: 'Almacén sintético', match: null });
     expect(byNumber(notes, 'WD-1').api_path).toMatch(/^\/v1\/delivery-notes\//);
+    expect(notes.totals.base).toBe('57.83');
     expect(notes.totals.amount).toBe('63.08');
     expect((await list('kind=delivery_note&q=VBPO-609138')).items.map((item) => item.number)).toEqual(['WD-1']);
     expect(notes.items[0]?.number).toBeNull();
@@ -389,6 +396,93 @@ describe('lista única de documentos de venta', () => {
     expect(advisor.total).toBe(8);
     expect(advisor.items.every((item) => item.entity_code === 'PO')).toBe(true);
     expect(await status('kind=invoice', 'bodega@winecore.test')).toBe(403);
+  });
+
+  it('exporta el filtro a Excel y PDF con la base y sin anuladas ni rechazadas', async () => {
+    const sheet = await ctx.app.handle(new Request('http://localhost/v1/sales-documents/export?kind=invoice&format=xlsx'));
+    expect(sheet.status).toBe(200);
+    expect(sheet.headers.get('Content-Type')).toContain('spreadsheetml.sheet');
+    expect(sheet.headers.get('Content-Disposition')).toContain('facturas.xlsx');
+    const book = Buffer.from(await sheet.arrayBuffer());
+    const xml = readZip(book).find((entry) => entry.name.endsWith('sheet1.xml'))?.data.toString('utf8') ?? '';
+    expect(xml).toContain('<v>1565.00</v>');
+    expect(xml).not.toContain('<v>1605.00</v>');
+    const shared = readZip(book).find((entry) => entry.name.endsWith('sharedStrings.xml'))?.data.toString('utf8') ?? '';
+    expect(shared).toContain('Base');
+    expect(shared).toContain('Pendiente');
+
+    const pdf = await ctx.app.handle(new Request('http://localhost/v1/sales-documents/export?kind=quote&status=rejected&format=pdf'));
+    expect(pdf.status).toBe(200);
+    expect(pdf.headers.get('Content-Disposition')).toContain('presupuestos.pdf');
+    const lines = pdfLines(new Uint8Array(await pdf.arrayBuffer()));
+    expect(lines.join('\n')).toContain('HQ-R');
+    expect(lines.join('\n')).toContain('0,00');
+    expect(lines.join('\n')).toContain('Sin anuladas');
+
+    expect((await ctx.app.handle(new Request('http://localhost/v1/sales-documents/export?kind=invoice'))).status).toBe(422);
+  });
+
+  it('suma los pedidos filtrados sin los cancelados y los exporta', async () => {
+    const ruleSet = newId();
+    const rule = newId();
+    const openId = newId();
+    const cancelledId = newId();
+    await ctx.writer.withWrite({ type: 'system', id: 'orders-export', requestId: newId() }, async (tx) => {
+      tx.write(sql`
+        INSERT INTO billing.billing_rule_set (id, version, status, created_by)
+        VALUES (CAST(${ruleSet} AS UUID), 41, 'draft', 'test')
+      `);
+      tx.write(sql`
+        INSERT INTO billing.billing_rule (id, rule_set_id, scope, issuing_entity_id)
+        VALUES (CAST(${rule} AS UUID), CAST(${ruleSet} AS UUID), 'default', CAST(${po} AS UUID))
+      `);
+      tx.write(sql`
+        INSERT INTO sales.sales_order (
+          id, legal_entity_id, number, status, source, channel, customer_id, order_date,
+          billing_rule_id, subtotal, tax_total, total, created_by
+        ) VALUES
+          (CAST(${openId} AS UUID), CAST(${po} AS UUID), 'PED-1', 'confirmed', 'manual', 'direct', CAST(${ids.norte} AS UUID),
+           CAST('2026-10-02' AS DATE), CAST(${rule} AS UUID), 100.00, 21.00, 121.00, 'test'),
+          (CAST(${cancelledId} AS UUID), CAST(${po} AS UUID), 'PED-2', 'cancelled', 'manual', 'horeca', CAST(${ids.avila} AS UUID),
+           CAST('2026-10-03' AS DATE), CAST(${rule} AS UUID), 50.00, 10.50, 60.50, 'test')
+      `);
+    });
+    const listed = await ctx.app.handle(new Request('http://localhost/v1/sales-orders?q=norte'));
+    expect(listed.status).toBe(200);
+    const body = await listed.json() as { total: number; totals: { base: string; amount: string }; items: { number: string | null }[] };
+    expect(body.total).toBe(1);
+    expect(body.items.map((item) => item.number)).toEqual(['PED-1']);
+    expect(body.totals).toEqual({ base: '100.00', amount: '121.00' });
+
+    const all = await ctx.app.handle(new Request('http://localhost/v1/sales-orders'));
+    const full = await all.json() as { total: number; totals: { base: string; amount: string } };
+    expect(full.total).toBe(2);
+    expect(full.totals).toEqual({ base: '100.00', amount: '121.00' });
+
+    const file = await ctx.app.handle(new Request('http://localhost/v1/sales-orders/export?format=xlsx&status=cancelled'));
+    expect(file.status).toBe(200);
+    expect(file.headers.get('Content-Disposition')).toContain('pedidos.xlsx');
+    const xml = readZip(Buffer.from(await file.arrayBuffer())).find((entry) => entry.name.endsWith('sheet1.xml'))?.data.toString('utf8') ?? '';
+    expect(xml).toContain('<v>60.50</v>');
+    expect(xml).toContain('<v>0.00</v>');
+  });
+
+  it('una rectificativa emitida resta en la base y en el total', async () => {
+    await ctx.writer.withWrite({ type: 'system', id: 'credit-note', requestId: newId() }, async (tx) => {
+      tx.write(sql`
+        INSERT INTO billing.invoice (
+          id, legal_entity_id, series_id, number, status, invoice_type, rectification_kind, issue_date, customer_id,
+          customer_snapshot, subtotal, tax_total, total, amount_paid, payment_status, issued_at, created_by
+        ) VALUES (
+          CAST(${newId()} AS UUID), CAST(${po} AS UUID), CAST(${ids.seriesPo} AS UUID), 'R-001', 'issued', 'R1', 'S',
+          CAST('2026-10-21' AS DATE), CAST(${ids.norte} AS UUID), ${sql.json({ name: 'Cliente Norte SL' })},
+          '-10.00', '-2.10', '-12.10', '0.00', 'unpaid', ${NOW}, 'test'
+        )
+      `);
+    });
+    const page = await list('kind=invoice');
+    expect(byNumber(page, 'R-001')).toMatchObject({ base: '-10.00', total: '-12.10', status: 'issued' });
+    expect(page.totals).toEqual({ base: '1555.00', amount: '1552.90', pending: '1265.00' });
   });
 
   it('rechaza parámetros no válidos', async () => {
@@ -547,10 +641,10 @@ function holdedQuote(tx: Tx, input: {
 }) {
   tx.write(sql`
     INSERT INTO legacy.holded_quote (
-      id, batch_id, entity_id, number, issue_date, valid_until, counterparty_name, total, status_holded, invoiced_status, raw
+      id, batch_id, entity_id, number, issue_date, valid_until, counterparty_name, subtotal, total, status_holded, invoiced_status, raw
     ) VALUES (
       CAST(${newId()} AS UUID), CAST(${ids.batch} AS UUID), CAST(${input.entity} AS UUID), ${input.number},
-      CAST(${input.date} AS DATE), CAST(${input.validUntil} AS DATE), ${input.name}, ${input.total},
+      CAST(${input.date} AS DATE), CAST(${input.validUntil} AS DATE), ${input.name}, ${input.total}, ${input.total},
       ${input.status}, ${input.invoiced}, ${sql.json({})}
     )
   `);
@@ -578,10 +672,10 @@ function nativeQuote(tx: Tx, input: {
 
 function holdedNote(tx: Tx, input: { entity: string; number: string; date: string; destination: string; status: string; total: string }) {
   tx.write(sql`
-    INSERT INTO legacy.holded_delivery_note (id, batch_id, entity_id, number, issue_date, destination, total, invoiced_status, raw)
+    INSERT INTO legacy.holded_delivery_note (id, batch_id, entity_id, number, issue_date, destination, subtotal, total, invoiced_status, raw)
     VALUES (
       CAST(${newId()} AS UUID), CAST(${ids.batch} AS UUID), CAST(${input.entity} AS UUID), ${input.number},
-      CAST(${input.date} AS DATE), ${input.destination}, ${input.total}, ${input.status}, ${sql.json({})}
+      CAST(${input.date} AS DATE), ${input.destination}, ${input.total}, ${input.total}, ${input.status}, ${sql.json({})}
     )
   `);
 }

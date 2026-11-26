@@ -86,8 +86,12 @@ export function statusLabel(kind: DocumentKind, status: string, direction: Direc
   return labels[status] ?? status;
 }
 
-/** Estados que no suman en el importe del listado salvo que se filtren expresamente. */
-export const NOT_COUNTED: readonly string[] = ['void', 'discarded', 'cancelled'];
+/**
+ * Estados que no suman en el pie ni en la exportación, aunque el filtro los muestre.
+ * Anulada, cancelada y rechazada quedan fuera; una rectificativa emitida no es uno de estos
+ * estados y entra con su importe en negativo.
+ */
+export const NOT_COUNTED: readonly string[] = ['void', 'voided', 'annulled', 'discarded', 'cancelled', 'rejected'];
 
 /** Estados con importe por cobrar (o por pagar). */
 export const RECEIVABLE: readonly string[] = ['pending', 'partial', 'overdue'];
