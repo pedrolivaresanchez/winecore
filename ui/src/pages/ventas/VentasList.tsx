@@ -328,6 +328,7 @@ export function VentasList({ me, creating = false }: { me: Me; creating?: boolea
         onChange={setFilter}
         onClear={clearFilters}
         grid={desktop ? gridFilters : undefined}
+        controls={<ExportMenu className="md:hidden" busy={listExporting} onExport={(format) => void exportList(format)} />}
         selection={{
           count: picked.size,
           pageCount: rows.length,
@@ -337,7 +338,7 @@ export function VentasList({ me, creating = false }: { me: Me; creating?: boolea
         }}
         trailing={
           <>
-            <ExportMenu busy={listExporting} onExport={(format) => void exportList(format)} />
+            <ExportMenu className="max-md:hidden" busy={listExporting} onExport={(format) => void exportList(format)} />
             <GlassMenu
               open={columnsMenu.open}
               onOpenChange={columnsMenu.setOpen}

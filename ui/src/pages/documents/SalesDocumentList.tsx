@@ -849,6 +849,7 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
         onChange={setFilter}
         onClear={clearFilters}
         grid={desktop ? gridFilters : undefined}
+        controls={<ExportMenu className="md:hidden" busy={listExporting} onExport={(format) => void exportList(format)} />}
         selection={{
           count: picked.size,
           pageCount: items.length,
@@ -861,7 +862,7 @@ export function SalesDocumentList({ me, kind, direction = 'sale' }: { me: Me; ki
             {book === 'delivery_note' && data ? (
               <span className="text-label text-text-secondary">{fill(copy.salesDocs.periodTotal, { total: money(data.totals.amount) })}</span>
             ) : null}
-            <ExportMenu busy={listExporting} onExport={(format) => void exportList(format)} />
+            <ExportMenu className="max-md:hidden" busy={listExporting} onExport={(format) => void exportList(format)} />
             <GlassMenu
               open={columnsMenu.open}
               onOpenChange={columnsMenu.setOpen}
